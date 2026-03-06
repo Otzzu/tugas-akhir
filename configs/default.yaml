@@ -1,0 +1,24 @@
+# Default configuration — gnn_vuln project
+# Override any value here without touching Python code.
+# All paths are relative to project root unless they start with /
+
+data:
+  max_nodes: 500
+  node_feat_dim: 100
+
+model:
+  architecture: gcn   # options: gcn | gat
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4            # only used if architecture=gat
+  num_classes: 2      # change to match the number of class folders in data/raw/
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  weight_decay: 0.0001
+  patience: 10        # early-stopping patience (epochs without val improvement)
+  device: cpu         # change to "cuda" if you have a GPU
