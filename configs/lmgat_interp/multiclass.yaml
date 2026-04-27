@@ -1,0 +1,51 @@
+# configs/lmgat_interp/multiclass.yaml — Architecture 6: VulLMGNN explicit interpolation
+#
+# Correct VulLMGNN explicit stage (Cao et al. 2022):
+#   pred = λ * logit_gnn + (1-λ) * logit_lm
+#
+# Two independent branches:
+#   GNN  : GATv2 on CPG → global_mean_pool → MLP → logit_gnn
+#   LM   : CodeBERT CLS (live, full function text) → MLP → logit_lm
+#   Final: interpolate with learned λ (sigmoid-bounded)
+#
+# Contrast with Arch 3 (lmgat_codebert):
+#   Arch 3 concatenates GNN + CLS → single head (wrong, per paper).
+#   Arch 6 keeps branches independent → interpolates logits (correct).
+#
+# Requires: add_func_tokens: true (func_input_ids in Data objects)
+# Uses same processed .pt as lmgat_codebert: lm_dataset_multiclass_codebert-base_ft.pt
+#
+# Run:
+#   uv run train --config configs/lmgat_interp/multiclass.yaml
+
+data:
+  mode: multiclass
+  max_nodes: 1000
+
+model:
+  architecture: lmgat_interp
+  pretrained_lm: microsoft/codebert-base
+  add_func_tokens: true
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  num_classes: 11
+  mil_weight: 0.5
+  mil_k: 3
+  rank_loss_weight: 0.2
+  init_lambda: 0.5                 # initial GNN weight; learned during training
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 8
+  lr: 0.001
+  lm_lr: 0.00001                   # conservative — interpolation more sensitive than concat
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.0001
+  patience: 20
+  use_class_weights: true
+  focal_loss_gamma: 2.0
+  device: cuda

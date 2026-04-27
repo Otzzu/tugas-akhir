@@ -224,3 +224,93 @@ vulnerability spans multiple lines, the GNN's message passing captures inter-lin
 - MIL loss: binary BCE → multiclass CE
 - Class weights applied in MIL loss too, not just func CE
 - `func_head` input: `Linear(num_classes + 768, ...)` instead of `Linear(hidden_dim + 768, ...)`
+
+---
+
+## Architecture 5 — LM-GIN (Graph Isomorphism Network)
+
+**Status:** ✔ Implemented
+**Config:** `configs/lmgin/multiclass.yaml`
+**Model:** `src/gnn_vuln/models/lmgin.py`
+
+```
+CPG nodes (773D pre-computed, frozen CodeBERT per node)
+CPG edges (7D one-hot)
+    → edge_proj: Linear(7, 773) [first layer] / Linear(7, 256) [subsequent]
+    → GINEConv × num_layers
+        MLP((1+ε)*h_v + Σ_{u∈N(v)} (h_u + e_uv))  ← sum aggregation + edge features
+    → BatchNorm + ReLU + Dropout
+    ↓
+    ├── global_mean_pool(h) → MLP → logit_func [B, num_classes]
+    └── stmt_head: group nodes by source line
+              max-pool + mean-pool per line → dual scorers → stmt_scores [n_stmts]
+
+Loss = CE(logit_func, y, class_weight)
+     + mil_weight * MIL(stmt_scores, y, k)
+     + rank_loss_weight * RankingLoss(stmt_scores, flaw_line_mask)
+```
+
+**Key design decisions:**
+- GINEConv = GIN + edge features: `h_u + e_uv` before aggregation (Hu et al. 2020)
+- Sum aggregation: more expressive than mean (GCN) or weighted mean (GAT) for graph isomorphism
+- Frozen CodeBERT: same as Arch 1/2 — no live fine-tuning, uses existing processed `.pt`
+- Edge features projected to node dim before GINEConv (required by GINEConv API)
+
+**Comparison with LM-GAT:**
+| | LM-GAT (Arch 2) | LM-GIN (Arch 5) |
+|--|-----------------|-----------------|
+| Aggregation | Weighted mean (attention) | Sum |
+| Edge handling | Attention weight shaped by edge | Edge added to neighbor before sum |
+| Expressiveness | GATv2 dynamic attention | GIN: most expressive (Xu et al. 2019) |
+| Interpretability | Attention weights visible | No attention weights |
+
+---
+
+## Architecture 6 — LM-GAT + VulLMGNN Explicit Interpolation
+
+**Status:** ✔ Implemented
+**Config:** `configs/lmgat_interp/multiclass.yaml`
+**Model:** `src/gnn_vuln/models/lmgat_interp.py`
+
+Correct implementation of VulLMGNN explicit stage (Cao et al. 2022).
+Two fully independent branches combined via learned interpolation weight λ.
+
+```
+Full function text (input_ids/attention_mask in Data object)
+    → CodeBERT (LIVE, FINE-TUNED, lr=1e-5)
+    → CLS token [B, 768]
+    → lm_head MLP → logit_lm [B, num_classes]   ─────────────────────┐
+                                                                        │ λ = sigmoid(λ_logit) learned
+CPG nodes (773D pre-computed, frozen)                                   │
+    → GATv2Conv × num_layers (lr=1e-3)                                 │
+    → BatchNorm + ReLU + Dropout                                        │
+    ↓                                                                   │
+    global_mean_pool(h) → gnn_head MLP → logit_gnn [B, num_classes] ──┤
+                                                                        ↓
+                                                    λ * logit_gnn + (1-λ) * logit_lm
+                                                         ↓
+                                                 logit_func [B, num_classes]
+
+    └── stmt_head (GNN branch only):
+              group nodes by source line
+              max-pool + mean-pool per line → dual scorers → stmt_scores [n_stmts]
+
+Loss = CE(logit_func, y, class_weight)
+     + mil_weight * MIL(stmt_scores, y, k)
+     + rank_loss_weight * RankingLoss(stmt_scores, flaw_line_mask)
+```
+
+**Key design decisions:**
+- λ is a learned scalar (sigmoid-bounded to (0,1)) — model learns how much to trust GNN vs LM
+- init_lambda=0.5: equal weight at initialization, model adjusts during training
+- Branches are fully independent: GNN and CodeBERT optimize toward the same logit space separately
+- Statement head uses GNN embeddings only (structure-aware localization)
+- Uses same `_ft` processed `.pt` as Arch 3 (requires `add_func_tokens: true`)
+
+**Contrast with Arch 3 (lmgat_codebert):**
+| | Arch 3 (concat) | Arch 6 (interpolation) |
+|--|-----------------|------------------------|
+| GNN + LM fusion | Concat → single MLP | Separate heads → λ-blend logits |
+| Paper alignment | Wrong (not VulLMGNN) | Correct VulLMGNN explicit stage |
+| Branch independence | Shared func_head couples branches | Fully independent |
+| λ interpretable | No | Yes: how much model trusts GNN vs LM |

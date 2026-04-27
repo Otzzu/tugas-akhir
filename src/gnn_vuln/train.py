@@ -31,6 +31,8 @@ from gnn_vuln.models.lmgcn import LMGCNVulnDetector
 from gnn_vuln.models.lmgat import LMGATVulnDetector
 from gnn_vuln.models.lmgat_codebert import LMGATCodeBERTVulnDetector
 from gnn_vuln.models.lmgat_mcs import LMGATMCSVulnDetector
+from gnn_vuln.models.lmgin import LMGINVulnDetector
+from gnn_vuln.models.lmgat_interp import LMGATInterpVulnDetector
 from gnn_vuln.utils import (
     set_seed, setup_logging, get_device,
     save_checkpoint, load_resume_checkpoint, save_resume_checkpoint,
@@ -85,9 +87,30 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             num_heads=cfg.model.heads,
             edge_dim=getattr(cfg.model, "edge_dim", 7),
         )
+    if arch == "lmgin":
+        return LMGINVulnDetector(
+            in_channels=in_channels,
+            hidden_dim=cfg.model.hidden_dim,
+            num_layers=cfg.model.num_layers,
+            dropout=cfg.model.dropout,
+            num_classes=cfg.model.num_classes,
+            edge_dim=getattr(cfg.model, "edge_dim", 7),
+        )
+    if arch == "lmgat_interp":
+        return LMGATInterpVulnDetector(
+            pretrained_lm=pretrained_lm,
+            in_channels=in_channels,
+            hidden_dim=cfg.model.hidden_dim,
+            num_layers=cfg.model.num_layers,
+            dropout=cfg.model.dropout,
+            num_classes=cfg.model.num_classes,
+            num_heads=cfg.model.heads,
+            edge_dim=getattr(cfg.model, "edge_dim", 7),
+            init_lambda=getattr(cfg.model, "init_lambda", 0.5),
+        )
     raise ValueError(
         f"Unknown architecture: {arch!r}. "
-        "Available: lmgcn, lmgat, lmgat_codebert, lmgat_mcs"
+        "Available: lmgcn, lmgat, lmgat_codebert, lmgat_mcs, lmgin, lmgat_interp"
     )
 
 
