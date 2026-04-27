@@ -1,0 +1,49 @@
+# configs/lmgat_mcs/multiclass.yaml — Architecture 4: LM-GAT v2 + Live CodeBERT + Multiclass Stmt Head
+#
+# Key differences vs Architecture 3 (lmgat_codebert):
+#   - stmt_head outputs [n_stmts, num_classes] instead of [n_stmts] scalar
+#   - func_logit derived from max_pool(stmt_scores) + CodeBERT CLS — STRICT SYNC
+#   - No independent func_head: function CWE prediction cannot disagree with
+#     statement CWE scores by construction (WAVES-style)
+#   - MIL loss is multiclass CE (not binary BCE): top-k stmts per function
+#     pushed toward function's CWE class
+#   - rank_loss_weight: 0.0 — ranking not needed, multiclass MIL handles ordering
+#
+# Data layout expected:
+#   data/raw/benign/          <- CPG .json files (class_id=0)
+#   data/raw/vulnerable/      <- CPG .json files with .meta.json sidecars
+#   data/raw/cwe_vocab.json   <- REQUIRED
+#
+# Run:
+#   uv run train --config configs/lmgat_mcs/multiclass.yaml
+
+data:
+  mode: multiclass
+  max_nodes: 1000
+
+model:
+  architecture: lmgat_mcs
+  pretrained_lm: microsoft/codebert-base   # swap to microsoft/graphcodebert-base for GraphCodeBERT
+  add_func_tokens: true                    # required: enables func_input_ids in Data objects
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  num_classes: 11           # 10 CWE categories + benign (class 0)
+  mil_weight: 0.5
+  mil_k: 3
+  rank_loss_weight: 0.0     # disabled: multiclass MIL already pushes class-specific scores up
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 4             # live CodeBERT + multiclass stmt head: memory intensive
+  lr: 0.001
+  lm_lr: 0.00002
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.0001
+  patience: 15
+  use_class_weights: true
+  focal_loss_gamma: 2.0
+  device: cuda

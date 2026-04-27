@@ -30,6 +30,9 @@ dependencies = [
     "tree-sitter-c>=0.23.0",
     # Logging
     "loguru>=0.7.2",
+    "datasets>=4.8.4",
+    "transformers>=5.6.1",
+    "pdfplumber>=0.11.9",
 ]
 
 [project.optional-dependencies]
@@ -74,3 +77,15 @@ addopts = "-v --tb=short"
 # require matching torch+cpu wheels. Install them AFTER `uv sync` with:
 #   uv run pip install torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-2.2.0+cpu.html
 # (See README.md Quick Start for full instructions.)
+
+# ---------------------------------------------------------------------------
+# PyTorch CUDA source (RTX 4060 / CUDA 12.4)
+# ---------------------------------------------------------------------------
+[tool.uv.sources]
+torch = { index = "pytorch-cu124" }
+torchvision = { index = "pytorch-cu124" }
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true

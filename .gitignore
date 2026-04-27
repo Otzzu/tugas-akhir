@@ -18,14 +18,6 @@ build/
 .ipynb_checkpoints/
 *.ipynb_metadata/
 
-# Data — raw and processed data should NOT be committed (usually large)
-data/raw/
-data/processed/
-data/splits/
-
-# Model outputs
-checkpoints/
-results/
 
 # Logs
 logs/
@@ -46,3 +38,13 @@ Thumbs.db
 # Joern output cache
 joern-cli/
 joern_workspace/
+
+# Large generated / binary / third-party — do NOT push
+/data/
+/checkpoints/
+/results/
+/paper/
+diagram.md
+src/LineVul/
+src/VulChecker/
+src/vul-LMGNN/

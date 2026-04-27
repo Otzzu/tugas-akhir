@@ -1,0 +1,41 @@
+# configs/lmgcn/binary.yaml - LM-GCN binary vulnerability detection
+#
+# Ready to run as-is:
+#   uv run train --config configs/lmgcn/binary.yaml
+#
+# Data layout expected:
+#   data/raw/benign/      <- CPG .json files (label 0)
+#   data/raw/vulnerable/  <- CPG .json files (label 1)
+#   data/raw/cwe_vocab.json  <- can stay present, ignored in binary mode
+#
+# Processed cache: data/processed/lm_dataset_binary.pt  (separate from multiclass)
+# For multi-class CWE classification use configs/lmgcn/multiclass.yaml instead.
+
+data:
+  mode: binary              # "binary" or "multiclass" — controls which cache file is used
+  max_nodes: 1000           # graphs with more nodes are skipped during preprocessing
+
+model:
+  architecture: lmgcn
+  pretrained_lm: microsoft/codebert-base   # swap to microsoft/graphcodebert-base to use GraphCodeBERT
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  num_classes: 2            # 2 = binary (benign=0, vulnerable=1)
+                            # MUST match dataset.num_classes - train.py will raise
+                            # a clear error if they disagree
+  # Statement-level MIL head (WAVES-style localization)
+  mil_weight: 0.5           # weight of statement MIL loss vs function CE loss
+                            # set to 0.0 to disable localization training
+  mil_k: 3                  # top-k statements per function used for pseudo-labels
+                            # tune to avg vulnerable statements per function
+                            # BigVul/Devign/DiverseVul: ~3 is a good default
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  weight_decay: 0.0001
+  patience: 10              # early-stopping: epochs without val_loss improvement
+  device: cuda              # "cpu" or "cuda"

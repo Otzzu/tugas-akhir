@@ -1,88 +1,228 @@
 """
 evaluate.py — Evaluation and metrics reporting.
 
+Metrics computed
+----------------
+Function-level (VulLMGNN / LineVul / VulChecker style):
+  Accuracy, Precision, Recall, F1 (macro for multi-class), AUC-ROC, AUC-PR
+
+Statement-level localization (LineVul / WAVES style):
+  Top-10 Accuracy  : ≥1 flaw line in the top-10 ranked statements per function
+  IFA              : clean lines inspected before first flaw line  (lower = better)
+  Effort@20%Recall : fraction of lines to inspect for 20% flaw recall (lower = better)
+  Recall@K%LOC     : flaw recall when inspecting top K% of lines   (higher = better)
+
+All outputs are saved to results/ for offline analysis:
+  predictions.csv          per-sample function-level results
+  localization_scores.csv  per-(function,line) MIL scores + flaw labels
+  metrics_summary.json     all scalar metrics in one file
+  roc_curve.png
+  confusion_matrix.png
+  pr_curve.png
+  recall_at_loc_curve.png  (only when flaw GT exists)
+  ifa_distribution.png     (only when flaw GT exists)
+
 Usage:
-    uv run evaluate --checkpoint checkpoints/best_gcn.pt --config configs/default.yaml
-    uv run python -m gnn_vuln.evaluate --checkpoint checkpoints/best_gcn.pt
+    uv run evaluate --checkpoint checkpoints/<run_id>/best_lmgcn.pt --config configs/lmgcn/binary.yaml
+    uv run evaluate --checkpoint checkpoints/<run_id>/best_lmgat.pt --config configs/lmgat/multiclass.yaml
+    uv run evaluate --checkpoint checkpoints/<run_id>/best_lmgat_codebert.pt --config configs/lmgat_codebert/multiclass.yaml
+    uv run evaluate --checkpoint checkpoints/<run_id>/best_lmgat_mcs.pt --config configs/lmgat_mcs/multiclass.yaml
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import torch
 from loguru import logger
 from sklearn.metrics import (
+    auc,
     classification_report,
     confusion_matrix,
     f1_score,
+    precision_recall_curve,
     roc_auc_score,
     roc_curve,
 )
+from sklearn.preprocessing import label_binarize
 from torch_geometric.loader import DataLoader
 
+from gnn_vuln.baselines import print_binary_comparison, print_multiclass_comparison
 from gnn_vuln.config import Config, load_default_config
-from gnn_vuln.data.dataset import VulnerabilityDataset
+from gnn_vuln.data.dataset_lm import CodeBERTGraphDataset
+from gnn_vuln.metrics import compute_all_localization_metrics, make_func_loc_result
+import torch.nn as nn
+from gnn_vuln.models.lmgcn import LMGCNVulnDetector
 from gnn_vuln.train import build_model
 from gnn_vuln.utils import get_device, load_checkpoint, setup_logging
 
 
 # ---------------------------------------------------------------------------
-# Evaluation helpers
+# Localization data extraction
 # ---------------------------------------------------------------------------
 
+def _extract_func_loc(
+    scores_b: torch.Tensor,
+    batch_idx: torch.Tensor,
+    node_line: torch.Tensor,
+    flaw_mask: torch.Tensor | None,
+    b: int,
+) -> dict:
+    """
+    Extract per-function localization data for graph b from a batched PyG Data.
+
+    scores_b  : [n_stmts] binary scalar scores  OR  [n_stmts, num_classes]
+                multiclass logits (one element from stmt_scores_list[b])
+    batch_idx : [N_total] graph membership per node
+    node_line : [N_total] source line number per node (-1 = unknown)
+    flaw_mask : [N_total] 1 if node is on a flaw line, else 0 (None → all zeros)
+    b         : graph index within this batch
+    """
+    if len(scores_b) == 0:
+        return make_func_loc_result([], [], [])
+
+    # Convert raw logits to a scalar vulnerability score per statement
+    if scores_b.dim() == 2:
+        # Multiclass stmt head: use 1 - p_benign as vulnerability score
+        probs = torch.softmax(scores_b, dim=-1)
+        scores_scalar = (1.0 - probs[:, 0]).cpu()   # [n_stmts]
+    else:
+        # Binary stmt head: sigmoid of raw logit
+        scores_scalar = torch.sigmoid(scores_b).cpu()  # [n_stmts]
+
+    graph_mask = batch_idx == b
+    node_line_b = node_line[graph_mask]
+    flaw_b = (
+        flaw_mask[graph_mask]
+        if flaw_mask is not None
+        else torch.zeros_like(node_line_b)
+    )
+
+    valid = node_line_b >= 0
+    if not valid.any():
+        return make_func_loc_result([], [], [])
+
+    lines_b = node_line_b[valid]
+    flaw_b = flaw_b[valid]
+    unique_lines = lines_b.unique(sorted=True)
+
+    scores_list = scores_scalar.tolist()
+    line_labels: list[int] = []
+    for line in unique_lines:
+        nodes_on_line = lines_b == line
+        line_labels.append(int(flaw_b[nodes_on_line].any().item()))
+
+    return make_func_loc_result(
+        unique_lines.cpu().tolist(),
+        scores_list,
+        line_labels,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Prediction + localization loop
+# ---------------------------------------------------------------------------
 
 @torch.no_grad()
-def get_predictions(model, loader, device) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def get_predictions_and_localization(
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[dict]]:
     """
-    Return (true_labels, predicted_labels, class_probabilities).
+    Run inference over the full loader, collecting both function-level predictions
+    and per-function statement-level localization data.
 
-    class_probabilities has shape [N, num_classes] — works for both binary
-    (num_classes=2) and any multi-class setting.
+    Returns
+    -------
+    y_true      : [N] int array — ground-truth class labels
+    y_pred      : [N] int array — predicted class labels
+    y_prob      : [N, C] float  — softmax probabilities per class
+    confidence  : [N] float     — max softmax probability (predicted-class confidence)
+    loc_results : list[dict]    — one per function (see metrics.make_func_loc_result)
     """
     model.eval()
-    all_y, all_pred, all_prob = [], [], []
+    all_y: list = []
+    all_pred: list = []
+    all_prob: list = []
+    loc_results: list[dict] = []
+
     for batch in loader:
         batch = batch.to(device)
-        logits = model(batch.x, batch.edge_index, batch.batch)
-        probs = torch.softmax(logits, dim=-1)          # [B, num_classes]
-        preds = logits.argmax(dim=-1)                  # [B]
-        all_y.extend(batch.y.cpu().numpy())
-        all_pred.extend(preds.cpu().numpy())
+        node_line = getattr(batch, "node_line", None)
+        flaw_mask = getattr(batch, "flaw_line_mask", None)
+        edge_attr = getattr(batch, "edge_attr", None)
+
+        if hasattr(model, "codebert"):
+            func_input_ids = getattr(batch, "func_input_ids", None)
+            func_attention_mask = getattr(batch, "func_attention_mask", None)
+            logit_func, stmt_scores_list = model(
+                batch.x, batch.edge_index, batch.batch, node_line, edge_attr,
+                func_input_ids, func_attention_mask,
+            )
+        else:
+            logit_func, stmt_scores_list = model(
+                batch.x, batch.edge_index, batch.batch, node_line, edge_attr
+            )
+
+        probs = torch.softmax(logit_func, dim=-1)
+        preds = logit_func.argmax(dim=-1)
+
+        all_y.extend(batch.y.cpu().numpy().tolist())
+        all_pred.extend(preds.cpu().numpy().tolist())
         all_prob.append(probs.cpu().numpy())
-    return np.array(all_y), np.array(all_pred), np.vstack(all_prob)
+
+        n_graphs = int(batch.batch.max().item()) + 1
+        for b in range(n_graphs):
+            if stmt_scores_list is not None and node_line is not None:
+                func_loc = _extract_func_loc(
+                    stmt_scores_list[b], batch.batch, node_line, flaw_mask, b
+                )
+            else:
+                func_loc = make_func_loc_result([], [], [])
+            loc_results.append(func_loc)
+
+    y_prob = np.vstack(all_prob)
+    confidence = y_prob.max(axis=1)
+    return np.array(all_y), np.array(all_pred), y_prob, confidence, loc_results
 
 
-def plot_roc_curve(y_true, y_prob, save_path: Path, class_names: list[str] | None = None) -> None:
-    """
-    Plot ROC curve(s).
+# ---------------------------------------------------------------------------
+# Plotting helpers
+# ---------------------------------------------------------------------------
 
-    - Binary (num_classes=2):  single curve using the positive-class column.
-    - Multi-class (N>2):       one curve per class (OvR), plus macro-average.
-    """
+def plot_roc_curve(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    save_path: Path,
+    class_names: list[str] | None = None,
+) -> None:
+    """ROC curve — single curve for binary, one-vs-rest per class for multi-class."""
     num_classes = y_prob.shape[1]
     plt.figure(figsize=(8, 6))
 
     if num_classes == 2:
-        # Binary
-        from sklearn.metrics import roc_curve
         fpr, tpr, _ = roc_curve(y_true, y_prob[:, 1])
-        auc = roc_auc_score(y_true, y_prob[:, 1])
-        plt.plot(fpr, tpr, label=f"AUC = {auc:.4f}")
+        auc_val = roc_auc_score(y_true, y_prob[:, 1])
+        plt.plot(fpr, tpr, label=f"AUC = {auc_val:.4f}")
     else:
-        # Multi-class OvR
-        from sklearn.preprocessing import label_binarize
         classes = list(range(num_classes))
         y_bin = label_binarize(y_true, classes=classes)
-        from sklearn.metrics import roc_curve
         for i in classes:
-            fpr, tpr, _ = roc_curve(y_bin[:, i], y_prob[:, i])
-            name = class_names[i] if class_names else f"Class {i}"
-            auc_i = roc_auc_score(y_bin[:, i], y_prob[:, i])
-            plt.plot(fpr, tpr, label=f"{name} (AUC={auc_i:.3f})")
+            if y_bin[:, i].sum() == 0:
+                continue
+            try:
+                fpr_i, tpr_i, _ = roc_curve(y_bin[:, i], y_prob[:, i])
+                auc_i = roc_auc_score(y_bin[:, i], y_prob[:, i])
+                name = class_names[i] if class_names else f"Class {i}"
+                plt.plot(fpr_i, tpr_i, label=f"{name} (AUC={auc_i:.3f})")
+            except ValueError:
+                continue
 
     plt.plot([0, 1], [0, 1], "k--", label="Random")
     plt.xlabel("False Positive Rate")
@@ -92,89 +232,388 @@ def plot_roc_curve(y_true, y_prob, save_path: Path, class_names: list[str] | Non
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)
     plt.close()
-    logger.info(f"ROC curve saved → {save_path}")
+    logger.info(f"ROC curve → {save_path}")
 
 
-def plot_confusion_matrix(y_true, y_pred, save_path: Path, class_names: list[str] | None = None) -> None:
-    num_classes = len(np.unique(y_true))
-    cm = confusion_matrix(y_true, y_pred)
-    fig_size = max(5, num_classes)  # scale figure with number of classes
+def plot_confusion_matrix(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    num_classes: int,
+    save_path: Path,
+    class_names: list[str] | None = None,
+) -> None:
+    """Confusion matrix with all classes shown even if absent in test set."""
+    cm = confusion_matrix(y_true, y_pred, labels=list(range(num_classes)))
+    fig_size = max(5, num_classes)
     fig, ax = plt.subplots(figsize=(fig_size + 1, fig_size))
     im = ax.imshow(cm, cmap="Blues")
     plt.colorbar(im)
-    tick_labels = class_names if class_names else [str(i) for i in range(num_classes)]
+    labels = class_names if class_names else [str(i) for i in range(num_classes)]
     ax.set_xticks(range(num_classes))
     ax.set_yticks(range(num_classes))
-    ax.set_xticklabels(tick_labels, rotation=45, ha="right")
-    ax.set_yticklabels(tick_labels)
+    ax.set_xticklabels(labels, rotation=45, ha="right")
+    ax.set_yticklabels(labels)
     ax.set_xlabel("Predicted")
     ax.set_ylabel("True")
     ax.set_title("Confusion Matrix")
+    thresh = cm.max() / 2 if cm.max() > 0 else 1
     for i in range(num_classes):
         for j in range(num_classes):
             ax.text(j, i, str(cm[i, j]), ha="center", va="center",
-                    color="white" if cm[i, j] > cm.max() / 2 else "black")
+                    color="white" if cm[i, j] > thresh else "black")
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)
     plt.close()
-    logger.info(f"Confusion matrix saved → {save_path}")
+    logger.info(f"Confusion matrix → {save_path}")
+
+
+def plot_pr_curve(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    save_path: Path,
+    class_names: list[str] | None = None,
+) -> None:
+    """Precision-Recall curve — single for binary, OvR per class for multi-class."""
+    num_classes = y_prob.shape[1]
+    plt.figure(figsize=(8, 6))
+
+    if num_classes == 2:
+        prec, rec, _ = precision_recall_curve(y_true, y_prob[:, 1])
+        pr_auc = auc(rec, prec)
+        plt.plot(rec, prec, label=f"AUC-PR = {pr_auc:.4f}")
+    else:
+        classes = list(range(num_classes))
+        y_bin = label_binarize(y_true, classes=classes)
+        for i in classes:
+            if y_bin[:, i].sum() == 0:
+                continue
+            try:
+                prec_i, rec_i, _ = precision_recall_curve(y_bin[:, i], y_prob[:, i])
+                pr_auc_i = auc(rec_i, prec_i)
+                name = class_names[i] if class_names else f"Class {i}"
+                plt.plot(rec_i, prec_i, label=f"{name} (AUC={pr_auc_i:.3f})")
+            except ValueError:
+                continue
+
+    plt.xlabel("Recall")
+    plt.ylabel("Precision")
+    plt.title("Precision-Recall Curve — Vulnerability Detection")
+    plt.legend(fontsize=8)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150)
+    plt.close()
+    logger.info(f"PR curve → {save_path}")
+
+
+def plot_recall_at_loc_curve(
+    k_values: list[float],
+    recall_values: list[float],
+    save_path: Path,
+) -> None:
+    """Recall@K%LOC curve — fraction of flaw lines caught vs fraction of lines inspected."""
+    k_pct = [k * 100 for k in k_values]
+    rec_pct = [
+        r * 100 if not (isinstance(r, float) and np.isnan(r)) else float("nan")
+        for r in recall_values
+    ]
+    plt.figure(figsize=(8, 5))
+    plt.plot(k_pct, rec_pct, marker="o", linewidth=2)
+    plt.xlabel("% Lines Inspected (LOC%)")
+    plt.ylabel("% Flaw Lines Found (Recall%)")
+    plt.title("Recall@K%LOC — Statement-Level Localization")
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150)
+    plt.close()
+    logger.info(f"Recall@K%LOC curve → {save_path}")
+
+
+def plot_ifa_distribution(ifa_values: list[float], save_path: Path) -> None:
+    """IFA histogram — distribution of clean lines inspected before first flaw."""
+    if not ifa_values:
+        return
+    plt.figure(figsize=(8, 5))
+    plt.hist(ifa_values, bins=30, edgecolor="black", alpha=0.75)
+    plt.axvline(
+        np.mean(ifa_values), color="red", linestyle="--",
+        label=f"Mean IFA = {np.mean(ifa_values):.2f}",
+    )
+    plt.xlabel("IFA (clean lines inspected before first flaw line)")
+    plt.ylabel("Number of Functions")
+    plt.title("IFA Distribution — Statement-Level Localization")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150)
+    plt.close()
+    logger.info(f"IFA distribution → {save_path}")
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
+def _safe(v: object) -> object:
+    """Convert NaN floats to None for JSON serialisation."""
+    if isinstance(v, float) and np.isnan(v):
+        return None
+    return v
 
-def main():
-    parser = argparse.ArgumentParser(description="Evaluate a trained GNN vulnerability detector")
-    parser.add_argument("--checkpoint", type=str, required=True, help="Path to checkpoint .pt file")
-    parser.add_argument("--config", type=str, default="configs/default.yaml")
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Evaluate a trained vulnerability detector")
+    parser.add_argument("--checkpoint", type=str, required=True,
+                        help="Path to best_*.pt checkpoint file")
+    parser.add_argument("--config", type=str, default=None,
+                        help="Config YAML used during training (auto-detected from checkpoint dir if omitted)")
     args = parser.parse_args()
 
-    cfg = Config.from_yaml(args.config) if Path(args.config).exists() else load_default_config()
+    # Auto-detect config from checkpoint's run directory (train.py copies config.yaml there)
+    config_path = None
+    if args.config:
+        config_path = Path(args.config)
+    else:
+        ckpt_dir = Path(args.checkpoint).parent
+        auto = ckpt_dir / "config.yaml"
+        if auto.exists():
+            config_path = auto
+            logger.info(f"Auto-detected config: {config_path}")
+        else:
+            logger.warning(f"No config.yaml in {ckpt_dir}, falling back to default.")
+
+    cfg = (
+        Config.from_yaml(config_path)
+        if config_path and config_path.exists()
+        else load_default_config()
+    )
     setup_logging(cfg.train.log_dir)
     device = get_device(cfg.train.device)
 
-    dataset = VulnerabilityDataset(root=str(cfg.data.processed_dir.parent))
+    pretrained_lm = getattr(cfg.model, "pretrained_lm", "microsoft/codebert-base")
+    add_func_tokens = getattr(cfg.model, "add_func_tokens", False)
+
+    logger.info("Loading dataset…")
+    dataset = CodeBERTGraphDataset(
+        root=str(cfg.data.processed_dir.parent),
+        max_nodes=cfg.data.max_nodes,
+        embedder_device=cfg.train.device,
+        mode=cfg.data.mode,
+        pretrained_lm=pretrained_lm,
+        add_func_tokens=add_func_tokens,
+    )
     _, _, test_idx = dataset.get_splits(seed=cfg.train.seed)
     test_loader = DataLoader(dataset[test_idx], batch_size=cfg.train.batch_size)
 
     in_channels = dataset[0].x.size(1)
     model = build_model(cfg, in_channels).to(device)
     load_checkpoint(model, args.checkpoint, device=str(device))
+    logger.info(f"Model loaded from {args.checkpoint}")
 
-    y_true, y_pred, y_prob = get_predictions(model, test_loader, device)
+    logger.info("Running inference…")
+    y_true, y_pred, y_prob, confidence, loc_results = get_predictions_and_localization(
+        model, test_loader, device
+    )
+
     num_classes = y_prob.shape[1]
     is_binary = num_classes == 2
-
-    # Resolve class names from dataset if available
-    class_names = getattr(dataset, "class_names", None)
-
-    # Print metrics
-    print("\n" + "=" * 55)
-    print("Classification Report")
-    print("=" * 55)
+    class_names: list[str] | None = getattr(dataset, "class_names", None)
     target_names = class_names or [str(i) for i in range(num_classes)]
-    print(classification_report(y_true, y_pred, target_names=target_names))
+    correct_mask = y_true == y_pred
 
-    # AUC-ROC
-    if is_binary:
-        auc = roc_auc_score(y_true, y_prob[:, 1])
-        f1 = f1_score(y_true, y_pred, average="binary")
+    # ── Function-level report ───────────────────────────────────────────────
+    print("\n" + "=" * 65)
+    print("Function-Level Classification Report")
+    print("=" * 65)
+    print(classification_report(
+        y_true, y_pred,
+        labels=list(range(num_classes)),
+        target_names=target_names,
+        zero_division=0,
+    ))
+
+    try:
+        if is_binary:
+            auc_roc = roc_auc_score(y_true, y_prob[:, 1])
+        else:
+            auc_roc = roc_auc_score(
+                y_true, y_prob, multi_class="ovr", average="macro"
+            )
+    except ValueError:
+        auc_roc = float("nan")
+
+    f1 = f1_score(y_true, y_pred, average="macro", zero_division=0)
+    accuracy = float((y_true == y_pred).mean())
+
+    print(f"AUC-ROC (macro OvR) : {auc_roc:.4f}")
+    print(f"F1 Score (macro)    : {f1:.4f}")
+    print(f"Accuracy            : {accuracy:.4f}")
+    print("-" * 65)
+    print(f"Confidence (mean)   : {confidence.mean():.4f}")
+    if correct_mask.any():
+        print(f"Confidence (correct): {confidence[correct_mask].mean():.4f}")
+    if (~correct_mask).any():
+        print(
+            f"Confidence (wrong)  : {confidence[~correct_mask].mean():.4f}"
+            f"  (n={int((~correct_mask).sum())})"
+        )
+    print("=" * 65)
+
+    # ── Statement-level localization ────────────────────────────────────────
+    loc_metrics = compute_all_localization_metrics(loc_results)
+    n_gt = loc_metrics["num_funcs_with_flaw_gt"]
+
+    print(f"\n{'=' * 65}")
+    print(f"Statement-Level Localization  (functions with flaw GT: {n_gt})")
+    print("=" * 65)
+    if n_gt == 0:
+        print("  No flaw-line ground truth found (flaw_line_mask all-zero).")
+        print("  To enable localization metrics, ensure each CPG file has a")
+        print("  sidecar .meta.json with a non-empty 'flaw_lines' list.")
     else:
-        # macro OvR for multi-class
-        auc = roc_auc_score(y_true, y_prob, multi_class="ovr", average="macro")
-        f1 = f1_score(y_true, y_pred, average="macro")
+        print(f"  Top-1  Accuracy    : {loc_metrics['top_1_accuracy']:.4f}")
+        print(f"  Top-3  Accuracy    : {loc_metrics['top_3_accuracy']:.4f}")
+        print(f"  Top-5  Accuracy    : {loc_metrics['top_5_accuracy']:.4f}")
+        print(f"  Top-10 Accuracy    : {loc_metrics['top_10_accuracy']:.4f}")
+        print(f"  IFA (mean)         : {loc_metrics['ifa_mean']:.2f}  (lower = better)")
+        print(f"  Effort@20%Recall   : {loc_metrics['effort_at_20pct_recall']:.4f}  (lower = better)")
+        print(f"  Recall@1%LOC       : {loc_metrics['recall_at_1pct_loc']:.4f}")
+        print(f"  Recall@5%LOC       : {loc_metrics['recall_at_5pct_loc']:.4f}")
+        print(f"  Recall@20%LOC      : {loc_metrics['recall_at_20pct_loc']:.4f}")
+    print("=" * 65 + "\n")
 
-    print(f"AUC-ROC (macro OvR): {auc:.4f}")
-    print(f"F1 Score (macro)   : {f1:.4f}")
-    print("=" * 55 + "\n")
+    # ── Baseline comparison ─────────────────────────────────────────────────
+    from sklearn.metrics import precision_score, recall_score
+    our_prec = float(precision_score(y_true, y_pred, average="macro", zero_division=0))
+    our_rec  = float(recall_score(y_true, y_pred, average="macro", zero_division=0))
 
-    # Save plots
-    results_dir = cfg.train.results_dir
+    if is_binary:
+        our_metrics_dict = {
+            "f1_macro": f1,
+            "precision": our_prec,
+            "recall": our_rec,
+            "accuracy": accuracy,
+            "top_1_accuracy": loc_metrics.get("top_1_accuracy") if n_gt > 0 else None,
+            "top_3_accuracy": loc_metrics.get("top_3_accuracy") if n_gt > 0 else None,
+            "top_5_accuracy": loc_metrics.get("top_5_accuracy") if n_gt > 0 else None,
+            "top_10_accuracy": loc_metrics.get("top_10_accuracy") if n_gt > 0 else None,
+            "ifa_mean": loc_metrics.get("ifa_mean") if n_gt > 0 else None,
+            "effort_at_20pct_recall": loc_metrics.get("effort_at_20pct_recall") if n_gt > 0 else None,
+            "recall_at_1pct_loc": loc_metrics.get("recall_at_1pct_loc") if n_gt > 0 else None,
+        }
+        print_binary_comparison(our_metrics_dict)
+    else:
+        from sklearn.metrics import classification_report as cr
+        report = cr(
+            y_true, y_pred,
+            labels=list(range(num_classes)),
+            output_dict=True, zero_division=0,
+        )
+        per_class_recall = {}
+        if class_names:
+            for i, name in enumerate(class_names):
+                if i > 0 and str(i) in report:
+                    per_class_recall[name] = report[str(i)].get("recall", None)
+        print_multiclass_comparison(
+            {"per_class_recall": per_class_recall},
+            class_names=class_names,
+        )
+
+    # ── Save outputs ────────────────────────────────────────────────────────
+    run_id = Path(args.checkpoint).parent.name
+    results_dir = cfg.train.results_dir / run_id
     results_dir.mkdir(parents=True, exist_ok=True)
-    plot_roc_curve(y_true, y_prob, results_dir / "roc_curve.png", class_names=class_names)
-    plot_confusion_matrix(y_true, y_pred, results_dir / "confusion_matrix.png", class_names=class_names)
+    logger.info(f"Results directory: {results_dir}")
+
+    # predictions.csv
+    pred_df = pd.DataFrame({
+        "y_true": y_true,
+        "y_pred": y_pred,
+        "confidence": confidence,
+        "correct": correct_mask,
+    })
+    for i, name in enumerate(target_names):
+        pred_df[f"prob_{name}"] = y_prob[:, i]
+    csv_path = results_dir / "predictions.csv"
+    pred_df.to_csv(csv_path, index=False)
+    logger.info(f"predictions.csv → {csv_path}")
+
+    # localization_scores.csv
+    loc_rows: list[dict] = []
+    for func_idx, (r, yt, yp) in enumerate(zip(loc_results, y_true, y_pred)):
+        for ln, sc, lab in zip(r["line_numbers"], r["line_scores"], r["line_labels"]):
+            loc_rows.append({
+                "func_idx": func_idx,
+                "y_true": int(yt),
+                "y_pred": int(yp),
+                "line_number": int(ln),
+                "score": round(float(sc), 6),
+                "is_flaw_line": int(lab),
+            })
+    if loc_rows:
+        loc_df = pd.DataFrame(loc_rows)
+        loc_csv = results_dir / "localization_scores.csv"
+        loc_df.to_csv(loc_csv, index=False)
+        logger.info(f"localization_scores.csv → {loc_csv}")
+    else:
+        logger.warning("No localization data collected (node_line not in dataset).")
+
+    # metrics_summary.json
+    metrics_summary = {
+        "function_level": {
+            "accuracy": accuracy,
+            "f1_macro": f1,
+            "auc_roc_macro_ovr": _safe(auc_roc),
+            "confidence_mean": float(confidence.mean()),
+            "confidence_correct": (
+                float(confidence[correct_mask].mean()) if correct_mask.any() else None
+            ),
+            "confidence_wrong": (
+                float(confidence[~correct_mask].mean()) if (~correct_mask).any() else None
+            ),
+            "num_classes": num_classes,
+            "num_test_samples": int(len(y_true)),
+        },
+        "localization": {
+            "top_1_accuracy": _safe(loc_metrics["top_1_accuracy"]),
+            "top_3_accuracy": _safe(loc_metrics["top_3_accuracy"]),
+            "top_5_accuracy": _safe(loc_metrics["top_5_accuracy"]),
+            "top_10_accuracy": _safe(loc_metrics["top_10_accuracy"]),
+            "ifa_mean": _safe(loc_metrics["ifa_mean"]),
+            "effort_at_20pct_recall": _safe(loc_metrics["effort_at_20pct_recall"]),
+            "recall_at_1pct_loc": _safe(loc_metrics["recall_at_1pct_loc"]),
+            "recall_at_5pct_loc": _safe(loc_metrics["recall_at_5pct_loc"]),
+            "recall_at_20pct_loc": _safe(loc_metrics["recall_at_20pct_loc"]),
+            "num_funcs_with_flaw_gt": n_gt,
+        },
+        "localization_curve": {
+            "k_values": loc_metrics["recall_at_loc_curve_k"],
+            "recall_values": [_safe(v) for v in loc_metrics["recall_at_loc_curve_v"]],
+        },
+        "ifa_distribution": loc_metrics["ifa_per_func"],
+    }
+    json_path = results_dir / "metrics_summary.json"
+    with open(json_path, "w") as f:
+        json.dump(metrics_summary, f, indent=2)
+    logger.info(f"metrics_summary.json → {json_path}")
+
+    # Plots
+    plot_roc_curve(y_true, y_prob, results_dir / "roc_curve.png", class_names)
+    plot_confusion_matrix(
+        y_true, y_pred, num_classes, results_dir / "confusion_matrix.png", class_names
+    )
+    plot_pr_curve(y_true, y_prob, results_dir / "pr_curve.png", class_names)
+
+    if n_gt > 0:
+        plot_recall_at_loc_curve(
+            loc_metrics["recall_at_loc_curve_k"],
+            loc_metrics["recall_at_loc_curve_v"],
+            results_dir / "recall_at_loc_curve.png",
+        )
+        plot_ifa_distribution(
+            loc_metrics["ifa_per_func"],
+            results_dir / "ifa_distribution.png",
+        )
+
+    logger.info(f"All results saved to {results_dir}/")
 
 
 if __name__ == "__main__":

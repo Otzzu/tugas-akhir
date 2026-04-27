@@ -1,0 +1,59 @@
+# configs/lmgcn/multiclass.yaml - LM-GCN multi-class CWE vulnerability classification
+#
+# Ready to run as-is once cwe_vocab.json and .meta.json sidecars are in place:
+#   uv run train --config configs/lmgcn/multiclass.yaml
+#
+# Data layout expected:
+#   data/raw/benign/          <- CPG .json files (class_id=0 automatically)
+#   data/raw/vulnerable/      <- CPG .json files with sidecar .meta.json per file
+#   data/raw/cwe_vocab.json   <- REQUIRED for multi-class mode
+#
+# cwe_vocab.json format (class 0 = benign, 1..N = CWE categories):
+#   {"benign": 0, "CWE-119": 1, "CWE-20": 2, "CWE-125": 3, ...}
+#
+# .meta.json sidecar format (one per CPG .json file in vulnerable/):
+#   {"class_id": 2, "cwe": "CWE-20", "flaw_lines": [14, 17]}
+#
+# Class layout used in this config (10 CWE categories + benign):
+#   0  = benign
+#   1  = CWE-119  (buffer errors / memory safety)
+#   2  = CWE-20   (improper input validation)
+#   3  = CWE-125  (out-of-bounds read)
+#   4  = CWE-416  (use-after-free)
+#   5  = CWE-476  (null pointer dereference)
+#   6  = CWE-190  (integer overflow)
+#   7  = CWE-787  (out-of-bounds write)
+#   8  = CWE-399  (resource management errors)
+#   9  = CWE-200  (information exposure)
+#   10 = OTHER    (catch-all for any other CWE types)
+#
+# Statement head is always binary regardless of num_classes:
+#   label == 0 -> benign -> push statement scores toward 0
+#   label  > 0 -> any CWE -> push statement scores toward 1
+
+data:
+  mode: multiclass          # "binary" or "multiclass" — controls which cache file is used
+  max_nodes: 1000
+
+model:
+  architecture: lmgcn
+  pretrained_lm: microsoft/codebert-base   # swap to microsoft/graphcodebert-base to use GraphCodeBERT
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  num_classes: 11           # 10 CWE categories + 1 benign class (class 0)
+                            # MUST match len(cwe_vocab.json) - train.py will raise
+                            # a clear error if they disagree
+  mil_weight: 0.5
+  mil_k: 3
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 16            # smaller batch for more stable gradients with 11 classes
+  lr: 0.001
+  weight_decay: 0.0001
+  patience: 10
+  use_class_weights: true
+  focal_loss_gamma: 2.0
+  device: cuda              # set to "cpu" if no GPU is available

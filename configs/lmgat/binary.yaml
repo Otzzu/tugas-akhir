@@ -1,0 +1,40 @@
+# configs/lmgat/binary.yaml - LM-GAT binary vulnerability detection
+#
+# Improvements over lmgcn/binary.yaml:
+#   - GATConv with 4 attention heads: neighbours weighted by learned attention
+#     -> richer statement embeddings, better localisation ranking
+#   - mil_k raised 3 -> 5: more statements trained per function
+#     -> model sees more context, reduces IFA
+#   - rank_loss_weight 0.3: pairwise ranking loss on known flaw lines
+#     -> directly optimises statement ranking (reduces IFA / Effort@20%)
+#   - use_class_weights: handles the 300 benign / 755 vulnerable imbalance
+#   - patience raised 10 -> 15: lets the lr scheduler work before stopping
+#
+# Run:
+#   uv run train --config configs/lmgat/binary.yaml
+
+data:
+  mode: binary
+  max_nodes: 1000
+
+model:
+  architecture: lmgat
+  pretrained_lm: microsoft/codebert-base   # swap to microsoft/graphcodebert-base to use GraphCodeBERT
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4              # GAT attention heads (concat=False -> output stays 256-D)
+  num_classes: 2
+  mil_weight: 0.5
+  mil_k: 5              # increased from 3 for richer statement supervision
+  rank_loss_weight: 0.3 # pairwise ranking loss to push flaw lines to the top
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 16            # reduced from 32: GATv2+edge_dim uses more VRAM than v1
+  lr: 0.001
+  weight_decay: 0.0001
+  patience: 15
+  use_class_weights: true
+  device: cuda

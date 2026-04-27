@@ -48,7 +48,7 @@ class VulnerabilityDataset(InMemoryDataset):
     Dataset of CPG graphs for multi-class (or binary) vulnerability classification.
 
     Class labels are assigned by sorting subdirectory names alphabetically.
-    Set `model.num_classes` in `configs/default.yaml` to match the number
+    Set `model.num_classes` in the config (e.g. `configs/lmgcn/binary.yaml`) to match the number
     of class subdirectories.
 
     Parameters

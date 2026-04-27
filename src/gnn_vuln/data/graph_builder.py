@@ -52,15 +52,34 @@ KEYWORD_TO_IDX = {kw: i for i, kw in enumerate(C_KEYWORDS)}
 NODE_FEAT_DIM = len(C_KEYWORDS) + 4  # keywords + [has_literal, call_depth, lineno_norm, out_degree_norm]
 
 
+def _get_attr(attrs: dict, *keys: str, default: str = "") -> str:
+    """Attribute lookup supporting multiple possible key names.
+
+    Handles:
+      - Joern JSON (flat): 'code', 'label'
+      - Joern GraphML v4:  'CODE', 'labelV' (node type), 'labelE' (edge type)
+    """
+    for k in keys:
+        if k in attrs:
+            return str(attrs[k])
+        if k.upper() in attrs:
+            return str(attrs[k.upper()])
+        if k.lower() in attrs:
+            return str(attrs[k.lower()])
+    return default
+
+
 def _node_features(node_attrs: dict, graph: nx.DiGraph) -> list[float]:
     """
     Extract a fixed-length feature vector from a CPG node's attributes.
 
-    Extend this function to add richer features (e.g., word embeddings from
-    a pre-trained code model like CodeBERT).
+    Handles:
+      - Flat JSON format (lowercase):  code, label, lineNumber
+      - Joern GraphML v4 (uppercase):  CODE, labelV, LINE_NUMBER
     """
-    code = str(node_attrs.get("code", ""))
-    label = str(node_attrs.get("label", ""))
+    code = _get_attr(node_attrs, "code", "CODE")
+    # Joern v4 GraphML uses 'labelV' for node type; flat JSON uses 'label'
+    label = _get_attr(node_attrs, "labelV", "label", "LABEL")
 
     # Keyword one-hot
     kw_feat = [0.0] * len(C_KEYWORDS)
@@ -70,16 +89,15 @@ def _node_features(node_attrs: dict, graph: nx.DiGraph) -> list[float]:
 
     # Structural features
     has_literal = float(any(c.isdigit() for c in code))
-    lineno = float(node_attrs.get("lineNumber", 0)) / 1000.0  # normalise
-    # call_depth: use label as proxy (METHOD_RETURN, CALL, etc.)
+    lineno = float(_get_attr(node_attrs, "lineNumber", "LINE_NUMBER") or 0) / 1000.0
     is_call = float("CALL" in label)
 
     return kw_feat + [has_literal, is_call, lineno, 0.0]  # last: out_degree (filled later)
 
 
 def _edge_attr(edge_attrs: dict) -> list[float]:
-    """One-hot vector for edge type."""
-    etype = edge_attrs.get("label", "AST")
+    """One-hot vector for edge type. Handles 'labelE' (Joern v4 GraphML) and 'label' (JSON)."""
+    etype = _get_attr(edge_attrs, "labelE", "label", "EDGE_TYPE", default="AST")
     idx = EDGE_TYPE_TO_IDX.get(etype, 0)
     one_hot = [0.0] * len(EDGE_TYPES)
     one_hot[idx] = 1.0

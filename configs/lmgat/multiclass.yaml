@@ -1,0 +1,44 @@
+# configs/lmgat/multiclass.yaml - LM-GAT multi-class CWE classification
+#
+# Improvements over lmgcn/multiclass.yaml:
+#   - GATConv with 4 attention heads: attention-weighted neighbour aggregation
+#   - use_class_weights: CRITICAL fix for multiclass collapse (CWE-399/200/416/189
+#     all got 0 recall in LM-GCN because the loss was unweighted)
+#   - rank_loss_weight 0.2: pairwise ranking for statement localisation
+#   - patience raised 10 -> 15
+#   - batch_size reduced 16 -> 12 for more gradient steps per epoch
+#
+# Data layout expected:
+#   data/raw/benign/          <- CPG .json files (class_id=0)
+#   data/raw/vulnerable/      <- CPG .json files with .meta.json sidecars
+#   data/raw/cwe_vocab.json   <- REQUIRED
+#
+# Run:
+#   uv run train --config configs/lmgat/multiclass.yaml
+
+data:
+  mode: multiclass
+  max_nodes: 1000
+
+model:
+  architecture: lmgat
+  pretrained_lm: microsoft/codebert-base   # swap to microsoft/graphcodebert-base to use GraphCodeBERT
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  num_classes: 11           # 10 CWE categories + benign (class 0)
+  mil_weight: 0.5
+  mil_k: 3
+  rank_loss_weight: 0.2
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 6             # reduced from 12: GATv2+edge_dim uses more VRAM than v1
+  lr: 0.001
+  weight_decay: 0.0001
+  patience: 15
+  use_class_weights: true   # inverse-frequency weights — fixes minority CWE collapse
+  focal_loss_gamma: 2.0     # focal loss: down-weights easy examples, forces learning on rare CWEs
+  device: cuda

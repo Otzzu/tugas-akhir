@@ -2,87 +2,477 @@
 train.py — Training entry point.
 
 Usage (via uv):
-    uv run train --config configs/default.yaml
-    uv run python -m gnn_vuln.train --config configs/default.yaml
+    uv run train --config configs/lmgcn/binary.yaml
+    uv run train --config configs/lmgat/binary.yaml
+    uv run train --config configs/lmgat_codebert/multiclass.yaml
+    uv run train --config configs/lmgat_mcs/multiclass.yaml
 """
 
 from __future__ import annotations
 
 import argparse
+import shutil
+import time
+from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.metrics import f1_score
 from torch_geometric.loader import DataLoader
 from loguru import logger
+from tqdm import tqdm
 
 from gnn_vuln.config import Config, load_default_config
-from gnn_vuln.data.dataset import VulnerabilityDataset
-from gnn_vuln.models.gcn import GCNVulnDetector
-from gnn_vuln.models.gat import GATVulnDetector
-from gnn_vuln.utils import set_seed, setup_logging, save_checkpoint, get_device
+from gnn_vuln.data.dataset_lm import CodeBERTGraphDataset
+from gnn_vuln.models.lmgcn import LMGCNVulnDetector
+from gnn_vuln.models.lmgat import LMGATVulnDetector
+from gnn_vuln.models.lmgat_codebert import LMGATCodeBERTVulnDetector
+from gnn_vuln.models.lmgat_mcs import LMGATMCSVulnDetector
+from gnn_vuln.utils import (
+    set_seed, setup_logging, get_device,
+    save_checkpoint, load_resume_checkpoint, save_resume_checkpoint,
+)
 
 
 # ---------------------------------------------------------------------------
 # Model factory
 # ---------------------------------------------------------------------------
 
-def build_model(cfg: Config, in_channels: int) -> torch.nn.Module:
+def build_model(cfg: Config, in_channels: int) -> nn.Module:
     arch = cfg.model.architecture.lower()
-    if arch == "gcn":
-        return GCNVulnDetector(
+    pretrained_lm = getattr(cfg.model, "pretrained_lm", "microsoft/codebert-base")
+
+    if arch == "lmgcn":
+        return LMGCNVulnDetector(
             in_channels=in_channels,
             hidden_dim=cfg.model.hidden_dim,
             num_layers=cfg.model.num_layers,
             dropout=cfg.model.dropout,
             num_classes=cfg.model.num_classes,
         )
-    elif arch == "gat":
-        return GATVulnDetector(
+    if arch == "lmgat":
+        return LMGATVulnDetector(
             in_channels=in_channels,
-            hidden_dim=cfg.model.hidden_dim // cfg.model.heads,
+            hidden_dim=cfg.model.hidden_dim,
             num_layers=cfg.model.num_layers,
-            heads=cfg.model.heads,
             dropout=cfg.model.dropout,
             num_classes=cfg.model.num_classes,
+            num_heads=cfg.model.heads,
+            edge_dim=getattr(cfg.model, "edge_dim", 7),
+        )
+    if arch == "lmgat_codebert":
+        return LMGATCodeBERTVulnDetector(
+            pretrained_lm=pretrained_lm,
+            in_channels=in_channels,
+            hidden_dim=cfg.model.hidden_dim,
+            num_layers=cfg.model.num_layers,
+            dropout=cfg.model.dropout,
+            num_classes=cfg.model.num_classes,
+            num_heads=cfg.model.heads,
+            edge_dim=getattr(cfg.model, "edge_dim", 7),
+        )
+    if arch == "lmgat_mcs":
+        return LMGATMCSVulnDetector(
+            pretrained_lm=pretrained_lm,
+            in_channels=in_channels,
+            hidden_dim=cfg.model.hidden_dim,
+            num_layers=cfg.model.num_layers,
+            dropout=cfg.model.dropout,
+            num_classes=cfg.model.num_classes,
+            num_heads=cfg.model.heads,
+            edge_dim=getattr(cfg.model, "edge_dim", 7),
+        )
+    raise ValueError(
+        f"Unknown architecture: {arch!r}. "
+        "Available: lmgcn, lmgat, lmgat_codebert, lmgat_mcs"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Optimizer / scheduler factory
+# ---------------------------------------------------------------------------
+
+def build_optimizer_and_scheduler(
+    model: nn.Module,
+    cfg: Config,
+    total_steps: int,
+) -> tuple[torch.optim.Optimizer, object, bool]:
+    """
+    Build optimizer and LR scheduler appropriate for the architecture.
+
+    Returns (optimizer, scheduler, step_scheduler_per_batch).
+    step_scheduler_per_batch=True  → linear warmup, must call scheduler.step()
+                                     inside train_one_epoch after each batch.
+    step_scheduler_per_batch=False → ReduceLROnPlateau, call once per epoch
+                                     after validation.
+    """
+    arch = cfg.model.architecture.lower()
+    is_ft_arch = arch in ("lmgat_codebert", "lmgat_mcs")
+
+    if is_ft_arch:
+        lm_lr = getattr(cfg.train, "lm_lr", 2e-5)
+        warmup_ratio = getattr(cfg.train, "warmup_ratio", 0.1)
+
+        lm_param_ids = {id(p) for p in model.codebert.parameters()}
+        lm_params = [p for p in model.parameters() if id(p) in lm_param_ids]
+        other_params = [p for p in model.parameters() if id(p) not in lm_param_ids]
+
+        optimizer = torch.optim.AdamW([
+            {"params": lm_params,    "lr": lm_lr,          "weight_decay": 0.01},
+            {"params": other_params, "lr": cfg.train.lr,   "weight_decay": cfg.train.weight_decay},
+        ])
+
+        warmup_steps = max(1, int(total_steps * warmup_ratio))
+        from transformers import get_linear_schedule_with_warmup
+        scheduler = get_linear_schedule_with_warmup(optimizer, warmup_steps, total_steps)
+        step_per_batch = True
+
+        logger.info(
+            f"AdamW: CodeBERT lr={lm_lr:.1e}  GNN lr={cfg.train.lr:.1e} | "
+            f"linear warmup {warmup_steps}/{total_steps} steps"
         )
     else:
-        raise ValueError(f"Unknown architecture: {arch!r}. Choose from: gcn, gat")
+        optimizer = torch.optim.Adam(
+            model.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay
+        )
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, patience=5, factor=0.5
+        )
+        step_per_batch = False
+
+    return optimizer, scheduler, step_per_batch
 
 
 # ---------------------------------------------------------------------------
-# Training loop
+# Focal loss
 # ---------------------------------------------------------------------------
 
-def train_one_epoch(model, loader, optimizer, device) -> float:
+def focal_loss(
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+    gamma: float = 2.0,
+    weight: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """
+    Focal loss for multiclass classification.
+    gamma=0 reduces to standard cross-entropy.
+    Combines with class weights the same way F.cross_entropy does.
+    """
+    ce = F.cross_entropy(logits, targets, weight=weight, reduction="none")
+    # p_t = probability assigned to the correct class
+    p_t = torch.exp(-ce)
+    return ((1.0 - p_t) ** gamma * ce).mean()
+
+
+# ---------------------------------------------------------------------------
+# MIL loss — binary statement head (Architectures 1, 2, 3)
+# ---------------------------------------------------------------------------
+
+def mil_loss(
+    stmt_scores_list: list[torch.Tensor],
+    labels: torch.Tensor,
+    k: int,
+) -> torch.Tensor:
+    """
+    MIL binary cross-entropy for statement-level localisation.
+
+    Each stmt produces a scalar logit. Top-k stmts per function:
+      benign (label=0)  → pseudo-label 0
+      vulnerable (label>0) → pseudo-label 1
+    """
+    device = labels.device
+    total = torch.tensor(0.0, device=device)
+    count = 0
+
+    for scores, label in zip(stmt_scores_list, labels):
+        if len(scores) == 0:
+            continue
+        n = len(scores)
+        actual_k = min(k, n)
+        _, topk_idx = scores.topk(actual_k)
+        topk_scores = scores[topk_idx]
+        binary_label = float(label.item() > 0)
+        pseudo = torch.full((actual_k,), binary_label, device=device)
+        total = total + F.binary_cross_entropy_with_logits(topk_scores, pseudo)
+        count += 1
+
+    return total / count if count > 0 else total
+
+
+# ---------------------------------------------------------------------------
+# MIL loss — multiclass statement head (Architecture 4)
+# ---------------------------------------------------------------------------
+
+def mil_loss_multiclass(
+    stmt_scores_list: list[torch.Tensor],
+    labels: torch.Tensor,
+    k: int,
+) -> torch.Tensor:
+    """
+    MIL multiclass cross-entropy for Architecture 4's [n_stmts, num_classes] head.
+
+    For a function of class c, select top-k statements ranked by their score
+    for class c, then apply CE loss pushing them toward class c.
+    """
+    device = labels.device
+    total = torch.tensor(0.0, device=device)
+    count = 0
+
+    for scores, label in zip(stmt_scores_list, labels):
+        if scores.shape[0] == 0:
+            continue
+        c = int(label.item())
+        n = scores.shape[0]
+        actual_k = min(k, n)
+
+        # Select top-k by score for this function's class
+        class_scores = scores[:, c]
+        _, topk_idx = class_scores.topk(actual_k)
+        topk_scores = scores[topk_idx]  # [k, num_classes]
+
+        targets = torch.full((actual_k,), c, dtype=torch.long, device=device)
+        total = total + F.cross_entropy(topk_scores, targets)
+        count += 1
+
+    return total / count if count > 0 else total
+
+
+# ---------------------------------------------------------------------------
+# Pairwise ranking loss for statement localisation
+# ---------------------------------------------------------------------------
+
+def ranking_loss(
+    stmt_scores_list: list[torch.Tensor],
+    batch_idx: torch.Tensor,
+    node_line: torch.Tensor,
+    flaw_line_mask: torch.Tensor,
+    labels: torch.Tensor,
+    margin: float = 1.0,
+) -> torch.Tensor:
+    """
+    Margin ranking loss: flaw statements must score higher than non-flaw
+    statements by at least `margin`. Only used with binary stmt heads (Arch 1-3).
+    """
+    device = labels.device
+    total = torch.tensor(0.0, device=device)
+    count = 0
+
+    for b, (scores, label) in enumerate(zip(stmt_scores_list, labels)):
+        if label.item() == 0 or len(scores) == 0:
+            continue
+
+        mask = batch_idx == b
+        lines_b = node_line[mask]
+        flaw_b = flaw_line_mask[mask]
+
+        valid = lines_b >= 0
+        if not valid.any():
+            continue
+        lines_b = lines_b[valid]
+        flaw_b = flaw_b[valid]
+
+        unique_lines = lines_b.unique(sorted=True)
+        flaw_flags = torch.stack([
+            (flaw_b[lines_b == line]).max() for line in unique_lines
+        ]).bool()
+
+        if not flaw_flags.any() or flaw_flags.all():
+            continue
+
+        flaw_scores = scores[flaw_flags]
+        safe_scores = scores[~flaw_flags]
+        diff = flaw_scores.unsqueeze(1) - safe_scores.unsqueeze(0)
+        loss_b = F.relu(margin - diff).mean()
+        total = total + loss_b
+        count += 1
+
+    return total / count if count > 0 else total
+
+
+# ---------------------------------------------------------------------------
+# Forward pass
+# ---------------------------------------------------------------------------
+
+def _forward(
+    model: nn.Module,
+    batch,
+    mil_k: int,
+    mil_weight: float,
+    class_weight: torch.Tensor | None = None,
+    rank_loss_weight: float = 0.0,
+    focal_gamma: float = 0.0,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Single forward pass returning (logit_func, total_loss).
+
+    Automatically detects whether the model uses a live CodeBERT branch
+    (passes func_input_ids / func_attention_mask if available in batch)
+    and whether the stmt head is multiclass (picks correct MIL loss).
+    """
+    node_line = getattr(batch, "node_line", None)
+    edge_attr = getattr(batch, "edge_attr", None)
+
+    if hasattr(model, "codebert"):
+        func_input_ids = getattr(batch, "func_input_ids", None)
+        func_attention_mask = getattr(batch, "func_attention_mask", None)
+        logit_func, stmt_scores = model(
+            batch.x, batch.edge_index, batch.batch, node_line, edge_attr,
+            func_input_ids, func_attention_mask,
+        )
+    else:
+        logit_func, stmt_scores = model(
+            batch.x, batch.edge_index, batch.batch, node_line, edge_attr
+        )
+
+    if focal_gamma > 0.0:
+        loss = focal_loss(logit_func, batch.y, gamma=focal_gamma, weight=class_weight)
+    else:
+        loss = F.cross_entropy(logit_func, batch.y, weight=class_weight)
+
+    if stmt_scores is not None and mil_weight > 0.0:
+        # Detect multiclass stmt head: each element is [n_stmts, num_classes]
+        is_mc_stmt = (
+            len(stmt_scores) > 0
+            and stmt_scores[0].dim() == 2
+        )
+        if is_mc_stmt:
+            loss = loss + mil_weight * mil_loss_multiclass(stmt_scores, batch.y, mil_k)
+        else:
+            loss = loss + mil_weight * mil_loss(stmt_scores, batch.y, mil_k)
+
+    # Ranking loss: only for binary stmt heads (1D scores)
+    if (
+        stmt_scores is not None
+        and rank_loss_weight > 0.0
+        and node_line is not None
+        and (len(stmt_scores) == 0 or stmt_scores[0].dim() == 1)
+    ):
+        flaw_mask = getattr(batch, "flaw_line_mask", None)
+        if flaw_mask is not None:
+            rl = ranking_loss(
+                stmt_scores, batch.batch, node_line, flaw_mask, batch.y
+            )
+            loss = loss + rank_loss_weight * rl
+
+    return logit_func, loss
+
+
+# ---------------------------------------------------------------------------
+# Training / evaluation loops
+# ---------------------------------------------------------------------------
+
+def train_one_epoch(
+    model: nn.Module,
+    loader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    device: torch.device,
+    mil_k: int,
+    mil_weight: float,
+    rank_loss_weight: float,
+    class_weight: torch.Tensor | None,
+    epoch: int,
+    total_epochs: int,
+    grad_clip: float = 0.0,
+    batch_scheduler=None,
+    focal_gamma: float = 0.0,
+) -> float:
     model.train()
     total_loss = 0.0
-    for batch in loader:
+    pbar = tqdm(loader, desc=f"  Train {epoch:03d}/{total_epochs}", unit="batch", leave=False)
+    for batch in pbar:
         batch = batch.to(device)
         optimizer.zero_grad()
-        logits = model(batch.x, batch.edge_index, batch.batch)
-        loss = F.cross_entropy(logits, batch.y)
+        _, loss = _forward(model, batch, mil_k, mil_weight, class_weight, rank_loss_weight, focal_gamma)
         loss.backward()
+        if grad_clip > 0.0:
+            nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
+        if batch_scheduler is not None:
+            batch_scheduler.step()
         total_loss += loss.item() * batch.num_graphs
+        pbar.set_postfix(loss=f"{loss.item():.4f}")
     return total_loss / len(loader.dataset)
 
 
 @torch.no_grad()
-def evaluate(model, loader, device) -> tuple[float, float]:
-    """Return (loss, accuracy)."""
+def evaluate(
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+    mil_k: int,
+    mil_weight: float,
+    rank_loss_weight: float = 0.0,
+    class_weight: torch.Tensor | None = None,
+    is_binary: bool = True,
+    focal_gamma: float = 0.0,
+) -> tuple[float, float, float, float, float]:
+    """Return (loss, accuracy, mean_confidence, f1_macro, f1_weighted)."""
     model.eval()
     total_loss = 0.0
-    correct = 0
+    total_conf = 0.0
+    all_preds: list[int] = []
+    all_labels: list[int] = []
     for batch in loader:
         batch = batch.to(device)
-        logits = model(batch.x, batch.edge_index, batch.batch)
-        loss = F.cross_entropy(logits, batch.y)
-        total_loss += loss.item() * batch.num_graphs
+        logits, loss = _forward(model, batch, mil_k, mil_weight, class_weight, rank_loss_weight, focal_gamma)
+        probs = F.softmax(logits, dim=-1)
         preds = logits.argmax(dim=-1)
-        correct += (preds == batch.y).sum().item()
+        total_loss += loss.item() * batch.num_graphs
+        total_conf += probs.max(dim=-1).values.sum().item()
+        all_preds.extend(preds.cpu().tolist())
+        all_labels.extend(batch.y.cpu().tolist())
     n = len(loader.dataset)
-    return total_loss / n, correct / n
+    avg = "binary" if is_binary else "macro"
+    f1_macro = f1_score(all_labels, all_preds, average=avg, zero_division=0)
+    f1_weighted = f1_score(all_labels, all_preds, average="weighted", zero_division=0)
+    acc = np.mean(np.array(all_preds) == np.array(all_labels))
+    return total_loss / n, float(acc), total_conf / n, float(f1_macro), float(f1_weighted)
+
+
+# ---------------------------------------------------------------------------
+# Inference: statement-level localisation
+# ---------------------------------------------------------------------------
+
+@torch.no_grad()
+def localise(
+    model: nn.Module,
+    data,
+    device: torch.device,
+    top_k: int = 5,
+) -> list[tuple[int, float]]:
+    """Return the top-k most suspicious source lines for a single graph."""
+    model.eval()
+    data = data.to(device)
+    batch = torch.zeros(data.num_nodes, dtype=torch.long, device=device)
+    node_line = getattr(data, "node_line", None)
+    func_input_ids = getattr(data, "func_input_ids", None)
+    func_attention_mask = getattr(data, "func_attention_mask", None)
+
+    if hasattr(model, "codebert"):
+        fids = func_input_ids.unsqueeze(0) if func_input_ids is not None else None
+        fmask = func_attention_mask.unsqueeze(0) if func_attention_mask is not None else None
+        _, stmt_scores_list = model(data.x, data.edge_index, batch, node_line, None, fids, fmask)
+    else:
+        _, stmt_scores_list = model(data.x, data.edge_index, batch, node_line)
+
+    if stmt_scores_list is None or len(stmt_scores_list[0]) == 0:
+        return []
+
+    scores_raw = stmt_scores_list[0]
+    # Multiclass stmt head: use 1 - p_benign as vulnerability score
+    if scores_raw.dim() == 2:
+        scores = 1.0 - torch.softmax(scores_raw, dim=-1)[:, 0]
+    else:
+        scores = torch.sigmoid(scores_raw)
+
+    valid_lines = data.node_line[data.node_line >= 0].unique(sorted=True)
+    k = min(top_k, len(valid_lines))
+    top_scores, top_idx = scores.topk(k)
+    return [(int(valid_lines[i].item()), float(top_scores[j].item()))
+            for j, i in enumerate(top_idx)]
 
 
 # ---------------------------------------------------------------------------
@@ -90,8 +480,12 @@ def evaluate(model, loader, device) -> tuple[float, float]:
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Train GNN for vulnerability detection")
-    parser.add_argument("--config", type=str, default="configs/default.yaml", help="Path to YAML config")
+    parser = argparse.ArgumentParser(description="Train GNN vulnerability detector")
+    parser.add_argument("--config", type=str, default="configs/lmgcn/binary.yaml")
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="Resume training from checkpoints/<arch>_last.pt if it exists.",
+    )
     args = parser.parse_args()
 
     cfg = Config.from_yaml(args.config) if Path(args.config).exists() else load_default_config()
@@ -99,9 +493,28 @@ def main():
     setup_logging(cfg.train.log_dir)
     device = get_device(cfg.train.device)
 
-    # Dataset & splits
-    logger.info("Loading dataset…")
-    dataset = VulnerabilityDataset(root=str(cfg.data.processed_dir.parent))
+    mil_k = getattr(cfg.model, "mil_k", 3)
+    mil_weight = getattr(cfg.model, "mil_weight", 0.5)
+    rank_loss_weight = getattr(cfg.model, "rank_loss_weight", 0.0)
+    use_class_weights = getattr(cfg.train, "use_class_weights", True)
+    grad_clip = getattr(cfg.train, "grad_clip", 0.0)
+    is_binary = getattr(cfg.data, "mode", "binary") == "binary"
+    focal_gamma = getattr(cfg.train, "focal_loss_gamma", 0.0)
+
+    pretrained_lm = getattr(cfg.model, "pretrained_lm", "microsoft/codebert-base")
+    add_func_tokens = getattr(cfg.model, "add_func_tokens", False)
+    logger.info(
+        f"Loading dataset… (pretrained_lm={pretrained_lm}, "
+        f"add_func_tokens={add_func_tokens})"
+    )
+    dataset = CodeBERTGraphDataset(
+        root=str(cfg.data.processed_dir.parent),
+        max_nodes=cfg.data.max_nodes,
+        embedder_device=str(device),
+        mode=cfg.data.mode,
+        pretrained_lm=pretrained_lm,
+        add_func_tokens=add_func_tokens,
+    )
     train_idx, val_idx, test_idx = dataset.get_splits(seed=cfg.train.seed)
 
     train_loader = DataLoader(dataset[train_idx], batch_size=cfg.train.batch_size, shuffle=True)
@@ -111,40 +524,153 @@ def main():
     in_channels = dataset[0].x.size(1)
     logger.info(f"Dataset: {len(dataset)} graphs | in_channels={in_channels}")
 
-    # Model
-    model = build_model(cfg, in_channels).to(device)
-    logger.info(f"Model: {cfg.model.architecture.upper()} | params={sum(p.numel() for p in model.parameters()):,}")
+    if dataset.num_classes != cfg.model.num_classes:
+        raise ValueError(
+            f"Config model.num_classes={cfg.model.num_classes} but the dataset has "
+            f"{dataset.num_classes} classes. "
+            "Update model.num_classes in your config to match, "
+            "or check data/raw/cwe_vocab.json."
+        )
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5, factor=0.5)
+    # Inverse-frequency class weights
+    if use_class_weights:
+        train_labels = torch.tensor(
+            [int(dataset[i].y.item()) for i in train_idx], dtype=torch.long
+        )
+        counts = torch.bincount(train_labels, minlength=cfg.model.num_classes).float()
+        class_weight = (counts.sum() / (counts * cfg.model.num_classes)).to(device)
+        class_weight = torch.clamp(class_weight, max=10.0)
+        logger.info(f"Class weights: {[f'{w:.3f}' for w in class_weight.tolist()]}")
+    else:
+        class_weight = None
+
+    model = build_model(cfg, in_channels).to(device)
+    n_params = sum(p.numel() for p in model.parameters())
+    logger.info(
+        f"Model: {cfg.model.architecture.upper()} | params={n_params:,} | "
+        f"mil_weight={mil_weight} | mil_k={mil_k} | "
+        f"rank_loss_weight={rank_loss_weight} | class_weights={use_class_weights} | "
+        f"focal_gamma={focal_gamma}"
+    )
+
+    total_steps = len(train_loader) * cfg.train.epochs
+    optimizer, scheduler, step_per_batch = build_optimizer_and_scheduler(
+        model, cfg, total_steps
+    )
 
     best_val_loss = float("inf")
     patience_counter = 0
-    best_ckpt = cfg.train.checkpoint_dir / f"best_{cfg.model.architecture}.pt"
+    start_epoch = 1
 
-    for epoch in range(1, cfg.train.epochs + 1):
-        train_loss = train_one_epoch(model, train_loader, optimizer, device)
-        val_loss, val_acc = evaluate(model, val_loader, device)
-        scheduler.step(val_loss)
+    run_id = (
+        f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        f"_{cfg.model.architecture}_{cfg.data.mode}"
+    )
+    run_dir = cfg.train.checkpoint_dir / run_id
+
+    if args.resume:
+        existing = sorted(
+            cfg.train.checkpoint_dir.glob(
+                f"*_{cfg.model.architecture}_{cfg.data.mode}/last_{cfg.model.architecture}.pt"
+            )
+        )
+        if existing:
+            last_ckpt = existing[-1]
+            run_dir = last_ckpt.parent
+            run_id = run_dir.name
+            logger.info(f"Resuming run: {run_id}")
+        else:
+            logger.warning("--resume set but no previous run found — starting a new run.")
+            args.resume = False
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    best_ckpt = run_dir / f"best_{cfg.model.architecture}.pt"
+    last_ckpt = run_dir / f"last_{cfg.model.architecture}.pt"
+
+    config_src = Path(args.config) if Path(args.config).exists() else None
+    if config_src:
+        shutil.copy(config_src, run_dir / "config.yaml")
+
+    logger.info(f"Run ID: {run_id}  |  checkpoints → {run_dir}")
+
+    if args.resume and last_ckpt.exists():
+        meta = load_resume_checkpoint(last_ckpt, model, optimizer, scheduler, device=str(device))
+        start_epoch = meta["epoch"] + 1
+        best_val_loss = meta["best_val_loss"]
+        patience_counter = meta["patience_counter"]
+        logger.info(f"Resuming from epoch {start_epoch} (patience={patience_counter})")
+    elif args.resume:
+        logger.warning(f"--resume set but {last_ckpt} not found — starting from scratch.")
+
+    for epoch in range(start_epoch, cfg.train.epochs + 1):
+        t0 = time.time()
+        train_loss = train_one_epoch(
+            model, train_loader, optimizer, device,
+            mil_k, mil_weight, rank_loss_weight, class_weight,
+            epoch=epoch, total_epochs=cfg.train.epochs,
+            grad_clip=grad_clip,
+            batch_scheduler=scheduler if step_per_batch else None,
+            focal_gamma=focal_gamma,
+        )
+        val_loss, val_acc, val_conf, val_f1, val_f1w = evaluate(
+            model, val_loader, device, mil_k, mil_weight, rank_loss_weight, class_weight,
+            is_binary=is_binary, focal_gamma=focal_gamma,
+        )
+        if not step_per_batch:
+            scheduler.step(val_loss)
+        elapsed = time.time() - t0
+
+        # Show GNN LR (last param group) to track the main learning rate
+        current_lr = optimizer.param_groups[-1]["lr"]
+        improved = val_loss < best_val_loss
 
         logger.info(
             f"Epoch {epoch:03d}/{cfg.train.epochs} | "
-            f"train_loss={train_loss:.4f} | val_loss={val_loss:.4f} | val_acc={val_acc:.4f}"
+            f"train={train_loss:.4f} | val={val_loss:.4f} | "
+            f"acc={val_acc:.4f} | f1={val_f1:.4f} | f1w={val_f1w:.4f} | "
+            f"conf={val_conf:.4f} | "
+            f"lr={current_lr:.2e} | patience={patience_counter}/{cfg.train.patience} | "
+            f"{elapsed:.0f}s"
+            + (" *" if improved else "")
         )
 
-        if val_loss < best_val_loss:
+        if improved:
             best_val_loss = val_loss
             patience_counter = 0
-            save_checkpoint(model, best_ckpt, epoch=epoch, val_loss=val_loss, val_acc=val_acc)
+            save_checkpoint(
+                model, best_ckpt,
+                epoch=epoch, val_loss=val_loss, val_acc=val_acc, val_conf=val_conf,
+                val_f1=val_f1, val_f1_weighted=val_f1w,
+            )
         else:
             patience_counter += 1
-            if patience_counter >= cfg.train.patience:
-                logger.info(f"Early stopping triggered after {epoch} epochs.")
-                break
 
-    # Final test evaluation
-    _, test_acc = evaluate(model, test_loader, device)
-    logger.info(f"Test accuracy: {test_acc:.4f}")
+        save_resume_checkpoint(
+            last_ckpt, model, optimizer, scheduler,
+            epoch=epoch,
+            best_val_loss=best_val_loss,
+            patience_counter=patience_counter,
+            val_loss=val_loss, val_acc=val_acc, val_conf=val_conf,
+            val_f1=val_f1, val_f1_weighted=val_f1w,
+        )
+
+        if patience_counter >= cfg.train.patience:
+            logger.info(f"Early stopping triggered after {epoch} epochs.")
+            break
+
+    _, test_acc, test_conf, test_f1, test_f1w = evaluate(
+        model, test_loader, device, mil_k, mil_weight, rank_loss_weight, class_weight,
+        is_binary=is_binary, focal_gamma=focal_gamma,
+    )
+    logger.info(
+        f"Test accuracy: {test_acc:.4f} | f1: {test_f1:.4f} | "
+        f"f1_weighted: {test_f1w:.4f} | confidence: {test_conf:.4f}"
+    )
+    logger.info(f"Best checkpoint → {best_ckpt}")
+    logger.info(
+        f"To evaluate:  uv run evaluate "
+        f"--checkpoint {best_ckpt} --config {run_dir / 'config.yaml'}"
+    )
 
 
 if __name__ == "__main__":

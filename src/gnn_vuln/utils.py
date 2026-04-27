@@ -53,23 +53,83 @@ def setup_logging(log_dir: str | Path, level: str = "INFO") -> None:
 
 
 def save_checkpoint(model: torch.nn.Module, path: str | Path, **extra) -> None:
-    """Save model weights + optional metadata."""
+    """Save model weights + optional metadata (no optimizer — for best-model checkpoints)."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    state = {"model_state_dict": model.state_dict(), **extra}
-    torch.save(state, path)
+    torch.save({"model_state_dict": model.state_dict(), **extra}, path)
     logger.info(f"Checkpoint saved → {path}")
 
 
+def save_resume_checkpoint(
+    path: str | Path,
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scheduler,
+    epoch: int,
+    best_val_loss: float,
+    patience_counter: int,
+    **extra,
+) -> None:
+    """
+    Save full training state so that training can be resumed exactly.
+    Writes to a temp file first then renames, so a crash mid-write never
+    corrupts the checkpoint.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
+            "epoch": epoch,
+            "best_val_loss": best_val_loss,
+            "patience_counter": patience_counter,
+            **extra,
+        },
+        tmp,
+    )
+    tmp.replace(path)
+    logger.debug(f"Resume checkpoint saved → {path}")
+
+
 def load_checkpoint(model: torch.nn.Module, path: str | Path, device: str = "cpu") -> dict:
-    """Load model weights from a checkpoint file."""
+    """Load model weights from a best-model checkpoint. Returns metadata dict."""
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {path}")
-    state = torch.load(path, map_location=device)
+    state = torch.load(path, map_location=device, weights_only=False)
     model.load_state_dict(state["model_state_dict"])
     logger.info(f"Checkpoint loaded ← {path}")
     return {k: v for k, v in state.items() if k != "model_state_dict"}
+
+
+def load_resume_checkpoint(
+    path: str | Path,
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scheduler,
+    device: str = "cpu",
+) -> dict:
+    """
+    Restore full training state from a resume checkpoint.
+    Returns metadata dict with epoch, best_val_loss, patience_counter, etc.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Resume checkpoint not found: {path}")
+    state = torch.load(path, map_location=device, weights_only=False)
+    model.load_state_dict(state["model_state_dict"])
+    optimizer.load_state_dict(state["optimizer_state_dict"])
+    scheduler.load_state_dict(state["scheduler_state_dict"])
+    meta = {k: v for k, v in state.items()
+            if k not in ("model_state_dict", "optimizer_state_dict", "scheduler_state_dict")}
+    logger.info(
+        f"Resumed from {path}  "
+        f"(epoch {meta['epoch']}, best_val_loss={meta['best_val_loss']:.4f})"
+    )
+    return meta
 
 
 # ---------------------------------------------------------------------------
