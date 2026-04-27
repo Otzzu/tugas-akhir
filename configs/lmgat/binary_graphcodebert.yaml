@@ -1,0 +1,29 @@
+# configs/lmgat/binary_graphcodebert.yaml — LM-GAT binary + frozen GraphCodeBERT
+
+data:
+  mode: binary
+  max_nodes: 1000
+
+model:
+  architecture: lmgat
+  pretrained_lm: microsoft/graphcodebert-base
+  add_func_tokens: true           # reuse _ft processed file; func tokens unused by lmgat
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  num_classes: 2
+  mil_weight: 0.5
+  mil_k: 5
+  rank_loss_weight: 0.3
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 64
+  lr: 0.003
+  weight_decay: 0.0001
+  patience: 15
+  use_class_weights: true
+  focal_loss_gamma: 2.0
+  device: cuda
