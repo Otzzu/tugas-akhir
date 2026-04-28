@@ -86,10 +86,16 @@ class CodeBERTGraphDataset(InMemoryDataset):
         # Resolve and validate mode before super().__init__ because
         # processed_file_names is called during parent __init__.
         raw_dir = Path(root) / "raw"
-        has_vocab = (raw_dir / "cwe_vocab.json").exists()
+        # cwe_vocab.json may be at raw root (flat) or inside a source subdir (grouped)
+        has_vocab = (raw_dir / "cwe_vocab.json").exists() or (
+            raw_dir.exists() and any(
+                (d / "cwe_vocab.json").exists()
+                for d in raw_dir.iterdir() if d.is_dir()
+            )
+        )
         if mode == "multiclass" and not has_vocab:
             raise RuntimeError(
-                f"mode='multiclass' but {raw_dir / 'cwe_vocab.json'} not found. "
+                f"mode='multiclass' but cwe_vocab.json not found under {raw_dir}. "
                 "Run prepare_dataset.py --top-cwe N to generate it."
             )
         self._mode = mode  # "binary" or "multiclass"
@@ -123,10 +129,67 @@ class CodeBERTGraphDataset(InMemoryDataset):
         raw_dir = Path(self.raw_dir)
 
         # ------------------------------------------------------------------
+        # Auto-detect layout: grouped (raw/<source>/benign/) or flat (raw/benign/)
+        # ------------------------------------------------------------------
+        top_dirs = [d for d in raw_dir.iterdir() if d.is_dir()]
+        is_grouped = any(
+            (d / "benign").is_dir() or (d / "vulnerable").is_dir() for d in top_dirs
+        )
+
+        if is_grouped:
+            # Merge benign/vulnerable files across all source subdirs
+            all_benign: list[Path] = []
+            all_vuln: list[Path] = []
+            for src in sorted(top_dirs, key=lambda d: d.name):
+                for cls_name, lst in [("benign", all_benign), ("vulnerable", all_vuln)]:
+                    cls_d = src / cls_name
+                    if cls_d.is_dir():
+                        lst.extend(sorted(
+                            f for f in cls_d.iterdir()
+                            if f.suffix.lower() in (".json", ".xml", ".graphml")
+                            and ".meta." not in f.name
+                        ))
+            # vocab: raw root first, then first source dir that has it
+            vocab_path = raw_dir / "cwe_vocab.json"
+            if not vocab_path.exists():
+                for src in sorted(top_dirs, key=lambda d: d.name):
+                    candidate = src / "cwe_vocab.json"
+                    if candidate.exists():
+                        vocab_path = candidate
+                        break
+            # class_sources: (name, is_benign, [cpg_paths])
+            class_sources: list[tuple[str, bool, list[Path]]] = []
+            if all_benign:
+                class_sources.append(("benign", True, all_benign))
+            if all_vuln:
+                class_sources.append(("vulnerable", False, all_vuln))
+            logger.info(
+                f"Grouped layout detected: {len(top_dirs)} source(s), "
+                f"{len(all_benign)} benign + {len(all_vuln)} vulnerable files."
+            )
+        else:
+            # Flat layout (backwards compat): raw/benign/ and raw/vulnerable/
+            vocab_path = raw_dir / "cwe_vocab.json"
+            class_sources = []
+            for d in sorted(top_dirs, key=lambda d: d.name):
+                files = sorted(
+                    f for f in d.iterdir()
+                    if f.suffix.lower() in (".json", ".xml", ".graphml")
+                    and ".meta." not in f.name
+                )
+                class_sources.append((d.name, d.name == "benign", files))
+
+        if not class_sources:
+            raise RuntimeError(
+                f"No CPG files found under {raw_dir}. "
+                "Expected data/raw/benign/ and data/raw/vulnerable/ (flat) "
+                "or data/raw/<source>/benign/ (grouped)."
+            )
+
+        # ------------------------------------------------------------------
         # Determine mode: multi-class (cwe_vocab.json present) or binary
         # ------------------------------------------------------------------
         is_multi_class = self._mode == "multiclass"
-        vocab_path = raw_dir / "cwe_vocab.json"
         if is_multi_class:
             with open(vocab_path, encoding="utf-8") as f:
                 cwe_vocab: dict[str, int] = json.load(f)
@@ -140,22 +203,9 @@ class CodeBERTGraphDataset(InMemoryDataset):
             logger.info("Binary mode.")
 
         # ------------------------------------------------------------------
-        # Discover class directories
-        # ------------------------------------------------------------------
-        class_dirs = sorted(
-            [d for d in raw_dir.iterdir() if d.is_dir()], key=lambda d: d.name
-        )
-        if not class_dirs:
-            raise RuntimeError(
-                f"No class subdirectories found in {raw_dir}. "
-                "Expected at least data/raw/benign/ and data/raw/vulnerable/."
-            )
-        dir_label_map = {d.name: idx for idx, d in enumerate(class_dirs)}
-
-        # ------------------------------------------------------------------
         # Build work units — each unit maps to exactly one cache file.
         #
-        # benign dir          → one unit  (cache: benign.pt)
+        # benign             → one unit  (cache: benign.pt)
         # vulnerable + binary → one unit  (cache: vulnerable.pt)
         # vulnerable + multi  → one unit PER CWE class (cache: vuln_CWE_119.pt …)
         #
@@ -166,18 +216,11 @@ class CodeBERTGraphDataset(InMemoryDataset):
         # work_units: list of (cache_key, [(path, label, flaw_lines)])
         work_units: list[tuple[str, list[tuple[Path, int, list[int]]]]] = []
 
-        for cls_dir in class_dirs:
-            base_label = dir_label_map[cls_dir.name]
-            is_benign_dir = cls_dir.name == "benign"
-
-            cpg_files = sorted(
-                f for f in cls_dir.iterdir()
-                if f.suffix.lower() in (".json", ".xml", ".graphml")
-                and ".meta." not in f.name
-            )
+        for cls_name, is_benign_dir, cpg_files in class_sources:
+            base_label = 0 if is_benign_dir else 1
 
             if is_benign_dir or not is_multi_class:
-                # One cache file for the whole directory
+                # One cache file for the whole class
                 entries: list[tuple[Path, int, list[int]]] = []
                 for gf in cpg_files:
                     meta_path = gf.parent / f"{gf.stem}.meta.json"
@@ -186,10 +229,10 @@ class CodeBERTGraphDataset(InMemoryDataset):
                         with open(meta_path) as mf:
                             flaw_lines = json.load(mf).get("flaw_lines", [])
                     entries.append((gf, base_label, flaw_lines))
-                work_units.append((cls_dir.name, entries))
+                work_units.append((cls_name, entries))
             else:
                 # Multi-class vulnerable: group by CWE class_id from meta.json
-                logger.info(f"  [{cls_dir.name}] grouping {len(cpg_files)} files by CWE class…")
+                logger.info(f"  [{cls_name}] grouping {len(cpg_files)} files by CWE class…")
                 cwe_groups: dict[int, list[tuple[Path, int, list[int]]]] = {}
                 for gf in cpg_files:
                     meta_path = gf.parent / f"{gf.stem}.meta.json"

@@ -418,6 +418,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # Auto-subdir by source format so datasets stay organized: data/raw/bigvul/
+    args.out_dir = args.out_dir / args.format
+
     # -----------------------------------------------------------------------
     # Load dataset
     # -----------------------------------------------------------------------

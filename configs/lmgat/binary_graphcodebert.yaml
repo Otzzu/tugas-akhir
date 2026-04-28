@@ -20,8 +20,8 @@ model:
 train:
   seed: 42
   epochs: 100
-  batch_size: 64
-  lr: 0.003
+  batch_size: 16            # RTX 4070 laptop 8GB
+  lr: 0.001
   weight_decay: 0.0001
   patience: 15
   use_class_weights: true

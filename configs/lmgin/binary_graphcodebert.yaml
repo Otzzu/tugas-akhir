@@ -1,0 +1,34 @@
+# configs/lmgin/binary_graphcodebert.yaml — LM-GIN binary + frozen GraphCodeBERT
+#
+# GINEConv (edge-aware GIN) + frozen GraphCodeBERT node embeddings.
+# Binary: benign (0) vs vulnerable (1).
+#
+# Run:
+#   uv run train --config configs/lmgin/binary_graphcodebert.yaml
+
+data:
+  mode: binary
+  max_nodes: 1000
+
+model:
+  architecture: lmgin
+  pretrained_lm: microsoft/graphcodebert-base
+  add_func_tokens: true           # reuse _ft processed file
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  num_classes: 2
+  mil_weight: 0.5
+  mil_k: 5
+  rank_loss_weight: 0.3
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 16
+  lr: 0.001
+  weight_decay: 0.0001
+  patience: 15
+  use_class_weights: true
+  focal_loss_gamma: 2.0
+  device: cuda

@@ -20,6 +20,7 @@ data:
 model:
   architecture: lmgat
   pretrained_lm: microsoft/codebert-base   # swap to microsoft/graphcodebert-base to use GraphCodeBERT
+  add_func_tokens: true                    # generates _ft.pt reusable by lmgat_codebert/binary configs
   hidden_dim: 256
   num_layers: 4
   dropout: 0.3
