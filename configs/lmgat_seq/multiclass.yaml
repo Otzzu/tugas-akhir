@@ -1,9 +1,9 @@
 # configs/lmgat_seq/multiclass.yaml — Architecture 7: Sequential Localization → Classification
 #
 # Stage 1: GATv2 binary localization → per-node suspicion score s_i
-# Stage 2: GATv2(concat[x_raw, s_i]) + live LM → CWE classification
-# MIL loss: binary BCE on stage-1 statement scores (top-k)
-# Ranking loss: pushes suspicious lines above benign lines in vulnerable functions
+# Stage 2: GATv2(concat[h_loc, s_i]) + live LM → CWE classification  [stage2_node_input: loc]
+# MIL loss: binary BCE on stage-1 stmt scores (reduced weight — let cls loss dominate)
+# Ranking loss: disabled — too many competing signals in early training
 #
 # pretrained_lm: frozen node embedder — MUST match processed .pt on cloud (unixcoder)
 # func_lm: live fine-tuned LM for Stage 2 function branch (unixcoder, already on cloud)
@@ -28,21 +28,21 @@ model:
   heads: 4
   edge_dim: 7
   num_classes: 11
-  stage2_node_input: raw        # Stage 2 GNN gets original 773D + s_i (preserves raw signal)
-  mil_weight: 0.3               # binary BCE MIL on stage-1 stmt scores
+  stage2_node_input: loc        # Stage 2 gets 256D h_loc + s_i — smoother than raw 773D + random s_i
+  mil_weight: 0.1               # reduced — let classification loss dominate early training
   mil_k: 3
-  rank_loss_weight: 0.1         # ranking loss (binary stmt head -- pushes vuln lines above benign)
+  rank_loss_weight: 0.0         # disabled — too many competing signals cause early plateau
 
 train:
   seed: 42
   epochs: 100
   batch_size: 8                 # 2x GATv2 stacks + live LM; RTX 4090 24GB
-  lr: 0.001
+  lr: 0.0005                    # lower — Stage 1 + Stage 2 competing grads need slower updates
   lm_lr: 0.00001
   warmup_ratio: 0.1
   grad_clip: 1.0
   weight_decay: 0.0001
-  patience: 15
+  patience: 25                  # more room for Stage 2 to re-adapt after Stage 1 stabilizes
   use_class_weights: true
   focal_loss_gamma: 2.0
   device: cuda
