@@ -1,38 +1,42 @@
-# configs/lmgat_waves_seq/multiclass.yaml — Architecture 8: WAVES Localization → VulLMGNN Classification
+# configs/lmgat_waves_seq/multiclass.yaml — Architecture 8: WAVES localization → VulLMGNN classification
 #
-# Stage 1: Transformer encoder over statement embeddings (CodeBERT slice from frozen 773D node features)
-#          → per-statement suspicion score via MIL binary loss
-# Stage 2: GNN branch (773D + s_i = 774D) + live LM branch → CWE head
+# Stage 1: Transformer encoder over CPG statements (WAVES-style) → per-statement suspicion
+# Stage 2: GATv2(node_feat + s_i) + live LM → concat → CWE head (VulLMGNN-style)
+# Stage 1 detached from Stage 2: localization and classification update independently
 #
-# Run:
-#   uv run train --config configs/lmgat_waves_seq/multiclass.yaml
+# pretrained_lm: frozen node embedder — MUST match processed .pt on cloud (unixcoder)
+# func_lm: live fine-tuned LM for Stage 2 (unixcoder, already on cloud)
+#
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/lmgat_waves_seq/multiclass.yaml
 
 data:
   source: bigvul
   mode: multiclass
-  max_nodes: 1000
   top_cwe: 10
+  max_nodes: 1000
 
 model:
   architecture: lmgat_waves_seq
-  pretrained_lm: microsoft/codebert-base    # node embedder LM (frozen, preprocessing)
-  func_lm: microsoft/unixcoder-base         # live LM for function branch (fine-tuned)
+  pretrained_lm: microsoft/unixcoder-base      # must match dataset .pt
+  func_lm: microsoft/unixcoder-base            # live LM branch (already on cloud)
   add_func_tokens: true
   hidden_dim: 256
   num_layers: 4
   dropout: 0.3
   heads: 4
+  edge_dim: 7
   num_classes: 11
-  mil_weight: 0.3           # Stage 1 localization loss weight
+  stmt_transformer_layers: 2    # Stage 1 transformer depth
+  stmt_transformer_heads: 4     # Stage 1 transformer attention heads
+  mil_weight: 0.3               # binary BCE MIL on stage-1 stmt suspicion logits
   mil_k: 3
-  rank_loss_weight: 0.0
-  stmt_transformer_layers: 2
-  stmt_transformer_heads: 4
+  rank_loss_weight: 0.1         # ranking loss (1D stmt scores supported)
 
 train:
   seed: 42
   epochs: 100
-  batch_size: 4
+  batch_size: 4                 # Stage 1 loop is serial per graph + transformer + GATv2 + LM; conservative
   lr: 0.001
   lm_lr: 0.00001
   warmup_ratio: 0.1

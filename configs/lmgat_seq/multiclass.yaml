@@ -1,41 +1,42 @@
 # configs/lmgat_seq/multiclass.yaml — Architecture 7: Sequential Localization → Classification
 #
 # Stage 1: GATv2 binary localization → per-node suspicion score s_i
-# Stage 2: GATv2(node_feat + s_i) + live LM → CWE head
+# Stage 2: GATv2(concat[x_raw, s_i]) + live LM → CWE classification
+# MIL loss: binary BCE on stage-1 statement scores (top-k)
+# Ranking loss: pushes suspicious lines above benign lines in vulnerable functions
 #
-# Key differences vs Arch3 (lmgat_codebert):
-#   - Two GNN stacks: Stage 1 (773D) + Stage 2 (774D = 773 + s_i)
-#   - Suspicion-weighted pool instead of global mean pool
-#   - mil_weight controls Stage 1 localization loss weight
+# pretrained_lm: frozen node embedder — MUST match processed .pt on cloud (unixcoder)
+# func_lm: live fine-tuned LM for Stage 2 function branch (unixcoder, already on cloud)
 #
-# Run:
-#   uv run train --config configs/lmgat_seq/multiclass.yaml
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/lmgat_seq/multiclass.yaml
 
 data:
   source: bigvul
   mode: multiclass
-  max_nodes: 1000
   top_cwe: 10
+  max_nodes: 1000
 
 model:
   architecture: lmgat_seq
-  pretrained_lm: microsoft/codebert-base    # node embedder LM (frozen, preprocessing)
-  func_lm: microsoft/unixcoder-base         # live LM for function branch (fine-tuned)
-  stage2_node_input: raw                    # "raw" = x+s_i (774D) | "loc" = h_loc+s_i (257D)
+  pretrained_lm: microsoft/unixcoder-base      # must match dataset .pt
+  func_lm: microsoft/unixcoder-base            # live LM branch (already on cloud)
   add_func_tokens: true
   hidden_dim: 256
   num_layers: 4
   dropout: 0.3
   heads: 4
+  edge_dim: 7
   num_classes: 11
-  mil_weight: 0.3           # Stage 1 localization loss weight
+  stage2_node_input: raw        # Stage 2 GNN gets original 773D + s_i (preserves raw signal)
+  mil_weight: 0.3               # binary BCE MIL on stage-1 stmt scores
   mil_k: 3
-  rank_loss_weight: 0.0
+  rank_loss_weight: 0.1         # ranking loss (binary stmt head -- pushes vuln lines above benign)
 
 train:
   seed: 42
   epochs: 100
-  batch_size: 4
+  batch_size: 8                 # 2x GATv2 stacks + live LM; RTX 4090 24GB
   lr: 0.001
   lm_lr: 0.00001
   warmup_ratio: 0.1
