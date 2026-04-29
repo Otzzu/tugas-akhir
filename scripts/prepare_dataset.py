@@ -154,13 +154,15 @@ def _read_file(path: Path | str) -> pd.DataFrame:
 # CWE vocabulary builder (BigVul only)
 # ---------------------------------------------------------------------------
 
+_CWE_JUNK = {"CWE-unknown", "unknown", "NVD-CWE-Other", "NVD-CWE-noinfo", ""}
+
 def _build_cwe_vocab(df: pd.DataFrame, top_k: int) -> dict[str, int]:
     """
     Map top-k most common CWE IDs to class indices 1..K.
-    "benign" is always 0. Rows with missing/empty CWE are excluded.
+    "benign" is always 0. Rows with missing/empty/unknown CWE are excluded.
     """
-    vul_cwe = df[df["vul"] == 1]["CWE ID"].fillna("").astype(str)
-    vul_cwe = vul_cwe[vul_cwe.str.strip() != ""]  # drop missing CWEs
+    vul_cwe = df[df["vul"] == 1]["CWE ID"].fillna("").astype(str).str.strip()
+    vul_cwe = vul_cwe[~vul_cwe.isin(_CWE_JUNK)]
     top_cwes = vul_cwe.value_counts().head(top_k).index.tolist()
     vocab: dict[str, int] = {"benign": 0}
     for i, cwe in enumerate(top_cwes, start=1):
@@ -243,7 +245,7 @@ def load_bigvul(
             df["cwe_str"] = df[cwe_col].fillna("").astype(str)
         else:
             df["cwe_str"] = ""
-            logger.warning("BigVul: no CWE ID column found, falling back to binary labels.")
+            logger.warning("No CWE ID column found, falling back to binary labels.")
             df["label"] = df["vul"]
 
         if vocab and cwe_col:
@@ -257,7 +259,7 @@ def load_bigvul(
             df = df[df["label"] >= 0].copy()
             dropped = before - len(df)
             if dropped:
-                logger.info(f"Dropped {dropped} BigVul rows with rare CWEs (outside top-{top_k_cwe})")
+                logger.info(f"Dropped {dropped} rows with unknown/junk CWE IDs (NVD-CWE-Other, CWE-unknown, etc.)")
 
     # Compute flaw lines from func_before → func_after diff
     if after_col and after_col in df.columns:
@@ -272,7 +274,7 @@ def load_bigvul(
         logger.info("Computing flaw lines from func_before/func_after diff…")
         df["flaw_lines"] = df.apply(_flaw, axis=1)
     else:
-        logger.warning("BigVul: func_after column not found — flaw_lines will be empty.")
+        logger.warning("func_after column not found — flaw_lines will be empty.")
         df["flaw_lines"] = [[] for _ in range(len(df))]
 
     df = df.rename(columns={"cwe_str": "cwe"})
@@ -366,6 +368,10 @@ def _run_one(
             meta["flaw_lines"] = flaw_lines
         if meta:
             (out_dir / f"func_{idx}.meta.json").write_text(json.dumps(meta))
+        elif cwe:
+            # Always persist cwe string even in binary mode so CPGs can be
+            # re-used for multiclass training with a different vocab later.
+            (out_dir / f"func_{idx}.meta.json").write_text(json.dumps({"cwe": cwe}))
 
         return idx, dest, None
     except Exception:
@@ -386,7 +392,7 @@ def main() -> None:
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument(
         "--format", default="devign",
-        choices=["devign", "bigvul", "diversevul", "csv"],
+        choices=["devign", "bigvul", "diversevul", "csv", "merged"],
     )
     parser.add_argument("--code-col", default="func")
     parser.add_argument("--label-col", default="target")
@@ -416,10 +422,15 @@ def main() -> None:
         help="Path to an existing cwe_vocab.json to reuse (for val/test splits). "
              "If omitted, vocab is auto-saved to <out-dir>/cwe_vocab.json.",
     )
+    parser.add_argument(
+        "--split", default="train", choices=["train", "val", "test"],
+        help="Dataset split — appends _val/_test to output subdir (e.g. bigvul_val/).",
+    )
     args = parser.parse_args()
 
-    # Auto-subdir by source format so datasets stay organized: data/raw/bigvul/
-    args.out_dir = args.out_dir / args.format
+    # Auto-subdir: data/raw/bigvul/, data/raw/bigvul_val/, data/raw/bigvul_test/
+    split_suffix = f"_{args.split}" if args.split != "train" else ""
+    args.out_dir = args.out_dir / f"{args.format}{split_suffix}"
 
     # -----------------------------------------------------------------------
     # Load dataset
@@ -452,18 +463,39 @@ def main() -> None:
             cwe_vocab=existing_vocab,
         )
 
-        if is_multi_class and cwe_vocab and not vocab_path.exists():
+        # Always save vocab to output dir so val/test splits can find it
+        out_vocab = args.out_dir / "cwe_vocab.json"
+        if is_multi_class and cwe_vocab and not out_vocab.exists():
             args.out_dir.mkdir(parents=True, exist_ok=True)
-            with open(vocab_path, "w") as f:
+            with open(out_vocab, "w") as f:
                 json.dump(cwe_vocab, f, indent=2)
-            logger.info(
-                f"CWE vocabulary ({len(cwe_vocab)} classes) saved → {vocab_path}\n"
-                f"  {cwe_vocab}"
-            )
+            logger.info(f"CWE vocabulary ({len(cwe_vocab)} classes) saved → {out_vocab}")
 
     elif args.format == "diversevul":
         df = load_diversevul(args.input)
         is_multi_class = False
+
+    elif args.format == "merged":
+        # merged dataset has same schema as BigVul (func_before, func_after, vul, CWE ID)
+        is_multi_class = not args.binary
+        vocab_path = args.cwe_vocab or (args.out_dir / "cwe_vocab.json")
+        existing_vocab = None
+        if vocab_path.exists():
+            with open(vocab_path) as f:
+                existing_vocab = json.load(f)
+            logger.info(f"Loaded existing CWE vocab ({len(existing_vocab)} classes) from {vocab_path}")
+        df, cwe_vocab = load_bigvul(
+            args.input,
+            top_k_cwe=args.top_cwe,
+            binary=args.binary,
+            cwe_vocab=existing_vocab,
+        )
+        out_vocab = args.out_dir / "cwe_vocab.json"
+        if is_multi_class and cwe_vocab and not out_vocab.exists():
+            args.out_dir.mkdir(parents=True, exist_ok=True)
+            with open(out_vocab, "w") as f:
+                json.dump(cwe_vocab, f, indent=2)
+            logger.info(f"CWE vocabulary ({len(cwe_vocab)} classes) saved → {out_vocab}")
 
     else:
         df = load_csv(args.input, args.code_col, args.label_col)

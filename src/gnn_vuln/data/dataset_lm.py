@@ -71,8 +71,10 @@ class CodeBERTGraphDataset(InMemoryDataset):
         max_nodes: int = 500,
         embedder_device: str = "cpu",
         mode: str = "binary",
+        source: str = "bigvul",
         pretrained_lm: str = "microsoft/codebert-base",
         add_func_tokens: bool = False,
+        top_cwe: int = 0,
         transform=None,
         pre_transform=None,
     ):
@@ -80,22 +82,19 @@ class CodeBERTGraphDataset(InMemoryDataset):
         self._embedder_device = embedder_device
         self._pretrained_lm = pretrained_lm
         self._add_func_tokens = add_func_tokens
+        self._source = source
+        self._top_cwe = top_cwe
         # Short name used in cache filenames: "microsoft/codebert-base" → "codebert-base"
         self._lm_short = pretrained_lm.split("/")[-1]
 
         # Resolve and validate mode before super().__init__ because
         # processed_file_names is called during parent __init__.
-        raw_dir = Path(root) / "raw"
-        # cwe_vocab.json may be at raw root (flat) or inside a source subdir (grouped)
-        has_vocab = (raw_dir / "cwe_vocab.json").exists() or (
-            raw_dir.exists() and any(
-                (d / "cwe_vocab.json").exists()
-                for d in raw_dir.iterdir() if d.is_dir()
-            )
-        )
+        # Source dir is data/raw/<source>/ — flat layout (benign/ + vulnerable/ inside).
+        source_dir = Path(root) / "raw" / source
+        has_vocab = (source_dir / "cwe_vocab.json").exists()
         if mode == "multiclass" and not has_vocab:
             raise RuntimeError(
-                f"mode='multiclass' but cwe_vocab.json not found under {raw_dir}. "
+                f"mode='multiclass' but cwe_vocab.json not found under {source_dir}. "
                 "Run prepare_dataset.py --top-cwe N to generate it."
             )
         self._mode = mode  # "binary" or "multiclass"
@@ -119,71 +118,39 @@ class CodeBERTGraphDataset(InMemoryDataset):
 
     @property
     def processed_file_names(self) -> list[str]:
-        suffix = "_ft" if self._add_func_tokens else ""
-        return [f"lm_dataset_{self._mode}_{self._lm_short}{suffix}.pt"]
+        ft_suffix = "_ft" if self._add_func_tokens else ""
+        top_suffix = f"_top{self._top_cwe}" if self._top_cwe > 0 else ""
+        return [f"lm_dataset_{self._source}_{self._mode}_{self._lm_short}{ft_suffix}{top_suffix}.pt"]
 
     def download(self) -> None:
         pass
 
     def process(self) -> None:
-        raw_dir = Path(self.raw_dir)
-
-        # ------------------------------------------------------------------
-        # Auto-detect layout: grouped (raw/<source>/benign/) or flat (raw/benign/)
-        # ------------------------------------------------------------------
-        top_dirs = [d for d in raw_dir.iterdir() if d.is_dir()]
-        is_grouped = any(
-            (d / "benign").is_dir() or (d / "vulnerable").is_dir() for d in top_dirs
-        )
-
-        if is_grouped:
-            # Merge benign/vulnerable files across all source subdirs
-            all_benign: list[Path] = []
-            all_vuln: list[Path] = []
-            for src in sorted(top_dirs, key=lambda d: d.name):
-                for cls_name, lst in [("benign", all_benign), ("vulnerable", all_vuln)]:
-                    cls_d = src / cls_name
-                    if cls_d.is_dir():
-                        lst.extend(sorted(
-                            f for f in cls_d.iterdir()
-                            if f.suffix.lower() in (".json", ".xml", ".graphml")
-                            and ".meta." not in f.name
-                        ))
-            # vocab: raw root first, then first source dir that has it
-            vocab_path = raw_dir / "cwe_vocab.json"
-            if not vocab_path.exists():
-                for src in sorted(top_dirs, key=lambda d: d.name):
-                    candidate = src / "cwe_vocab.json"
-                    if candidate.exists():
-                        vocab_path = candidate
-                        break
-            # class_sources: (name, is_benign, [cpg_paths])
-            class_sources: list[tuple[str, bool, list[Path]]] = []
-            if all_benign:
-                class_sources.append(("benign", True, all_benign))
-            if all_vuln:
-                class_sources.append(("vulnerable", False, all_vuln))
-            logger.info(
-                f"Grouped layout detected: {len(top_dirs)} source(s), "
-                f"{len(all_benign)} benign + {len(all_vuln)} vulnerable files."
+        # Source dir: data/raw/<source>/ — flat layout with benign/ + vulnerable/ inside.
+        source_dir = Path(self.raw_dir) / self._source
+        if not source_dir.is_dir():
+            raise RuntimeError(
+                f"Source directory not found: {source_dir}. "
+                f"Run prepare_dataset.py --out-dir data/raw --format {self._source} first."
             )
-        else:
-            # Flat layout (backwards compat): raw/benign/ and raw/vulnerable/
-            vocab_path = raw_dir / "cwe_vocab.json"
-            class_sources = []
-            for d in sorted(top_dirs, key=lambda d: d.name):
+
+        vocab_path = source_dir / "cwe_vocab.json"
+        class_sources: list[tuple[str, bool, list[Path]]] = []
+        for cls_name in ("benign", "vulnerable"):
+            cls_dir = source_dir / cls_name
+            if cls_dir.is_dir():
                 files = sorted(
-                    f for f in d.iterdir()
+                    f for f in cls_dir.iterdir()
                     if f.suffix.lower() in (".json", ".xml", ".graphml")
                     and ".meta." not in f.name
                 )
-                class_sources.append((d.name, d.name == "benign", files))
+                class_sources.append((cls_name, cls_name == "benign", files))
+                logger.info(f"Source [{self._source}/{cls_name}]: {len(files)} CPG files")
 
         if not class_sources:
             raise RuntimeError(
-                f"No CPG files found under {raw_dir}. "
-                "Expected data/raw/benign/ and data/raw/vulnerable/ (flat) "
-                "or data/raw/<source>/benign/ (grouped)."
+                f"No CPG files found under {source_dir}. "
+                "Expected benign/ and/or vulnerable/ subdirectories."
             )
 
         # ------------------------------------------------------------------
@@ -193,10 +160,15 @@ class CodeBERTGraphDataset(InMemoryDataset):
         if is_multi_class:
             with open(vocab_path, encoding="utf-8") as f:
                 cwe_vocab: dict[str, int] = json.load(f)
+            if self._top_cwe > 0:
+                cwe_vocab = {k: v for k, v in cwe_vocab.items() if v <= self._top_cwe}
             class_names: list[str] | None = [
                 name for name, _ in sorted(cwe_vocab.items(), key=lambda kv: kv[1])
             ]
-            logger.info(f"Multi-class mode: {len(class_names)} classes from {vocab_path.name}")
+            logger.info(
+                f"Multi-class mode: {len(class_names)} classes from {vocab_path.name}"
+                + (f" (filtered to top-{self._top_cwe})" if self._top_cwe > 0 else "")
+            )
         else:
             cwe_vocab = {}
             class_names = None
@@ -231,7 +203,9 @@ class CodeBERTGraphDataset(InMemoryDataset):
                     entries.append((gf, base_label, flaw_lines))
                 work_units.append((cls_name, entries))
             else:
-                # Multi-class vulnerable: group by CWE class_id from meta.json
+                # Multi-class vulnerable: group by CWE class_id from meta.json.
+                # Re-map via cwe string → vocab so training vocab can differ from
+                # the vocab used during CPG generation (generate-all workflow).
                 logger.info(f"  [{cls_name}] grouping {len(cpg_files)} files by CWE class…")
                 cwe_groups: dict[int, list[tuple[Path, int, list[int]]]] = {}
                 for gf in cpg_files:
@@ -240,7 +214,16 @@ class CodeBERTGraphDataset(InMemoryDataset):
                         continue
                     with open(meta_path) as mf:
                         meta = json.load(mf)
-                    class_id = meta.get("class_id", -1)
+                    cwe_str = meta.get("cwe", "")
+                    # Prefer vocab re-mapping from cwe string.
+                    # When top_cwe filtering is active, skip if not in filtered vocab
+                    # (avoids stale stored class_ids from a wider vocab).
+                    if cwe_str and cwe_str in cwe_vocab:
+                        class_id = cwe_vocab[cwe_str]
+                    elif self._top_cwe > 0:
+                        class_id = -1
+                    else:
+                        class_id = meta.get("class_id", -1)
                     if class_id < 0:
                         continue
                     flaw_lines = meta.get("flaw_lines", [])
@@ -257,7 +240,8 @@ class CodeBERTGraphDataset(InMemoryDataset):
         # Cache directory + resume detection
         # ------------------------------------------------------------------
         ft_suffix = "_ft" if self._add_func_tokens else ""
-        cache_dir = Path(self.processed_dir) / f"cls_cache_{self._mode}{ft_suffix}"
+        top_suffix = f"_top{self._top_cwe}" if self._top_cwe > 0 else ""
+        cache_dir = Path(self.processed_dir) / f"cls_cache_{self._mode}{ft_suffix}{top_suffix}"
         cache_dir.mkdir(parents=True, exist_ok=True)
 
         done_keys    = [k for k, _ in work_units if (cache_dir / f"{k}.pt").exists()]
@@ -277,9 +261,9 @@ class CodeBERTGraphDataset(InMemoryDataset):
 
         tokenizer = None
         if self._add_func_tokens and pending_keys:
-            from transformers import RobertaTokenizer
+            from transformers import AutoTokenizer
             logger.info(f"Initialising function tokenizer ({self._pretrained_lm})…")
-            tokenizer = RobertaTokenizer.from_pretrained(self._pretrained_lm)
+            tokenizer = AutoTokenizer.from_pretrained(self._pretrained_lm)
 
         # ------------------------------------------------------------------
         # Process each work unit

@@ -1,6 +1,7 @@
 # configs/lmgat/binary_graphcodebert.yaml — LM-GAT binary + frozen GraphCodeBERT
 
 data:
+  source: bigvul
   mode: binary
   max_nodes: 1000
 

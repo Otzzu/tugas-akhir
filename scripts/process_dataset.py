@@ -38,17 +38,25 @@ def main() -> None:
     print(f"Max nodes   : {cfg.data.max_nodes}")
     print()
 
+    source   = getattr(cfg.data, "source",  "bigvul")
+    top_cwe  = getattr(cfg.data, "top_cwe", 0)
+
+    print(f"Source      : {source}")
+    print(f"Top CWE     : {top_cwe if top_cwe > 0 else 'all'}")
+    print()
+
     dataset = CodeBERTGraphDataset(
         root=str(cfg.data.processed_dir.parent),
+        source=source,
         max_nodes=cfg.data.max_nodes,
         embedder_device=device,
         mode=cfg.data.mode,
         pretrained_lm=pretrained_lm,
         add_func_tokens=add_func_tokens,
+        top_cwe=top_cwe,
     )
 
     print(f"\nDone: {len(dataset)} graphs processed and cached.")
-    print(f"File: data/processed/lm_dataset_{cfg.data.mode}_{pretrained_lm.split('/')[-1]}{'_ft' if add_func_tokens else ''}.pt")
 
 
 if __name__ == "__main__":

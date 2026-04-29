@@ -1,22 +1,28 @@
-# configs/lmgat_codebert/binary_graphcodebert.yaml — Arch 3 binary + live GraphCodeBERT
+# configs/lmgat_unixcoder/multiclass.yaml — Architecture 3: LM-GAT v2 + UniXcoder
+#
+# Same as lmgat_codebert but uses microsoft/unixcoder-base as the LM.
+#
+# Run:
+#   uv run train --config configs/lmgat_unixcoder/multiclass.yaml
 
 data:
   source: bigvul
-  mode: binary
+  mode: multiclass
   max_nodes: 1000
+  top_cwe: 10
 
 model:
   architecture: lmgat_codebert
-  pretrained_lm: microsoft/graphcodebert-base
+  pretrained_lm: microsoft/unixcoder-base
   add_func_tokens: true
   hidden_dim: 256
   num_layers: 4
   dropout: 0.3
   heads: 4
-  num_classes: 2
+  num_classes: 11
   mil_weight: 0.5
-  mil_k: 5
-  rank_loss_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
 
 train:
   seed: 42
@@ -27,7 +33,7 @@ train:
   warmup_ratio: 0.1
   grad_clip: 1.0
   weight_decay: 0.0001
-  patience: 20
+  patience: 15
   use_class_weights: true
   focal_loss_gamma: 2.0
   device: cuda

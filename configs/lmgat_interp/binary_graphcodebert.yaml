@@ -8,6 +8,7 @@
 #   uv run train --config configs/lmgat_interp/binary_graphcodebert.yaml
 
 data:
+  source: bigvul
   mode: binary
   max_nodes: 1000
 

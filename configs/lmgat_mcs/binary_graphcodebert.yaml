@@ -1,6 +1,7 @@
 # configs/lmgat_mcs/binary_graphcodebert.yaml — Arch 4 binary + live GraphCodeBERT
 
 data:
+  source: bigvul
   mode: binary
   max_nodes: 1000
 

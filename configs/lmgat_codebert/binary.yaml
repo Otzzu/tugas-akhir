@@ -12,6 +12,7 @@
 #   uv run train --config configs/lmgat_codebert/binary.yaml
 
 data:
+  source: bigvul
   mode: binary
   max_nodes: 1000
 

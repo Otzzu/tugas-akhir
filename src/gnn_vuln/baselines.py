@@ -21,8 +21,8 @@ Our evaluation uses BigVul subsampled to 2000/class with a 70/15/15 split.
 => Function-level numbers are NOT perfectly comparable (different splits + class
    balance), but localization metrics share the same definition and can be compared.
 
-Metric definitions match our evaluate.py exactly
--------------------------------------------------
+Metric definitions
+------------------
 f1_binary : sklearn f1_score(average="binary") - positive class only (vulnerable=1)
 f1_macro  : sklearn f1_score(average="macro")
 top_N_accuracy : at least one flaw line in top-N ranked statements
@@ -33,6 +33,14 @@ effort_at_20pct_recall : fraction of code to inspect for 20% flaw recall (lower 
 recall_at_1pct_loc     : flaw recall at top 1% of lines (higher = better)
 
 None = metric not reported in the paper for that dataset.
+
+WARNING — numbers here are NOT directly comparable to our evaluate.py output:
+  1. Dataset split: baselines use full BigVul; we use 2000/class subsample.
+  2. Localization denominator: baselines may include all vulnerable functions;
+     we compute only over functions with flaw-line ground truth (flaw_line_mask > 0).
+  3. Task: baselines are binary; our primary task is 11-class multiclass.
+These numbers are stored for reference only. Fair comparison requires running
+LineVul / VulLMGNN on our exact dataset split with matching evaluation code.
 """
 
 from __future__ import annotations

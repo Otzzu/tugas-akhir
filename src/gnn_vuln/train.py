@@ -33,6 +33,8 @@ from gnn_vuln.models.lmgat_codebert import LMGATCodeBERTVulnDetector
 from gnn_vuln.models.lmgat_mcs import LMGATMCSVulnDetector
 from gnn_vuln.models.lmgin import LMGINVulnDetector
 from gnn_vuln.models.lmgat_interp import LMGATInterpVulnDetector
+from gnn_vuln.models.lmgat_seq import LMGATSeqVulnDetector
+from gnn_vuln.models.lmgat_waves_seq import LMGATWavesSeqVulnDetector
 from gnn_vuln.utils import (
     set_seed, setup_logging, get_device,
     save_checkpoint, load_resume_checkpoint, save_resume_checkpoint,
@@ -46,6 +48,7 @@ from gnn_vuln.utils import (
 def build_model(cfg: Config, in_channels: int) -> nn.Module:
     arch = cfg.model.architecture.lower()
     pretrained_lm = getattr(cfg.model, "pretrained_lm", "microsoft/codebert-base")
+    func_lm = getattr(cfg.model, "func_lm", "") or pretrained_lm
 
     if arch == "lmgcn":
         return LMGCNVulnDetector(
@@ -108,9 +111,36 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             edge_dim=getattr(cfg.model, "edge_dim", 7),
             init_lambda=getattr(cfg.model, "init_lambda", 0.5),
         )
+    if arch == "lmgat_seq":
+        return LMGATSeqVulnDetector(
+            pretrained_lm=pretrained_lm,
+            func_lm=func_lm,
+            in_channels=in_channels,
+            hidden_dim=cfg.model.hidden_dim,
+            num_layers=cfg.model.num_layers,
+            dropout=cfg.model.dropout,
+            num_classes=cfg.model.num_classes,
+            num_heads=cfg.model.heads,
+            edge_dim=getattr(cfg.model, "edge_dim", 7),
+            stage2_node_input=getattr(cfg.model, "stage2_node_input", "raw"),
+        )
+    if arch == "lmgat_waves_seq":
+        return LMGATWavesSeqVulnDetector(
+            pretrained_lm=pretrained_lm,
+            func_lm=func_lm,
+            in_channels=in_channels,
+            hidden_dim=cfg.model.hidden_dim,
+            num_layers=cfg.model.num_layers,
+            dropout=cfg.model.dropout,
+            num_classes=cfg.model.num_classes,
+            num_heads=cfg.model.heads,
+            edge_dim=getattr(cfg.model, "edge_dim", 7),
+            stmt_transformer_layers=getattr(cfg.model, "stmt_transformer_layers", 2),
+            stmt_transformer_heads=getattr(cfg.model, "stmt_transformer_heads", 4),
+        )
     raise ValueError(
         f"Unknown architecture: {arch!r}. "
-        "Available: lmgcn, lmgat, lmgat_codebert, lmgat_mcs, lmgin, lmgat_interp"
+        "Available: lmgcn, lmgat, lmgat_codebert, lmgat_mcs, lmgin, lmgat_interp, lmgat_seq, lmgat_waves_seq"
     )
 
 
@@ -133,7 +163,7 @@ def build_optimizer_and_scheduler(
                                      after validation.
     """
     arch = cfg.model.architecture.lower()
-    is_ft_arch = arch in ("lmgat_codebert", "lmgat_mcs")
+    is_ft_arch = arch in ("lmgat_codebert", "lmgat_mcs", "lmgat_seq", "lmgat_waves_seq")
 
     if is_ft_arch:
         lm_lr = getattr(cfg.train, "lm_lr", 2e-5)
@@ -526,23 +556,42 @@ def main():
 
     pretrained_lm = getattr(cfg.model, "pretrained_lm", "microsoft/codebert-base")
     add_func_tokens = getattr(cfg.model, "add_func_tokens", False)
+    source_val  = getattr(cfg.data, "source_val",  "")
+    source_test = getattr(cfg.data, "source_test", "")
+    use_official_splits = bool(source_val and source_test)
+
     logger.info(
         f"Loading dataset… (pretrained_lm={pretrained_lm}, "
-        f"add_func_tokens={add_func_tokens})"
+        f"add_func_tokens={add_func_tokens}, "
+        f"splits={'official' if use_official_splits else 'internal 70/15/15'})"
     )
-    dataset = CodeBERTGraphDataset(
+
+    dataset_kwargs = dict(
         root=str(cfg.data.processed_dir.parent),
         max_nodes=cfg.data.max_nodes,
         embedder_device=str(device),
         mode=cfg.data.mode,
         pretrained_lm=pretrained_lm,
         add_func_tokens=add_func_tokens,
+        top_cwe=getattr(cfg.data, "top_cwe", 0),
     )
-    train_idx, val_idx, test_idx = dataset.get_splits(seed=cfg.train.seed)
+    dataset = CodeBERTGraphDataset(
+        source=getattr(cfg.data, "source", "bigvul"), **dataset_kwargs
+    )
 
-    train_loader = DataLoader(dataset[train_idx], batch_size=cfg.train.batch_size, shuffle=True)
-    val_loader   = DataLoader(dataset[val_idx],   batch_size=cfg.train.batch_size)
-    test_loader  = DataLoader(dataset[test_idx],  batch_size=cfg.train.batch_size)
+    if use_official_splits:
+        logger.info(f"Official splits: train={cfg.data.source}  val={source_val}  test={source_test}")
+        val_dataset  = CodeBERTGraphDataset(source=source_val,  **dataset_kwargs)
+        test_dataset = CodeBERTGraphDataset(source=source_test, **dataset_kwargs)
+        train_idx = list(range(len(dataset)))
+        train_loader = DataLoader(dataset,      batch_size=cfg.train.batch_size, shuffle=True)
+        val_loader   = DataLoader(val_dataset,  batch_size=cfg.train.batch_size)
+        test_loader  = DataLoader(test_dataset, batch_size=cfg.train.batch_size)
+    else:
+        train_idx, val_idx, test_idx = dataset.get_splits(seed=cfg.train.seed)
+        train_loader = DataLoader(dataset[train_idx], batch_size=cfg.train.batch_size, shuffle=True)
+        val_loader   = DataLoader(dataset[val_idx],   batch_size=cfg.train.batch_size)
+        test_loader  = DataLoader(dataset[test_idx],  batch_size=cfg.train.batch_size)
 
     in_channels = dataset[0].x.size(1)
     logger.info(f"Dataset: {len(dataset)} graphs | in_channels={in_channels}")

@@ -1,14 +1,16 @@
-# configs/lmgat_graphcodebert/multiclass.yaml — Architecture 3 variant: LM-GAT + GraphCodeBERT
+# configs/lmgat_graphcodebert/multiclass.yaml — Architecture 3: LM-GAT v2 + GraphCodeBERT
 #
-# Same as lmgat_codebert/multiclass.yaml but uses GraphCodeBERT node embeddings.
-# GraphCodeBERT trained on code structure (data flow) — potentially better node embeddings.
+# Same as lmgat_codebert but uses microsoft/graphcodebert-base as the LM.
+# GraphCodeBERT adds data-flow pre-training on top of CodeBERT.
 #
 # Run:
 #   uv run train --config configs/lmgat_graphcodebert/multiclass.yaml
 
 data:
+  source: bigvul
   mode: multiclass
   max_nodes: 1000
+  top_cwe: 10
 
 model:
   architecture: lmgat_codebert
@@ -26,9 +28,9 @@ model:
 train:
   seed: 42
   epochs: 100
-  batch_size: 4
+  batch_size: 16
   lr: 0.001
-  lm_lr: 0.00002
+  lm_lr: 0.00001
   warmup_ratio: 0.1
   grad_clip: 1.0
   weight_decay: 0.0001

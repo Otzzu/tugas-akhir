@@ -52,7 +52,7 @@ from sklearn.metrics import (
 from sklearn.preprocessing import label_binarize
 from torch_geometric.loader import DataLoader
 
-from gnn_vuln.baselines import print_binary_comparison, print_multiclass_comparison
+from gnn_vuln.baselines import LINEVUL_FUNC, LINEVUL_LOC_ATTENTION  # stored for future use
 from gnn_vuln.config import Config, load_default_config
 from gnn_vuln.data.dataset_lm import CodeBERTGraphDataset
 from gnn_vuln.metrics import compute_all_localization_metrics, make_func_loc_result
@@ -397,6 +397,7 @@ def main() -> None:
         max_nodes=cfg.data.max_nodes,
         embedder_device=cfg.train.device,
         mode=cfg.data.mode,
+        source=getattr(cfg.data, "source", "bigvul"),
         pretrained_lm=pretrained_lm,
         add_func_tokens=add_func_tokens,
     )
@@ -481,41 +482,20 @@ def main() -> None:
     print("=" * 65 + "\n")
 
     # ── Baseline comparison ─────────────────────────────────────────────────
-    from sklearn.metrics import precision_score, recall_score
-    our_prec = float(precision_score(y_true, y_pred, average="macro", zero_division=0))
-    our_rec  = float(recall_score(y_true, y_pred, average="macro", zero_division=0))
-
-    if is_binary:
-        our_metrics_dict = {
-            "f1_macro": f1,
-            "precision": our_prec,
-            "recall": our_rec,
-            "accuracy": accuracy,
-            "top_1_accuracy": loc_metrics.get("top_1_accuracy") if n_gt > 0 else None,
-            "top_3_accuracy": loc_metrics.get("top_3_accuracy") if n_gt > 0 else None,
-            "top_5_accuracy": loc_metrics.get("top_5_accuracy") if n_gt > 0 else None,
-            "top_10_accuracy": loc_metrics.get("top_10_accuracy") if n_gt > 0 else None,
-            "ifa_mean": loc_metrics.get("ifa_mean") if n_gt > 0 else None,
-            "effort_at_20pct_recall": loc_metrics.get("effort_at_20pct_recall") if n_gt > 0 else None,
-            "recall_at_1pct_loc": loc_metrics.get("recall_at_1pct_loc") if n_gt > 0 else None,
-        }
-        print_binary_comparison(our_metrics_dict)
-    else:
-        from sklearn.metrics import classification_report as cr
-        report = cr(
-            y_true, y_pred,
-            labels=list(range(num_classes)),
-            output_dict=True, zero_division=0,
-        )
-        per_class_recall = {}
-        if class_names:
-            for i, name in enumerate(class_names):
-                if i > 0 and str(i) in report:
-                    per_class_recall[name] = report[str(i)].get("recall", None)
-        print_multiclass_comparison(
-            {"per_class_recall": per_class_recall},
-            class_names=class_names,
-        )
+    # NOTE: Direct comparison to published baselines (LineVul, WAVES, VulLMGNN)
+    # is NOT valid here because:
+    #   - They use full BigVul / different dataset splits
+    #   - Localization denominators differ (all vulnerable vs flaw-GT-only subset)
+    #   - Our task is multiclass (11 CWE classes); baselines are binary
+    # Fair comparison requires running baselines on our exact dataset split.
+    # See baselines.py for stored baseline numbers; comparison table will be
+    # generated separately once LineVul / VulLMGNN are run on our split.
+    print("\n" + "=" * 65)
+    print("Baseline Comparison: DEFERRED")
+    print("  Reason: different dataset splits and task definitions make")
+    print("  direct comparison misleading. Run LineVul / VulLMGNN on the")
+    print("  same split first. See baselines.py for stored reference numbers.")
+    print("=" * 65 + "\n")
 
     # ── Save outputs ────────────────────────────────────────────────────────
     run_id = Path(args.checkpoint).parent.name

@@ -19,7 +19,9 @@
 #   uv run train --config configs/lmgat_interp/multiclass.yaml
 
 data:
+  source: bigvul
   mode: multiclass
+  top_cwe: 10
   max_nodes: 1000
 
 model:

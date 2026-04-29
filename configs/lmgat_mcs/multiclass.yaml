@@ -18,12 +18,14 @@
 #   uv run train --config configs/lmgat_mcs/multiclass.yaml
 
 data:
+  source: bigvul
   mode: multiclass
+  top_cwe: 10
   max_nodes: 1000
 
 model:
   architecture: lmgat_mcs
-  pretrained_lm: microsoft/codebert-base   # swap to microsoft/graphcodebert-base for GraphCodeBERT
+  pretrained_lm: microsoft/unixcoder-base
   add_func_tokens: true                    # required: enables func_input_ids in Data objects
   hidden_dim: 256
   num_layers: 4
@@ -37,9 +39,9 @@ model:
 train:
   seed: 42
   epochs: 100
-  batch_size: 4             # live CodeBERT + multiclass stmt head: memory intensive
+  batch_size: 16
   lr: 0.001
-  lm_lr: 0.00002
+  lm_lr: 0.00001
   warmup_ratio: 0.1
   grad_clip: 1.0
   weight_decay: 0.0001

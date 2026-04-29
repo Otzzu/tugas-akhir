@@ -12,6 +12,7 @@
 # For multi-class CWE classification use configs/lmgcn/multiclass.yaml instead.
 
 data:
+  source: bigvul
   mode: binary              # "binary" or "multiclass" — controls which cache file is used
   max_nodes: 1000           # graphs with more nodes are skipped during preprocessing
 

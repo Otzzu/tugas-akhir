@@ -9,6 +9,7 @@
 #   uv run train --config configs/lmgat/multiclass_graphcodebert.yaml
 
 data:
+  source: bigvul
   mode: multiclass
   max_nodes: 1000
 

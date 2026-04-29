@@ -1,4 +1,4 @@
-# configs/lmgat_codebert/multiclass.yaml — Architecture 3: LM-GAT v2 + Live Fine-tuned CodeBERT
+# configs/lmgat_codebert/multiclass.yaml — Architecture 3: LM-GAT v2 + CodeBERT (codebert-base)
 #
 # What's new vs lmgat/multiclass.yaml:
 #   - add_func_tokens: true — tokenizes full function text into Data objects
@@ -17,12 +17,14 @@
 #   uv run train --config configs/lmgat_codebert/multiclass.yaml
 
 data:
+  source: bigvul
   mode: multiclass
   max_nodes: 1000
+  top_cwe: 10
 
 model:
   architecture: lmgat_codebert
-  pretrained_lm: microsoft/codebert-base   # swap to microsoft/graphcodebert-base for GraphCodeBERT
+  pretrained_lm: microsoft/codebert-base
   add_func_tokens: true                    # required: enables func_input_ids in Data objects
   hidden_dim: 256
   num_layers: 4
@@ -36,9 +38,9 @@ model:
 train:
   seed: 42
   epochs: 100
-  batch_size: 4             # reduced from 6: live CodeBERT + 11-class adds VRAM
+  batch_size: 16
   lr: 0.001
-  lm_lr: 0.00002
+  lm_lr: 0.00001
   warmup_ratio: 0.1
   grad_clip: 1.0
   weight_decay: 0.0001

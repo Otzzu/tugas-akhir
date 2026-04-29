@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import torch
-from transformers import RobertaModel, RobertaTokenizer
+from transformers import AutoModel, AutoTokenizer
 
 # CPG node type vocabulary (Joern labels)
 NODE_TYPES = [
@@ -47,8 +47,8 @@ class CodeBERTNodeEmbedder:
         device: str = "cpu",
         max_length: int = 128,
     ):
-        self.tokenizer = RobertaTokenizer.from_pretrained(model_name)
-        self.model = RobertaModel.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModel.from_pretrained(model_name)
         self.model.eval()
         self.device = torch.device(device)
         self.model.to(self.device)

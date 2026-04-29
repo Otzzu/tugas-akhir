@@ -8,7 +8,9 @@
 #   uv run train --config configs/lmgin/multiclass.yaml
 
 data:
+  source: bigvul
   mode: multiclass
+  top_cwe: 10
   max_nodes: 1000
 
 model:

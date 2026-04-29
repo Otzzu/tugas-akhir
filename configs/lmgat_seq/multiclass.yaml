@@ -1,0 +1,47 @@
+# configs/lmgat_seq/multiclass.yaml — Architecture 7: Sequential Localization → Classification
+#
+# Stage 1: GATv2 binary localization → per-node suspicion score s_i
+# Stage 2: GATv2(node_feat + s_i) + live LM → CWE head
+#
+# Key differences vs Arch3 (lmgat_codebert):
+#   - Two GNN stacks: Stage 1 (773D) + Stage 2 (774D = 773 + s_i)
+#   - Suspicion-weighted pool instead of global mean pool
+#   - mil_weight controls Stage 1 localization loss weight
+#
+# Run:
+#   uv run train --config configs/lmgat_seq/multiclass.yaml
+
+data:
+  source: bigvul
+  mode: multiclass
+  max_nodes: 1000
+  top_cwe: 10
+
+model:
+  architecture: lmgat_seq
+  pretrained_lm: microsoft/codebert-base    # node embedder LM (frozen, preprocessing)
+  func_lm: microsoft/unixcoder-base         # live LM for function branch (fine-tuned)
+  stage2_node_input: raw                    # "raw" = x+s_i (774D) | "loc" = h_loc+s_i (257D)
+  add_func_tokens: true
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  num_classes: 11
+  mil_weight: 0.3           # Stage 1 localization loss weight
+  mil_k: 3
+  rank_loss_weight: 0.0
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 4
+  lr: 0.001
+  lm_lr: 0.00001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.0001
+  patience: 15
+  use_class_weights: true
+  focal_loss_gamma: 2.0
+  device: cuda

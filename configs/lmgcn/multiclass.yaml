@@ -32,7 +32,9 @@
 #   label  > 0 -> any CWE -> push statement scores toward 1
 
 data:
+  source: bigvul
   mode: multiclass          # "binary" or "multiclass" — controls which cache file is used
+  top_cwe: 10
   max_nodes: 1000
 
 model:

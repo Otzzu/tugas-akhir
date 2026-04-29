@@ -40,13 +40,25 @@ class DataConfig:
     # Dataset mode: "binary" (benign/vuln) or "multiclass" (per-CWE).
     # Controls which processed cache file is used so both can coexist.
     mode: str = "binary"
+    # Source subdirectory under data/raw/ — isolates datasets and appears in
+    # the processed .pt filename so bigvul and merged never collide.
+    source: str = "bigvul"
+    # Optional separate val/test source dirs (e.g. bigvul_val, bigvul_test).
+    # When both are set, official splits are used instead of internal 70/15/15.
+    # Leave empty for datasets without separate val/test parquets.
+    source_val: str = ""
+    source_test: str = ""
+    # Filter vocab to top-K CWE classes at .pt build time (0 = use all in vocab).
+    # Raw data can be generated with --top-cwe 999; this narrows it at processed stage.
+    top_cwe: int = 0
 
 
 @dataclass
 class ModelConfig:
     architecture: str = "lmgcn"  # lmgcn | lmgat | lmgat_ft | lmgat_mc
-    pretrained_lm: str = "microsoft/codebert-base"  # HuggingFace model ID for node embeddings
-    add_func_tokens: bool = False  # tokenize full function text → stored in Data for live CodeBERT
+    pretrained_lm: str = "microsoft/codebert-base"  # HuggingFace model ID for node embeddings (frozen)
+    func_lm: str = ""               # live LM for function branch; if empty falls back to pretrained_lm
+    add_func_tokens: bool = False   # tokenize full function text → stored in Data for live LM
     hidden_dim: int = 256
     num_layers: int = 4
     dropout: float = 0.3
