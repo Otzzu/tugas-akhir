@@ -62,6 +62,7 @@ class LMGATInterpVulnDetector(nn.Module):
     def __init__(
         self,
         pretrained_lm: str = "microsoft/codebert-base",
+        func_lm: str = "",
         in_channels: int = NODE_FEAT_DIM,
         hidden_dim: int = 256,
         num_layers: int = 4,
@@ -74,8 +75,9 @@ class LMGATInterpVulnDetector(nn.Module):
         super().__init__()
         self.dropout = dropout
 
-        # ── Live CodeBERT branch ────────────────────────────────────────────
-        self.codebert = AutoModel.from_pretrained(pretrained_lm)
+        # ── Live LM branch ──────────────────────────────────────────────────
+        _func_lm = func_lm if func_lm else pretrained_lm
+        self.codebert = AutoModel.from_pretrained(_func_lm)
         self.lm_head = nn.Sequential(
             nn.Linear(_CODEBERT_DIM, hidden_dim),
             nn.ReLU(),

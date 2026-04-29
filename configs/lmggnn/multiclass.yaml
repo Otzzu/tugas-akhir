@@ -1,0 +1,39 @@
+# configs/lmggnn/multiclass.yaml — VulLMGNN faithful re-implementation (Cao et al., ICSE 2023)
+#
+# GatedGraphConv × num_layers + live LM, fixed-alpha interpolation.
+# Paper uses alpha=0.1 (GNN auxiliary, LM dominant) and num_layers=6.
+#
+# Run:
+#   uv run train --config configs/lmggnn/multiclass.yaml
+
+data:
+  source: bigvul
+  mode: multiclass
+  max_nodes: 1000
+  top_cwe: 10
+
+model:
+  architecture: lmggnn
+  pretrained_lm: microsoft/codebert-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  hidden_dim: 256
+  num_layers: 6               # paper uses 6 GatedGraphConv steps
+  dropout: 0.3
+  num_classes: 11
+  alpha: 0.1                  # paper: 0.1 GNN + 0.9 LM
+  mil_weight: 0.0             # no statement head in VulLMGNN
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 16
+  lr: 0.001
+  lm_lr: 0.00001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.0001
+  patience: 15
+  use_class_weights: true
+  focal_loss_gamma: 2.0
+  device: cuda

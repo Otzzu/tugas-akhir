@@ -71,6 +71,7 @@ class LMGATCodeBERTVulnDetector(nn.Module):
     def __init__(
         self,
         pretrained_lm: str = "microsoft/codebert-base",
+        func_lm: str = "",
         in_channels: int = NODE_FEAT_DIM,
         hidden_dim: int = 256,
         num_layers: int = 4,
@@ -82,8 +83,9 @@ class LMGATCodeBERTVulnDetector(nn.Module):
         super().__init__()
         self.dropout = dropout
 
-        # ── Live fine-tuned CodeBERT for full-function context ───────────────
-        self.codebert = AutoModel.from_pretrained(pretrained_lm)
+        # ── Live fine-tuned LM for full-function context ─────────────────────
+        _func_lm = func_lm if func_lm else pretrained_lm
+        self.codebert = AutoModel.from_pretrained(_func_lm)
 
         # ── Shared GATv2 encoder ─────────────────────────────────────────────
         self.convs = nn.ModuleList()

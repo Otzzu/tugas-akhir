@@ -34,6 +34,7 @@ from gnn_vuln.models.lmgat_mcs import LMGATMCSVulnDetector
 from gnn_vuln.models.lmgin import LMGINVulnDetector
 from gnn_vuln.models.lmgat_interp import LMGATInterpVulnDetector
 from gnn_vuln.models.lmgat_seq import LMGATSeqVulnDetector
+from gnn_vuln.models.lmggnn import LMGNNVulnDetector
 from gnn_vuln.models.lmgat_waves_seq import LMGATWavesSeqVulnDetector
 from gnn_vuln.utils import (
     set_seed, setup_logging, get_device,
@@ -71,6 +72,7 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
     if arch == "lmgat_codebert":
         return LMGATCodeBERTVulnDetector(
             pretrained_lm=pretrained_lm,
+            func_lm=func_lm,
             in_channels=in_channels,
             hidden_dim=cfg.model.hidden_dim,
             num_layers=cfg.model.num_layers,
@@ -82,6 +84,7 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
     if arch == "lmgat_mcs":
         return LMGATMCSVulnDetector(
             pretrained_lm=pretrained_lm,
+            func_lm=func_lm,
             in_channels=in_channels,
             hidden_dim=cfg.model.hidden_dim,
             num_layers=cfg.model.num_layers,
@@ -102,6 +105,7 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
     if arch == "lmgat_interp":
         return LMGATInterpVulnDetector(
             pretrained_lm=pretrained_lm,
+            func_lm=func_lm,
             in_channels=in_channels,
             hidden_dim=cfg.model.hidden_dim,
             num_layers=cfg.model.num_layers,
@@ -123,6 +127,17 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             num_heads=cfg.model.heads,
             edge_dim=getattr(cfg.model, "edge_dim", 7),
             stage2_node_input=getattr(cfg.model, "stage2_node_input", "raw"),
+        )
+    if arch == "lmggnn":
+        return LMGNNVulnDetector(
+            pretrained_lm=pretrained_lm,
+            func_lm=func_lm,
+            in_channels=in_channels,
+            hidden_dim=cfg.model.hidden_dim,
+            num_layers=cfg.model.num_layers,
+            dropout=cfg.model.dropout,
+            num_classes=cfg.model.num_classes,
+            alpha=getattr(cfg.model, "alpha", 0.1),
         )
     if arch == "lmgat_waves_seq":
         return LMGATWavesSeqVulnDetector(
@@ -163,7 +178,7 @@ def build_optimizer_and_scheduler(
                                      after validation.
     """
     arch = cfg.model.architecture.lower()
-    is_ft_arch = arch in ("lmgat_codebert", "lmgat_mcs", "lmgat_seq", "lmgat_waves_seq")
+    is_ft_arch = arch in ("lmgat_codebert", "lmgat_mcs", "lmgat_seq", "lmgat_waves_seq", "lmggnn")
 
     if is_ft_arch:
         lm_lr = getattr(cfg.train, "lm_lr", 2e-5)

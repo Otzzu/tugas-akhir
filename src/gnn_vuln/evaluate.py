@@ -400,6 +400,7 @@ def main() -> None:
         source=getattr(cfg.data, "source", "bigvul"),
         pretrained_lm=pretrained_lm,
         add_func_tokens=add_func_tokens,
+        top_cwe=getattr(cfg.data, "top_cwe", 0),
     )
     _, _, test_idx = dataset.get_splits(seed=cfg.train.seed)
     test_loader = DataLoader(dataset[test_idx], batch_size=cfg.train.batch_size)
