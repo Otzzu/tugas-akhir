@@ -51,6 +51,14 @@ class DataConfig:
     # Filter vocab to top-K CWE classes at .pt build time (0 = use all in vocab).
     # Raw data can be generated with --top-cwe 999; this narrows it at processed stage.
     top_cwe: int = 0
+    # Explicit CWE whitelist, e.g. ["CWE-119", "CWE-787"]. Unioned with cwe_groups.
+    cwe_list: list | None = None
+    # Group whitelist, e.g. ["memory_safety", "injection"]. Expanded via CWE_GROUP_MAP.
+    cwe_groups: list | None = None
+    # Max graphs per class/CWE/group bucket during .pt build (0 = no limit).
+    max_per_class: int = 0
+    # Random seed for max_per_class sampling. Change for a different sample.
+    resample_seed: int = 42
 
 
 @dataclass

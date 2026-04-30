@@ -314,3 +314,240 @@ Loss = CE(logit_func, y, class_weight)
 | Paper alignment | Wrong (not VulLMGNN) | Correct VulLMGNN explicit stage |
 | Branch independence | Shared func_head couples branches | Fully independent |
 | λ interpretable | No | Yes: how much model trusts GNN vs LM |
+
+---
+
+## Architecture 7 — LM-GAT-Seq (Sequential Localization → Classification)
+
+**Status:** ✔ Implemented
+**Config:** `configs/lmgat_seq/multiclass.yaml`
+**Model:** `src/gnn_vuln/models/lmgat_seq.py`
+
+Two independent GATv2 stacks: Stage 1 produces a per-node suspicion score `s_i`, which augments
+node features before Stage 2. Stage 2 combines suspicion-weighted GNN pooling + live LM for CWE
+classification.
+
+```
+CPG nodes (773D pre-computed, frozen)
+CPG edges (7D one-hot)
+
+── Stage 1: Binary Localization ─────────────────────────────────────────────
+    → GATv2Conv × num_layers (heads=4, concat=False) → h_loc [N, 256]
+    → BatchNorm + ReLU + Dropout
+    → binary stmt head: sigmoid(0.8*max_head(h_loc) + 0.6*mean_head(h_loc))
+    → s_i ∈ [0,1] per node                                          [N]
+
+── Stage 2: Classification ───────────────────────────────────────────────────
+    stage2_base = h_loc (256D) if stage2_node_input="loc"
+               or x_frozen (773D) if stage2_node_input="raw"
+    x_aug = concat(stage2_base, s_i)                    [N, 257 or 774]
+    → GATv2Conv × num_layers (heads=4, concat=False) → h_cls [N, 256]
+    → BatchNorm + ReLU + Dropout
+    → suspicion-weighted pool:
+          graph_emb = global_add_pool(h_cls * s_i) / sum(s_i)     [B, 256]
+
+Full function text → live LM → CLS token                          [B, 768]
+    concat(graph_emb, lm_emb)                                      [B, 1024]
+    → MLP → logit_func                                             [B, num_classes]
+
+Loss = CE(logit_func, y, class_weight)
+     + mil_weight * MIL(stmt_scores_stage1, y, k)          # binary BCE on s_i
+     + rank_loss_weight * RankingLoss(stmt_scores_stage1, flaw_line_mask)
+```
+
+**Key design decisions:**
+- Stage 1 and Stage 2 share the same graph — Stage 1 gradient flows into `s_i` during training
+- `stage2_node_input="raw"`: Stage 2 gets full 773D features + noisy-but-informative s_i gradient
+- `stage2_node_input="loc"`: Stage 2 gets compact 256D h_loc + s_i — smoother but loses raw signal
+- Suspicion-weighted pooling: high-suspicion nodes contribute more to graph_emb than uniform mean
+- No detachment: classification loss backpropagates through Stage 2 GNN; localization loss through Stage 1
+
+**Experimental finding:**
+- `stage2_node_input="raw"` (v1, original) outperforms `"loc"` (v2, tuned) on all metrics
+- Raw noisy s_i gradient is more informative than clean but compressed h_loc features
+
+| Run | Config | F1↑ | AUC-ROC↑ | IFA↓ | Top-1↑ | Effort@20%↓ | Recall@20%loc↑ |
+|---|---|---|---|---|---|---|---|
+| 20260429_121124 | v1: stage2=raw, mil=0.3, rank=0.1, lr=0.001 | **0.4554** | **0.8610** | **7.34** | **0.356** | **0.0855** | **0.387** |
+| 20260429_135046 | v2: stage2=loc, mil=0.1, rank=0.0, lr=0.0005 | 0.3857 | 0.8018 | 12.13 | 0.182 | 0.1177 | 0.294 |
+
+---
+
+## Architecture 8 — LM-GAT-WAVES-Seq (Transformer Localization → GATv2 + LM Classification)
+
+**Status:** ✔ Implemented
+**Config:** `configs/lmgat_waves_seq/multiclass.yaml`
+**Model:** `src/gnn_vuln/models/lmgat_waves_seq.py`
+
+Stage 1 uses a Transformer encoder (WAVES-inspired) over CPG statement embeddings to produce
+per-statement suspicion scores. Stage 2 uses GATv2 + live LM (VulLMGNN-style) for classification.
+Stages are **decoupled** — s_i is detached before Stage 2.
+
+```
+CPG nodes (773D pre-computed, frozen)
+CPG edges (7D one-hot)
+
+── Stage 1: WAVES-style Transformer Localization ────────────────────────────
+    Group nodes by source line → mean-pool CodeBERT slice (indices 1:769)
+    per-stmt embeddings [n_stmts, 768]
+    → TransformerEncoder(d_model=768, nhead=4, layers=2, dim_ff=1536)
+    → Linear(768, 1) → sigmoid → suspicion [n_stmts]
+    → broadcast to node level via node_line mapping
+    s_i ∈ [0,1] per node (DETACHED — Stage 2 sees no Stage 1 gradient)     [N]
+
+── Stage 2 GNN Branch ────────────────────────────────────────────────────────
+    x_aug = concat(x_frozen, s_i)                              [N, 774]
+    → GATv2Conv × num_layers (heads=4, concat=False) → h [N, 256]
+    → BatchNorm + ReLU + Dropout
+    → global_mean_pool(h) → gnn_emb                           [B, 256]
+
+── Stage 2 LM Branch ─────────────────────────────────────────────────────────
+    Full function text → live LM → CLS → lm_emb               [B, 768]
+
+    concat(gnn_emb, lm_emb)                                    [B, 1024]
+    → MLP → logit_func                                         [B, num_classes]
+
+Loss_Stage1 = mil_weight * MIL(stmt_logits, y, k)
+            + rank_loss_weight * RankingLoss(stmt_logits, flaw_line_mask)
+Loss_Stage2 = CE(logit_func, y, class_weight)
+Loss        = Loss_Stage1 + Loss_Stage2
+```
+
+**Key design decisions:**
+- Transformer operates on statement-level (sequence of lines), not node-level — no CPG topology in Stage 1
+- Detach prevents classification gradient from corrupting localization transformer
+- VulLMGNN-style global_mean_pool in Stage 2 (vs suspicion-weighted pool in Arch7)
+
+**Experimental finding:**
+- Transformer localization fails on CPG: Top-1=0.096 (worst of all models), IFA=13.72
+- Without CPG structure, transformer cannot identify vulnerable lines from CodeBERT embeddings alone
+- Classification still reasonable (F1=0.4305) — Stage 2 GATv2+LM is competent despite bad s_i
+
+| Run | Config | F1↑ | AUC-ROC↑ | IFA↓ | Top-1↑ | Effort@20%↓ | Recall@20%loc↑ |
+|---|---|---|---|---|---|---|---|
+| 20260429_125637 | stmt_transformer_layers=2, heads=4 | 0.4305 | 0.8357 | 13.72 | 0.096 | 0.1394 | 0.245 |
+
+---
+
+## Architecture 9 — LM-GGNN (LM-GAT-CodeBERT with GATv2 → GatedGraphConv)
+
+**Status:** ✔ Implemented
+**Config:** `configs/lmggnn/multiclass.yaml`
+**Model:** `src/gnn_vuln/models/lmggnn.py`
+
+Arch3 (LM-GAT-CodeBERT) variant with GATv2Conv swapped for GatedGraphConv. The fusion strategy
+also changed from concat → single MLP (Arch3) to two separate heads interpolated via fixed alpha,
+which aligns with the BertGGCN design (Cao et al. ICSE 2023). GatedGraphConv requires equal
+in/out dims so node features are projected before GGNN. Residual concat(h_gnn, h0) before
+pooling preserves original projected features alongside GGNN-refined features.
+
+**No statement head** — localization capability removed entirely (GGNN returns `(logit, None)`).
+
+```
+CPG nodes (773D pre-computed, frozen)
+    → input_proj: Linear(773, 256)                               [N, 256]
+    → GatedGraphConv(out=256, num_layers=6) → h                  [N, 256]
+    → Dropout
+    → global_mean_pool(h) → h_graph                             [B, 256]
+
+Full function text → live LM → CLS → cls                        [B, 768]
+
+    concat(h_graph, cls)                                         [B, 1024]
+    → func_head MLP(1024 → 256 → num_classes) → logit_func       [B, num_classes]
+
+    └── stmt_head: group nodes by source line
+              max-pool(h_line) → Linear(256,1) → s_max
+              mean-pool(h_line) → Linear(256,1) → s_mean
+              stmt_score = 0.8 * s_max + 0.6 * s_mean → stmt_scores [n_stmts]
+
+Loss = CE(logit_func, y, class_weight)
+     + mil_weight * MIL(stmt_scores, y, k)
+     + rank_loss_weight * RankingLoss(stmt_scores, flaw_line_mask)
+```
+
+**Differences from Arch3 (LM-GAT-CodeBERT):**
+| | Arch3 | Arch9 (LM-GGNN) |
+|--|-------|-----------------|
+| GNN backbone | GATv2Conv × 4 | GatedGraphConv × 6 |
+| Edge features | 7D one-hot, shapes attention | Not used (GGNN ignores edge_attr) |
+| GNN + LM fusion | concat(pool, cls) → single MLP | **same** |
+| Statement head | Binary MIL | **same** |
+| BatchNorm | Yes (after each GATv2) | No (GGNN gating handles normalisation) |
+| Node projection | None (GATv2 accepts 773D) | input_proj: 773D → 256D (GGNN requires in==out) |
+
+**Key design decisions:**
+- `input_proj` maps 773D → 256D before GGNN — GatedGraphConv requires `in_channels == out_channels`
+- `**kwargs` in `__init__` absorbs deprecated `alpha` from old checkpoint configs
+- No BatchNorm after GGNN — GRU gating inside GatedGraphConv provides normalisation
+
+**Results (20260429_203915, old implementation without stmt_head — Dataset v2):**
+
+| F1↑ | AUC-ROC↑ | IFA↓ | Top-1↑ | Effort@20%↓ | Recall@20%loc↑ |
+|---|---|---|---|---|---|
+| 0.3519 | 0.8053 | N/A | N/A | N/A | N/A |
+
+> Old run used interpolation fusion without stmt_head — needs retrain with corrected implementation.
+
+---
+
+## Architecture 10 — LM-GAT-DualFlow (Context-Preserving Sequential Router)
+
+**Status:** 🎯 Target
+**Config:** `configs/lmgat_dualflow/multiclass.yaml`
+**Model:** `src/gnn_vuln/models/lmgat_dualflow.py`
+
+Extends Arch7 v1 (sequential localization) by adding a second parallel pooling stream in Stage 2.
+Arch7's suspicion-weighted pool isolates the flaw but discards safe-context nodes carrying
+CWE-discriminating structural information. DualFlow restores this by concatenating a standard
+`global_mean_pool` embedding alongside the focal embedding before the classifier.
+
+```
+CPG nodes (773D pre-computed, frozen)
+CPG edges (7D one-hot)
+
+── Stage 1: Binary Localization (identical to Arch7 v1) ─────────────────────
+    → GATv2Conv × num_layers (heads=4, concat=False) → h_loc [N, 256]
+    → BatchNorm + ReLU + Dropout
+    → binary stmt head: sigmoid(0.8*max_head + 0.6*mean_head)
+    → s_i ∈ [0,1] per node                                          [N]
+
+── Stage 2: Dual-Flow Graph Encoding ─────────────────────────────────────────
+    x_aug = concat(x_frozen, s_i)                                   [N, 774]
+    → GATv2Conv × num_layers (heads=4, concat=False) → h_cls        [N, 256]
+    → BatchNorm + ReLU + Dropout
+
+    Flow A — focal_emb:   weighted_mean_pool(h_cls, s_i)            [B, 256]
+    Flow B — context_emb: global_mean_pool(h_cls)                   [B, 256]
+
+── Stage 3: Tri-Modal Fusion ─────────────────────────────────────────────────
+    Full function text → live UniXcoder → CLS → lm_emb              [B, 768]
+
+    concat(focal_emb, context_emb, lm_emb)                          [B, 1280]
+    → MLP(1280 → 512 → num_classes) → logit_func                    [B, num_classes]
+
+Loss = CE(logit_func, y, class_weight)
+     + mil_weight * MIL(stmt_scores_stage1, y, k)
+     + rank_loss_weight * RankingLoss(stmt_scores_stage1, flaw_line_mask)
+```
+
+**Design rationale vs Arch7 v1:**
+| | Arch7 v1 | Arch10 DualFlow |
+|--|----------|-----------------|
+| Stage 1 | GATv2 binary localization | **identical** |
+| Stage 2 GNN | GATv2(concat[x, s_i]) | **identical** |
+| Stage 2 pooling | focal only (weighted mean) | focal + context (both) |
+| Fusion input | [256 + 768] = 1024D | [256 + 256 + 768] = **1280D** |
+| func_head | MLP(1024 → 256 → C) | MLP(1280 → 512 → C) |
+| Localization loss | Stage 1 MIL + ranking | **identical** |
+
+**Why localization should be preserved:**
+Stage 1 and its MIL/ranking losses are unchanged — `s_i` gradient path is identical to Arch7 v1.
+Adding `context_emb` to Stage 3 input does not affect Stage 1 parameters.
+
+**Why F1 should improve over Arch7 v1:**
+`focal_emb` concentrates on high-suspicion nodes; for complex CWEs (race condition, missing auth)
+the classifier needs surrounding safe-context nodes to resolve the CWE category.
+`context_emb` provides the full CPG structural layout, giving the MLP all three signals:
+flaw shape (focal), code structure (context), semantic text (LM).
+
+**Results:** pending (needs cloud training run).

@@ -1,10 +1,11 @@
-# configs/lmggnn/multiclass.yaml — VulLMGNN faithful re-implementation (Cao et al., ICSE 2023)
+# configs/lmggnn/multiclass.yaml — Architecture 9: LM-GGNN
 #
-# GatedGraphConv × num_layers + live LM, fixed-alpha interpolation.
-# Paper uses alpha=0.1 (GNN auxiliary, LM dominant) and num_layers=6.
+# Arch3 (lmgat_codebert) with GATv2Conv replaced by GatedGraphConv × 6.
+# Fusion: concat(pool(h_gnn), lm_cls) → func_head (same as Arch3).
+# Statement head: binary per-line scorer + MIL loss (same as Arch3).
 #
-# Run:
-#   uv run train --config configs/lmggnn/multiclass.yaml
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/lmggnn/multiclass.yaml
 
 data:
   source: bigvul
@@ -14,20 +15,21 @@ data:
 
 model:
   architecture: lmggnn
-  pretrained_lm: microsoft/unixcoder-base    # unixcoder best across all runs; local .pt exists
+  pretrained_lm: microsoft/unixcoder-base
   func_lm: microsoft/unixcoder-base
   add_func_tokens: true
   hidden_dim: 256
-  num_layers: 6               # paper uses 6 GatedGraphConv steps
+  num_layers: 6
   dropout: 0.3
   num_classes: 11
-  alpha: 0.1                  # paper: 0.1 GNN + 0.9 LM
-  mil_weight: 0.0             # no statement head in VulLMGNN
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.1
 
 train:
   seed: 42
   epochs: 100
-  batch_size: 8                 # RTX 4060 8GB VRAM
+  batch_size: 4                 # RTX 4060 8GB VRAM — GatedGraphConv×6 + live UniXcoder OOMs at 8
   lr: 0.001
   lm_lr: 0.00001
   warmup_ratio: 0.1

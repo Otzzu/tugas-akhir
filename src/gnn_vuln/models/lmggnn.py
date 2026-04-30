@@ -1,22 +1,12 @@
 """
-lmggnn.py — VulLMGNN faithful re-implementation (Cao et al., ICSE 2023)
+lmggnn.py — Architecture 9: LM-GAT-CodeBERT with GATv2 → GatedGraphConv
 
-Exact BertGGCN architecture adapted for PyG batch format:
+Arch3 (lmgat_codebert) with GATv2Conv replaced by GatedGraphConv (GGNN).
+GatedGraphConv requires in_channels == out_channels, so node features are
+projected to hidden_dim via input_proj before GGNN.
 
-    CPG nodes (773D pre-computed)
-        → GatedGraphConv × num_layers → h [N, hidden_dim]
-        → concat(h, x_original) per node [N, hidden_dim + in_channels]
-        → global_mean_pool → [B, hidden_dim + in_channels]
-        → MLP → gnn_logit [B, num_classes]
-
-    Full function text → live CodeBERT → CLS → MLP → lm_logit [B, num_classes]
-
-    Final: alpha * gnn_logit + (1 - alpha) * lm_logit
-           (paper: alpha=0.1 — GNN auxiliary, LM dominant)
-
-Adaptation note: paper uses Conv1d pooling over per-node features.
-We use global_mean_pool (standard PyG) which is architecturally equivalent
-for variable-size graphs in batched format.
+Fusion: concat(pool(h_gnn), lm_cls) → single func_head (same as Arch3).
+Statement head: binary per-line scorer (same as Arch3).
 """
 
 from __future__ import annotations
@@ -29,11 +19,18 @@ from transformers import AutoModel
 
 NODE_FEAT_DIM = 773
 _LM_DIM = 768
+_ALPHA_MAX = 0.8
+_ALPHA_MEAN = 0.6
 
 
 class LMGNNVulnDetector(nn.Module):
     """
-    VulLMGNN BertGGCN: GatedGraphConv + concat(h, x_orig) + live LM interpolation.
+    GatedGraphConv vulnerability detector with pre-computed node embeddings
+    and a live fine-tuned LM branch for full-function context.
+
+    Arch3 (lmgat_codebert) equivalent with GATv2Conv replaced by
+    GatedGraphConv. input_proj maps 773D → hidden_dim before GGNN since
+    GatedGraphConv requires in_channels == out_channels.
 
     Parameters
     ----------
@@ -44,15 +41,13 @@ class LMGNNVulnDetector(nn.Module):
     in_channels : int
         Node feature dimension (773D).
     hidden_dim : int
-        GatedGraphConv output dimension (paper: 200D).
+        GatedGraphConv output dimension.
     num_layers : int
-        GatedGraphConv steps (paper: 6).
+        GatedGraphConv steps.
     dropout : float
         Dropout probability.
     num_classes : int
         Output classes.
-    alpha : float
-        GNN interpolation weight. Paper uses 0.1 (GNN auxiliary, LM dominant).
     """
 
     def __init__(
@@ -64,39 +59,69 @@ class LMGNNVulnDetector(nn.Module):
         num_layers: int = 6,
         dropout: float = 0.3,
         num_classes: int = 11,
-        alpha: float = 0.1,
+        **kwargs,  # absorb unused config keys (e.g. alpha from old config)
     ):
         super().__init__()
         self.dropout = dropout
-        self.alpha = alpha
         self.num_classes = num_classes
 
         # Project node features to hidden_dim (GatedGraphConv requires in==out)
         self.input_proj = nn.Linear(in_channels, hidden_dim)
 
-        # GatedGraphConv (paper-faithful, num_layers steps)
+        # GatedGraphConv backbone
         self.ggnn = GatedGraphConv(out_channels=hidden_dim, num_layers=num_layers)
-
-        # GNN head: concat(h_gnn, x_projected) → num_classes
-        # Mirrors paper's concat(ggnn_out, original_emb) before classification
-        self.gnn_head = nn.Sequential(
-            nn.Linear(hidden_dim * 2, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, num_classes),
-        )
 
         # Live LM branch (fine-tuned)
         _func_lm = func_lm if func_lm else pretrained_lm
         self.codebert = AutoModel.from_pretrained(_func_lm)
 
-        # LM head: CLS → num_classes
-        self.lm_head = nn.Sequential(
-            nn.Linear(_LM_DIM, hidden_dim),
+        # Function head: concat(GNN pooled, LM CLS) → num_classes
+        self.func_head = nn.Sequential(
+            nn.Linear(hidden_dim + _LM_DIM, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, num_classes),
         )
+
+        # Statement head: binary per-line suspicious score
+        self.stmt_max_head = nn.Linear(hidden_dim, 1)
+        self.stmt_mean_head = nn.Linear(hidden_dim, 1)
+
+    def _statement_scores(
+        self,
+        h: torch.Tensor,
+        batch: torch.Tensor,
+        node_line: torch.Tensor,
+    ) -> list[torch.Tensor]:
+        device = h.device
+        batch_size = int(batch.max().item()) + 1
+        result: list[torch.Tensor] = []
+
+        for b in range(batch_size):
+            mask = batch == b
+            h_b = h[mask]
+            lines_b = node_line[mask]
+            valid = lines_b >= 0
+            if not valid.any():
+                result.append(torch.zeros(0, device=device))
+                continue
+            h_b = h_b[valid]
+            lines_b = lines_b[valid]
+            unique_lines = lines_b.unique(sorted=True)
+            scores: list[torch.Tensor] = []
+            for line in unique_lines:
+                node_mask = lines_b == line
+                h_line = h_b[node_mask]
+                h_max = h_line.max(dim=0).values
+                h_mean = h_line.mean(dim=0)
+                s = (
+                    _ALPHA_MAX  * self.stmt_max_head(h_max).squeeze(-1)
+                    + _ALPHA_MEAN * self.stmt_mean_head(h_mean).squeeze(-1)
+                )
+                scores.append(s)
+            result.append(torch.stack(scores))
+
+        return result
 
     def forward(
         self,
@@ -104,21 +129,16 @@ class LMGNNVulnDetector(nn.Module):
         edge_index: torch.Tensor,
         batch: torch.Tensor,
         node_line: torch.Tensor | None = None,
-        edge_attr: torch.Tensor | None = None,
+        edge_attr: torch.Tensor | None = None,  # unused: GGNN ignores edge_attr
         func_input_ids: torch.Tensor | None = None,
         func_attention_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, None]:
+    ) -> tuple[torch.Tensor, list[torch.Tensor] | None]:
         B = int(batch.max().item()) + 1
 
         # ── GNN branch ───────────────────────────────────────────────────────
-        h0 = self.input_proj(x)                          # [N, hidden_dim]
-        h = self.ggnn(h0, edge_index)                    # [N, hidden_dim]
+        h = self.ggnn(self.input_proj(x), edge_index)    # [N, hidden_dim]
         h = F.dropout(h, p=self.dropout, training=self.training)
-
-        # Concat GNN output with projected input (paper: concat ggnn_out + orig_emb)
-        h_cat = torch.cat([h, h0], dim=-1)               # [N, hidden_dim * 2]
-        h_cat = global_mean_pool(h_cat, batch)            # [B, hidden_dim * 2]
-        logit_gnn = self.gnn_head(h_cat)                  # [B, num_classes]
+        h_graph = global_mean_pool(h, batch)              # [B, hidden_dim]
 
         # ── LM branch ────────────────────────────────────────────────────────
         if func_input_ids is not None:
@@ -126,12 +146,17 @@ class LMGNNVulnDetector(nn.Module):
                 input_ids=func_input_ids,
                 attention_mask=func_attention_mask,
             )
-            lm_emb = lm_out.last_hidden_state[:, 0, :]   # CLS [B, 768]
+            cls = lm_out.last_hidden_state[:, 0, :]      # CLS [B, 768]
         else:
-            lm_emb = torch.zeros(B, _LM_DIM, device=x.device)
-        logit_lm = self.lm_head(lm_emb)                  # [B, num_classes]
+            cls = torch.zeros(B, _LM_DIM, device=x.device)
 
-        # ── Fixed-alpha interpolation (paper: 0.1 GNN + 0.9 LM) ─────────────
-        logit = self.alpha * logit_gnn + (1.0 - self.alpha) * logit_lm
+        # ── Function head ─────────────────────────────────────────────────────
+        logit_func = self.func_head(torch.cat([h_graph, cls], dim=-1))
 
-        return logit, None
+        # ── Statement scores for MIL loss ────────────────────────────────────
+        stmt_scores = (
+            self._statement_scores(h, batch, node_line)
+            if node_line is not None else None
+        )
+
+        return logit_func, stmt_scores

@@ -1,6 +1,6 @@
 # Results Comparison — All Experiments
 
-Generated: 2026-04-29 (updated 2026-04-29 with cloud UniXcoder runs)
+Generated: 2026-04-29 (updated 2026-04-30 with Arch9 corrected impl results)
 
 Metric direction: F1↑ AUC-ROC↑ IFA↓ Top-1↑ Effort@20%↓ Recall@20%loc↑
 
@@ -109,6 +109,40 @@ Two distinct datasets were used across experiments. Do NOT treat old vs new resu
 
 ---
 
+### Arch7 — LM-GAT-Seq (Stage 1 GATv2 binary localization → Stage 2 GATv2 + live LM classification)
+
+| Folder | Description | Dataset | F1↑ | AUC-ROC↑ | IFA↓ | Top-1↑ | Effort@20%↓ | Recall@20%loc↑ |
+|---|---|---|---|---|---|---|---|---|
+| **20260429_121124_lmgat_seq_multiclass** | **Arch7 v1, UniXcoder live, original config (stage2=raw, mil=0.3, rank=0.1, lr=0.001)** | ⚠️ v2 | **0.4554** | **0.8610** | **7.34** | **0.356** | **0.0855** | **0.387** |
+| 20260429_135046_lmgat_seq_multiclass | Arch7 v2, UniXcoder live, tuned config (stage2=loc, mil=0.1, rank=0.0, lr=0.0005, patience=25) | ⚠️ v2 | 0.3857 | 0.8018 | 12.13 | 0.182 | 0.1177 | 0.294 |
+
+> **Tuning degraded performance:** v1 (original) beats v2 (tuned) on all metrics. stage2=loc + lower lr + no rank loss produced worse IFA and Top-1 — the Stage 2 receiving raw node features + s_i gradient signal was more useful than the cleaner-but-detached loc features.
+> **Best localization among all v2 models:** Arch7 v1 IFA=7.34 beats Arch3 v4 IFA=7.72; Top-1=0.356 close to Arch3 v4's 0.366.
+
+---
+
+### Arch9 — LM-GGNN (GATv2 → GatedGraphConv, fixed-alpha interpolation, no stmt head)
+
+| Folder | Description | Dataset | F1↑ | AUC-ROC↑ | IFA↓ | Top-1↑ | Effort@20%↓ | Recall@20%loc↑ |
+|---|---|---|---|---|---|---|---|---|
+| 20260429_203915_lmggnn_multiclass | Arch9 **old impl** (interpolation, no stmt_head), UniXcoder live | ⚠️ v2 | 0.3519 | 0.8053 | N/A | N/A | N/A | N/A |
+| **20260430_004221_lmggnn_multiclass** | **Arch9 corrected impl** (concat + stmt_head + MIL), UniXcoder live | ⚠️ v2 | **0.4080** | **0.8073** | **8.29** | **0.244** | **0.1378** | **0.292** |
+
+> Old impl (203915): alpha interpolation, no stmt_head — classification only.
+> Corrected impl (004221): concat fusion + binary stmt_head + MIL — localization recovered. F1 improved 0.352→0.408.
+
+---
+
+### Arch8 — LM-GAT-WAVES-Seq (Stage 1 Transformer localization → Stage 2 GATv2 + live LM classification)
+
+| Folder | Description | Dataset | F1↑ | AUC-ROC↑ | IFA↓ | Top-1↑ | Effort@20%↓ | Recall@20%loc↑ |
+|---|---|---|---|---|---|---|---|---|
+| 20260429_125637_lmgat_waves_seq_multiclass | Arch8 v1, UniXcoder live, stmt_transformer_layers=2 | ⚠️ v2 | 0.4305 | 0.8357 | 13.72 | 0.096 | 0.1394 | 0.245 |
+
+> **Transformer localization fails:** Arch8 localization (IFA=13.72, Top-1=0.096) is worst among all v2 architectures — serial transformer over CPG statements cannot replace GATv2 attention for localization. Classification F1=0.4305 is reasonable but localization is broken.
+
+---
+
 ## Full Multiclass Comparison (sorted by F1)
 
 > ⚠️ Rows marked v2 used a larger dataset (all.parquet) — not directly comparable to v1 rows.
@@ -116,18 +150,23 @@ Two distinct datasets were used across experiments. Do NOT treat old vs new resu
 | Rank | Model | Folder | Dataset | F1↑ | AUC-ROC↑ | IFA↓ | Top-1↑ | Effort@20%↓ | Recall@20%loc↑ |
 |---|---|---|---|---|---|---|---|---|---|
 | 1 | **Arch4 v3** UniXcoder live | 20260429_095918_lmgat_mcs | ⚠️ v2 | **0.5791** | **0.8977** | 12.74 | 0.221 | 0.110 | 0.308 |
-| 2 | **Arch3 v4** UniXcoder live | 20260429_091918_lmgat_codebert | ⚠️ v2 | **0.4115** | **0.8562** | 7.72 | 0.366 | 0.103 | 0.340 |
-| 3 | Arch4 v2 GraphCodeBERT live | 20260427_103516_lmgat_mcs | v1 | 0.272 | 0.761 | 12.76 | 0.225 | 0.149 | 0.268 |
-| 4 | Arch3 v3 GraphCodeBERT live | 20260427_075727_lmgat_codebert | v1 | 0.259 | 0.738 | **6.12** | **0.398** | 0.106 | **0.372** |
-| 5 | Arch2 v2 CodeBERT frozen | 20260426_181253_lmgat | v1 | 0.224 | 0.726 | 8.44 | 0.322 | **0.101** | 0.314 |
-| 6 | Arch1 LM-GCN CodeBERT frozen | 20260426_002451_lmgcn | v1 | 0.209 | 0.742 | 8.65 | 0.272 | 0.162 | 0.232 |
-| 7 | Arch4 v1 CodeBERT live | 20260427_053340_lmgat_mcs | v1 | 0.207 | 0.721 | 14.23 | 0.173 | 0.291 | 0.132 |
-| 8 | Arch3 v1 CodeBERT live | 20260427_012529_lmgat_codebert | v1 | 0.204 | 0.696 | 10.73 | 0.235 | 0.185 | 0.217 |
-| 9 | Arch3 v2 CodeBERT live | 20260427_062921_lmgat_codebert | v1 | 0.193 | 0.686 | 9.20 | 0.315 | 0.142 | 0.294 |
-| 10 | Arch2 v1 CodeBERT frozen | 20260426_144901_lmgat | v1 | 0.172 | 0.711 | 8.62 | 0.329 | 0.121 | 0.297 |
-| 11 | Arch6 GAT-Interp CodeBERT live | 20260427_195648_lmgat_interp | v1 | 0.160 | 0.704 | 8.87 | 0.318 | **0.101** | 0.310 |
-| 12 | Arch2 v3 GraphCodeBERT frozen | 20260427_091241_lmgat | v1 | 0.135 | 0.696 | 7.63 | 0.315 | 0.127 | 0.283 |
-| 13 | Arch5 LM-GIN CodeBERT frozen | 20260427_175127_lmgin | v1 | 0.107 | 0.645 | 8.40 | 0.339 | 0.139 | 0.278 |
+| 2 | **Arch7 v1** UniXcoder live (original) | 20260429_121124_lmgat_seq | ⚠️ v2 | **0.4554** | **0.8610** | **7.34** | 0.356 | **0.0855** | **0.387** |
+| 3 | **Arch8 v1** UniXcoder live | 20260429_125637_lmgat_waves_seq | ⚠️ v2 | 0.4305 | 0.8357 | 13.72 | 0.096 | 0.1394 | 0.245 |
+| 4 | **Arch3 v4** UniXcoder live | 20260429_091918_lmgat_codebert | ⚠️ v2 | 0.4115 | 0.8562 | 7.72 | **0.366** | 0.103 | 0.340 |
+| 5 | **Arch9** LM-GGNN corrected UniXcoder live | 20260430_004221_lmggnn | ⚠️ v2 | 0.4080 | 0.8073 | 8.29 | 0.244 | 0.1378 | 0.292 |
+| 6 | **Arch7 v2** UniXcoder live (tuned) | 20260429_135046_lmgat_seq | ⚠️ v2 | 0.3857 | 0.8018 | 12.13 | 0.182 | 0.1177 | 0.294 |
+| 7 | **Arch9** LM-GGNN old impl (no stmt_head) | 20260429_203915_lmggnn | ⚠️ v2 | 0.3519 | 0.8053 | N/A | N/A | N/A | N/A |
+| 8 | Arch4 v2 GraphCodeBERT live | 20260427_103516_lmgat_mcs | v1 | 0.272 | 0.761 | 12.76 | 0.225 | 0.149 | 0.268 |
+| 9 | Arch3 v3 GraphCodeBERT live | 20260427_075727_lmgat_codebert | v1 | 0.259 | 0.738 | **6.12** | **0.398** | 0.106 | **0.372** |
+| 10 | Arch2 v2 CodeBERT frozen | 20260426_181253_lmgat | v1 | 0.224 | 0.726 | 8.44 | 0.322 | **0.101** | 0.314 |
+| 11 | Arch1 LM-GCN CodeBERT frozen | 20260426_002451_lmgcn | v1 | 0.209 | 0.742 | 8.65 | 0.272 | 0.162 | 0.232 |
+| 12 | Arch4 v1 CodeBERT live | 20260427_053340_lmgat_mcs | v1 | 0.207 | 0.721 | 14.23 | 0.173 | 0.291 | 0.132 |
+| 13 | Arch3 v1 CodeBERT live | 20260427_012529_lmgat_codebert | v1 | 0.204 | 0.696 | 10.73 | 0.235 | 0.185 | 0.217 |
+| 14 | Arch3 v2 CodeBERT live | 20260427_062921_lmgat_codebert | v1 | 0.193 | 0.686 | 9.20 | 0.315 | 0.142 | 0.294 |
+| 15 | Arch2 v1 CodeBERT frozen | 20260426_144901_lmgat | v1 | 0.172 | 0.711 | 8.62 | 0.329 | 0.121 | 0.297 |
+| 16 | Arch6 GAT-Interp CodeBERT live | 20260427_195648_lmgat_interp | v1 | 0.160 | 0.704 | 8.87 | 0.318 | **0.101** | 0.310 |
+| 17 | Arch2 v3 GraphCodeBERT frozen | 20260427_091241_lmgat | v1 | 0.135 | 0.696 | 7.63 | 0.315 | 0.127 | 0.283 |
+| 18 | Arch5 LM-GIN CodeBERT frozen | 20260427_175127_lmgin | v1 | 0.107 | 0.645 | 8.40 | 0.339 | 0.139 | 0.278 |
 
 ---
 
@@ -150,14 +189,20 @@ Two distinct datasets were used across experiments. Do NOT treat old vs new resu
 10. **Arch6 interpolation** best Effort@20% (0.101) but lower F1 — competitive for ranking efficiency
 11. **Arch4 localisation weakness is NOT fixed by better LM** — IFA stays ~12.7 regardless of CodeBERT/GraphCodeBERT/UniXcoder; MCS pooling is the bottleneck
 
+### Arch7/Arch8 Seq Architecture Findings (Dataset v2)
+12. **Arch7 v1 best F1+localization trade-off among v2 models** — F1=0.4554, IFA=7.34, Effort@20%=0.0855 (best Effort across all v2 runs); sequential GATv2 loc → classification is effective
+13. **Tuning Arch7 hurt performance** — stage2=loc + lower lr + no rank loss → F1 drops 0.455→0.386, IFA degrades 7.34→12.13; raw s_i gradient during Stage 2 is useful, not harmful
+14. **Arch8 (WAVES-style transformer) localization broken** — serial transformer over CPG statements: Top-1=0.096 (worst of all models), IFA=13.72; transformer cannot replace GATv2 attention on CPG structure for localization
+15. **Arch9 (LM-GGNN) corrected impl** — with stmt_head + concat fusion: F1=0.4080, IFA=8.29; old impl (interpolation, no stmt_head): F1=0.3519, no localization. Still underperforms GATv2+LM (Arch3 v4: F1=0.4115, IFA=7.72) — GATv2 attention on CPG edge types more effective than GGNN uniform message passing
+
 ---
 
 ## Missing / Pending Results
 
 - Arch3/4 binary GraphCodeBERT variants — not yet trained
-- Arch7 (lmgat_seq) UniXcoder — training in progress on cloud
-- Arch8 (lmgat_waves_seq) UniXcoder — training in progress on cloud
-- VulLMGNN / lmggnn UniXcoder — training locally
+- Arch9 (lmggnn) run 20260429_202324 — not yet evaluated (older/incomplete run, may skip)
+- Arch7 v1 config re-run on fresh seed — confirm original config is indeed best (v1 was stopped at epoch 23; result may vary with more epochs)
+- Arch3/4 retrain on Dataset v2 with CodeBERT/GraphCodeBERT — needed for fair LM comparison vs UniXcoder
 
 ---
 

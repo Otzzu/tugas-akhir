@@ -36,6 +36,7 @@ from gnn_vuln.models.lmgat_interp import LMGATInterpVulnDetector
 from gnn_vuln.models.lmgat_seq import LMGATSeqVulnDetector
 from gnn_vuln.models.lmggnn import LMGNNVulnDetector
 from gnn_vuln.models.lmgat_waves_seq import LMGATWavesSeqVulnDetector
+from gnn_vuln.models.lmgat_dualflow import LMGATDualFlowVulnDetector
 from gnn_vuln.utils import (
     set_seed, setup_logging, get_device,
     save_checkpoint, load_resume_checkpoint, save_resume_checkpoint,
@@ -153,9 +154,22 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             stmt_transformer_layers=getattr(cfg.model, "stmt_transformer_layers", 2),
             stmt_transformer_heads=getattr(cfg.model, "stmt_transformer_heads", 4),
         )
+    if arch == "lmgat_dualflow":
+        return LMGATDualFlowVulnDetector(
+            pretrained_lm=pretrained_lm,
+            func_lm=func_lm,
+            in_channels=in_channels,
+            hidden_dim=cfg.model.hidden_dim,
+            num_layers=cfg.model.num_layers,
+            dropout=cfg.model.dropout,
+            num_classes=cfg.model.num_classes,
+            num_heads=cfg.model.heads,
+            edge_dim=getattr(cfg.model, "edge_dim", 7),
+        )
     raise ValueError(
         f"Unknown architecture: {arch!r}. "
-        "Available: lmgcn, lmgat, lmgat_codebert, lmgat_mcs, lmgin, lmgat_interp, lmgat_seq, lmgat_waves_seq"
+        "Available: lmgcn, lmgat, lmgat_codebert, lmgat_mcs, lmgin, lmgat_interp, "
+        "lmgat_seq, lmgat_waves_seq, lmggnn, lmgat_dualflow"
     )
 
 
@@ -589,6 +603,10 @@ def main():
         pretrained_lm=pretrained_lm,
         add_func_tokens=add_func_tokens,
         top_cwe=getattr(cfg.data, "top_cwe", 0),
+        cwe_list=getattr(cfg.data, "cwe_list", None),
+        cwe_groups=getattr(cfg.data, "cwe_groups", None),
+        max_per_class=getattr(cfg.data, "max_per_class", 0),
+        resample_seed=getattr(cfg.data, "resample_seed", 42),
     )
     dataset = CodeBERTGraphDataset(
         source=getattr(cfg.data, "source", "bigvul"), **dataset_kwargs
