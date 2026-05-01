@@ -1,4 +1,4 @@
-# configs/lmgat_hcdfgat/multiclass.yaml — HC-DFGAT (Arch11 Defense-Safe)
+# configs/lmgat_hcdfgat/multiclass.yaml — HC-DFGAT (Arch12) best config
 #
 # Architecture: Dual-flow GATv2 + live UniXcoder + 3 MTL heads
 #   Stage 1: localization GNN → suspicion s_i per node (stmt MIL / ranking)
@@ -7,13 +7,14 @@
 #   Z_combined = concat(focal, context, lm)  [B, 1280]
 #   Heads: binary_head, group_head (coarse), cwe_head (fine, conditioned on group)
 #
-# Losses:
-#   LIVABLE_CE(cwe)
-#   + group_loss_weight  * CE(group)
-#   + binary_loss_weight * CE(binary)
-#   + mil_weight         * MIL(stmt_scores)
-#   + rank_loss_weight   * RankLoss(stmt_scores)    [requires flaw_line_mask]
-#   + supcon_weight      * HierarchicalSupCon(Z_combined)
+# Best settings applied:
+#   - LIVABLE epoch-adaptive class weights (epoch-adaptive → stable class balance)
+#   - early_stop_metric=f1  (Arch3 v5: loss-stop was main bottleneck; +0.26 F1 gain)
+#   - patience=25           (match Arch3 v5)
+#   - rank_loss_weight=0.1  (BigVul has flaw_line_mask → enable ranking supervision)
+#   - mil_weight=0.5        (Arch3 v5 best)
+#   - focal_loss_gamma=2.0  (imbalanced multiclass)
+#   - group_loss_weight=0.3 + supcon_weight=0.1 (HC-DFGAT coarse→fine routing)
 #
 # Run (cloud, Linux):
 #   PYTHONPATH=src python -m gnn_vuln.train --config configs/lmgat_hcdfgat/multiclass.yaml
@@ -35,15 +36,15 @@ model:
   heads: 4
   edge_dim: 7
   num_classes: 11        # fine-grained: top-10 CWE + benign
-  num_groups: 16         # coarse: 15 CWE groups + benign
-  mil_weight: 0.3
+  num_groups: 16         # coarse: 15 CWE groups + benign (GROUP_VOCAB has 16 entries)
+  mil_weight: 0.5        # increased from 0.3 (Arch3 v5 best)
   mil_k: 3
-  rank_loss_weight: 0.0  # set >0 only when flaw_line_mask is available (BigVul/MegaVul)
+  rank_loss_weight: 0.1  # enabled: BigVul has flaw_line_mask
   group_loss_weight: 0.3
   binary_loss_weight: 0.2
-  supcon_weight: 0.1        # HierarchicalSupConLoss on Z_combined
+  supcon_weight: 0.1
   supcon_temperature: 0.07
-  supcon_alpha: 0.5         # soft-positive weight for same-group, diff-CWE pairs
+  supcon_alpha: 0.5
 
 train:
   seed: 42
@@ -54,8 +55,9 @@ train:
   warmup_ratio: 0.1
   grad_clip: 1.0
   weight_decay: 0.0001
-  patience: 20
+  patience: 25
+  early_stop_metric: f1
   use_class_weights: true
   focal_loss_gamma: 2.0
-  livable_loss: true      # LIVABLE epoch-adaptive class weights
+  livable_loss: true
   device: cuda
