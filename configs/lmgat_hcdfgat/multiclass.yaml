@@ -3,9 +3,10 @@
 # Architecture: Dual-flow GATv2 + live UniXcoder + 3 MTL heads
 #   Stage 1: localization GNN → suspicion s_i per node (stmt MIL / ranking)
 #   Stage 2: classification GNN(x + s_i) → focal_emb + context_emb
-#   Stage 3: UniXcoder CLS → lm_emb
+#   Stage 3: UniXcoder CLS → lm_emb  (func_lm; pretrained_lm is fallback only)
 #   Z_combined = concat(focal, context, lm)  [B, 1280]
-#   Heads: binary_head, group_head (coarse), cwe_head (fine, conditioned on group)
+#   Heads: binary_head, group_head (coarse, 16 classes), cwe_head (fine, 11 classes)
+#   group_id: 7 active groups in dataset (0,1,2,3,4,6,9); num_groups=16 matches GROUP_VOCAB
 #
 # Best settings applied:
 #   - LIVABLE epoch-adaptive class weights (epoch-adaptive → stable class balance)
@@ -27,7 +28,7 @@ data:
 
 model:
   architecture: lmgat_hcdfgat
-  pretrained_lm: microsoft/codebert-base
+  pretrained_lm: microsoft/unixcoder-base  # fallback only; func_lm overrides
   func_lm: microsoft/unixcoder-base
   add_func_tokens: true
   hidden_dim: 256
@@ -37,6 +38,7 @@ model:
   edge_dim: 7
   num_classes: 11        # fine-grained: top-10 CWE + benign
   num_groups: 16         # coarse: 15 CWE groups + benign (GROUP_VOCAB has 16 entries)
+  use_group_cond: true   # CWE head conditioned on group_probs; group_id available in dataset
   mil_weight: 0.5        # increased from 0.3 (Arch3 v5 best)
   mil_k: 3
   rank_loss_weight: 0.1  # enabled: BigVul has flaw_line_mask
