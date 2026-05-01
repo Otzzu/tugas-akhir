@@ -73,7 +73,7 @@ class LMGNNVulnDetector(nn.Module):
 
         # Live LM branch (fine-tuned)
         _func_lm = func_lm if func_lm else pretrained_lm
-        self.codebert = AutoModel.from_pretrained(_func_lm)
+        self.codebert = AutoModel.from_pretrained(_func_lm, use_safetensors=True)
 
         # Function head: concat(GNN pooled, LM CLS) → num_classes
         self.func_head = nn.Sequential(

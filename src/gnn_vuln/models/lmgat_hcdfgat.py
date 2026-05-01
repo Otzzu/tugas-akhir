@@ -137,7 +137,7 @@ class LMGATHCDFGATVulnDetector(nn.Module):
 
         # ── Stage 3: Live LM branch ───────────────────────────────────────────
         _func_lm = func_lm if func_lm else pretrained_lm
-        self.codebert = AutoModel.from_pretrained(_func_lm)
+        self.codebert = AutoModel.from_pretrained(_func_lm, use_safetensors=True)
 
         # ── MTL heads ────────────────────────────────────────────────────────
         fused_dim = hidden_dim * 2 + _LM_DIM  # 256 + 256 + 768 = 1280

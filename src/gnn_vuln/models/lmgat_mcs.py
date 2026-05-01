@@ -98,7 +98,7 @@ class LMGATMCSVulnDetector(nn.Module):
 
         # ── Live fine-tuned LM for full-function context ─────────────────────
         _func_lm = func_lm if func_lm else pretrained_lm
-        self.codebert = AutoModel.from_pretrained(_func_lm)
+        self.codebert = AutoModel.from_pretrained(_func_lm, use_safetensors=True)
 
         # ── Shared GATv2 encoder ─────────────────────────────────────────────
         self.convs = nn.ModuleList()

@@ -120,7 +120,7 @@ class LMGATWavesSeqVulnDetector(nn.Module):
 
         # ── Stage 2 LM branch (VulLMGNN-style, live fine-tuned) ──────────────
         _func_lm = func_lm if func_lm else pretrained_lm
-        self.codebert = AutoModel.from_pretrained(_func_lm)
+        self.codebert = AutoModel.from_pretrained(_func_lm, use_safetensors=True)
 
         # ── Stage 2 function head ─────────────────────────────────────────────
         self.func_head = nn.Sequential(

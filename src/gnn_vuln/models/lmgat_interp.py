@@ -77,7 +77,7 @@ class LMGATInterpVulnDetector(nn.Module):
 
         # ── Live LM branch ──────────────────────────────────────────────────
         _func_lm = func_lm if func_lm else pretrained_lm
-        self.codebert = AutoModel.from_pretrained(_func_lm)
+        self.codebert = AutoModel.from_pretrained(_func_lm, use_safetensors=True)
         self.lm_head = nn.Sequential(
             nn.Linear(_CODEBERT_DIM, hidden_dim),
             nn.ReLU(),
