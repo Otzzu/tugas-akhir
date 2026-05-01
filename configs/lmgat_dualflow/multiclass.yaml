@@ -2,10 +2,9 @@
 #
 # Stage 1: GATv2 binary localization → s_i  (Arch7 v1 engine)
 # Stage 2: GATv2(x + s_i) → h_cls → focal_emb (suspicion-weighted) + context_emb (mean)
-# Stage 3: concat(focal, context, lm_cls) → CWE head
+# Stage 3: concat(focal, context, lm_cls) [1280D] → CWE head
 #
-# Hypothesis: Arch7 v1 drops F1 because suspicion-weighted pool discards safe-context nodes.
-# DualFlow restores context_emb alongside focal_emb so classifier sees full structural layout.
+# Tuned for RTX 4090 24GB.
 #
 # Run (cloud, Linux):
 #   PYTHONPATH=src python -m gnn_vuln.train --config configs/lmgat_dualflow/multiclass.yaml
@@ -29,18 +28,19 @@ model:
   num_classes: 11
   mil_weight: 0.3               # binary BCE MIL on stage-1 stmt scores
   mil_k: 3
-  rank_loss_weight: 0.1         # ranking loss on stage-1 stmt scores
+  rank_loss_weight: 0.1         # pairwise ranking loss — requires flaw_line_mask (BigVul/MegaVul only)
 
 train:
   seed: 42
   epochs: 100
-  batch_size: 6                 # two GATv2 stacks + live LM; 1280D fusion slightly heavier than Arch7
+  batch_size: 12                # RTX 4090 24GB: two GATv2 stacks + UniXcoder; reduce to 8 if OOM
   lr: 0.001
-  lm_lr: 0.00001
+  lm_lr: 0.00001                # AdamW separate LR for UniXcoder branch
   warmup_ratio: 0.1
   grad_clip: 1.0
   weight_decay: 0.0001
-  patience: 20
+  patience: 25
   use_class_weights: true
   focal_loss_gamma: 2.0
+  livable_loss: false           # set true to enable LIVABLE epoch-adaptive class weights
   device: cuda

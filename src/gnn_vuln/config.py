@@ -96,6 +96,7 @@ class TrainConfig:
     device: str = "cpu"         # set to "cuda" if GPU available
     use_class_weights: bool = True  # inverse-frequency weighting for imbalanced classes
     focal_loss_gamma: float = 0.0  # focal loss gamma; 0 = standard CE, 2.0 recommended for imbalanced
+    livable_loss: bool = False      # LIVABLE epoch-adaptive weights (arXiv:2306.06935); requires use_class_weights=true
 
 
 @dataclass

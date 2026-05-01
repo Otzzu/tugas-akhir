@@ -37,6 +37,9 @@ from gnn_vuln.models.lmgat_seq import LMGATSeqVulnDetector
 from gnn_vuln.models.lmggnn import LMGNNVulnDetector
 from gnn_vuln.models.lmgat_waves_seq import LMGATWavesSeqVulnDetector
 from gnn_vuln.models.lmgat_dualflow import LMGATDualFlowVulnDetector
+from gnn_vuln.models.lmgat_codebert_mtl import LMGATCodeBERTMTLVulnDetector
+from gnn_vuln.models.lmgat_hcdfgat import LMGATHCDFGATVulnDetector
+from gnn_vuln.losses import HierarchicalSupConLoss
 from gnn_vuln.utils import (
     set_seed, setup_logging, get_device,
     save_checkpoint, load_resume_checkpoint, save_resume_checkpoint,
@@ -166,6 +169,34 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             num_heads=cfg.model.heads,
             edge_dim=getattr(cfg.model, "edge_dim", 7),
         )
+    if arch == "lmgat_codebert_mtl":
+        return LMGATCodeBERTMTLVulnDetector(
+            pretrained_lm=pretrained_lm,
+            func_lm=func_lm,
+            in_channels=in_channels,
+            hidden_dim=cfg.model.hidden_dim,
+            num_layers=cfg.model.num_layers,
+            dropout=cfg.model.dropout,
+            num_classes=cfg.model.num_classes,
+            num_groups=getattr(cfg.model, "num_groups", 16),
+            num_heads=cfg.model.heads,
+            edge_dim=getattr(cfg.model, "edge_dim", 7),
+            use_group_cond=getattr(cfg.model, "use_group_cond", True),
+        )
+    if arch == "lmgat_hcdfgat":
+        return LMGATHCDFGATVulnDetector(
+            pretrained_lm=pretrained_lm,
+            func_lm=func_lm,
+            in_channels=in_channels,
+            hidden_dim=cfg.model.hidden_dim,
+            num_layers=cfg.model.num_layers,
+            dropout=cfg.model.dropout,
+            num_classes=cfg.model.num_classes,
+            num_groups=getattr(cfg.model, "num_groups", 16),
+            num_heads=cfg.model.heads,
+            edge_dim=getattr(cfg.model, "edge_dim", 7),
+            use_group_cond=getattr(cfg.model, "use_group_cond", True),
+        )
     raise ValueError(
         f"Unknown architecture: {arch!r}. "
         "Available: lmgcn, lmgat, lmgat_codebert, lmgat_mcs, lmgin, lmgat_interp, "
@@ -192,7 +223,7 @@ def build_optimizer_and_scheduler(
                                      after validation.
     """
     arch = cfg.model.architecture.lower()
-    is_ft_arch = arch in ("lmgat_codebert", "lmgat_mcs", "lmgat_seq", "lmgat_waves_seq", "lmggnn")
+    is_ft_arch = arch in ("lmgat_codebert", "lmgat_mcs", "lmgat_seq", "lmgat_waves_seq", "lmggnn", "lmgat_codebert_mtl", "lmgat_dualflow", "lmgat_hcdfgat")
 
     if is_ft_arch:
         lm_lr = getattr(cfg.train, "lm_lr", 2e-5)
@@ -247,6 +278,27 @@ def focal_loss(
     # p_t = probability assigned to the correct class
     p_t = torch.exp(-ce)
     return ((1.0 - p_t) ** gamma * ce).mean()
+
+
+# ---------------------------------------------------------------------------
+# LIVABLE epoch-adaptive class weights (arXiv:2306.06935)
+# ---------------------------------------------------------------------------
+
+def livable_weights(
+    counts: torch.Tensor,
+    epoch: int,
+    total_epochs: int,
+    num_classes: int,
+    device: torch.device,
+    max_weight: float = 10.0,
+) -> torch.Tensor:
+    """
+    w_i(t) = (N / (K * n_i)) ^ (t / T)
+    Ramps from uniform (epoch 1) to full inverse-frequency (epoch total_epochs).
+    """
+    t_ratio = epoch / total_epochs
+    base = counts.sum().float() / (num_classes * counts.float().clamp(min=1))
+    return torch.clamp(base ** t_ratio, max=max_weight).to(device)
 
 
 # ---------------------------------------------------------------------------
@@ -386,13 +438,18 @@ def _forward(
     class_weight: torch.Tensor | None = None,
     rank_loss_weight: float = 0.0,
     focal_gamma: float = 0.0,
+    group_loss_weight: float = 0.0,
+    binary_loss_weight: float = 0.0,
+    supcon_fn: nn.Module | None = None,
+    supcon_weight: float = 0.0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Single forward pass returning (logit_func, total_loss).
 
-    Automatically detects whether the model uses a live CodeBERT branch
-    (passes func_input_ids / func_attention_mask if available in batch)
-    and whether the stmt head is multiclass (picks correct MIL loss).
+    Handles:
+      - Standard 2-tuple  (logit, stmt_scores)
+      - MTL 4-tuple       (logit_cwe, logit_group, logit_binary, stmt_scores)
+      - HC-DFGAT 5-tuple  (logit_cwe, logit_group, logit_binary, stmt_scores, z_combined)
     """
     node_line = getattr(batch, "node_line", None)
     edge_attr = getattr(batch, "edge_attr", None)
@@ -400,19 +457,39 @@ def _forward(
     if hasattr(model, "codebert"):
         func_input_ids = getattr(batch, "func_input_ids", None)
         func_attention_mask = getattr(batch, "func_attention_mask", None)
-        logit_func, stmt_scores = model(
+        out = model(
             batch.x, batch.edge_index, batch.batch, node_line, edge_attr,
             func_input_ids, func_attention_mask,
         )
     else:
-        logit_func, stmt_scores = model(
+        out = model(
             batch.x, batch.edge_index, batch.batch, node_line, edge_attr
         )
+
+    # Dispatch on return-tuple length
+    if len(out) == 5:
+        logit_func, logit_group, logit_binary, stmt_scores, z_combined = out
+    elif len(out) == 4:
+        logit_func, logit_group, logit_binary, stmt_scores = out
+        z_combined = None
+    else:
+        logit_func, stmt_scores = out
+        logit_group = logit_binary = z_combined = None
 
     if focal_gamma > 0.0:
         loss = focal_loss(logit_func, batch.y, gamma=focal_gamma, weight=class_weight)
     else:
         loss = F.cross_entropy(logit_func, batch.y, weight=class_weight)
+
+    # MTL auxiliary losses
+    if logit_group is not None and group_loss_weight > 0.0:
+        group_labels = getattr(batch, "group_id", None)
+        if group_labels is not None:
+            loss = loss + group_loss_weight * F.cross_entropy(logit_group, group_labels)
+
+    if logit_binary is not None and binary_loss_weight > 0.0:
+        binary_labels = (batch.y > 0).long()
+        loss = loss + binary_loss_weight * F.cross_entropy(logit_binary, binary_labels)
 
     if stmt_scores is not None and mil_weight > 0.0:
         # Detect multiclass stmt head: each element is [n_stmts, num_classes]
@@ -439,6 +516,13 @@ def _forward(
             )
             loss = loss + rank_loss_weight * rl
 
+    # Hierarchical SupCon on Z_combined (HC-DFGAT only)
+    if z_combined is not None and supcon_fn is not None and supcon_weight > 0.0:
+        group_ids = getattr(batch, "group_id", None)
+        if group_ids is not None:
+            sc_loss = supcon_fn(z_combined, batch.y, group_ids)
+            loss = loss + supcon_weight * sc_loss
+
     return logit_func, loss
 
 
@@ -460,6 +544,10 @@ def train_one_epoch(
     grad_clip: float = 0.0,
     batch_scheduler=None,
     focal_gamma: float = 0.0,
+    group_loss_weight: float = 0.0,
+    binary_loss_weight: float = 0.0,
+    supcon_fn: nn.Module | None = None,
+    supcon_weight: float = 0.0,
 ) -> float:
     model.train()
     total_loss = 0.0
@@ -467,7 +555,7 @@ def train_one_epoch(
     for batch in pbar:
         batch = batch.to(device)
         optimizer.zero_grad()
-        _, loss = _forward(model, batch, mil_k, mil_weight, class_weight, rank_loss_weight, focal_gamma)
+        _, loss = _forward(model, batch, mil_k, mil_weight, class_weight, rank_loss_weight, focal_gamma, group_loss_weight, binary_loss_weight, supcon_fn, supcon_weight)
         loss.backward()
         if grad_clip > 0.0:
             nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
@@ -490,6 +578,10 @@ def evaluate(
     class_weight: torch.Tensor | None = None,
     is_binary: bool = True,
     focal_gamma: float = 0.0,
+    group_loss_weight: float = 0.0,
+    binary_loss_weight: float = 0.0,
+    supcon_fn: nn.Module | None = None,
+    supcon_weight: float = 0.0,
 ) -> tuple[float, float, float, float, float]:
     """Return (loss, accuracy, mean_confidence, f1_macro, f1_weighted)."""
     model.eval()
@@ -499,7 +591,7 @@ def evaluate(
     all_labels: list[int] = []
     for batch in loader:
         batch = batch.to(device)
-        logits, loss = _forward(model, batch, mil_k, mil_weight, class_weight, rank_loss_weight, focal_gamma)
+        logits, loss = _forward(model, batch, mil_k, mil_weight, class_weight, rank_loss_weight, focal_gamma, group_loss_weight, binary_loss_weight, supcon_fn, supcon_weight)
         probs = F.softmax(logits, dim=-1)
         preds = logits.argmax(dim=-1)
         total_loss += loss.item() * batch.num_graphs
@@ -578,7 +670,18 @@ def main():
     mil_k = getattr(cfg.model, "mil_k", 3)
     mil_weight = getattr(cfg.model, "mil_weight", 0.5)
     rank_loss_weight = getattr(cfg.model, "rank_loss_weight", 0.0)
+    group_loss_weight = getattr(cfg.model, "group_loss_weight", 0.0)
+    binary_loss_weight = getattr(cfg.model, "binary_loss_weight", 0.0)
+    supcon_weight = getattr(cfg.model, "supcon_weight", 0.0)
+    supcon_fn = (
+        HierarchicalSupConLoss(
+            temperature=getattr(cfg.model, "supcon_temperature", 0.07),
+            alpha=getattr(cfg.model, "supcon_alpha", 0.5),
+        )
+        if supcon_weight > 0.0 else None
+    )
     use_class_weights = getattr(cfg.train, "use_class_weights", True)
+    use_livable = getattr(cfg.train, "livable_loss", False) and use_class_weights
     grad_clip = getattr(cfg.train, "grad_clip", 0.0)
     is_binary = getattr(cfg.data, "mode", "binary") == "binary"
     focal_gamma = getattr(cfg.train, "focal_loss_gamma", 0.0)
@@ -637,25 +740,32 @@ def main():
             "or check data/raw/cwe_vocab.json."
         )
 
-    # Inverse-frequency class weights
+    # Class weights — static inverse-freq or LIVABLE epoch-adaptive
+    train_counts: torch.Tensor | None = None
+    class_weight: torch.Tensor | None = None
     if use_class_weights:
         train_labels = torch.tensor(
             [int(dataset[i].y.item()) for i in train_idx], dtype=torch.long
         )
-        counts = torch.bincount(train_labels, minlength=cfg.model.num_classes).float()
-        class_weight = (counts.sum() / (counts * cfg.model.num_classes)).to(device)
-        class_weight = torch.clamp(class_weight, max=10.0)
-        logger.info(f"Class weights: {[f'{w:.3f}' for w in class_weight.tolist()]}")
-    else:
-        class_weight = None
+        train_counts = torch.bincount(train_labels, minlength=cfg.model.num_classes).float()
+        if use_livable:
+            # LIVABLE: weights computed per epoch; start with epoch=1 to show initial
+            class_weight = livable_weights(train_counts, 1, cfg.train.epochs, cfg.model.num_classes, device)
+            logger.info(f"LIVABLE adaptive weights enabled (epoch 1 init): {[f'{w:.3f}' for w in class_weight.tolist()]}")
+        else:
+            class_weight = torch.clamp(
+                train_counts.sum() / (train_counts * cfg.model.num_classes), max=10.0
+            ).to(device)
+            logger.info(f"Static class weights: {[f'{w:.3f}' for w in class_weight.tolist()]}")
 
     model = build_model(cfg, in_channels).to(device)
     n_params = sum(p.numel() for p in model.parameters())
+    loss_mode = "livable" if use_livable else ("focal" if focal_gamma > 0 else "ce")
     logger.info(
         f"Model: {cfg.model.architecture.upper()} | params={n_params:,} | "
         f"mil_weight={mil_weight} | mil_k={mil_k} | "
         f"rank_loss_weight={rank_loss_weight} | class_weights={use_class_weights} | "
-        f"focal_gamma={focal_gamma}"
+        f"loss={loss_mode} | focal_gamma={focal_gamma}"
     )
 
     total_steps = len(train_loader) * cfg.train.epochs
@@ -708,6 +818,10 @@ def main():
         logger.warning(f"--resume set but {last_ckpt} not found — starting from scratch.")
 
     for epoch in range(start_epoch, cfg.train.epochs + 1):
+        if use_livable and train_counts is not None:
+            class_weight = livable_weights(
+                train_counts, epoch, cfg.train.epochs, cfg.model.num_classes, device
+            )
         t0 = time.time()
         train_loss = train_one_epoch(
             model, train_loader, optimizer, device,
@@ -716,10 +830,18 @@ def main():
             grad_clip=grad_clip,
             batch_scheduler=scheduler if step_per_batch else None,
             focal_gamma=focal_gamma,
+            group_loss_weight=group_loss_weight,
+            binary_loss_weight=binary_loss_weight,
+            supcon_fn=supcon_fn,
+            supcon_weight=supcon_weight,
         )
         val_loss, val_acc, val_conf, val_f1, val_f1w = evaluate(
             model, val_loader, device, mil_k, mil_weight, rank_loss_weight, class_weight,
             is_binary=is_binary, focal_gamma=focal_gamma,
+            group_loss_weight=group_loss_weight,
+            binary_loss_weight=binary_loss_weight,
+            supcon_fn=supcon_fn,
+            supcon_weight=supcon_weight,
         )
         if not step_per_batch:
             scheduler.step(val_loss)
@@ -766,6 +888,10 @@ def main():
     _, test_acc, test_conf, test_f1, test_f1w = evaluate(
         model, test_loader, device, mil_k, mil_weight, rank_loss_weight, class_weight,
         is_binary=is_binary, focal_gamma=focal_gamma,
+        group_loss_weight=group_loss_weight,
+        binary_loss_weight=binary_loss_weight,
+        supcon_fn=supcon_fn,
+        supcon_weight=supcon_weight,
     )
     logger.info(
         f"Test accuracy: {test_acc:.4f} | f1: {test_f1:.4f} | "

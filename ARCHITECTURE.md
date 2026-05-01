@@ -492,7 +492,7 @@ Loss = CE(logit_func, y, class_weight)
 
 ## Architecture 10 — LM-GAT-DualFlow (Context-Preserving Sequential Router)
 
-**Status:** 🎯 Target
+**Status:** ✔ Implemented
 **Config:** `configs/lmgat_dualflow/multiclass.yaml`
 **Model:** `src/gnn_vuln/models/lmgat_dualflow.py`
 
@@ -549,5 +549,160 @@ Adding `context_emb` to Stage 3 input does not affect Stage 1 parameters.
 the classifier needs surrounding safe-context nodes to resolve the CWE category.
 `context_emb` provides the full CPG structural layout, giving the MLP all three signals:
 flaw shape (focal), code structure (context), semantic text (LM).
+
+**Results:** pending (needs cloud training run).
+
+---
+
+## Architecture 11 — LM-GAT-CodeBERT-MTL (Multi-Task Learning Heads)
+
+**Status:** ✔ Implemented
+**Config:** `configs/lmgat_codebert/multiclass_mtl.yaml`
+**Model:** `src/gnn_vuln/models/lmgat_codebert_mtl.py`
+
+Adds three parallel MTL output heads on top of the shared GATv2 + live CodeBERT encoder from Arch3.
+The group head provides a coarse routing signal (detached) that conditions the fine CWE head,
+inspired by VulANalyzeR (coarse-to-fine) and MulVul (multi-task vulnerability classification).
+
+```
+Full function text → CodeBERT (LIVE, lr=1e-5) → CLS [B, 768] ──────────────┐
+                                                                              │
+CPG nodes (773D pre-computed, frozen)                                         │
+    → GATv2Conv × num_layers (lr=1e-3)                                       │
+    → BatchNorm + ReLU + Dropout                                              │
+    → global_mean_pool → h_graph [B, 256] ──────────── concat ───────────────┘
+                                                            ↓
+                                                  fused [B, 1024]
+                                                     │
+              ┌──────────────────────────────────────┤──────────────────────────┐
+              │                                      │                          │
+              ▼                                      ▼                          │
+        binary_head                            group_head                       │
+        [B, 2]                                 [B, 16]                          │
+        (safe / vuln)                          (coarse CWE family)              │
+                                                      │                          │
+                                          softmax + detach                       │
+                                                      │                          │
+                                          concat(fused, group_probs)             │
+                                                      ↓                          │
+                                                 cwe_head ←──────────────────────┘
+                                              [B, num_classes]
+                                              (fine CWE class)
+
+    └── stmt_head: group nodes by line → max + mean → stmt_scores [n_stmts]
+
+Loss = focal_CE(cwe, class_weight)
+     + group_loss_weight  * CE(group)
+     + binary_loss_weight * CE(binary)
+     + mil_weight         * MIL(stmt_scores, y, k)
+```
+
+**Key design decisions:**
+- `group_probs` detached before CWE head — heads remain independent; group head gets its own clean gradient
+- Binary label derived inline as `(batch.y > 0).long()` — no extra dataset column needed
+- Forward returns 4-tuple `(logit_cwe, logit_group, logit_binary, stmt_scores)` — detected by `_forward()` in train.py
+- fused_dim = 256 + 768 = 1024D; cwe_head input = 1024 + 16 = 1040D
+
+**Comparison with Arch3:**
+| | Arch3 (single head) | Arch11 (MTL) |
+|--|---------------------|--------------|
+| Output heads | 1 (CWE) | 3 (binary + group + CWE) |
+| Group supervision | None | Auxiliary CE loss |
+| Binary supervision | None | Auxiliary CE loss |
+| CWE head conditioning | Independent | Conditioned on detached group probs |
+| Return tuple | 2-tuple | 4-tuple |
+
+**Results:** pending (needs cloud training run).
+
+---
+
+## Architecture 12 — HC-DFGAT (Hierarchical Contrastive Dual-Flow GAT)
+
+**Status:** 🎯 Target
+**Config:** `configs/lmgat_hcdfgat/multiclass.yaml`
+**Model:** `src/gnn_vuln/models/lmgat_hcdfgat.py`
+**Loss:** `src/gnn_vuln/losses/hierarchical_supcon.py`
+
+Combines Arch10 (dual-flow sequential encoder) with Arch11 (MTL heads) and adds a
+Hierarchical Supervised Contrastive loss on the shared Z_combined embedding.
+The contrastive loss uses the CWE group hierarchy to weight positive pairs,
+explicitly shaping the embedding space for CWE discrimination.
+
+```
+CPG nodes (773D pre-computed, frozen)
+CPG edges (7D one-hot)
+
+── Stage 1: Binary Localization ─────────────────────────────────────────────
+    → GATv2Conv × num_layers → h_loc [N, 256]
+    → binary stmt head: sigmoid(0.8*max_head + 0.6*mean_head)
+    → s_i ∈ [0,1] per node [N]                    ← MIL + ranking targets
+
+── Stage 2: Dual-Flow Classification GNN ────────────────────────────────────
+    x_aug = concat(x_frozen, s_i)                  [N, 774]
+    → GATv2Conv × num_layers → h_cls               [N, 256]
+
+    focal_emb   = suspicion-weighted pool(h_cls, s_i)  [B, 256]
+    context_emb = global_mean_pool(h_cls)               [B, 256]
+
+── Stage 3: Live UniXcoder ───────────────────────────────────────────────────
+    Full function text → UniXcoder CLS → lm_emb    [B, 768]
+
+Z_combined = concat(focal_emb, context_emb, lm_emb) [B, 1280]
+                              │
+     ┌────────────────────────┤──────────────────────────┐
+     │                        │                          │
+     ▼                        ▼                          │
+binary_head              group_head                      │
+[B, 2]                   [B, 16]                         │
+                              │                          │
+                    softmax + detach                      │
+                              │                          │
+                   concat(Z_combined, group_probs)        │
+                              ↓                          │
+                         cwe_head ←────────────────────── ┘
+                      [B, num_classes]
+
+    └── stmt_scores from Stage 1 (MIL / ranking)
+
+Loss = LIVABLE_CE(cwe, class_weight)
+     + group_loss_weight  * CE(group)
+     + binary_loss_weight * CE(binary)
+     + mil_weight         * MIL(stmt_scores, y, k)
+     + rank_loss_weight   * RankingLoss(stmt_scores, flaw_line_mask)
+     + supcon_weight      * HierarchicalSupCon(Z_combined, y, group_id)
+```
+
+**HierarchicalSupConLoss (`src/gnn_vuln/losses/hierarchical_supcon.py`):**
+
+For each vulnerable anchor i, positives weighted by CWE hierarchy:
+- Same CWE class (y_i == y_j, both > 0) → w = 1.0
+- Same group, different CWE (group_i == group_j, y_i ≠ y_j, both > 0) → w = alpha (default 0.5)
+- Different group or benign → pure negative (not a positive; still in denominator)
+- Benign samples (y=0) excluded from anchor set, kept as negatives
+
+```
+L_i = -1/|P_i| * Σ_{j∈P_i} w_ij * log [ exp(z_i·z_j / τ) / Σ_{k≠i} exp(z_i·z_k / τ) ]
+```
+
+No projection head — L2-normalized Z_combined used directly in contrastive space.
+
+**Forward returns 5-tuple** `(logit_cwe, logit_group, logit_binary, stmt_scores, z_combined)` —
+detected by `_forward()` in train.py via `len(out) == 5`.
+
+**Comparison with Arch10 / Arch11:**
+| | Arch10 DualFlow | Arch11 MTL | Arch12 HC-DFGAT |
+|--|-----------------|------------|-----------------|
+| Encoder | Dual-flow GATv2 + UniXcoder | GATv2 + CodeBERT | Dual-flow GATv2 + UniXcoder |
+| Output heads | 1 (CWE) | 3 (binary+group+CWE) | 3 (binary+group+CWE) |
+| Z_combined dim | 1280D | 1024D | 1280D |
+| Contrastive loss | None | None | HierarchicalSupCon |
+| Return tuple | 2-tuple | 4-tuple | 5-tuple |
+| LIVABLE weights | optional | optional | enabled |
+
+**Default config losses:**
+```
+LIVABLE_CE + 0.3·CE(group) + 0.2·CE(binary) + 0.3·MIL + 0.1·HierSupCon
+rank_loss_weight = 0.0  (enable >0 for BigVul/MegaVul with flaw_line_mask)
+```
 
 **Results:** pending (needs cloud training run).

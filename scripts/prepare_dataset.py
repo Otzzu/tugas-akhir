@@ -154,7 +154,8 @@ def _read_file(path: Path | str) -> pd.DataFrame:
 # CWE vocabulary builder (BigVul only)
 # ---------------------------------------------------------------------------
 
-_CWE_JUNK = {"CWE-unknown", "unknown", "NVD-CWE-Other", "NVD-CWE-noinfo", ""}
+_CWE_JUNK = {"CWE-unknown", "CWE-Other", "CWE-other", "unknown", "other",
+             "NVD-CWE-Other", "NVD-CWE-noinfo", ""}
 
 def _build_cwe_vocab(df: pd.DataFrame, top_k: int) -> dict[str, int]:
     """
@@ -392,7 +393,7 @@ def main() -> None:
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument(
         "--format", default="devign",
-        choices=["devign", "bigvul", "diversevul", "csv", "merged"],
+        choices=["devign", "bigvul", "megavul", "diversevul", "csv", "merged"],
     )
     parser.add_argument("--code-col", default="func")
     parser.add_argument("--label-col", default="target")
@@ -475,8 +476,8 @@ def main() -> None:
         df = load_diversevul(args.input)
         is_multi_class = False
 
-    elif args.format == "merged":
-        # merged dataset has same schema as BigVul (func_before, func_after, vul, CWE ID)
+    elif args.format in ("megavul", "merged"):
+        # megavul / merged: same schema as BigVul (func_before, func_after, vul, CWE ID)
         is_multi_class = not args.binary
         vocab_path = args.cwe_vocab or (args.out_dir / "cwe_vocab.json")
         existing_vocab = None
