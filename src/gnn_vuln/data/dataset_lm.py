@@ -156,6 +156,61 @@ CWE_GROUP_MAP: dict[str, str] = {
     # 15. Deprecated / General (no longer in active CWE tree)
     "CWE-254": "deprecated", "CWE-19": "deprecated", "CWE-17": "deprecated",
     "CWE-693": "deprecated", "CWE-18": "deprecated",
+
+    # --- Added from tree analysis for TitanVul / BenchVul ---
+    "CWE-193": "numeric",           # Off-by-one Error (child CWE-682)
+    "CWE-406": "resource_management", # Insufficient Control of Network Message Volume (Network Amplification) (child CWE-400)
+    "CWE-288": "authentication",    # Authentication Bypass Using an Alternate Path or Channel (child CWE-287)
+    "CWE-323": "cryptography",      # Reusing a Nonce, Key Pair in Encryption (child CWE-330)
+    "CWE-913": "data_integrity",    # Improper Control of Dynamically-Managed Code Resources (parent of CWE-502)
+    "CWE-294": "authentication",    # Authentication Bypass by Capture-replay (child CWE-287)
+    "CWE-297": "access_control",    # Improper Validation of Certificate with Host Mismatch (child CWE-284)
+    "CWE-273": "error_handling",    # Improper Check for Dropped Privileges (child CWE-703)
+    "CWE-707": "input_validation",  # Improper Neutralization (parent of injection/validation)
+    "CWE-1187": "resource_management", # DEPRECATED: Use of Uninitialized Resource (child CWE-665)
+    "CWE-61": "access_control",     # UNIX Symbolic Link (Symlink) Following (child CWE-59)
+    "CWE-303": "authentication",    # Incorrect Implementation of Authentication Algorithm (child CWE-287)
+    "CWE-88": "injection",          # Improper Neutralization of Argument Delimiters in a Command (child CWE-77)
+    "CWE-91": "injection",          # XML Injection (aka Blind XPath Injection) (child CWE-74)
+    "CWE-331": "cryptography",      # Insufficient Entropy (child CWE-330)
+    "CWE-113": "injection",         # Improper Neutralization of CRLF Sequences in HTTP Headers ('HTTP Response Splitting') (child CWE-93)
+    "CWE-417": "resource_management", # Communication Channel Errors (child CWE-400)
+    "CWE-776": "resource_management", # Improper Restriction of Recursive Entity References in DTDs ('XML Entity Expansion') (child CWE-400)
+    "CWE-924": "access_control",    # Improper Enforcement of Message Integrity During Transmission in a Communication Channel (child CWE-284)
+    "CWE-307": "authentication",    # Improper Restriction of Excessive Authentication Attempts (child CWE-287)
+    "CWE-266": "access_control",    # Incorrect Privilege Assignment (child CWE-269)
+    "CWE-565": "authentication",    # Reliance on Cookies without Validation and Integrity Checking (child CWE-287)
+    "CWE-943": "injection",         # Improper Neutralization of Special Elements in Data Query Logic (parent of 89)
+    "CWE-349": "cryptography",      # Acceptance of Extraneous Untrusted Data With Trusted Data (child CWE-345)
+    "CWE-457": "resource_management", # Use of Uninitialized Variable (child CWE-908)
+    "CWE-805": "memory_safety",     # Buffer Access with Incorrect Length Value (child CWE-119)
+    "CWE-798": "authentication",    # Use of Hard-coded Credentials (child CWE-255)
+    "CWE-786": "memory_safety",     # Access of Memory Location Before Start of Buffer (child CWE-119)
+    "CWE-428": "code_quality",      # Unquoted Search Path or Element (child CWE-426)
+    "CWE-118": "memory_safety",     # Incorrect Access of Indexable Resource ('Range Error') (parent of CWE-119)
+    "CWE-639": "access_control",    # Authorization Bypass Through User-Controlled Key (child CWE-285)
+    "CWE-1325": "resource_management", # Improperly Controlled Sequential Memory Allocation (child CWE-400)
+    "CWE-757": "cryptography",      # Selection of Less-Secure Algorithm During Negotiation ('Algorithm Downgrade') (child CWE-327)
+    "CWE-99": "injection",          # Improper Control of Resource Identifiers ('Resource Injection') (child CWE-74)
+    "CWE-185": "numeric",           # Incorrect Regular Expression (child CWE-697)
+    "CWE-1049": "resource_management", # Excessive Data Query Operations (child CWE-400)
+    "CWE-628": "code_quality",      # Function Call with Incorrectly Specified Arguments (child CWE-684)
+    "CWE-202": "access_control",    # Exposure of Sensitive Information Through Data Queries (child CWE-200)
+    "CWE-248": "error_handling",    # Uncaught Exception (child CWE-705)
+    "CWE-626": "code_quality",      # System Object Named Unlike System Provided Type (child CWE-691)
+    "CWE-460": "error_handling",    # Improper Cleanup on Thrown Exception (child CWE-755)
+    "CWE-73": "access_control",     # External Control of File Name or Path (child CWE-642)
+    "CWE-324": "cryptography",      # Use of a Key Past its Expiration Date (child CWE-672)
+    "CWE-117": "logging",           # Improper Output Neutralization for Logs (child CWE-116)
+    "CWE-1050": "resource_management", # Excessive Platform Resource Consumption within a Loop (child CWE-400)
+    "CWE-282": "access_control",    # Improper Ownership Management (child CWE-284)
+    "CWE-610": "access_control",    # Externally Controlled Reference to a Resource in Another Sphere (parent of 601)
+    "CWE-338": "cryptography",      # Use of Cryptographically Weak Pseudo-Random Number Generator (PRNG) (child CWE-330)
+    "CWE-300": "access_control",    # Channel Accessible by Non-Endpoint (child CWE-923)
+    "CWE-392": "error_handling",    # Missing Report of Error Condition (child CWE-390)
+    "CWE-114": "access_control",    # Process Control (child CWE-73)
+    "CWE-680": "numeric",           # Integer Overflow to Buffer Overflow (child CWE-190)
+    "CWE-789": "resource_management", # Memory Allocation with Excessive Size Value (child CWE-400)
 }
 
 # Fixed group → integer ID (0 = benign, 1-15 = groups). Stable across runs.
@@ -212,6 +267,27 @@ def _filter_suffix(cwe_list: list[str] | None, cwe_groups: list[str] | None) -> 
         sort_keys=True,
     )
     return "_f" + hashlib.md5(key.encode()).hexdigest()[:8]
+
+
+def _parse_cwe_string(raw: str | list) -> str:
+    """
+    Extract the primary (first) CWE string from potentially multi-label 
+    or raw list strings like "CWE-119, CWE-787" -> "CWE-119".
+    """
+    if not raw:
+        return ""
+    if isinstance(raw, list):
+        raw = raw[0] if raw else ""
+    s = str(raw).strip()
+    if not s or s.lower() in ("nan", "none", "unknown", "other", "cwe-other", "cwe-unknown"):
+        return ""
+    if "," in s:
+        s = s.split(",")[0].strip()
+    if s.startswith("CWE-"):
+        return s
+    if s.isdigit():
+        return f"CWE-{s}"
+    return s
 
 
 def _subsample(entries: list, max_per_class: int, seed: int) -> list:
@@ -412,7 +488,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
                         with open(meta_path) as mf:
                             meta = json.load(mf)
                         flaw_lines = meta.get("flaw_lines", [])
-                        cwe_str = meta.get("cwe", "")
+                        cwe_str = _parse_cwe_string(meta.get("cwe", ""))
                     if self._effective_cwes is not None and cwe_str not in self._effective_cwes:
                         continue
                     entries.append((gf, base_label, flaw_lines, cwe_str))
@@ -428,7 +504,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
                         continue
                     with open(meta_path) as mf:
                         meta = json.load(mf)
-                    cwe_str = meta.get("cwe", "")
+                    cwe_str = _parse_cwe_string(meta.get("cwe", ""))
                     if cwe_str and cwe_str in cwe_vocab:
                         class_id = cwe_vocab[cwe_str]
                     elif self._top_cwe > 0 or self._effective_cwes is not None:
@@ -461,7 +537,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
                         continue
                     with open(meta_path) as mf:
                         meta = json.load(mf)
-                    cwe_str = meta.get("cwe", "")
+                    cwe_str = _parse_cwe_string(meta.get("cwe", ""))
                     group_name = CWE_GROUP_MAP.get(cwe_str, "")
                     if not group_name:
                         continue  # skip CWEs not in our group map

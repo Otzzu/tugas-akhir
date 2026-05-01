@@ -1,13 +1,15 @@
 """
 download_datasets.py
 ~~~~~~~~~~~~~~~~~~~~
-Download BigVul, Devign, DiverseVul, and MegaVul from HuggingFace Hub
-and save them as parquet files under data/datasets/.
+Download BigVul, Devign, DiverseVul, MegaVul, TitanVul, and BenchVul
+from HuggingFace Hub and save them as parquet files under data/datasets/.
 
 Usage:
     uv run python scripts/download_datasets.py
     uv run python scripts/download_datasets.py --only devign
     uv run python scripts/download_datasets.py --only megavul
+    uv run python scripts/download_datasets.py --only titanvul
+    uv run python scripts/download_datasets.py --only benchvul
 """
 
 from __future__ import annotations
@@ -137,16 +139,189 @@ def download_megavul() -> None:
     print(f"\n  Use with prepare_dataset.py --format bigvul --input {out_file.relative_to(PROJECT_ROOT)}")
 
 
+def download_titanvul() -> None:
+    """
+    Download TitanVul (38,548 vulnerability-fix pairs, multilingual).
+
+    Column schema: func_before, func_after, cve_id, cwe_id, extension, ...
+    Every row is a vulnerable function paired with its fix — there is no
+    explicit 'vul' label column.  We expand each row into:
+      - one vulnerable sample  (func_before, vul=1, CWE from cwe_id)
+      - one benign sample      (func_after,  vul=0)  when func_after differs
+
+    Output columns (BigVul-compatible so prepare_dataset.py --format bigvul works):
+        func_before, func_after, vul, CWE ID, CVE ID
+
+    Note: filter to C/C++ only via the 'extension' field (.c / .cpp / .h).
+    """
+    import pandas as pd
+    from datasets import load_dataset
+    from tqdm import tqdm
+
+    dest = OUT_DIR / "titanvul"
+    dest.mkdir(parents=True, exist_ok=True)
+    out_file = dest / "train.parquet"
+
+    print(f"\n{'='*60}")
+    print("  Downloading: titanvul  (yikun-li/TitanVul)")
+    print("  38,548 vuln-fix pairs — expanding to vuln + benign rows…")
+    print(f"{'='*60}")
+
+    ds = load_dataset("yikun-li/TitanVul", split="train")
+
+    C_EXTENSIONS = {".c", ".cpp", ".cc", ".cxx", ".h", ".hpp"}
+
+    rows: list[dict] = []
+    skipped_lang = 0
+    skipped_no_code = 0
+    for raw in tqdm(ds, desc="  processing", unit="row"):
+        ext = (raw.get("extension") or "").lower().strip()
+        if ext and ext not in C_EXTENSIONS:
+            skipped_lang += 1
+            continue
+
+        vuln_code = raw.get("func_before")
+        fixed_code = raw.get("func_after")
+        if not vuln_code:
+            skipped_no_code += 1
+            continue
+
+        cwe = (raw.get("cwe_id") or "").strip()
+        cve_id = (raw.get("cve_id") or "").strip()
+
+        # Vulnerable sample
+        rows.append({
+            "func_before": vuln_code,
+            "func_after": fixed_code or None,
+            "vul": 1,
+            "CWE ID": cwe,
+            "CVE ID": cve_id,
+        })
+
+        # Benign sample from the fixed version (patched = not vulnerable)
+        if fixed_code and fixed_code.strip() != vuln_code.strip():
+            rows.append({
+                "func_before": fixed_code,
+                "func_after": None,
+                "vul": 0,
+                "CWE ID": "",
+                "CVE ID": cve_id,
+            })
+
+    df = pd.DataFrame(rows)
+    df.to_parquet(str(out_file), index=False)
+
+    vuln_n = (df["vul"] == 1).sum()
+    benign_n = (df["vul"] == 0).sum()
+    print(f"\n  Skipped {skipped_lang:,} non-C/C++ rows, {skipped_no_code:,} rows with missing code")
+    print(f"  Saved {len(df):,} rows  (vulnerable={vuln_n:,}  benign={benign_n:,})")
+    print(f"  -> {out_file.relative_to(PROJECT_ROOT)}")
+    print("\n  CWE distribution (top 15):")
+    cwe_counts = df[df["vul"] == 1]["CWE ID"].value_counts().head(15)
+    for cwe, cnt in cwe_counts.items():
+        print(f"    {cwe}: {cnt}")
+    print(f"\n  Use with prepare_dataset.py --format bigvul --input {out_file.relative_to(PROJECT_ROOT)}")
+
+
+def download_benchvul() -> None:
+    """
+    Download BenchVul (1,050 rows) — a manually-verified benchmark for the
+    Top 25 Most Dangerous CWEs.  50 vulnerable + 50 fixed samples per CWE.
+
+    Column schema: cwe_id, cve_id, func_before, func_after, programming_language, ...
+    Same expansion logic as TitanVul: each row → vuln sample + benign sample.
+    Output is BigVul-compatible (func_before / func_after / vul / CWE ID).
+
+    Note: filter to C/C++ via the 'programming_language' field.
+    """
+    import pandas as pd
+    from datasets import load_dataset
+    from tqdm import tqdm
+
+    dest = OUT_DIR / "benchvul"
+    dest.mkdir(parents=True, exist_ok=True)
+    out_file = dest / "train.parquet"
+
+    print(f"\n{'='*60}")
+    print("  Downloading: benchvul  (yikun-li/BenchVul)")
+    print("  1,050 manually-verified vuln-fix pairs — expanding to vuln + benign rows…")
+    print(f"{'='*60}")
+
+    ds = load_dataset("yikun-li/BenchVul", split="train")
+
+    C_LANGUAGES = {"c", "c++", "cpp"}
+
+    rows: list[dict] = []
+    skipped_lang = 0
+    skipped_no_code = 0
+    for raw in tqdm(ds, desc="  processing", unit="row"):
+        lang = (raw.get("programming_language") or "").lower().strip()
+        if lang and lang not in C_LANGUAGES:
+            skipped_lang += 1
+            continue
+
+        vuln_code = raw.get("func_before")
+        fixed_code = raw.get("func_after")
+        if not vuln_code:
+            skipped_no_code += 1
+            continue
+
+        cwe = (raw.get("cwe_id") or "").strip()
+        cve_id = (raw.get("cve_id") or "").strip()
+
+        # Vulnerable sample
+        rows.append({
+            "func_before": vuln_code,
+            "func_after": fixed_code or None,
+            "vul": 1,
+            "CWE ID": cwe,
+            "CVE ID": cve_id,
+        })
+
+        # Benign sample from the fixed version
+        if fixed_code and fixed_code.strip() != vuln_code.strip():
+            rows.append({
+                "func_before": fixed_code,
+                "func_after": None,
+                "vul": 0,
+                "CWE ID": "",
+                "CVE ID": cve_id,
+            })
+
+    df = pd.DataFrame(rows)
+    df.to_parquet(str(out_file), index=False)
+
+    vuln_n = (df["vul"] == 1).sum()
+    benign_n = (df["vul"] == 0).sum()
+    print(f"\n  Skipped {skipped_lang:,} non-C/C++ rows, {skipped_no_code:,} rows with missing code")
+    print(f"  Saved {len(df):,} rows  (vulnerable={vuln_n:,}  benign={benign_n:,})")
+    print(f"  -> {out_file.relative_to(PROJECT_ROOT)}")
+    print("\n  CWE distribution (top 15):")
+    cwe_counts = df[df["vul"] == 1]["CWE ID"].value_counts().head(15)
+    for cwe, cnt in cwe_counts.items():
+        print(f"    {cwe}: {cnt}")
+    print(f"\n  Use with prepare_dataset.py --format bigvul --input {out_file.relative_to(PROJECT_ROOT)}")
+    print("  Tip: BenchVul is small (1,050 rows) — best used as a test/eval set, not for training.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download vulnerability datasets from HuggingFace.")
     parser.add_argument(
-        "--only", choices=[*DATASETS.keys(), "megavul"],
-        help="Download only this dataset (default: all)",
+        "--only", choices=[*DATASETS.keys(), "megavul", "titanvul", "benchvul"],
+        help="Download only this dataset (default: all standard datasets)",
     )
     args = parser.parse_args()
 
     if args.only == "megavul":
         download_megavul()
+        return
+
+    if args.only == "titanvul":
+        download_titanvul()
+        return
+
+    if args.only == "benchvul":
+        download_benchvul()
         return
 
     targets = {args.only: DATASETS[args.only]} if args.only else DATASETS
@@ -159,7 +334,9 @@ def main() -> None:
             print(f"  ERROR downloading {name}: {e}", file=sys.stderr)
 
     if not args.only:
-        print("\nSkipping megavul (run with --only megavul to download separately — streams 672K rows).")
+        print("\nSkipping megavul  (run with --only megavul  to download separately — streams 672K rows).")
+        print("Skipping titanvul (run with --only titanvul to download separately — 38K rows).")
+        print("Skipping benchvul (run with --only benchvul to download separately — 1K rows, eval only).")
 
     print("\nAll done.")
     print(f"Files are in: {OUT_DIR}")

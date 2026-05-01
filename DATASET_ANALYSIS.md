@@ -9,13 +9,17 @@ Generated from raw parquet files. Group mapping via `CWE_GROUP_MAP` in `dataset_
 
 ## Summary
 
-| Dataset | Total | Benign | Vulnerable | Has CWE | Has Flaw Lines |
-|---|---|---|---|---|---|
-| BigVul | 217,007 | 206,112 | 10,895 | Yes | Yes (diff) |
-| DiverseVul | 330,492 | 311,547 | 18,945 | Yes (multi-label) | No |
-| MegaVul | 55,868 | 27,934 | 27,934 | Yes | Yes (diff) |
-| Devign | 27,318 | 14,858 | 12,460 | No | Yes (vul_lines) |
-| Merged (BigVul+MegaVul) | 176,674 | 154,205 | 22,469 | Yes | Yes (diff) |
+| Dataset | Total | Benign | Vulnerable | Has CWE | Has Flaw Lines | Notes |
+|---|---|---|---|---|---|---|
+| BigVul | 217,007 | 206,112 | 10,895 | Yes | Yes (diff) | Primary training dataset |
+| DiverseVul | 330,492 | 311,547 | 18,945 | Yes (multi-label) | No | Binary only |
+| MegaVul | 55,868 | 27,934 | 27,934 | Yes | Yes (diff) | Balanced 1:1 |
+| Devign | 27,318 | 14,858 | 12,460 | No | Yes (vul_lines) | Binary only |
+| Merged (BigVul+MegaVul) | 176,674 | 154,205 | 22,469 | Yes | Yes (diff) | Combined |
+| TitanVul | 15,300\* | 7,650 | 7,650 | Yes | Yes (diff) | Balanced 1:1, C/C++ filtered |
+| BenchVul | 460\* | 230 | 230 | Yes | Yes (diff) | **Benchmark for Top 25 Most Dangerous CWEs** |
+
+\*After C/C++ language filter (from 38,548 and 1,050 original pairs respectively).
 
 ---
 
@@ -161,21 +165,21 @@ Total: **330,492** | Benign: **311,547** | Vulnerable: **18,945**
 | Group ID | Group | Count |
 |---|---|---|
 | 0 | benign | 311,547 |
-| 1 | memory_safety | 7,063 |
-| -1 | UNKNOWN | 2,974 |
-| 6 | access_control | 1,825 |
-| 4 | input_validation | 1,418 |
-| 3 | resource_management | 1,353 |
-| 2 | numeric | 1,176 |
-| 14 | error_handling | 829 |
-| 8 | cryptography | 529 |
+| 1 | memory_safety | 7,065 |
+| -1 | UNKNOWN | 2,836 |
+| 6 | access_control | 1,839 |
+| 4 | input_validation | 1,424 |
+| 3 | resource_management | 1,383 |
+| 2 | numeric | 1,187 |
+| 14 | error_handling | 835 |
+| 8 | cryptography | 547 |
 | 9 | concurrency | 450 |
-| 10 | code_quality | 402 |
-| 5 | injection | 383 |
-| 7 | authentication | 253 |
+| 10 | code_quality | 403 |
+| 5 | injection | 395 |
+| 7 | authentication | 281 |
 | 15 | deprecated | 179 |
 | 11 | configuration | 96 |
-| 12 | data_integrity | 8 |
+| 12 | data_integrity | 18 |
 | 13 | logging | 7 |
 
 ### CWE Distribution (all vulnerable, primary CWE)
@@ -252,22 +256,22 @@ Total: **330,492** | Benign: **311,547** | Vulnerable: **18,945**
 | CWE-345 | 20 | 11 | configuration |
 | CWE-358 | 20 | 10 | code_quality |
 | CWE-276 | 19 | 11 | configuration |
-| CWE-406 | 19 | -1 | UNKNOWN |
+| CWE-406 | 19 | 3 | resource_management |
 | CWE-209 | 18 | 14 | error_handling |
 | CWE-863 | 18 | 6 | access_control |
 | CWE-763 | 17 | 1 | memory_safety |
 | CWE-434 | 15 | 5 | injection |
 | CWE-843 | 14 | 1 | memory_safety |
 | CWE-611 | 14 | 11 | configuration |
-| CWE-288 | 13 | -1 | UNKNOWN |
-| CWE-323 | 13 | -1 | UNKNOWN |
+| CWE-288 | 13 | 7 | authentication |
+| CWE-323 | 13 | 8 | cryptography |
 | CWE-668 | 12 | 6 | access_control |
 | CWE-824 | 12 | 1 | memory_safety |
 | CWE-522 | 11 | 8 | cryptography |
-| CWE-193 | 11 | -1 | UNKNOWN |
+| CWE-193 | 11 | 2 | numeric |
 | CWE-131 | 11 | 2 | numeric |
 | CWE-552 | 10 | 6 | access_control |
-| CWE-913 | 10 | -1 | UNKNOWN |
+| CWE-913 | 10 | 12 | data_integrity |
 | CWE-909 | 10 | 3 | resource_management |
 | CWE-388 | 10 | 10 | code_quality |
 | CWE-116 | 9 | 5 | injection |
@@ -279,51 +283,51 @@ Total: **330,492** | Benign: **311,547** | Vulnerable: **18,945**
 | CWE-121 | 7 | 1 | memory_safety |
 | CWE-212 | 7 | 6 | access_control |
 | CWE-532 | 7 | 13 | logging |
-| CWE-294 | 7 | -1 | UNKNOWN |
+| CWE-294 | 7 | 7 | authentication |
 | CWE-682 | 6 | 2 | numeric |
-| CWE-297 | 6 | -1 | UNKNOWN |
+| CWE-297 | 6 | 6 | access_control |
 | CWE-918 | 6 | 6 | access_control |
-| CWE-273 | 6 | -1 | UNKNOWN |
-| CWE-707 | 6 | -1 | UNKNOWN |
+| CWE-273 | 6 | 14 | error_handling |
+| CWE-707 | 6 | 4 | input_validation |
 | CWE-281 | 6 | 6 | access_control |
-| CWE-1187 | 6 | -1 | UNKNOWN |
+| CWE-1187 | 6 | 3 | resource_management |
 | CWE-346 | 6 | 7 | authentication |
 | CWE-16 | 5 | 11 | configuration |
 | CWE-681 | 5 | 2 | numeric |
 | CWE-502 | 4 | 12 | data_integrity |
 | CWE-1021 | 4 | 12 | data_integrity |
 | CWE-823 | 4 | 1 | memory_safety |
-| CWE-61 | 4 | -1 | UNKNOWN |
-| CWE-303 | 4 | -1 | UNKNOWN |
-| CWE-88 | 4 | -1 | UNKNOWN |
-| CWE-91 | 4 | -1 | UNKNOWN |
+| CWE-61 | 4 | 6 | access_control |
+| CWE-303 | 4 | 7 | authentication |
+| CWE-88 | 4 | 5 | injection |
+| CWE-91 | 4 | 5 | injection |
 | CWE-311 | 4 | 8 | cryptography |
-| CWE-331 | 4 | -1 | UNKNOWN |
+| CWE-331 | 4 | 8 | cryptography |
 | CWE-352 | 4 | 6 | access_control |
 | CWE-129 | 3 | 2 | numeric |
 | CWE-426 | 3 | 10 | code_quality |
 | CWE-672 | 3 | 1 | memory_safety |
 | CWE-670 | 3 | 10 | code_quality |
-| CWE-113 | 3 | -1 | UNKNOWN |
-| CWE-417 | 2 | -1 | UNKNOWN |
-| CWE-776 | 2 | -1 | UNKNOWN |
-| CWE-924 | 2 | -1 | UNKNOWN |
-| CWE-307 | 2 | -1 | UNKNOWN |
+| CWE-113 | 3 | 5 | injection |
+| CWE-417 | 2 | 3 | resource_management |
+| CWE-776 | 2 | 3 | resource_management |
+| CWE-924 | 2 | 6 | access_control |
+| CWE-307 | 2 | 7 | authentication |
 | CWE-693 | 2 | 15 | deprecated |
-| CWE-266 | 2 | -1 | UNKNOWN |
+| CWE-266 | 2 | 6 | access_control |
 | CWE-93 | 2 | 5 | injection |
 | CWE-285 | 2 | 6 | access_control |
 | CWE-697 | 1 | 2 | numeric |
-| CWE-565 | 1 | -1 | UNKNOWN |
-| CWE-943 | 1 | -1 | UNKNOWN |
+| CWE-565 | 1 | 7 | authentication |
+| CWE-943 | 1 | 5 | injection |
 | CWE-255 | 1 | 7 | authentication |
-| CWE-349 | 1 | -1 | UNKNOWN |
-| CWE-457 | 1 | -1 | UNKNOWN |
-| CWE-805 | 1 | -1 | UNKNOWN |
+| CWE-349 | 1 | 8 | cryptography |
+| CWE-457 | 1 | 3 | resource_management |
+| CWE-805 | 1 | 1 | memory_safety |
 | CWE-436 | 1 | 4 | input_validation |
-| CWE-798 | 1 | -1 | UNKNOWN |
-| CWE-786 | 1 | -1 | UNKNOWN |
-| CWE-428 | 1 | -1 | UNKNOWN |
+| CWE-798 | 1 | 7 | authentication |
+| CWE-786 | 1 | 1 | memory_safety |
+| CWE-428 | 1 | 10 | code_quality |
 | CWE-706 | 1 | 6 | access_control |
 
 ---
@@ -339,22 +343,22 @@ Total: **55,868** | Benign: **27,934** | Vulnerable: **27,934**
 | Group ID | Group | Count |
 |---|---|---|
 | 0 | benign | 27,934 |
-| 1 | memory_safety | 12,208 |
-| 3 | resource_management | 2,744 |
-| 6 | access_control | 2,406 |
-| -1 | UNKNOWN | 2,378 |
-| 4 | input_validation | 2,017 |
-| 2 | numeric | 1,903 |
-| 10 | code_quality | 1,198 |
+| 1 | memory_safety | 12,214 |
+| 3 | resource_management | 2,784 |
+| 6 | access_control | 2,424 |
+| -1 | UNKNOWN | 2,143 |
+| 4 | input_validation | 2,020 |
+| 2 | numeric | 2,012 |
+| 10 | code_quality | 1,214 |
 | 9 | concurrency | 1,195 |
-| 7 | authentication | 460 |
-| 5 | injection | 429 |
-| 8 | cryptography | 367 |
+| 7 | authentication | 462 |
+| 5 | injection | 437 |
+| 8 | cryptography | 386 |
 | 15 | deprecated | 258 |
 | 11 | configuration | 192 |
-| 14 | error_handling | 120 |
+| 14 | error_handling | 132 |
 | 12 | data_integrity | 50 |
-| 13 | logging | 9 |
+| 13 | logging | 11 |
 
 ### CWE Distribution (all vulnerable)
 
@@ -394,7 +398,7 @@ Total: **55,868** | Benign: **27,934** | Vulnerable: **27,934**
 | CWE-667 | 135 | 9 | concurrency |
 | CWE-404 | 119 | 3 | resource_management |
 | CWE-295 | 117 | 7 | authentication |
-| CWE-193 | 107 | -1 | UNKNOWN |
+| CWE-193 | 107 | 2 | numeric |
 | CWE-909 | 104 | 3 | resource_management |
 | CWE-78 | 102 | 5 | injection |
 | CWE-284 | 96 | 6 | access_control |
@@ -431,7 +435,7 @@ Total: **55,868** | Benign: **27,934** | Vulnerable: **27,934**
 | CWE-326 | 40 | 8 | cryptography |
 | CWE-502 | 40 | 12 | data_integrity |
 | CWE-611 | 38 | 11 | configuration |
-| CWE-776 | 36 | -1 | UNKNOWN |
+| CWE-776 | 36 | 3 | resource_management |
 | CWE-436 | 36 | 4 | input_validation |
 | CWE-763 | 35 | 1 | memory_safety |
 | CWE-345 | 32 | 11 | configuration |
@@ -453,8 +457,8 @@ Total: **55,868** | Benign: **27,934** | Vulnerable: **27,934**
 | CWE-911 | 14 | 3 | resource_management |
 | CWE-18 | 14 | 15 | deprecated |
 | CWE-319 | 13 | 8 | cryptography |
-| CWE-428 | 12 | -1 | UNKNOWN |
-| CWE-331 | 12 | -1 | UNKNOWN |
+| CWE-428 | 12 | 10 | code_quality |
+| CWE-331 | 12 | 8 | cryptography |
 | CWE-346 | 12 | 7 | authentication |
 | CWE-385 | 12 | 8 | cryptography |
 | CWE-407 | 12 | 3 | resource_management |
@@ -464,7 +468,7 @@ Total: **55,868** | Benign: **27,934** | Vulnerable: **27,934**
 | CWE-337 | 10 | 8 | cryptography |
 | CWE-532 | 9 | 13 | logging |
 | CWE-918 | 8 | 6 | access_control |
-| CWE-273 | 8 | -1 | UNKNOWN |
+| CWE-273 | 8 | 14 | error_handling |
 | CWE-1077 | 8 | 2 | numeric |
 | CWE-90 | 8 | 5 | injection |
 | CWE-241 | 8 | 4 | input_validation |
@@ -472,53 +476,272 @@ Total: **55,868** | Benign: **27,934** | Vulnerable: **27,934**
 | CWE-494 | 6 | 12 | data_integrity |
 | CWE-672 | 6 | 1 | memory_safety |
 | CWE-1333 | 6 | 3 | resource_management |
-| CWE-118 | 6 | -1 | UNKNOWN |
+| CWE-118 | 6 | 1 | memory_safety |
 | CWE-434 | 6 | 5 | injection |
 | CWE-693 | 6 | 15 | deprecated |
 | CWE-172 | 6 | 4 | input_validation |
 | CWE-184 | 6 | 4 | input_validation |
 | CWE-229 | 6 | -1 | UNKNOWN |
 | CWE-522 | 5 | 8 | cryptography |
-| CWE-113 | 4 | -1 | UNKNOWN |
+| CWE-113 | 4 | 5 | injection |
 | CWE-16 | 4 | 11 | configuration |
 | CWE-255 | 4 | 7 | authentication |
 | CWE-762 | 4 | -1 | UNKNOWN |
 | CWE-306 | 4 | -1 | UNKNOWN |
-| CWE-924 | 4 | -1 | UNKNOWN |
-| CWE-324 | 4 | -1 | UNKNOWN |
+| CWE-924 | 4 | 6 | access_control |
+| CWE-324 | 4 | 8 | cryptography |
 | CWE-1021 | 4 | 12 | data_integrity |
 | CWE-285 | 4 | 6 | access_control |
 | CWE-358 | 4 | 10 | code_quality |
-| CWE-88 | 4 | -1 | UNKNOWN |
-| CWE-639 | 4 | -1 | UNKNOWN |
+| CWE-88 | 4 | 5 | injection |
+| CWE-639 | 4 | 6 | access_control |
 | CWE-320 | 3 | 8 | cryptography |
 | CWE-706 | 3 | 6 | access_control |
-| CWE-707 | 3 | -1 | UNKNOWN |
-| CWE-185 | 2 | -1 | UNKNOWN |
-| CWE-1049 | 2 | -1 | UNKNOWN |
-| CWE-628 | 2 | -1 | UNKNOWN |
-| CWE-202 | 2 | -1 | UNKNOWN |
-| CWE-248 | 2 | -1 | UNKNOWN |
-| CWE-626 | 2 | -1 | UNKNOWN |
-| CWE-460 | 2 | -1 | UNKNOWN |
+| CWE-707 | 3 | 4 | input_validation |
+| CWE-185 | 2 | 2 | numeric |
+| CWE-1049 | 2 | 3 | resource_management |
+| CWE-628 | 2 | 10 | code_quality |
+| CWE-202 | 2 | 6 | access_control |
+| CWE-248 | 2 | 14 | error_handling |
+| CWE-626 | 2 | 10 | code_quality |
+| CWE-460 | 2 | 14 | error_handling |
 | CWE-290 | 2 | 6 | access_control |
-| CWE-73 | 2 | -1 | UNKNOWN |
+| CWE-73 | 2 | 6 | access_control |
 | CWE-93 | 2 | 5 | injection |
-| CWE-117 | 2 | -1 | UNKNOWN |
+| CWE-117 | 2 | 13 | logging |
 | CWE-209 | 2 | 14 | error_handling |
-| CWE-1050 | 2 | -1 | UNKNOWN |
-| CWE-282 | 2 | -1 | UNKNOWN |
-| CWE-610 | 2 | -1 | UNKNOWN |
-| CWE-338 | 2 | -1 | UNKNOWN |
-| CWE-300 | 2 | -1 | UNKNOWN |
-| CWE-307 | 2 | -1 | UNKNOWN |
+| CWE-1050 | 2 | 3 | resource_management |
+| CWE-282 | 2 | 6 | access_control |
+| CWE-610 | 2 | 6 | access_control |
+| CWE-338 | 2 | 8 | cryptography |
+| CWE-300 | 2 | 6 | access_control |
+| CWE-307 | 2 | 7 | authentication |
 | CWE-838 | 2 | -1 | UNKNOWN |
 | CWE-325 | 2 | -1 | UNKNOWN |
-| CWE-349 | 1 | -1 | UNKNOWN |
+| CWE-349 | 1 | 8 | cryptography |
 
 ---
 
-## 4. Devign (`data/datasets/devign/{train,validation,test}.parquet`)
+## 6. TitanVul (`data/datasets/titanvul/train.parquet`)
+
+Total: **15,300** | Benign: **7,650** | Vulnerable: **7,650**
+
+> Aggregated from 7 public vulnerability datasets (BigVul, D2A, CVEfixes, Devign, ReVeal, DiverseVul, MegaVul),
+> deduplicated and validated with a multi-agent LLM framework.
+> Original 38,548 multilingual pairs filtered to **C/C++ only** (via `extension` field).
+> Balanced 1:1 (func_after = benign). Has `func_before` + `func_after` for diff-based flaw lines.
+
+### Group Distribution
+
+| Group ID | Group | Count |
+|---|---|---|
+| 0 | benign | 7,650 |
+| 1 | memory_safety | 2,593 |
+| -1 | UNKNOWN | 1,353 |
+| 6 | access_control | 750 |
+| 3 | resource_management | 553 |
+| 4 | input_validation | 540 |
+| 2 | numeric | 488 |
+| 8 | cryptography | 299 |
+| 14 | error_handling | 275 |
+| 9 | concurrency | 191 |
+| 5 | injection | 186 |
+| 10 | code_quality | 183 |
+| 7 | authentication | 138 |
+| 11 | configuration | 51 |
+| 15 | deprecated | 36 |
+| 12 | data_integrity | 12 |
+| 13 | logging | 2 |
+
+### CWE Distribution (all vulnerable)
+
+| CWE | Count | Group ID | Group |
+|---|---|---|---|
+| *(empty/unknown)* | 1,351 | -1 | UNKNOWN |
+| CWE-787 | 684 | 1 | memory_safety |
+| CWE-119 | 526 | 1 | memory_safety |
+| CWE-20 | 503 | 4 | input_validation |
+| CWE-125 | 434 | 1 | memory_safety |
+| CWE-416 | 422 | 1 | memory_safety |
+| CWE-200 | 325 | 6 | access_control |
+| CWE-476 | 302 | 1 | memory_safety |
+| CWE-703 | 245 | 14 | error_handling |
+| CWE-190 | 235 | 2 | numeric |
+| CWE-399 | 186 | 3 | resource_management |
+| CWE-310 | 166 | 8 | cryptography |
+| CWE-189 | 164 | 2 | numeric |
+| CWE-362 | 162 | 9 | concurrency |
+| CWE-264 | 128 | 6 | access_control |
+| CWE-400 | 128 | 3 | resource_management |
+| CWE-120 | 100 | 1 | memory_safety |
+| CWE-401 | 90 | 3 | resource_management |
+| CWE-415 | 79 | 1 | memory_safety |
+| CWE-284 | 77 | 6 | access_control |
+| CWE-835 | 59 | 10 | code_quality |
+| CWE-369 | 57 | 2 | numeric |
+| CWE-94 | 54 | 5 | injection |
+| CWE-617 | 53 | 10 | code_quality |
+| CWE-59 | 50 | 6 | access_control |
+| CWE-269 | 49 | 6 | access_control |
+| CWE-295 | 48 | 7 | authentication |
+| CWE-287 | 44 | 7 | authentication |
+| CWE-22 | 42 | 6 | access_control |
+| CWE-770 | 40 | 3 | resource_management |
+| CWE-459 | 35 | 3 | resource_management |
+| CWE-89 | 35 | 5 | injection |
+| CWE-613 | 34 | 7 | authentication |
+| CWE-674 | 33 | 10 | code_quality |
+| CWE-772 | 32 | 3 | resource_management |
+| CWE-319 | 31 | 8 | cryptography |
+| CWE-78 | 29 | 5 | injection |
+| CWE-732 | 25 | 11 | configuration |
+| CWE-327 | 23 | 8 | cryptography |
+| CWE-330 | 22 | 8 | cryptography |
+| CWE-191 | 21 | 2 | numeric |
+| CWE-444 | 21 | 5 | injection |
+| CWE-122 | 20 | 1 | memory_safety |
+| CWE-77 | 20 | 5 | injection |
+| CWE-704 | 19 | 10 | code_quality |
+| CWE-290 | 17 | 6 | access_control |
+| CWE-254 | 16 | 15 | deprecated |
+| CWE-134 | 16 | 1 | memory_safety |
+| CWE-862 | 15 | 6 | access_control |
+| CWE-347 | 14 | 8 | cryptography |
+| CWE-326 | 14 | 8 | cryptography |
+| CWE-209 | 13 | 14 | error_handling |
+| CWE-79 | 13 | 5 | injection |
+| CWE-320 | 13 | 8 | cryptography |
+| CWE-345 | 13 | 11 | configuration |
+| CWE-406 | 13 | 3 | resource_management |
+| CWE-252 | 13 | 4 | input_validation |
+| CWE-354 | 13 | 4 | input_validation |
+| CWE-908 | 12 | 3 | resource_management |
+| CWE-203 | 12 | 6 | access_control |
+| CWE-662 | 12 | 9 | concurrency |
+| CWE-367 | 9 | 9 | concurrency |
+| CWE-755 | 9 | 14 | error_handling |
+| CWE-17 | 9 | 15 | deprecated |
+| CWE-241 | 9 | 4 | input_validation |
+| CWE-834 | 9 | 10 | code_quality |
+| CWE-668 | 8 | 6 | access_control |
+| CWE-667 | 8 | 9 | concurrency |
+| CWE-754 | 8 | 14 | error_handling |
+| CWE-276 | 8 | 11 | configuration |
+| CWE-323 | 7 | 8 | cryptography |
+| CWE-19 | 7 | 15 | deprecated |
+| CWE-863 | 7 | 6 | access_control |
+| CWE-665 | 7 | 3 | resource_management |
+| CWE-74 | 6 | 5 | injection |
+| CWE-288 | 5 | 7 | authentication |
+| CWE-388 | 5 | 10 | code_quality |
+| CWE-913 | 5 | 12 | data_integrity |
+| CWE-311 | 5 | 8 | cryptography |
+| CWE-601 | 4 | 6 | access_control |
+| CWE-1021 | 4 | 12 | data_integrity |
+| CWE-909 | 4 | 3 | resource_management |
+| CWE-281 | 4 | 6 | access_control |
+| CWE-18 | 4 | 15 | deprecated |
+| CWE-502 | 3 | 12 | data_integrity |
+| CWE-352 | 3 | 6 | access_control |
+| CWE-434 | 3 | 5 | injection |
+| CWE-16 | 3 | 11 | configuration |
+| CWE-358 | 3 | 10 | code_quality |
+| CWE-121 | 3 | 1 | memory_safety |
+| CWE-763 | 3 | 1 | memory_safety |
+| CWE-193 | 3 | 2 | numeric |
+| CWE-285 | 3 | 6 | access_control |
+| CWE-303 | 3 | 7 | authentication |
+| CWE-611 | 2 | 11 | configuration |
+| CWE-426 | 2 | 10 | code_quality |
+| CWE-294 | 2 | 7 | authentication |
+| CWE-417 | 2 | 3 | resource_management |
+| CWE-131 | 2 | 2 | numeric |
+| CWE-212 | 2 | 6 | access_control |
+| CWE-824 | 2 | 1 | memory_safety |
+| CWE-522 | 2 | 8 | cryptography |
+| CWE-681 | 2 | 2 | numeric |
+| CWE-532 | 2 | 13 | logging |
+| CWE-297 | 2 | 6 | access_control |
+| CWE-776 | 2 | 3 | resource_management |
+| CWE-682 | 2 | 2 | numeric |
+| CWE-404 | 1 | 3 | resource_management |
+| CWE-116 | 1 | 5 | injection |
+| CWE-129 | 1 | 2 | numeric |
+| CWE-823 | 1 | 1 | memory_safety |
+| CWE-697 | 1 | 2 | numeric |
+| CWE-707 | 1 | 4 | input_validation |
+| CWE-266 | 1 | 6 | access_control |
+| CWE-331 | 1 | 8 | cryptography |
+| CWE-93 | 1 | 5 | injection |
+| NVD-CWE-Other | 1 | -1 | UNKNOWN |
+| CWE-91 | 1 | 5 | injection |
+| CWE-346 | 1 | 7 | authentication |
+| CWE-552 | 1 | 6 | access_control |
+| CWE-113 | 1 | 5 | injection |
+| CWE-1187 | 1 | 3 | resource_management |
+| CWE-172 | 1 | 4 | input_validation |
+| CWE-349 | 1 | 8 | cryptography |
+| CWE-126 | 1 | 1 | memory_safety |
+| CWE-307 | 1 | 7 | authentication |
+| CWE-275 | 1 | -1 | UNKNOWN |
+| CWE-88 | 1 | 5 | injection |
+
+---
+
+## 7. BenchVul (`data/datasets/benchvul/train.parquet`)
+
+# Benchmark for Top 25 Most Dangerous CWEs
+
+Total: **460** | Benign: **230** | Vulnerable: **230**
+
+> Manually verified benchmark designed for **evaluating** vulnerability detection models.
+> Covers a refined set of the Top 25 Most Dangerous CWEs (MITRE 2024).
+> 50 vulnerable + 50 fixed samples per CWE (before C/C++ filter).
+> Labels achieve 92% correctness rate per manual review.
+> Original 1,050 multilingual pairs filtered to **C/C++ only** (via `programming_language` field).
+> **Intended for evaluation/testing only — not suitable for training.**
+
+### Group Distribution
+
+| Group ID | Group | Count |
+|---|---|---|
+| 0 | benign | 230 |
+| 1 | memory_safety | 73 |
+| 6 | access_control | 54 |
+| 5 | injection | 26 |
+| 3 | resource_management | 24 |
+| 2 | numeric | 23 |
+| 7 | authentication | 19 |
+| -1 | UNKNOWN | 7 |
+| 12 | data_integrity | 4 |
+
+### CWE Distribution (all vulnerable)
+
+| CWE | Count | Group ID | Group |
+|---|---|---|---|
+| CWE-400 | 24 | 3 | resource_management |
+| CWE-190 | 23 | 2 | numeric |
+| CWE-416 | 21 | 1 | memory_safety |
+| CWE-476 | 19 | 1 | memory_safety |
+| CWE-798 | 19 | 7 | authentication |
+| CWE-125 | 17 | 1 | memory_safety |
+| CWE-787 | 16 | 1 | memory_safety |
+| CWE-434 | 16 | 5 | injection |
+| CWE-352 | 10 | 6 | access_control |
+| CWE-862 | 10 | 6 | access_control |
+| CWE-200 | 10 | 6 | access_control |
+| CWE-94 | 8 | 5 | injection |
+| CWE-269 | 8 | 6 | access_control |
+| CWE-306 | 7 | -1 | UNKNOWN |
+| CWE-863 | 6 | 6 | access_control |
+| CWE-918 | 6 | 6 | access_control |
+| CWE-22 | 4 | 6 | access_control |
+| CWE-502 | 4 | 12 | data_integrity |
+| CWE-79 | 2 | 5 | injection |
+
+---
+
+## 8. Devign (`data/datasets/devign/{train,validation,test}.parquet`)
 
 Total: **27,318** | Benign: **14,858** | Vulnerable: **12,460**
 
@@ -527,7 +750,7 @@ Total: **27,318** | Benign: **14,858** | Vulnerable: **12,460**
 
 ---
 
-## 5. Merged (`data/datasets/merged/train.parquet`)
+## 9. Merged (`data/datasets/merged/train.parquet`)
 
 Total: **176,674** | Benign: **154,205** | Vulnerable: **22,469**
 
@@ -538,22 +761,22 @@ Total: **176,674** | Benign: **154,205** | Vulnerable: **22,469**
 | Group ID | Group | Count |
 |---|---|---|
 | 0 | benign | 154,205 |
-| 1 | memory_safety | 8,959 |
-| -1 | UNKNOWN | 2,897 |
-| 6 | access_control | 2,276 |
-| 3 | resource_management | 2,076 |
-| 4 | input_validation | 1,815 |
-| 2 | numeric | 1,550 |
+| 1 | memory_safety | 8,962 |
+| -1 | UNKNOWN | 2,764 |
+| 6 | access_control | 2,286 |
+| 3 | resource_management | 2,100 |
+| 4 | input_validation | 1,818 |
+| 2 | numeric | 1,606 |
 | 9 | concurrency | 824 |
-| 10 | code_quality | 709 |
+| 10 | code_quality | 717 |
 | 15 | deprecated | 339 |
-| 5 | injection | 304 |
-| 8 | cryptography | 297 |
-| 7 | authentication | 168 |
+| 5 | injection | 310 |
+| 8 | cryptography | 310 |
+| 7 | authentication | 170 |
 | 11 | configuration | 149 |
-| 14 | error_handling | 73 |
+| 14 | error_handling | 80 |
 | 12 | data_integrity | 27 |
-| 13 | logging | 6 |
+| 13 | logging | 7 |
 
 ### CWE Distribution (all vulnerable)
 
@@ -600,7 +823,7 @@ Total: **176,674** | Benign: **154,205** | Vulnerable: **22,469**
 | CWE-79 | 66 | 5 | injection |
 | CWE-78 | 63 | 5 | injection |
 | CWE-909 | 55 | 3 | resource_management |
-| CWE-193 | 54 | -1 | UNKNOWN |
+| CWE-193 | 54 | 2 | numeric |
 | CWE-295 | 52 | 7 | authentication |
 | CWE-74 | 50 | 5 | injection |
 | CWE-704 | 48 | 10 | code_quality |
@@ -637,7 +860,7 @@ Total: **176,674** | Benign: **154,205** | Vulnerable: **22,469**
 | CWE-824 | 19 | 1 | memory_safety |
 | CWE-502 | 18 | 12 | data_integrity |
 | CWE-763 | 18 | 1 | memory_safety |
-| CWE-776 | 18 | -1 | UNKNOWN |
+| CWE-776 | 18 | 3 | resource_management |
 | CWE-444 | 18 | 5 | injection |
 | CWE-311 | 16 | 8 | cryptography |
 | CWE-662 | 16 | 9 | concurrency |
@@ -655,7 +878,7 @@ Total: **176,674** | Benign: **154,205** | Vulnerable: **22,469**
 | CWE-255 | 8 | 7 | authentication |
 | CWE-320 | 8 | 8 | cryptography |
 | CWE-552 | 8 | 6 | access_control |
-| CWE-331 | 8 | -1 | UNKNOWN |
+| CWE-331 | 8 | 8 | cryptography |
 | CWE-319 | 7 | 8 | cryptography |
 | CWE-440 | 7 | 10 | code_quality |
 | CWE-911 | 7 | 3 | resource_management |
@@ -665,7 +888,7 @@ Total: **176,674** | Benign: **154,205** | Vulnerable: **22,469**
 | CWE-532 | 6 | 13 | logging |
 | CWE-494 | 6 | 12 | data_integrity |
 | CWE-90 | 6 | 5 | injection |
-| CWE-428 | 6 | -1 | UNKNOWN |
+| CWE-428 | 6 | 10 | code_quality |
 | CWE-407 | 6 | 3 | resource_management |
 | CWE-918 | 5 | 6 | access_control |
 | CWE-823 | 5 | 1 | memory_safety |
@@ -673,7 +896,7 @@ Total: **176,674** | Benign: **154,205** | Vulnerable: **22,469**
 | CWE-606 | 5 | -1 | UNKNOWN |
 | CWE-693 | 4 | 15 | deprecated |
 | CWE-126 | 4 | 1 | memory_safety |
-| CWE-273 | 4 | -1 | UNKNOWN |
+| CWE-273 | 4 | 14 | error_handling |
 | CWE-1077 | 4 | 2 | numeric |
 | CWE-670 | 4 | 10 | code_quality |
 | CWE-241 | 4 | 4 | input_validation |
@@ -684,68 +907,68 @@ Total: **176,674** | Benign: **154,205** | Vulnerable: **22,469**
 | CWE-16 | 3 | 11 | configuration |
 | CWE-1188 | 3 | 11 | configuration |
 | CWE-672 | 3 | 1 | memory_safety |
-| CWE-118 | 3 | -1 | UNKNOWN |
+| CWE-118 | 3 | 1 | memory_safety |
 | CWE-434 | 3 | 5 | injection |
-| CWE-707 | 3 | -1 | UNKNOWN |
+| CWE-707 | 3 | 4 | input_validation |
 | CWE-325 | 3 | -1 | UNKNOWN |
 | CWE-209 | 2 | 14 | error_handling |
-| CWE-113 | 2 | -1 | UNKNOWN |
+| CWE-113 | 2 | 5 | injection |
 | CWE-762 | 2 | -1 | UNKNOWN |
 | CWE-1333 | 2 | 3 | resource_management |
 | CWE-306 | 2 | -1 | UNKNOWN |
-| CWE-924 | 2 | -1 | UNKNOWN |
-| CWE-88 | 2 | -1 | UNKNOWN |
-| CWE-639 | 2 | -1 | UNKNOWN |
-| CWE-307 | 2 | -1 | UNKNOWN |
+| CWE-924 | 2 | 6 | access_control |
+| CWE-88 | 2 | 5 | injection |
+| CWE-639 | 2 | 6 | access_control |
+| CWE-307 | 2 | 7 | authentication |
 | CWE-838 | 2 | -1 | UNKNOWN |
-| CWE-1325 | 2 | -1 | UNKNOWN |
-| CWE-757 | 2 | -1 | UNKNOWN |
-| CWE-99 | 2 | -1 | UNKNOWN |
+| CWE-1325 | 2 | 3 | resource_management |
+| CWE-757 | 2 | 8 | cryptography |
+| CWE-99 | 2 | 5 | injection |
 | CWE-664 | 1 | 3 | resource_management |
 | CWE-352 | 1 | 6 | access_control |
-| CWE-185 | 1 | -1 | UNKNOWN |
-| CWE-1049 | 1 | -1 | UNKNOWN |
-| CWE-628 | 1 | -1 | UNKNOWN |
-| CWE-202 | 1 | -1 | UNKNOWN |
-| CWE-248 | 1 | -1 | UNKNOWN |
-| CWE-626 | 1 | -1 | UNKNOWN |
-| CWE-460 | 1 | -1 | UNKNOWN |
+| CWE-185 | 1 | 2 | numeric |
+| CWE-1049 | 1 | 3 | resource_management |
+| CWE-628 | 1 | 10 | code_quality |
+| CWE-202 | 1 | 6 | access_control |
+| CWE-248 | 1 | 14 | error_handling |
+| CWE-626 | 1 | 10 | code_quality |
+| CWE-460 | 1 | 14 | error_handling |
 | CWE-290 | 1 | 6 | access_control |
-| CWE-73 | 1 | -1 | UNKNOWN |
-| CWE-324 | 1 | -1 | UNKNOWN |
+| CWE-73 | 1 | 6 | access_control |
+| CWE-324 | 1 | 8 | cryptography |
 | CWE-93 | 1 | 5 | injection |
-| CWE-117 | 1 | -1 | UNKNOWN |
-| CWE-1050 | 1 | -1 | UNKNOWN |
-| CWE-282 | 1 | -1 | UNKNOWN |
-| CWE-610 | 1 | -1 | UNKNOWN |
-| CWE-338 | 1 | -1 | UNKNOWN |
-| CWE-300 | 1 | -1 | UNKNOWN |
-| CWE-349 | 1 | -1 | UNKNOWN |
-| CWE-457 | 1 | -1 | UNKNOWN |
-| CWE-392 | 1 | -1 | UNKNOWN |
-| CWE-114 | 1 | -1 | UNKNOWN |
-| CWE-680 | 1 | -1 | UNKNOWN |
-| CWE-789 | 1 | -1 | UNKNOWN |
+| CWE-117 | 1 | 13 | logging |
+| CWE-1050 | 1 | 3 | resource_management |
+| CWE-282 | 1 | 6 | access_control |
+| CWE-610 | 1 | 6 | access_control |
+| CWE-338 | 1 | 8 | cryptography |
+| CWE-300 | 1 | 6 | access_control |
+| CWE-349 | 1 | 8 | cryptography |
+| CWE-457 | 1 | 3 | resource_management |
+| CWE-392 | 1 | 14 | error_handling |
+| CWE-114 | 1 | 6 | access_control |
+| CWE-680 | 1 | 2 | numeric |
+| CWE-789 | 1 | 3 | resource_management |
 
 ---
 
 ## Cross-Dataset Group Coverage (vulnerable only)
 
-| Group ID | Group | BigVul | DiverseVul | MegaVul | Merged |
-|---|---|---|---|---|---|
-| 1 | memory_safety | 3618 | 7063 | 12208 | 8959 |
-| -1 | UNKNOWN | 2135 | 2974 | 2378 | 2897 |
-| 6 | access_control | 1341 | 1825 | 2406 | 2276 |
-| 3 | resource_management | 916 | 1353 | 2744 | 2076 |
-| 4 | input_validation | 1153 | 1418 | 2017 | 1815 |
-| 2 | numeric | 703 | 1176 | 1903 | 1550 |
-| 9 | concurrency | 266 | 450 | 1195 | 824 |
-| 10 | code_quality | 131 | 402 | 1198 | 709 |
-| 8 | cryptography | 130 | 529 | 367 | 297 |
-| 5 | injection | 101 | 383 | 429 | 304 |
-| 15 | deprecated | 271 | 179 | 258 | 339 |
-| 14 | error_handling | 13 | 829 | 120 | 73 |
-| 7 | authentication | 36 | 253 | 460 | 168 |
-| 11 | configuration | 75 | 96 | 192 | 149 |
-| 12 | data_integrity | 5 | 8 | 50 | 27 |
-| 13 | logging | 1 | 7 | 9 | 6 |
+| Group ID | Group | BigVul | DiverseVul | MegaVul | TitanVul | BenchVul | Merged |
+|---|---|---|---|---|---|---|---|
+| 1 | memory_safety | 3618 | 7065 | 12214 | 2593 | 73 | 8962 |
+| -1 | UNKNOWN | 2135 | 2836 | 2143 | 1353 | 7 | 2764 |
+| 6 | access_control | 1341 | 1839 | 2424 | 750 | 54 | 2286 |
+| 3 | resource_management | 916 | 1383 | 2784 | 553 | 24 | 2100 |
+| 4 | input_validation | 1153 | 1424 | 2020 | 540 | 0 | 1818 |
+| 2 | numeric | 703 | 1187 | 2012 | 488 | 23 | 1606 |
+| 9 | concurrency | 266 | 450 | 1195 | 191 | 0 | 824 |
+| 10 | code_quality | 131 | 403 | 1214 | 183 | 0 | 717 |
+| 8 | cryptography | 130 | 547 | 386 | 299 | 0 | 310 |
+| 5 | injection | 101 | 395 | 437 | 186 | 26 | 310 |
+| 14 | error_handling | 13 | 835 | 132 | 275 | 0 | 80 |
+| 7 | authentication | 36 | 281 | 462 | 138 | 19 | 170 |
+| 15 | deprecated | 271 | 179 | 258 | 36 | 0 | 339 |
+| 11 | configuration | 75 | 96 | 192 | 51 | 0 | 149 |
+| 12 | data_integrity | 5 | 18 | 50 | 12 | 4 | 27 |
+| 13 | logging | 1 | 7 | 11 | 2 | 0 | 7 |

@@ -42,12 +42,16 @@ def cwe_to_group(cwe_str: str) -> tuple[int, str]:
 
 
 def parse_cwe(raw) -> str:
-    """Normalise CWE field to 'CWE-NNN' string."""
+    """Normalise CWE field to 'CWE-NNN' string. Extracts primary CWE if comma-separated."""
     if pd.isna(raw) or raw is None:
         return ""
+    if isinstance(raw, list):
+        raw = raw[0] if raw else ""
     s = str(raw).strip()
     if not s or s.lower() in ("nan", "none", "unknown", "other", "cwe-other", "cwe-unknown"):
         return ""
+    if "," in s:
+        s = s.split(",")[0].strip()
     if s.startswith("CWE-"):
         return s
     if s.isdigit():
@@ -202,13 +206,17 @@ Generated from raw parquet files. Group mapping via `CWE_GROUP_MAP` in `dataset_
 
 ## Summary
 
-| Dataset | Total | Benign | Vulnerable | Has CWE | Has Flaw Lines |
-|---|---|---|---|---|---|
-| BigVul | 217,007 | 206,112 | 10,895 | Yes | Yes (diff) |
-| DiverseVul | 330,492 | 311,547 | 18,945 | Yes (multi-label) | No |
-| MegaVul | 55,868 | 27,934 | 27,934 | Yes | Yes (diff) |
-| Devign | 27,318 | 14,858 | 12,460 | No | Yes (vul_lines) |
-| Merged (BigVul+MegaVul) | 176,674 | 154,205 | 22,469 | Yes | Yes (diff) |
+| Dataset | Total | Benign | Vulnerable | Has CWE | Has Flaw Lines | Notes |
+|---|---|---|---|---|---|---|
+| BigVul | 217,007 | 206,112 | 10,895 | Yes | Yes (diff) | Primary training dataset |
+| DiverseVul | 330,492 | 311,547 | 18,945 | Yes (multi-label) | No | Binary only |
+| MegaVul | 55,868 | 27,934 | 27,934 | Yes | Yes (diff) | Balanced 1:1 |
+| Devign | 27,318 | 14,858 | 12,460 | No | Yes (vul_lines) | Binary only |
+| Merged (BigVul+MegaVul) | 176,674 | 154,205 | 22,469 | Yes | Yes (diff) | Combined |
+| TitanVul | 15,300\* | 7,650 | 7,650 | Yes | Yes (diff) | Balanced 1:1, C/C++ filtered |
+| BenchVul | 460\* | 230 | 230 | Yes | Yes (diff) | **Benchmark for Top 25 Most Dangerous CWEs** |
+
+\*After C/C++ language filter (from 38,548 and 1,050 original pairs respectively).
 """)
 
     # ── BigVul ───────────────────────────────────────────────────────────────
@@ -300,8 +308,66 @@ Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
     else:
         print(f"  SKIP: {mv_path} not found")
 
+    # ── TitanVul ─────────────────────────────────────────────────────────────
+    print("Analyzing TitanVul...")
+    tv_path = DATA / "titanvul" / "train.parquet"
+    if tv_path.exists():
+        tv = pd.read_parquet(tv_path)
+        gc, cr, nb, nv = analyze_df(tv, cwe_col="CWE ID", label_col="vul")
+        all_group_counts["TitanVul"] = gc
+        sections.append(f"""## 6. TitanVul (`data/datasets/titanvul/train.parquet`)
+
+Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
+
+> Aggregated from 7 public vulnerability datasets (BigVul, D2A, CVEfixes, Devign, ReVeal, DiverseVul, MegaVul),
+> deduplicated and validated with a multi-agent LLM framework.
+> Original 38,548 multilingual pairs filtered to **C/C++ only** (via `extension` field).
+> Balanced 1:1 (func_after = benign). Has `func_before` + `func_after` for diff-based flaw lines.
+
+### Group Distribution
+
+{group_dist_table(gc)}
+
+### CWE Distribution (all vulnerable)
+
+{cwe_dist_table(cr)}
+""")
+    else:
+        print(f"  SKIP: {tv_path} not found")
+
+    # ── BenchVul ─────────────────────────────────────────────────────────────
+    print("Analyzing BenchVul...")
+    bvul_path = DATA / "benchvul" / "train.parquet"
+    if bvul_path.exists():
+        bvul = pd.read_parquet(bvul_path)
+        gc, cr, nb, nv = analyze_df(bvul, cwe_col="CWE ID", label_col="vul")
+        all_group_counts["BenchVul"] = gc
+        sections.append(f"""## 7. BenchVul (`data/datasets/benchvul/train.parquet`)
+
+# Benchmark for Top 25 Most Dangerous CWEs
+
+Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
+
+> Manually verified benchmark designed for **evaluating** vulnerability detection models.
+> Covers a refined set of the Top 25 Most Dangerous CWEs (MITRE 2024).
+> 50 vulnerable + 50 fixed samples per CWE (before C/C++ filter).
+> Labels achieve 92% correctness rate per manual review.
+> Original 1,050 multilingual pairs filtered to **C/C++ only** (via `programming_language` field).
+> **Intended for evaluation/testing only — not suitable for training.**
+
+### Group Distribution
+
+{group_dist_table(gc)}
+
+### CWE Distribution (all vulnerable)
+
+{cwe_dist_table(cr)}
+""")
+    else:
+        print(f"  SKIP: {bvul_path} not found")
+
     # ── Devign ───────────────────────────────────────────────────────────────
-    sections.append("""## 4. Devign (`data/datasets/devign/{train,validation,test}.parquet`)
+    sections.append("""## 8. Devign (`data/datasets/devign/{train,validation,test}.parquet`)
 
 Total: **27,318** | Benign: **14,858** | Vulnerable: **12,460**
 
@@ -316,7 +382,7 @@ Total: **27,318** | Benign: **14,858** | Vulnerable: **12,460**
         mg = pd.read_parquet(mg_path)
         gc, cr, nb, nv = analyze_df(mg, cwe_col="CWE ID", label_col="vul")
         all_group_counts["Merged"] = gc
-        sections.append(f"""## 5. Merged (`data/datasets/merged/train.parquet`)
+        sections.append(f"""## 9. Merged (`data/datasets/merged/train.parquet`)
 
 Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
 
