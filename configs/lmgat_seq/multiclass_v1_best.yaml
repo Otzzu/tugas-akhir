@@ -1,0 +1,46 @@
+# configs/lmgat_seq/multiclass_v1_best.yaml — Arch7 v1 replica + LIVABLE + F1-stop
+#
+# Base: 20260429_121124_lmgat_seq_multiclass (F1=0.4554, best localization among seq models)
+# v1 original settings: stage2=raw, mil=0.3, rank=0.1, lr=0.001
+# Changes vs original: livable_loss=true, early_stop_metric=f1, patience=25
+#
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/lmgat_seq/multiclass_v1_best.yaml
+
+data:
+  source: bigvul
+  mode: multiclass
+  top_cwe: 10
+  max_nodes: 1000
+
+model:
+  architecture: lmgat_seq
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 7
+  num_classes: 11
+  stage2_node_input: raw   # v1 original — raw 773D + s_i; DO NOT change to loc
+  mil_weight: 0.3          # v1 original
+  mil_k: 3
+  rank_loss_weight: 0.1    # v1 original
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 8
+  lr: 0.001                # v1 original; DO NOT lower (v2 used 0.0005 and degraded)
+  lm_lr: 0.00001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.0001
+  patience: 25
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 2.0
+  livable_loss: true
+  device: cuda
