@@ -54,5 +54,5 @@ train:
   patience: 25
   use_class_weights: true
   focal_loss_gamma: 2.0
-  livable_loss: true            # LIVABLE epoch-adaptive class weights (arXiv:2306.06935)
+  livable_loss: false           # disabled; enable for LIVABLE adaptive weights run
   device: cuda
