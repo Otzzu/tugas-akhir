@@ -773,6 +773,8 @@ def main():
         model, cfg, total_steps
     )
 
+    stop_on_f1 = getattr(cfg.train, "early_stop_metric", "f1") == "f1"
+    best_val_f1 = -1.0
     best_val_loss = float("inf")
     patience_counter = 0
     start_epoch = 1
@@ -811,7 +813,8 @@ def main():
     if args.resume and last_ckpt.exists():
         meta = load_resume_checkpoint(last_ckpt, model, optimizer, scheduler, device=str(device))
         start_epoch = meta["epoch"] + 1
-        best_val_loss = meta["best_val_loss"]
+        best_val_f1 = meta.get("best_val_f1", -1.0)
+        best_val_loss = meta.get("best_val_loss", float("inf"))
         patience_counter = meta["patience_counter"]
         logger.info(f"Resuming from epoch {start_epoch} (patience={patience_counter})")
     elif args.resume:
@@ -849,7 +852,7 @@ def main():
 
         # Show GNN LR (last param group) to track the main learning rate
         current_lr = optimizer.param_groups[-1]["lr"]
-        improved = val_loss < best_val_loss
+        improved = (val_f1 > best_val_f1) if stop_on_f1 else (val_loss < best_val_loss)
 
         logger.info(
             f"Epoch {epoch:03d}/{cfg.train.epochs} | "
@@ -862,6 +865,7 @@ def main():
         )
 
         if improved:
+            best_val_f1 = val_f1
             best_val_loss = val_loss
             patience_counter = 0
             save_checkpoint(
@@ -875,6 +879,7 @@ def main():
         save_resume_checkpoint(
             last_ckpt, model, optimizer, scheduler,
             epoch=epoch,
+            best_val_f1=best_val_f1,
             best_val_loss=best_val_loss,
             patience_counter=patience_counter,
             val_loss=val_loss, val_acc=val_acc, val_conf=val_conf,

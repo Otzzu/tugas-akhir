@@ -90,6 +90,7 @@ class TrainConfig:
     grad_clip: float = 0.0      # gradient clipping max norm (0 = disabled)
     weight_decay: float = 1e-4
     patience: int = 10          # early stopping patience
+    early_stop_metric: str = "f1"  # "f1" (macro, maximize) or "loss" (minimize)
     checkpoint_dir: Path = CHECKPOINT_DIR
     results_dir: Path = RESULTS_DIR
     log_dir: Path = LOG_DIR

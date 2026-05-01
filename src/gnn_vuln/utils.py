@@ -125,9 +125,11 @@ def load_resume_checkpoint(
     scheduler.load_state_dict(state["scheduler_state_dict"])
     meta = {k: v for k, v in state.items()
             if k not in ("model_state_dict", "optimizer_state_dict", "scheduler_state_dict")}
+    best_display = meta.get("best_val_f1", meta.get("best_val_loss", float("nan")))
+    best_key = "best_val_f1" if "best_val_f1" in meta else "best_val_loss"
     logger.info(
         f"Resumed from {path}  "
-        f"(epoch {meta['epoch']}, best_val_loss={meta['best_val_loss']:.4f})"
+        f"(epoch {meta['epoch']}, {best_key}={best_display:.4f})"
     )
     return meta
 
