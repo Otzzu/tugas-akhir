@@ -161,14 +161,21 @@ def get_predictions_and_localization(
         if hasattr(model, "codebert"):
             func_input_ids = getattr(batch, "func_input_ids", None)
             func_attention_mask = getattr(batch, "func_attention_mask", None)
-            logit_func, stmt_scores_list = model(
+            out = model(
                 batch.x, batch.edge_index, batch.batch, node_line, edge_attr,
                 func_input_ids, func_attention_mask,
             )
         else:
-            logit_func, stmt_scores_list = model(
+            out = model(
                 batch.x, batch.edge_index, batch.batch, node_line, edge_attr
             )
+
+        if len(out) == 5:
+            logit_func, _, _, stmt_scores_list, _ = out
+        elif len(out) == 4:
+            logit_func, _, _, stmt_scores_list = out
+        else:
+            logit_func, stmt_scores_list = out
 
         probs = torch.softmax(logit_func, dim=-1)
         preds = logit_func.argmax(dim=-1)
