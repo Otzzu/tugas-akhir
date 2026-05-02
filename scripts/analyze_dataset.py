@@ -47,15 +47,21 @@ def parse_cwe(raw) -> str:
         return ""
     if isinstance(raw, list):
         raw = raw[0] if raw else ""
-    s = str(raw).strip()
-    if not s or s.lower() in ("nan", "none", "unknown", "other", "cwe-other", "cwe-unknown"):
+    s = str(raw).strip().upper()
+    if not s or s in ("NAN", "NONE", "UNKNOWN", "OTHER", "CWE-OTHER", "CWE-UNKNOWN", "NVD-CWE-NOINFO", "NVD-CWE-OTHER"):
         return ""
     if "," in s:
         s = s.split(",")[0].strip()
+        
     if s.startswith("CWE-"):
+        num = s[4:]
+        if num.isdigit():
+            return f"CWE-{int(num)}"
         return s
+        
     if s.isdigit():
-        return f"CWE-{s}"
+        return f"CWE-{int(s)}"
+        
     return s
 
 
@@ -213,10 +219,8 @@ Generated from raw parquet files. Group mapping via `CWE_GROUP_MAP` in `dataset_
 | MegaVul | 55,868 | 27,934 | 27,934 | Yes | Yes (diff) | Balanced 1:1 |
 | Devign | 27,318 | 14,858 | 12,460 | No | Yes (vul_lines) | Binary only |
 | Merged (BigVul+MegaVul) | 176,674 | 154,205 | 22,469 | Yes | Yes (diff) | Combined |
-| TitanVul | 15,300\* | 7,650 | 7,650 | Yes | Yes (diff) | Balanced 1:1, C/C++ filtered |
-| BenchVul | 460\* | 230 | 230 | Yes | Yes (diff) | **Benchmark for Top 25 Most Dangerous CWEs** |
-
-\*After C/C++ language filter (from 38,548 and 1,050 original pairs respectively).
+| TitanVul | 77,096 | 38,548 | 38,548 | Yes | Yes (diff) | Balanced 1:1, Unfiltered |
+| BenchVul | 2,100 | 1,050 | 1,050 | Yes | Yes (diff) | **Benchmark for Top 25 Most Dangerous CWEs** |
 """)
 
     # ── BigVul ───────────────────────────────────────────────────────────────
@@ -321,7 +325,7 @@ Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
 
 > Aggregated from 7 public vulnerability datasets (BigVul, D2A, CVEfixes, Devign, ReVeal, DiverseVul, MegaVul),
 > deduplicated and validated with a multi-agent LLM framework.
-> Original 38,548 multilingual pairs filtered to **C/C++ only** (via `extension` field).
+> Contains 38,548 multilingual pairs (unfiltered).
 > Balanced 1:1 (func_after = benign). Has `func_before` + `func_after` for diff-based flaw lines.
 
 ### Group Distribution
@@ -352,7 +356,7 @@ Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
 > Covers a refined set of the Top 25 Most Dangerous CWEs (MITRE 2024).
 > 50 vulnerable + 50 fixed samples per CWE (before C/C++ filter).
 > Labels achieve 92% correctness rate per manual review.
-> Original 1,050 multilingual pairs filtered to **C/C++ only** (via `programming_language` field).
+> Contains 1,050 multilingual pairs (unfiltered).
 > **Intended for evaluation/testing only — not suitable for training.**
 
 ### Group Distribution

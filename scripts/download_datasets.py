@@ -169,16 +169,10 @@ def download_titanvul() -> None:
 
     ds = load_dataset("yikun-li/TitanVul", split="train")
 
-    C_EXTENSIONS = {".c", ".cpp", ".cc", ".cxx", ".h", ".hpp"}
-
     rows: list[dict] = []
     skipped_lang = 0
     skipped_no_code = 0
     for raw in tqdm(ds, desc="  processing", unit="row"):
-        ext = (raw.get("extension") or "").lower().strip()
-        if ext and ext not in C_EXTENSIONS:
-            skipped_lang += 1
-            continue
 
         vuln_code = raw.get("func_before")
         fixed_code = raw.get("func_after")
@@ -213,7 +207,7 @@ def download_titanvul() -> None:
 
     vuln_n = (df["vul"] == 1).sum()
     benign_n = (df["vul"] == 0).sum()
-    print(f"\n  Skipped {skipped_lang:,} non-C/C++ rows, {skipped_no_code:,} rows with missing code")
+    print(f"\n  Skipped {skipped_no_code:,} rows with missing code")
     print(f"  Saved {len(df):,} rows  (vulnerable={vuln_n:,}  benign={benign_n:,})")
     print(f"  -> {out_file.relative_to(PROJECT_ROOT)}")
     print("\n  CWE distribution (top 15):")
@@ -249,16 +243,10 @@ def download_benchvul() -> None:
 
     ds = load_dataset("yikun-li/BenchVul", split="train")
 
-    C_LANGUAGES = {"c", "c++", "cpp"}
-
     rows: list[dict] = []
     skipped_lang = 0
     skipped_no_code = 0
     for raw in tqdm(ds, desc="  processing", unit="row"):
-        lang = (raw.get("programming_language") or "").lower().strip()
-        if lang and lang not in C_LANGUAGES:
-            skipped_lang += 1
-            continue
 
         vuln_code = raw.get("func_before")
         fixed_code = raw.get("func_after")
@@ -293,7 +281,7 @@ def download_benchvul() -> None:
 
     vuln_n = (df["vul"] == 1).sum()
     benign_n = (df["vul"] == 0).sum()
-    print(f"\n  Skipped {skipped_lang:,} non-C/C++ rows, {skipped_no_code:,} rows with missing code")
+    print(f"\n  Skipped {skipped_no_code:,} rows with missing code")
     print(f"  Saved {len(df):,} rows  (vulnerable={vuln_n:,}  benign={benign_n:,})")
     print(f"  -> {out_file.relative_to(PROJECT_ROOT)}")
     print("\n  CWE distribution (top 15):")

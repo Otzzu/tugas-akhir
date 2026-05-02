@@ -520,7 +520,10 @@ def _forward(
     if z_combined is not None and supcon_fn is not None and supcon_weight > 0.0:
         group_ids = getattr(batch, "group_id", None)
         if group_ids is not None:
-            sc_loss = supcon_fn(z_combined, batch.y, group_ids)
+            # cwe_id stores the raw CWE vocab index (-1 for benign/unknown),
+            # used by the loss to look up continuous tree-distance weights.
+            cwe_vocab_ids = getattr(batch, "cwe_id", None)
+            sc_loss = supcon_fn(z_combined, batch.y, group_ids, cwe_vocab_ids)
             loss = loss + supcon_weight * sc_loss
 
     return logit_func, loss
@@ -673,13 +676,28 @@ def main():
     group_loss_weight = getattr(cfg.model, "group_loss_weight", 0.0)
     binary_loss_weight = getattr(cfg.model, "binary_loss_weight", 0.0)
     supcon_weight = getattr(cfg.model, "supcon_weight", 0.0)
-    supcon_fn = (
-        HierarchicalSupConLoss(
+    if supcon_weight > 0.0:
+        # Load CWE vocab from raw dir so the matrix lookup can map vocab_idx → matrix_idx
+        _cwe_vocab_path = (
+            Path(getattr(cfg.data, "processed_dir", Path("data/processed"))).parent
+            / "raw" / getattr(cfg.data, "source", "megavul") / "cwe_vocab.json"
+        )
+        _cwe_vocab: dict[str, int] | None = None
+        if _cwe_vocab_path.exists():
+            import json as _json
+            with open(_cwe_vocab_path, encoding="utf-8") as _f:
+                _cwe_vocab = _json.load(_f)
+        _dist_matrix_path = Path(getattr(
+            cfg.model, "cwe_dist_matrix", "data/cwe/cwe_distance_matrix.json"
+        ))
+        supcon_fn = HierarchicalSupConLoss(
             temperature=getattr(cfg.model, "supcon_temperature", 0.07),
             alpha=getattr(cfg.model, "supcon_alpha", 0.5),
+            dist_matrix_path=_dist_matrix_path if _dist_matrix_path.exists() else None,
+            cwe_vocab=_cwe_vocab,
         )
-        if supcon_weight > 0.0 else None
-    )
+    else:
+        supcon_fn = None
     use_class_weights = getattr(cfg.train, "use_class_weights", True)
     use_livable = getattr(cfg.train, "livable_loss", False) and use_class_weights
     grad_clip = getattr(cfg.train, "grad_clip", 0.0)

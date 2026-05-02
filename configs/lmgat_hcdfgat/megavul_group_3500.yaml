@@ -1,0 +1,16 @@
+# configs/lmgat_hcdfgat/megavul_group_3000.yaml
+data:
+  source: megavul
+  mode: group       # y = group_id (0=benign, 1-15=vuln group); sampling is per group
+  max_nodes: 1000
+  top_cwe: 0        # 0 = no CWE filtering; all CWEs in CWE_GROUP_MAP are included
+  max_per_class: 3500   # cap 3000 per GROUP bucket (not per CWE)
+  resample_seed: 42
+
+model:
+  architecture: lmgat_hcdfgat
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  num_classes: 16   # = num groups (benign + 15 vuln groups)
+  num_groups: 16

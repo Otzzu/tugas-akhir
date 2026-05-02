@@ -40,7 +40,9 @@ joern-cli/
 joern_workspace/
 
 # Large generated / binary / third-party — do NOT push
-/data/
+/data/raw/
+/data/datasets/
+/data/processed/
 /checkpoints/
 /results/
 /paper/
