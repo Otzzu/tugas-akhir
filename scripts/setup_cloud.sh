@@ -5,13 +5,18 @@
 
 set -e
 
-echo "=== [0/6] Installing system tools (zip, unzip, gdrive) ==="
-apt-get update -y && apt-get install -y zip unzip wget
+echo "=== [0/6] Installing system tools (zip, unzip, gdrive, rclone) ==="
+apt-get update -y && apt-get install -y zip unzip wget curl
+
+# Install gdrive
 wget -q https://github.com/glotlabs/gdrive/releases/download/3.0.0/gdrive_linux-x64.tar.gz
 tar -xf gdrive_linux-x64.tar.gz
 chmod +x gdrive
 mv gdrive /usr/local/bin/
 rm gdrive_linux-x64.tar.gz
+
+# Install rclone
+curl -s https://rclone.org/install.sh | bash
 
 echo "=== [1/6] Removing conflicting packages ==="
 pip uninstall -y torchaudio torch-scatter torch-sparse 2>/dev/null || true
