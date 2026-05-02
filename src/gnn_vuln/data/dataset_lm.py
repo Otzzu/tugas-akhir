@@ -44,6 +44,7 @@ Usage
 
 from __future__ import annotations
 
+import gc
 import hashlib
 import json
 import random
@@ -97,7 +98,6 @@ CWE_GROUP_MAP: dict[str, str] = {
     # 4. Input Validation (tree: CWE-20, CWE-707 subtrees)
     "CWE-20": "input_validation", "CWE-436": "input_validation",
     "CWE-172": "input_validation", "CWE-354": "input_validation",
-    "CWE-252": "input_validation",
     "CWE-1284": "input_validation",  # Improper Validation of Specified Quantity (child CWE-20)
     "CWE-184": "input_validation",   # Incomplete List of Disallowed Inputs (child CWE-693)
     "CWE-241": "input_validation",   # Improper Handling of Unexpected Data Type
@@ -113,7 +113,7 @@ CWE_GROUP_MAP: dict[str, str] = {
     "CWE-269": "access_control", "CWE-59": "access_control", "CWE-22": "access_control",
     "CWE-285": "access_control", "CWE-601": "access_control", "CWE-862": "access_control",
     "CWE-281": "access_control", "CWE-352": "access_control", "CWE-918": "access_control",
-    "CWE-290": "access_control", "CWE-668": "access_control", "CWE-706": "access_control",
+    "CWE-668": "access_control", "CWE-706": "access_control",
     "CWE-203": "access_control",   # Observable Discrepancy / side-channel info leak
     "CWE-212": "access_control",   # Improper Removal of Sensitive Information
     "CWE-552": "access_control",   # Files Accessible to External Parties
@@ -121,6 +121,7 @@ CWE_GROUP_MAP: dict[str, str] = {
     # 7. Authentication (tree: CWE-287, CWE-666 subtrees)
     "CWE-287": "authentication", "CWE-255": "authentication",
     "CWE-346": "authentication", "CWE-295": "authentication",
+    "CWE-290": "authentication",   # Authentication Bypass by Spoofing (child CWE-287)
     "CWE-613": "authentication",   # Insufficient Session Expiration (child CWE-666)
     # 8. Cryptography (tree: CWE-693, CWE-311, CWE-330 subtrees)
     "CWE-310": "cryptography", "CWE-311": "cryptography", "CWE-320": "cryptography",
@@ -137,7 +138,7 @@ CWE_GROUP_MAP: dict[str, str] = {
     "CWE-667": "concurrency",   # Improper Locking (child CWE-662)
     # 10. Code Quality / Control Flow (tree: CWE-691, CWE-710 subtrees)
     "CWE-704": "code_quality", "CWE-617": "code_quality", "CWE-835": "code_quality",
-    "CWE-834": "code_quality", "CWE-388": "code_quality", "CWE-674": "code_quality",
+    "CWE-834": "code_quality", "CWE-674": "code_quality",
     "CWE-358": "code_quality", "CWE-426": "code_quality",
     "CWE-440": "code_quality",   # Expected Behavior Violation (child CWE-710)
     "CWE-670": "code_quality",   # Always-Incorrect Control Flow (child CWE-691)
@@ -153,6 +154,8 @@ CWE_GROUP_MAP: dict[str, str] = {
     # 14. Error / Exception Handling (tree: CWE-703, CWE-754/755 subtrees)
     "CWE-754": "error_handling", "CWE-755": "error_handling", "CWE-209": "error_handling",
     "CWE-703": "error_handling",   # Improper Check/Handling of Exceptional Conditions
+    "CWE-252": "error_handling",   # Unchecked Return Value (child CWE-754)
+    "CWE-388": "error_handling",   # Error Handling
     # 15. Deprecated / General (no longer in active CWE tree)
     "CWE-254": "deprecated", "CWE-19": "deprecated", "CWE-17": "deprecated",
     "CWE-693": "deprecated", "CWE-18": "deprecated",
@@ -211,6 +214,42 @@ CWE_GROUP_MAP: dict[str, str] = {
     "CWE-114": "access_control",    # Process Control (child CWE-73)
     "CWE-680": "numeric",           # Integer Overflow to Buffer Overflow (child CWE-190)
     "CWE-789": "resource_management", # Memory Allocation with Excessive Size Value (child CWE-400)
+    
+    # --- Added for remaining high-frequency UNKNOWNs ---
+    "CWE-1321": "input_validation", # Prototype Pollution (child CWE-915 -> CWE-20)
+    "CWE-384": "authentication",    # Session Fixation (child CWE-383 -> CWE-287)
+    "CWE-640": "authentication",    # Weak Password Recovery (child CWE-287)
+    "CWE-377": "access_control",    # Insecure Temporary File (child CWE-379 -> CWE-668)
+    "CWE-1103": "code_quality",     # Third Party Components
+    "CWE-1236": "injection",        # CSV Injection (child CWE-116 -> CWE-707)
+    "CWE-521": "authentication",    # Weak Password Requirements (child CWE-255)
+    "CWE-917": "injection",         # Expression Language Injection (child CWE-94 -> CWE-74)
+    "CWE-470": "input_validation",  # Unsafe Reflection (child CWE-616 -> CWE-20)
+    "CWE-916": "cryptography",      # Weak Password Hash
+    "CWE-427": "code_quality",      # Uncontrolled Search Path (child CWE-426)
+    "CWE-306": "authentication",    # Missing Authentication (child CWE-285)
+    "CWE-915": "input_validation",  # Modification of Dynamically-Determined Object Attributes (child CWE-20)
+    "CWE-21": "access_control",     # Pathname Traversal (child CWE-22)
+    
+    # --- Added final tail of low-frequency unmapped CWEs ---
+    "CWE-150": "injection",         # Escape/Meta/Control Sequences
+    "CWE-359": "access_control",    # Exposure of Private Info
+    "CWE-829": "injection",         # Untrusted Control Sphere Inclusion
+    "CWE-312": "cryptography",      # Cleartext Storage
+    "CWE-774": "resource_management", # File Descriptor Exhaustion
+    "CWE-676": "code_quality",      # Potentially Dangerous Function
+    "CWE-335": "cryptography",      # PRNG Seed Issue
+    "CWE-275": "access_control",    # Permission Issues
+    "CWE-178": "input_validation",  # Case Sensitivity
+    "CWE-922": "cryptography",      # Insecure Storage
+    "CWE-378": "access_control",    # Insecure Temp File Permissions
+    "CWE-214": "access_control",    # Visible Sensitive Info in Process Invocation
+    "CWE-80": "injection",          # Script-Related HTML Tags (XSS)
+    "CWE-538": "access_control",    # Externally-Accessible Sensitive Info
+    "CWE-684": "code_quality",      # Incorrect Provision of Functionality
+    "CWE-425": "access_control",    # Forced Browsing
+    "CWE-321": "cryptography",      # Hard-coded Crypto Key
+    "CWE-526": "cryptography",      # Cleartext Env Var Storage
 }
 
 # Fixed group → integer ID (0 = benign, 1-15 = groups). Stable across runs.
@@ -273,20 +312,27 @@ def _parse_cwe_string(raw: str | list) -> str:
     """
     Extract the primary (first) CWE string from potentially multi-label 
     or raw list strings like "CWE-119, CWE-787" -> "CWE-119".
+    Also handles lowercase and leading zeros (e.g., "cwe-089" -> "CWE-89").
     """
     if not raw:
         return ""
     if isinstance(raw, list):
         raw = raw[0] if raw else ""
-    s = str(raw).strip()
-    if not s or s.lower() in ("nan", "none", "unknown", "other", "cwe-other", "cwe-unknown"):
+    s = str(raw).strip().upper()
+    if not s or s in ("NAN", "NONE", "UNKNOWN", "OTHER", "CWE-OTHER", "CWE-UNKNOWN", "NVD-CWE-NOINFO", "NVD-CWE-OTHER"):
         return ""
     if "," in s:
         s = s.split(",")[0].strip()
+    
     if s.startswith("CWE-"):
+        num = s[4:]
+        if num.isdigit():
+            return f"CWE-{int(num)}"
         return s
+    
     if s.isdigit():
-        return f"CWE-{s}"
+        return f"CWE-{int(s)}"
+        
     return s
 
 
@@ -296,6 +342,117 @@ def _subsample(entries: list, max_per_class: int, seed: int) -> list:
         return entries
     rng = random.Random(seed)
     return rng.sample(entries, max_per_class)
+
+
+def _streaming_collate_cache_files(
+    cache_files: list[Path],
+    class_names: list[str] | None,
+    out_path: Path,
+) -> int:
+    """
+    Two-pass memory-efficient merge of per-class .pt cache files into the
+    PyG InMemoryDataset (data, slices, class_names) format.
+
+    Pass 1 — scan:  load each class, record per-graph tensor sizes, delete.
+    Pass 2 — fill:  pre-allocate output tensors, copy class-by-class, delete.
+
+    Peak RAM ≈ output tensors + one class batch instead of 2× output.
+    Returns total number of graphs written.
+    """
+    # ------------------------------------------------------------------
+    # Pass 1 — scan sizes and dtypes
+    # ------------------------------------------------------------------
+    logger.info("Streaming merge — pass 1: scanning sizes…")
+
+    sizes: dict[str, list[int]] = {}       # per-graph size along cat_dim
+    cat_dims: dict[str, int] = {}
+    dtypes: dict[str, torch.dtype] = {}
+    example_shapes: dict[str, list[int]] = {}
+    n_graphs = 0
+
+    for cache_file in tqdm(cache_files, desc="  pass-1 scan", unit="class"):
+        if not cache_file.exists():
+            logger.warning(f"  Missing cache file: {cache_file} — skipping")
+            continue
+        cls_graphs: list[Data] = torch.load(cache_file, weights_only=False)
+        for g in cls_graphs:
+            n_graphs += 1
+            for key in g.keys():
+                val = g[key]
+                if not isinstance(val, torch.Tensor):
+                    continue
+                cat_dim = g.__cat_dim__(key, val)
+                if key not in sizes:
+                    sizes[key] = []
+                    cat_dims[key] = cat_dim
+                    dtypes[key] = val.dtype
+                    example_shapes[key] = list(val.shape)
+                sizes[key].append(val.shape[cat_dim])
+        del cls_graphs
+        gc.collect()
+
+    if n_graphs == 0:
+        raise RuntimeError("No graphs found in cache files.")
+
+    logger.info(f"  Scanned {n_graphs} graphs, {len(sizes)} attributes")
+
+    # Build cumulative slices
+    slices: dict[str, torch.Tensor] = {}
+    for key, sz_list in sizes.items():
+        cum = torch.zeros(len(sz_list) + 1, dtype=torch.long)
+        for i, s in enumerate(sz_list):
+            cum[i + 1] = cum[i] + s
+        slices[key] = cum
+
+    # ------------------------------------------------------------------
+    # Pre-allocate output tensors
+    # ------------------------------------------------------------------
+    logger.info("  Pre-allocating output tensors…")
+    out_data = Data()
+    for key in sizes:
+        total = int(slices[key][-1])
+        shape = list(example_shapes[key])
+        shape[cat_dims[key]] = total
+        out_data[key] = torch.empty(shape, dtype=dtypes[key])
+
+    has_x = "x" in slices
+
+    # ------------------------------------------------------------------
+    # Pass 2 — fill pre-allocated tensors
+    # ------------------------------------------------------------------
+    logger.info("Streaming merge — pass 2: filling tensors…")
+
+    write_offs: dict[str, int] = {k: 0 for k in sizes}
+    graph_idx = 0
+
+    for cache_file in tqdm(cache_files, desc="  pass-2 fill", unit="class"):
+        if not cache_file.exists():
+            continue
+        cls_graphs: list[Data] = torch.load(cache_file, weights_only=False)
+        for g in cls_graphs:
+            node_off = int(slices["x"][graph_idx]) if has_x else 0
+            for key in sizes:
+                val = g[key]
+                if val is None or not isinstance(val, torch.Tensor):
+                    continue
+                cat_dim = cat_dims[key]
+                sz = val.shape[cat_dim]
+                off = write_offs[key]
+                slc: list = [slice(None)] * val.dim()
+                slc[cat_dim] = slice(off, off + sz)
+                if key == "edge_index" and has_x:
+                    out_data[key][tuple(slc)] = val + node_off
+                else:
+                    out_data[key][tuple(slc)] = val
+                write_offs[key] += sz
+            graph_idx += 1
+        del cls_graphs
+        gc.collect()
+
+    logger.info(f"  Saving {n_graphs} graphs → {out_path}")
+    torch.save((out_data, slices, class_names), out_path)
+    logger.info("  Saved.")
+    return n_graphs
 
 
 class CodeBERTGraphDataset(InMemoryDataset):
@@ -645,15 +802,11 @@ class CodeBERTGraphDataset(InMemoryDataset):
         # ------------------------------------------------------------------
         # Process each work unit
         # ------------------------------------------------------------------
-        data_list: list[Data] = []
-
         for cache_key, entries in work_units:
             cache_file = cache_dir / f"{cache_key}.pt"
 
             if cache_file.exists():
-                cls_graphs: list[Data] = torch.load(cache_file, weights_only=False)
-                logger.info(f"  [{cache_key}] loaded {len(cls_graphs)} graphs from cache")
-                data_list.extend(cls_graphs)
+                logger.info(f"  [{cache_key}] already cached — skipping")
                 continue
 
             # Determine y label for this work unit
@@ -747,19 +900,16 @@ class CodeBERTGraphDataset(InMemoryDataset):
 
             torch.save(cls_graphs, cache_file)
             logger.info(f"  [{cache_key}] done — {len(cls_graphs)} graphs saved to cache")
-            data_list.extend(cls_graphs)
 
-        if not data_list:
-            raise RuntimeError(
-                "No graphs were built. Check that your JSON files match the Joern export format."
-            )
-
-        data, slices = self.collate(data_list)
-        torch.save((data, slices, class_names), self.processed_paths[0])
-        logger.info(f"Saved {len(data_list)} graphs → {self.processed_paths[0]}")
-
+        # ------------------------------------------------------------------
+        # Streaming merge: two-pass collate without holding all graphs in RAM
+        # ------------------------------------------------------------------
+        ordered_cache_files = [cache_dir / f"{k}.pt" for k, _ in work_units]
+        n = _streaming_collate_cache_files(
+            ordered_cache_files, class_names, Path(self.processed_paths[0])
+        )
         shutil.rmtree(cache_dir, ignore_errors=True)
-        logger.info("Per-class cache cleaned up.")
+        logger.info(f"Per-class cache cleaned up. Total graphs: {n}")
 
     # ------------------------------------------------------------------
     # Helpers
