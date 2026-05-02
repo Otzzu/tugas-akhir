@@ -1,0 +1,43 @@
+# configs/lmgat_codebert/multiclass_v7_codet5.yaml — Arch3 v7: CodeT5+ live LM
+#
+# Base: Arch3 v6 (F1-stop + LIVABLE)
+# Change vs v6: func_lm = Salesforce/codet5p-220m
+#
+# Note: The frozen CPG nodes still use unixcoder-base (which is what your existing .pt dataset uses).
+# We only swap the live text branch to CodeT5+.
+
+data:
+  source: bigvul
+  mode: multiclass
+  max_nodes: 1000
+  top_cwe: 10
+
+model:
+  architecture: lmgat_codebert
+  pretrained_lm: microsoft/unixcoder-base   # Keeps using your existing dataset
+  func_lm: Salesforce/codet5p-220m          # Overrides the live branch with CodeT5+
+  add_func_tokens: true
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  num_classes: 11
+  mil_weight: 0.5
+  mil_k: 3
+  rank_loss_weight: 0.2
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 16
+  lr: 0.001
+  lm_lr: 0.00001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.0001
+  patience: 25
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 2.0
+  livable_loss: true
+  device: cuda

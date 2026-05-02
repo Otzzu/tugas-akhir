@@ -705,6 +705,7 @@ def main():
     focal_gamma = getattr(cfg.train, "focal_loss_gamma", 0.0)
 
     pretrained_lm = getattr(cfg.model, "pretrained_lm", "microsoft/codebert-base")
+    func_lm = getattr(cfg.model, "func_lm", "") or pretrained_lm
     add_func_tokens = getattr(cfg.model, "add_func_tokens", False)
     source_val  = getattr(cfg.data, "source_val",  "")
     source_test = getattr(cfg.data, "source_test", "")
@@ -722,10 +723,13 @@ def main():
         embedder_device=str(device),
         mode=cfg.data.mode,
         pretrained_lm=pretrained_lm,
+        func_lm=func_lm,
         add_func_tokens=add_func_tokens,
         top_cwe=getattr(cfg.data, "top_cwe", 0),
         cwe_list=getattr(cfg.data, "cwe_list", None),
         cwe_groups=getattr(cfg.data, "cwe_groups", None),
+        filter_owasp_top10=getattr(cfg.data, "filter_owasp_top10", False),
+        filter_top25=getattr(cfg.data, "filter_top25", False),
         max_per_class=getattr(cfg.data, "max_per_class", 0),
         resample_seed=getattr(cfg.data, "resample_seed", 42),
     )

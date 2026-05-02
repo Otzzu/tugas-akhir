@@ -55,6 +55,10 @@ class DataConfig:
     cwe_list: list | None = None
     # Group whitelist, e.g. ["memory_safety", "injection"]. Expanded via CWE_GROUP_MAP.
     cwe_groups: list | None = None
+    # Automatically filter to OWASP Top 10 (2025) CWEs (unioned with cwe_list/cwe_groups)
+    filter_owasp_top10: bool = False
+    # Automatically filter to MITRE Top 25 CWEs (unioned with cwe_list/cwe_groups)
+    filter_top25: bool = False
     # Max graphs per class/CWE/group bucket during .pt build (0 = no limit).
     max_per_class: int = 0
     # Random seed for max_per_class sampling. Change for a different sample.

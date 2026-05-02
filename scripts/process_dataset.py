@@ -39,6 +39,8 @@ def main() -> None:
     top_cwe        = getattr(cfg.data, "top_cwe", 0)
     cwe_list       = getattr(cfg.data, "cwe_list", None)
     cwe_groups     = getattr(cfg.data, "cwe_groups", None)
+    filter_owasp_top10 = getattr(cfg.data, "filter_owasp_top10", False)
+    filter_top25   = getattr(cfg.data, "filter_top25", False)
     max_per_class  = getattr(cfg.data, "max_per_class", 0)
     resample_seed  = getattr(cfg.data, "resample_seed", 42)
 
@@ -62,6 +64,8 @@ def main() -> None:
     print(f"top_cwe       : {top_cwe if top_cwe > 0 else 'all'}")
     print(f"cwe_list      : {cwe_list}")
     print(f"cwe_groups    : {cwe_groups}")
+    print(f"filter_owasp  : {filter_owasp_top10}")
+    print(f"filter_top25  : {filter_top25}")
     print(f"max_per_class : {max_per_class if max_per_class > 0 else 'unlimited'}")
     if max_per_class > 0:
         print(f"resample_seed : {resample_seed}")
@@ -78,6 +82,8 @@ def main() -> None:
         top_cwe=top_cwe,
         cwe_list=cwe_list,
         cwe_groups=cwe_groups,
+        filter_owasp_top10=filter_owasp_top10,
+        filter_top25=filter_top25,
         max_per_class=max_per_class,
         resample_seed=resample_seed,
     )

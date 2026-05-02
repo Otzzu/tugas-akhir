@@ -1,8 +1,8 @@
 # configs/lmgat/group_all.yaml — Group-level classification: benign + all 15 CWE groups
 #
 # mode: group  → y = contiguous group ID (0=benign, 1..15 = groups present, remapped)
-# 16 classes total: benign + 15 groups (incl. small ones: logging=1, data_integrity=5)
-# use_class_weights: true — critical for severe imbalance (memory_safety 3618 vs logging 1)
+# 16 classes total: benign + 15 groups (incl. small ones: logging_and_alerting_failures=1, software_or_data_integrity_failures=5)
+# use_class_weights: true — critical for severe imbalance (memory_safety 3618 vs logging_and_alerting_failures 1)
 # focal_loss_gamma: 2.0 — extra focus on rare groups
 #
 # Run (cloud, Linux):

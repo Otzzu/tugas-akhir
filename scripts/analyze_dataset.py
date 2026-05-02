@@ -12,6 +12,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -65,6 +66,18 @@ def parse_cwe(raw) -> str:
     return s
 
 
+def get_cwe_set_from_xml(filepath: Path) -> set[str]:
+    """Parse CWE XML files and return a set of CWE string IDs."""
+    if not filepath.exists():
+        return set()
+    try:
+        content = filepath.read_text(encoding="utf-8")
+        cwes = re.findall(r'<Weakness [^>]*ID="(\d+)"', content)
+        return set(f"CWE-{x}" for x in cwes)
+    except Exception:
+        return set()
+
+
 def group_dist_table(group_counts: dict[tuple[int, str], int]) -> str:
     rows = sorted(group_counts.items(), key=lambda x: -x[1])
     lines = ["| Group ID | Group | Count |", "|---|---|---|"]
@@ -73,11 +86,54 @@ def group_dist_table(group_counts: dict[tuple[int, str], int]) -> str:
     return "\n".join(lines)
 
 
-def cwe_dist_table(cwe_rows: list[tuple[str, int, int, str]]) -> str:
+def get_owasp_category_map(filepath: Path) -> dict[str, str]:
+    if not filepath.exists():
+        return {}
+    import xml.etree.ElementTree as ET
+    try:
+        tree = ET.parse(filepath)
+        root = tree.getroot()
+        mapping = {}
+        categories = root.findall('.//{http://cwe.mitre.org/cwe-7}Category')
+        for c in categories:
+            name = c.attrib.get('Name')
+            if not name or "OWASP Top Ten 2025 Category" not in name:
+                continue
+            clean_name = name.replace("OWASP Top Ten 2025 Category ", "")
+            members = c.findall('.//{http://cwe.mitre.org/cwe-7}Has_Member')
+            for m in members:
+                cwe_id = m.attrib.get('CWE_ID')
+                if cwe_id:
+                    mapping[f"CWE-{cwe_id}"] = clean_name
+        return mapping
+    except Exception:
+        return {}
+
+def subset_dist_table(cwe_rows: list[tuple[str, int, int, str]], subset: set[str], subset_name: str, group_override: dict[str, str] = None) -> str:
+    subset_rows = [r for r in cwe_rows if r[0] in subset]
+    if not subset_rows:
+        return f"*(No {subset_name} CWEs found)*"
+        
     lines = ["| CWE | Count | Group ID | Group |", "|---|---|---|---|"]
+    total_cnt = 0
+    for cwe, cnt, gid, gname in subset_rows:
+        if group_override and cwe in group_override:
+            gname = group_override[cwe]
+        lines.append(f"| {cwe} | {cnt:,} | {gid} | {gname} |")
+        total_cnt += cnt
+        
+    lines.append(f"| **Total** | **{total_cnt:,}** | | |")
+    return "\n".join(lines)
+
+
+
+def cwe_dist_table(cwe_rows: list[tuple[str, int, int, str]], top25: set[str], owasp: set[str]) -> str:
+    lines = ["| CWE | Count | Group ID | Group | Top 25 | OWASP Top 10 |", "|---|---|---|---|---|---|"]
     for cwe, cnt, gid, gname in cwe_rows:
         label = cwe if cwe else "*(empty/unknown)*"
-        lines.append(f"| {label} | {cnt:,} | {gid} | {gname} |")
+        is_top25 = "✅" if cwe in top25 else ""
+        is_owasp = "✅" if cwe in owasp else ""
+        lines.append(f"| {label} | {cnt:,} | {gid} | {gname} | {is_top25} | {is_owasp} |")
     return "\n".join(lines)
 
 
@@ -196,6 +252,10 @@ def main():
 
     sections = []
     all_group_counts: dict[str, dict] = {}
+    
+    TOP25_CWES = get_cwe_set_from_xml(DATA.parent / "cwe" / "top25.xml")
+    OWASP_CWES = get_cwe_set_from_xml(DATA.parent / "cwe" / "owasptop10.xml")
+    OWASP_MAP = get_owasp_category_map(DATA.parent / "cwe" / "owasptop10.xml")
 
     GROUP_VOCAB_LINE = " · ".join(
         f"{v}={k}" for k, v in sorted(GROUP_VOCAB.items(), key=lambda x: x[1])
@@ -241,7 +301,15 @@ Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
 
 ### CWE Distribution (all vulnerable)
 
-{cwe_dist_table(cr)}
+{cwe_dist_table(cr, TOP25_CWES, OWASP_CWES)}
+
+### Top 25 Most Dangerous CWEs
+
+{subset_dist_table(cr, TOP25_CWES, "Top 25")}
+
+### OWASP Top 10 (2025)
+
+{subset_dist_table(cr, OWASP_CWES, "OWASP Top 10", group_override=OWASP_MAP)}
 
 ### CPG Files vs all.parquet (data/raw/bigvul/)
 
@@ -283,7 +351,15 @@ Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
 
 ### CWE Distribution (all vulnerable, primary CWE)
 
-{cwe_dist_table(cr)}
+{cwe_dist_table(cr, TOP25_CWES, OWASP_CWES)}
+
+### Top 25 Most Dangerous CWEs
+
+{subset_dist_table(cr, TOP25_CWES, "Top 25")}
+
+### OWASP Top 10 (2025)
+
+{subset_dist_table(cr, OWASP_CWES, "OWASP Top 10", group_override=OWASP_MAP)}
 """)
     else:
         print(f"  SKIP: {dv_path} not found")
@@ -307,7 +383,15 @@ Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
 
 ### CWE Distribution (all vulnerable)
 
-{cwe_dist_table(cr)}
+{cwe_dist_table(cr, TOP25_CWES, OWASP_CWES)}
+
+### Top 25 Most Dangerous CWEs
+
+{subset_dist_table(cr, TOP25_CWES, "Top 25")}
+
+### OWASP Top 10 (2025)
+
+{subset_dist_table(cr, OWASP_CWES, "OWASP Top 10", group_override=OWASP_MAP)}
 """)
     else:
         print(f"  SKIP: {mv_path} not found")
@@ -334,7 +418,15 @@ Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
 
 ### CWE Distribution (all vulnerable)
 
-{cwe_dist_table(cr)}
+{cwe_dist_table(cr, TOP25_CWES, OWASP_CWES)}
+
+### Top 25 Most Dangerous CWEs
+
+{subset_dist_table(cr, TOP25_CWES, "Top 25")}
+
+### OWASP Top 10 (2025)
+
+{subset_dist_table(cr, OWASP_CWES, "OWASP Top 10", group_override=OWASP_MAP)}
 """)
     else:
         print(f"  SKIP: {tv_path} not found")
@@ -365,7 +457,15 @@ Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
 
 ### CWE Distribution (all vulnerable)
 
-{cwe_dist_table(cr)}
+{cwe_dist_table(cr, TOP25_CWES, OWASP_CWES)}
+
+### Top 25 Most Dangerous CWEs
+
+{subset_dist_table(cr, TOP25_CWES, "Top 25")}
+
+### OWASP Top 10 (2025)
+
+{subset_dist_table(cr, OWASP_CWES, "OWASP Top 10", group_override=OWASP_MAP)}
 """)
     else:
         print(f"  SKIP: {bvul_path} not found")
@@ -398,7 +498,15 @@ Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
 
 ### CWE Distribution (all vulnerable)
 
-{cwe_dist_table(cr)}
+{cwe_dist_table(cr, TOP25_CWES, OWASP_CWES)}
+
+### Top 25 Most Dangerous CWEs
+
+{subset_dist_table(cr, TOP25_CWES, "Top 25")}
+
+### OWASP Top 10 (2025)
+
+{subset_dist_table(cr, OWASP_CWES, "OWASP Top 10", group_override=OWASP_MAP)}
 """)
     else:
         print(f"  SKIP: {mg_path} not found")

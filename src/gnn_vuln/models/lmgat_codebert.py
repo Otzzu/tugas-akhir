@@ -207,10 +207,16 @@ class LMGATCodeBERTVulnDetector(nn.Module):
 
         B = h_graph.size(0)
         if func_input_ids is not None:
-            cb_out = self.codebert(
-                input_ids=func_input_ids,
-                attention_mask=func_attention_mask,
-            )
+            if getattr(self.codebert.config, "is_encoder_decoder", False):
+                cb_out = self.codebert.encoder(
+                    input_ids=func_input_ids,
+                    attention_mask=func_attention_mask,
+                )
+            else:
+                cb_out = self.codebert(
+                    input_ids=func_input_ids,
+                    attention_mask=func_attention_mask,
+                )
             cls = cb_out.last_hidden_state[:, 0, :]  # [B, 768]
         else:
             cls = torch.zeros(B, _CODEBERT_DIM, device=h_graph.device)
