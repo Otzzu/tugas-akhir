@@ -17,17 +17,17 @@ for hierarchical supervised contrastive regularisation.
     Z_combined = concat(focal_emb, context_emb, lm_emb)             [B, 1280]
                                     │
           ┌─────────────────────────┤────────────────────────┐
-          │                         │                         │
-          ▼                         ▼                         │
-    binary_head               group_head                      │
-    [B, 2]                    [B, num_groups]                 │
-                                    │                         │
-                          softmax + detach                     │
-                                    │                         │
-                          concat(Z_combined, group_probs)      │
-                                    ▼                         │
-                               cwe_head                        │
-                            [B, num_classes]  ←───────────────┘
+          │                         │                        │
+          ▼                         ▼                        │
+    binary_head               group_head                     │
+    [B, 2]                    [B, num_groups]                │
+                                    │                        │
+                          softmax + detach                   │
+                                    │                        │
+                          concat(Z_combined, group_probs)    │
+                                    ▼                        │
+                               cwe_head                      │
+                            [B, num_classes]  ←──────────────┘
 
 Returns: (logit_cwe, logit_group, logit_binary, stmt_scores, z_combined)
 
@@ -125,13 +125,13 @@ class LMGATHCDFGATVulnDetector(nn.Module):
         self.cls_bns = nn.ModuleList()
         self.cls_convs.append(
             GATv2Conv(in_channels + 1, hidden_dim, heads=num_heads, concat=False,
-                      dropout=dropout, edge_dim=edge_dim)
+                      dropout=dropout, edge_dim=edge_dim, add_self_loops=False)
         )
         self.cls_bns.append(nn.BatchNorm1d(hidden_dim))
         for _ in range(num_layers - 1):
             self.cls_convs.append(
                 GATv2Conv(hidden_dim, hidden_dim, heads=num_heads, concat=False,
-                          dropout=dropout, edge_dim=edge_dim)
+                          dropout=dropout, edge_dim=edge_dim, add_self_loops=False)
             )
             self.cls_bns.append(nn.BatchNorm1d(hidden_dim))
 

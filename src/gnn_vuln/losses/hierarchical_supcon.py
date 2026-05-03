@@ -3,7 +3,7 @@ hierarchical_supcon.py — Hierarchical Supervised Contrastive Loss
 
 Positive pair weighting based on CWE tree distance (when matrix provided):
   - Same CWE class (y_i == y_j, both > 0)                → weight 1.0
-  - Different CWE, both in distance matrix                 → weight 1 - norm_dist(i, j)
+  - Different CWE, both in distance matrix                 → weight_fn(norm_dist(i, j))
   - Different CWE, one/both not in matrix, same group      → weight alpha (fallback)
   - Different group / disconnected in tree (norm_dist=1.0) → weight ≈ 0.0
   - Benign                                                 → pure negative (weight 0.0)
@@ -12,6 +12,11 @@ Without matrix (alpha-only fallback):
   - Same CWE                       → weight 1.0
   - Same group, different CWE      → weight alpha
   - Different group / benign       → weight 0.0
+
+weight_fn options (applied to normalised distance d ∈ [0, 1]):
+  "linear" : w = 1 - d                       (default)
+  "exp"    : w = exp(-exp_scale * d)          (sharper decay)
+  "power"  : w = (1 - d) ** power            (tunable curve)
 
 Benign samples (y == 0) are excluded from the anchor set but still serve as
 negatives in the denominator, pushing vulnerable embeddings away from benign.
@@ -48,6 +53,21 @@ class HierarchicalSupConLoss(nn.Module):
     cwe_vocab : dict[str, int] | None
         Mapping from CWE string e.g. "CWE-119" to vocab index used in the
         dataset labels. Required to resolve matrix row/col indices from labels.
+    weight_fn : str
+        How to convert normalised distance d ∈ [0,1] to pair weight:
+        "linear" (default) : w = 1 - d
+        "exp"              : w = exp(-exp_scale * d)
+        "power"            : w = (1 - d) ** power
+    exp_scale : float
+        Decay rate for weight_fn="exp" (default 5.0).
+        Higher → sharper falloff; at d=1 weight → exp(-exp_scale).
+    power : float
+        Exponent for weight_fn="power" (default 2.0).
+        >1 → concave (penalises moderate distance); <1 → convex.
+    min_weight : float
+        Floor applied to all matrix-derived weights before using them
+        (default 0.0). Set > 0 to keep a weak positive signal for all
+        in-matrix pairs regardless of distance.
     """
 
     def __init__(
@@ -56,10 +76,18 @@ class HierarchicalSupConLoss(nn.Module):
         alpha: float = 0.5,
         dist_matrix_path: str | Path | None = None,
         cwe_vocab: dict[str, int] | None = None,
+        weight_fn: str = "linear",
+        exp_scale: float = 5.0,
+        power: float = 2.0,
+        min_weight: float = 0.0,
     ) -> None:
         super().__init__()
         self.temperature = temperature
         self.alpha = alpha
+        self.weight_fn = weight_fn
+        self.exp_scale = exp_scale
+        self.power = power
+        self.min_weight = min_weight
         self._has_matrix = False
 
         if dist_matrix_path is not None and cwe_vocab is not None:
@@ -137,9 +165,15 @@ class HierarchicalSupConLoss(nn.Module):
             flat_idx = ai_safe.reshape(-1) * M + si_safe.reshape(-1)
             dists = self._dist_matrix.reshape(-1)[flat_idx].reshape(n_vuln, B)  # [A, B]
 
-            # weight = 1 - normalised_dist  →  same CWE (dist=0) → 1.0
-            #                                   max dist / disconnected (dist=1) → 0.0
-            continuous = (1.0 - dists).clamp(min=0.0)
+            # Convert normalised distance → weight via configured weight_fn.
+            if self.weight_fn == "exp":
+                continuous = torch.exp(-self.exp_scale * dists)
+            elif self.weight_fn == "power":
+                continuous = (1.0 - dists).clamp(min=0.0) ** self.power
+            else:  # "linear" (default)
+                continuous = (1.0 - dists).clamp(min=0.0)
+            if self.min_weight > 0.0:
+                continuous = continuous.clamp(min=self.min_weight)
             weights[in_matrix] = continuous[in_matrix]
 
         return weights, in_matrix

@@ -33,7 +33,8 @@ def main() -> None:
 
     cfg = Config.from_yaml(args.config) if Path(args.config).exists() else load_default_config()
 
-    pretrained_lm  = getattr(cfg.model, "pretrained_lm", "microsoft/codebert-base")
+    pretrained_lm  = getattr(cfg.model, "pretrained_lm", "microsoft/unixcoder-base")
+    func_lm        = getattr(cfg.model, "func_lm", "microsoft/unixcoder-base")
     add_func_tokens = getattr(cfg.model, "add_func_tokens", False)
     device         = args.device or str(cfg.train.device)
     top_cwe        = getattr(cfg.data, "top_cwe", 0)
@@ -57,6 +58,8 @@ def main() -> None:
     print(f"Config        : {args.config}")
     print(f"Split         : {args.split}  source={source}")
     print(f"Mode          : {cfg.data.mode}")
+    print(f"Pretrained LM : {pretrained_lm}")
+    print(f"Function LM   : {func_lm}")
     print(f"LM            : {pretrained_lm}")
     print(f"func_tokens   : {add_func_tokens}")
     print(f"Device        : {device}")
@@ -78,6 +81,7 @@ def main() -> None:
         embedder_device=device,
         mode=cfg.data.mode,
         pretrained_lm=pretrained_lm,
+        func_lm=func_lm,
         add_func_tokens=add_func_tokens,
         top_cwe=top_cwe,
         cwe_list=cwe_list,

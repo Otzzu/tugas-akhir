@@ -46,7 +46,14 @@ model:
   binary_loss_weight: 0.2
   supcon_weight: 0.1
   supcon_temperature: 0.07
-  supcon_alpha: 0.5
+  supcon_alpha: 0.5                  # same-group fallback weight (always used)
+  supcon_use_distance_matrix: false  # true → load cwe_dist_matrix for continuous weights
+  # --- distance-matrix options (only active when supcon_use_distance_matrix: true) ---
+  # cwe_dist_matrix: data/cwe/cwe_distance_matrix.json
+  # supcon_weight_fn: linear         # linear | exp | power
+  # supcon_exp_scale: 5.0
+  # supcon_power: 2.0
+  # supcon_min_weight: 0.0
 
 train:
   seed: 42

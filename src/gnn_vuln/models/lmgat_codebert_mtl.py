@@ -89,6 +89,15 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
         GATv2 attention heads.
     edge_dim : int
         Edge feature dimension (7 for one-hot CPG edge types).
+    add_self_loops : bool
+        Whether GATv2Conv adds self-loops (node attends to itself within
+        aggregation). Default True. When edge_dim is set, PyG pads self-loop
+        edge features with zeros.
+    use_skip : bool
+        Whether to add residual skip connections around each GATv2 layer.
+        Layer 0 uses a learned linear projection (in_channels → hidden_dim);
+        subsequent layers use identity. Prevents oversmoothing in deep stacks
+        and preserves the CodeBERT node embeddings through aggregation.
     """
 
     def __init__(
@@ -104,12 +113,15 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
         num_heads: int = 4,
         edge_dim: int = EDGE_FEAT_DIM,
         use_group_cond: bool = True,
+        add_self_loops: bool = True,
+        use_skip: bool = True,
     ):
         super().__init__()
         self.dropout = dropout
         self.num_classes = num_classes
         self.num_groups = num_groups
         self.use_group_cond = use_group_cond
+        self.use_skip = use_skip
 
         _func_lm = func_lm if func_lm else pretrained_lm
         self.codebert = AutoModel.from_pretrained(_func_lm, use_safetensors=True)
@@ -120,7 +132,8 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
         self.convs.append(
             GATv2Conv(
                 in_channels, hidden_dim,
-                heads=num_heads, concat=False, dropout=dropout, edge_dim=edge_dim,
+                heads=num_heads, concat=False, dropout=dropout,
+                edge_dim=edge_dim, add_self_loops=add_self_loops,
             )
         )
         self.bns.append(nn.BatchNorm1d(hidden_dim))
@@ -128,10 +141,18 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
             self.convs.append(
                 GATv2Conv(
                     hidden_dim, hidden_dim,
-                    heads=num_heads, concat=False, dropout=dropout, edge_dim=edge_dim,
+                    heads=num_heads, concat=False, dropout=dropout,
+                    edge_dim=edge_dim, add_self_loops=add_self_loops,
                 )
             )
             self.bns.append(nn.BatchNorm1d(hidden_dim))
+
+        # ── Residual projections (only created when use_skip=True) ───────────
+        if use_skip:
+            self.res_projs = nn.ModuleList()
+            self.res_projs.append(nn.Linear(in_channels, hidden_dim, bias=False))
+            for _ in range(num_layers - 1):
+                self.res_projs.append(nn.Identity())
 
         fused_dim = hidden_dim + _CODEBERT_DIM
 
@@ -172,10 +193,14 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
         edge_index: torch.Tensor,
         edge_attr: torch.Tensor | None,
     ) -> torch.Tensor:
-        for conv, bn in zip(self.convs, self.bns):
+        for i, (conv, bn) in enumerate(zip(self.convs, self.bns)):
+            residual = self.res_projs[i](x) if self.use_skip else None
             x = conv(x, edge_index, edge_attr=edge_attr)
             x = bn(x)
-            x = F.relu(x)
+            if residual is not None:
+                x = F.relu(x + residual)
+            else:
+                x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
         return x  # [N, hidden_dim]
 

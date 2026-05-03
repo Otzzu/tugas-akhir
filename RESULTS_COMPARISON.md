@@ -1,6 +1,6 @@
 # Results Comparison — All Experiments
 
-Generated: 2026-04-29 (updated 2026-05-02 with Arch12 HC-DFGAT + Arch3 v6 LIVABLE+F1-stop)
+Generated: 2026-04-29 (updated 2026-05-03 with Arch12 v2 dist-matrix + Arch11 v3 MTL+group+LIVABLE+F1-stop)
 
 Metric direction: F1↑ AUC-ROC↑ IFA↓ Top-1↑ Effort@20%↓ Recall@20%loc↑
 
@@ -166,10 +166,12 @@ Two distinct datasets were used across experiments. Do NOT treat old vs new resu
 
 | Folder                                        | Description                                                                                         | Dataset | F1↑        | AUC-ROC↑   | IFA↓     | Top-1↑    | Effort@20%↓ | Recall@20%loc↑ |
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------- | ---------- | ---------- | -------- | --------- | ----------- | -------------- |
-| **20260501_205917_lmgat_hcdfgat_multiclass**  | **Arch12 v1, UniXcoder live, LIVABLE+F1-stop, group_id active, supcon_weight=0.1, RTX 4090**       | ⚠️ v2   | **0.6952** | **0.9032** | **4.86** | **0.530** | **0.0386**  | **0.518**      |
+| **20260501_205917_lmgat_hcdfgat_multiclass**  | **Arch12 v1, UniXcoder live, LIVABLE+F1-stop, supcon alpha-only (no distance matrix)**             | ⚠️ v2   | **0.6952** | **0.9032** | **4.86** | **0.530** | **0.0386**  | **0.518**      |
+| 20260502_185139_lmgat_hcdfgat_multiclass      | Arch12 v2, same as v1 + supcon_use_distance_matrix=true (linear weight_fn, CWE tree distances)     | ⚠️ v2   | 0.6776     | 0.8943     | 6.00     | 0.405     | 0.0661      | 0.433          |
 
-> **New best F1 and IFA simultaneously:** F1=0.6952 (rank 1), IFA=4.86 (rank 1, first model below 5.0). Hierarchical coarse→fine routing (group head → CWE head) + supcon contrastive loss gives best combined classification and localization.
-> **HC-DFGAT vs Arch3 v6 trade-off:** HC-DFGAT leads on F1 (0.6952 vs 0.6797) and IFA (4.86 vs 5.40). Arch3 v6 leads on AUC (0.9067 vs 0.9032), Effort@20% (0.0350 vs 0.0386), Recall@20%loc (0.565 vs 0.518). Top-1 tied (0.530).
+> **v1 (alpha-only) dominates v2 (distance matrix) on every metric.** F1: 0.6952→0.6776 (−0.018), IFA: 4.86→6.00 (worse), Top-1: 0.530→0.405 (−0.125), Effort@20%: 0.0386→0.0661 (worse), Recall@20%loc: 0.518→0.433 (worse). Distance matrix hurts rather than helps.
+> **Likely cause:** Linear `w = 1 − norm_dist` assigns non-zero weight to structurally distant CWE pairs, diluting the contrastive signal that alpha-only concentrates on same-group pairs. Continuous weighting introduces gradient noise from weak cross-group positives. Next: try `weight_fn=exp` with high `exp_scale` (sharp falloff → behaves like alpha at short range) or raise `supcon_weight` to compensate.
+> **HC-DFGAT v1 vs Arch3 v6 trade-off (unchanged):** HC-DFGAT v1 leads on F1 (0.6952 vs 0.6797) and IFA (4.86 vs 5.40). Arch3 v6 leads on AUC (0.9067 vs 0.9032), Effort@20% (0.0350 vs 0.0386), Recall@20%loc (0.565 vs 0.518). Top-1 tied (0.530). Both Pareto-optimal.
 
 ---
 
@@ -179,9 +181,11 @@ Two distinct datasets were used across experiments. Do NOT treat old vs new resu
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------- | ---------- | ---------- | --------- | --------- | ----------- | -------------- |
 | **20260501_050001_lmgat_codebert_mtl_multiclass** | **Arch11 v1, UniXcoder live, binary_weight=0.2, group_weight=0.0, use_group_cond=false, RTX 4090** | ⚠️ v2   | **0.4308** | **0.8724** | **10.69** | **0.169** | **0.1035**  | **0.313**      |
 | **20260501_072750_lmgat_codebert_mtl_multiclass** | **Arch11 v2, UniXcoder live, same as v1 + livable_loss=true, RTX 4090**                           | ⚠️ v2   | **0.5084** | **0.8917** | **12.16** | **0.226** | **0.0741**  | **0.368**      |
+| **20260502_193921_lmgat_codebert_mtl_multiclass** | **Arch11 v3, UniXcoder live, LIVABLE+F1-stop, use_group_cond=true, group_loss=0.3, rank=0.2**     | ⚠️ v2   | **0.6819** | **0.9017** | **4.60** | **0.558** | **0.0338**  | **0.573**      |
 
-> **MTL binary head hurts localization:** Top-1=0.169 is worst among all recent v2 architectures. Sharing the encoder with binary classification signal pulls the node representations away from fine-grained localization. AUC-ROC=0.8724 is highest of all models — binary auxiliary task genuinely improves ranking calibration. IFA=10.69 is poor; MIL stmt head still trains but binary auxiliary loss competes.
-> **LIVABLE (v2) significantly improves classification:** F1 0.4308→0.5084 (+0.078), AUC 0.8724→0.8917. Effort@20% 0.1035→0.0741 (big improvement in ranking efficiency). IFA worsens slightly (10.69→12.16) — LIVABLE epoch-adaptive weights help classification but don't fix localization degradation from binary MTL head.
+> **MTL binary head hurts localization (v1):** Top-1=0.169 is worst among all recent v2 architectures. Sharing the encoder with binary classification signal pulls node representations away from localization. AUC-ROC=0.8724 is highest of all models — binary auxiliary task improves calibration. IFA=10.69 is poor.
+> **LIVABLE (v2) significantly improves classification:** F1 0.4308→0.5084 (+0.078), AUC 0.8724→0.8917. Effort@20% 0.1035→0.0741. IFA worsens (10.69→12.16) — LIVABLE helps balance but doesn't fix localization degradation from binary head without group conditioning.
+> **Group conditioning + LIVABLE + F1-stop (v3) transforms Arch11:** Enabling use_group_cond=true + group_loss_weight=0.3 + F1-stop unlocks dramatic localization improvement. IFA 12.16→4.60 (new overall best), Top-1 0.226→0.558 (new best), Effort@20% 0.0741→0.0338 (new best), Recall@20%loc 0.368→0.573 (new best). F1 jumps 0.5084→0.6819. Group supervision was the missing ingredient: once the model learns coarse group routing, MIL localization and CWE classification both benefit simultaneously.
 
 ---
 
@@ -189,33 +193,35 @@ Two distinct datasets were used across experiments. Do NOT treat old vs new resu
 
 > ⚠️ Rows marked v2 used a larger dataset (all.parquet) — not directly comparable to v1 rows.
 
-| Rank | Model                                           | Folder                             | Dataset | F1↑        | AUC-ROC↑   | IFA↓     | Top-1↑    | Effort@20%↓ | Recall@20%loc↑ |
-| ---- | ----------------------------------------------- | ---------------------------------- | ------- | ---------- | ---------- | -------- | --------- | ----------- | -------------- |
-| 1    | **Arch12** HC-DFGAT + LIVABLE + F1-stop         | 20260501_205917_lmgat_hcdfgat      | ⚠️ v2   | **0.6952** | 0.9032     | **4.86** | **0.530** | 0.0386      | 0.518          |
-| 2    | **Arch7 v1 best** UniXcoder + LIVABLE + F1-stop | 20260501_150638_lmgat_seq          | ⚠️ v2   | **0.6897** | 0.9041     | 6.88     | 0.340     | 0.0567      | 0.445          |
-| 3    | **Arch4 v3 best** UniXcoder + LIVABLE + F1-stop | 20260501_120840_lmgat_mcs          | ⚠️ v2   | **0.6851** | 0.9036     | 10.51    | 0.281     | 0.0862      | 0.374          |
-| 4    | **Arch3 v6** UniXcoder + F1-stop + LIVABLE      | 20260502_010952_lmgat_codebert     | ⚠️ v2   | **0.6797** | **0.9067** | 5.40     | **0.530** | **0.0350**  | **0.565**      |
-| 5    | **Arch3 v5** UniXcoder live + F1-stop           | 20260501_085445_lmgat_codebert     | ⚠️ v2   | 0.6744     | 0.8999     | 5.84     | 0.478     | 0.0556      | 0.483          |
-| 6    | **Arch4 v3** UniXcoder live                     | 20260429_095918_lmgat_mcs          | ⚠️ v2   | 0.5791     | 0.8977     | 12.74    | 0.221     | 0.110       | 0.308          |
-| 7    | **Arch11 v2** MTL + LIVABLE UniXcoder live      | 20260501_072750_lmgat_codebert_mtl | ⚠️ v2   | 0.5084     | 0.8917     | 12.16    | 0.226     | 0.0741      | 0.368          |
-| 8    | **Arch7 v1** UniXcoder live (original)          | 20260429_121124_lmgat_seq          | ⚠️ v2   | 0.4554     | 0.8610     | 7.34     | 0.356     | 0.0855      | 0.387          |
-| 9    | **Arch10** DualFlow UniXcoder live              | 20260501_035449_lmgat_dualflow     | ⚠️ v2   | 0.4461     | 0.8671     | 8.05     | 0.340     | 0.0786      | 0.405          |
-| 10   | **Arch11 v1** MTL (binary+CWE) UniXcoder live  | 20260501_050001_lmgat_codebert_mtl | ⚠️ v2   | 0.4308     | 0.8724     | 10.69    | 0.169     | 0.1035      | 0.313          |
-| 11   | **Arch8 v1** UniXcoder live                     | 20260429_125637_lmgat_waves_seq    | ⚠️ v2   | 0.4305     | 0.8357     | 13.72    | 0.096     | 0.1394      | 0.245          |
-| 12   | **Arch3 v4** UniXcoder live                     | 20260429_091918_lmgat_codebert     | ⚠️ v2   | 0.4115     | 0.8562     | 7.72     | 0.366     | 0.103       | 0.340          |
-| 13   | **Arch9** LM-GGNN corrected UniXcoder live      | 20260430_004221_lmggnn             | ⚠️ v2   | 0.4080     | 0.8073     | 8.29     | 0.244     | 0.1378      | 0.292          |
-| 14   | **Arch7 v2** UniXcoder live (tuned)             | 20260429_135046_lmgat_seq          | ⚠️ v2   | 0.3857     | 0.8018     | 12.13    | 0.182     | 0.1177      | 0.294          |
-| 15   | **Arch9** LM-GGNN old impl (no stmt_head)       | 20260429_203915_lmggnn             | ⚠️ v2   | 0.3519     | 0.8053     | N/A      | N/A       | N/A         | N/A            |
-| 16   | Arch4 v2 GraphCodeBERT live                     | 20260427_103516_lmgat_mcs          | v1      | 0.272      | 0.761      | 12.76    | 0.225     | 0.149       | 0.268          |
-| 17   | Arch3 v3 GraphCodeBERT live                     | 20260427_075727_lmgat_codebert     | v1      | 0.259      | 0.738      | 6.12     | 0.398     | 0.106       | 0.372          |
-| 18   | Arch2 v2 CodeBERT frozen                        | 20260426_181253_lmgat              | v1      | 0.224      | 0.726      | 8.44     | 0.322     | 0.101       | 0.314          |
-| 19   | Arch1 LM-GCN CodeBERT frozen                    | 20260426_002451_lmgcn              | v1      | 0.209      | 0.742      | 8.65     | 0.272     | 0.162       | 0.232          |
-| 20   | Arch4 v1 CodeBERT live                          | 20260427_053340_lmgat_mcs          | v1      | 0.207      | 0.721      | 14.23    | 0.173     | 0.291       | 0.132          |
-| 21   | Arch3 v1 CodeBERT live                          | 20260427_012529_lmgat_codebert     | v1      | 0.204      | 0.696      | 10.73    | 0.235     | 0.185       | 0.217          |
-| 22   | Arch3 v2 CodeBERT live                          | 20260427_062921_lmgat_codebert     | v1      | 0.193      | 0.686      | 9.20     | 0.315     | 0.142       | 0.294          |
-| 23   | Arch2 v1 CodeBERT frozen                        | 20260426_144901_lmgat              | v1      | 0.172      | 0.711      | 8.62     | 0.329     | 0.121       | 0.297          |
-| 24   | Arch6 GAT-Interp CodeBERT live                  | 20260427_195648_lmgat_interp       | v1      | 0.160      | 0.704      | 8.87     | 0.318     | 0.101       | 0.310          |
-| 25   | Arch2 v3 GraphCodeBERT frozen                   | 20260427_091241_lmgat              | v1      | 0.135      | 0.696      | 7.63     | 0.315     | 0.127       | 0.283          |
+| Rank | Model                                                          | Folder                             | Dataset | F1↑        | AUC-ROC↑   | IFA↓     | Top-1↑    | Effort@20%↓ | Recall@20%loc↑ |
+| ---- | -------------------------------------------------------------- | ---------------------------------- | ------- | ---------- | ---------- | -------- | --------- | ----------- | -------------- |
+| 1    | **Arch12 v1** HC-DFGAT + LIVABLE + F1-stop (alpha-only)       | 20260501_205917_lmgat_hcdfgat      | ⚠️ v2   | **0.6952** | 0.9032     | 4.86     | 0.530     | 0.0386      | 0.518          |
+| 2    | **Arch7 v1 best** UniXcoder + LIVABLE + F1-stop               | 20260501_150638_lmgat_seq          | ⚠️ v2   | **0.6897** | 0.9041     | 6.88     | 0.340     | 0.0567      | 0.445          |
+| 3    | **Arch4 v3 best** UniXcoder + LIVABLE + F1-stop               | 20260501_120840_lmgat_mcs          | ⚠️ v2   | **0.6851** | 0.9036     | 10.51    | 0.281     | 0.0862      | 0.374          |
+| 4    | **Arch11 v3** MTL + group_cond + LIVABLE + F1-stop            | 20260502_193921_lmgat_codebert_mtl | ⚠️ v2   | **0.6819** | 0.9017     | **4.60** | **0.558** | **0.0338**  | **0.573**      |
+| 5    | **Arch3 v6** UniXcoder + F1-stop + LIVABLE                    | 20260502_010952_lmgat_codebert     | ⚠️ v2   | **0.6797** | **0.9067** | 5.40     | 0.530     | 0.0350      | 0.565          |
+| 6    | **Arch3 v5** UniXcoder live + F1-stop                         | 20260501_085445_lmgat_codebert     | ⚠️ v2   | 0.6744     | 0.8999     | 5.84     | 0.478     | 0.0556      | 0.483          |
+| 7    | Arch12 v2 HC-DFGAT + dist matrix (linear)                     | 20260502_185139_lmgat_hcdfgat      | ⚠️ v2   | 0.6776     | 0.8943     | 6.00     | 0.405     | 0.0661      | 0.433          |
+| 8    | **Arch4 v3** UniXcoder live                                   | 20260429_095918_lmgat_mcs          | ⚠️ v2   | 0.5791     | 0.8977     | 12.74    | 0.221     | 0.110       | 0.308          |
+| 9    | **Arch11 v2** MTL + LIVABLE UniXcoder live                    | 20260501_072750_lmgat_codebert_mtl | ⚠️ v2   | 0.5084     | 0.8917     | 12.16    | 0.226     | 0.0741      | 0.368          |
+| 10   | **Arch7 v1** UniXcoder live (original)                        | 20260429_121124_lmgat_seq          | ⚠️ v2   | 0.4554     | 0.8610     | 7.34     | 0.356     | 0.0855      | 0.387          |
+| 11   | **Arch10** DualFlow UniXcoder live                            | 20260501_035449_lmgat_dualflow     | ⚠️ v2   | 0.4461     | 0.8671     | 8.05     | 0.340     | 0.0786      | 0.405          |
+| 12   | **Arch11 v1** MTL (binary+CWE, no group_cond) UniXcoder live  | 20260501_050001_lmgat_codebert_mtl | ⚠️ v2   | 0.4308     | 0.8724     | 10.69    | 0.169     | 0.1035      | 0.313          |
+| 13   | **Arch8 v1** UniXcoder live                                   | 20260429_125637_lmgat_waves_seq    | ⚠️ v2   | 0.4305     | 0.8357     | 13.72    | 0.096     | 0.1394      | 0.245          |
+| 14   | **Arch3 v4** UniXcoder live                                   | 20260429_091918_lmgat_codebert     | ⚠️ v2   | 0.4115     | 0.8562     | 7.72     | 0.366     | 0.103       | 0.340          |
+| 15   | **Arch9** LM-GGNN corrected UniXcoder live                    | 20260430_004221_lmggnn             | ⚠️ v2   | 0.4080     | 0.8073     | 8.29     | 0.244     | 0.1378      | 0.292          |
+| 16   | **Arch7 v2** UniXcoder live (tuned)                           | 20260429_135046_lmgat_seq          | ⚠️ v2   | 0.3857     | 0.8018     | 12.13    | 0.182     | 0.1177      | 0.294          |
+| 17   | **Arch9** LM-GGNN old impl (no stmt_head)                     | 20260429_203915_lmggnn             | ⚠️ v2   | 0.3519     | 0.8053     | N/A      | N/A       | N/A         | N/A            |
+| 18   | Arch4 v2 GraphCodeBERT live                                   | 20260427_103516_lmgat_mcs          | v1      | 0.272      | 0.761      | 12.76    | 0.225     | 0.149       | 0.268          |
+| 19   | Arch3 v3 GraphCodeBERT live                                   | 20260427_075727_lmgat_codebert     | v1      | 0.259      | 0.738      | 6.12     | 0.398     | 0.106       | 0.372          |
+| 20   | Arch2 v2 CodeBERT frozen                                      | 20260426_181253_lmgat              | v1      | 0.224      | 0.726      | 8.44     | 0.322     | 0.101       | 0.314          |
+| 21   | Arch1 LM-GCN CodeBERT frozen                                  | 20260426_002451_lmgcn              | v1      | 0.209      | 0.742      | 8.65     | 0.272     | 0.162       | 0.232          |
+| 22   | Arch4 v1 CodeBERT live                                        | 20260427_053340_lmgat_mcs          | v1      | 0.207      | 0.721      | 14.23    | 0.173     | 0.291       | 0.132          |
+| 23   | Arch3 v1 CodeBERT live                                        | 20260427_012529_lmgat_codebert     | v1      | 0.204      | 0.696      | 10.73    | 0.235     | 0.185       | 0.217          |
+| 24   | Arch3 v2 CodeBERT live                                        | 20260427_062921_lmgat_codebert     | v1      | 0.193      | 0.686      | 9.20     | 0.315     | 0.142       | 0.294          |
+| 25   | Arch2 v1 CodeBERT frozen                                      | 20260426_144901_lmgat              | v1      | 0.172      | 0.711      | 8.62     | 0.329     | 0.121       | 0.297          |
+| 26   | Arch6 GAT-Interp CodeBERT live                                | 20260427_195648_lmgat_interp       | v1      | 0.160      | 0.704      | 8.87     | 0.318     | 0.101       | 0.310          |
+| 27   | Arch2 v3 GraphCodeBERT frozen                                 | 20260427_091241_lmgat              | v1      | 0.135      | 0.696      | 7.63     | 0.315     | 0.127       | 0.283          |
 | 26   | Arch5 LM-GIN CodeBERT frozen                    | 20260427_175127_lmgin              | v1      | 0.107      | 0.645      | 8.40     | 0.339     | 0.139       | 0.278          |
 
 ---
@@ -275,6 +281,12 @@ Two distinct datasets were used across experiments. Do NOT treat old vs new resu
 28. **HC-DFGAT vs Arch3 v6 metric split** — HC-DFGAT best: F1 (0.6952 vs 0.6797), IFA (4.86 vs 5.40). Arch3 v6 best: AUC (0.9067 vs 0.9032), Effort@20% (0.0350 vs 0.0386), Recall@20%loc (0.565 vs 0.518). Top-1 tied (0.530). Neither dominates on all metrics — both are Pareto-optimal.
 29. **HC-DFGAT group_id essential** — Previous Arch11 (MTL without group supervision) had IFA=10.69; HC-DFGAT with full group routing achieves IFA=4.86. Coarse group conditioning on CWE head is the key differentiator vs plain MTL.
 
+### HC-DFGAT Distance Matrix Ablation (Arch12 v2, 2026-05-03)
+
+30. **Arch11 v3 (MTL + group_cond + LIVABLE + F1-stop) sets new localization records** — Enabling use_group_cond=true + group_loss_weight=0.3 + F1-stop on Arch11 yields: IFA=4.60 (new #1, beats HC-DFGAT's 4.86), Top-1=0.558 (new #1, beats 0.530), Effort@20%=0.0338 (new #1, beats Arch3 v6's 0.0350), Recall@20%loc=0.573 (new #1, beats Arch3 v6's 0.565). F1=0.6819 (rank 4). Group supervision was the key ingredient missing from Arch11 v1/v2: once coarse group routing is added, the model achieves better localization than HC-DFGAT while using a simpler architecture (shared GATv2 vs dual-flow). AUC=0.9017 (rank 5). Arch11 v3 is the new Pareto-optimal model for localization tasks.
+
+31. **CWE tree distance matrix hurts supcon (v2 < v1 on all metrics)** — Linear `w = 1 − norm_dist` continuous weighting degrades every metric vs alpha-only: F1 0.6952→0.6776 (−0.018), IFA 4.86→6.00 (worse), Top-1 0.530→0.405 (−0.125), Effort@20% 0.0386→0.0661, Recall@20%loc 0.518→0.433. Alpha-only binary weighting (same-group = 0.5, other = 0) produces a sharper contrastive signal by concentrating positives within groups. Linear distance assigns non-zero weight to cross-group pairs, diluting the gradient. Next steps: try `weight_fn=exp` with high `exp_scale` (approaches binary behavior at large distances) or threshold-gate the matrix (only use distance weights within same group, fall back to zero otherwise).
+
 ---
 
 ## Missing / Pending Results
@@ -284,6 +296,9 @@ Two distinct datasets were used across experiments. Do NOT treat old vs new resu
 - ~~Arch7 v1 LIVABLE+F1-stop~~ — Done: F1=0.6897, AUC=0.9041 (folder 20260501_150638)
 - ~~Arch3 v6 LIVABLE+F1-stop~~ — Done: F1=0.6797, AUC=0.9067, Effort=0.0350, Recall@20%=0.565 (folder 20260502_010952) — best Effort+Recall
 - ~~Arch12 HC-DFGAT~~ — Done: F1=0.6952, IFA=4.86 (folder 20260501_205917) — best F1+IFA
+- ~~Arch12 v2 HC-DFGAT + distance matrix~~ — Done: F1=0.6776, IFA=6.00 (folder 20260502_185139) — worse than v1; linear weight_fn hurts
+- ~~Arch11 v3 MTL + group_cond + LIVABLE + F1-stop~~ — Done: F1=0.6819, IFA=4.60, Effort=0.0338, Recall@20%=0.573 (folder 20260502_193921) — new localization champion
+- Arch12 v3 HC-DFGAT + distance matrix (exp weight_fn) — to investigate whether sharper falloff recovers v1 performance
 - Arch10/Arch11 retrain with early_stop_metric=f1 — F1-stop proved universally beneficial; not yet retrained
 - Arch3/4 binary GraphCodeBERT variants — not yet trained
 - Arch9 (lmggnn) run 20260429_202324 — not yet evaluated (may skip)

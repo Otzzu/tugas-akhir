@@ -182,6 +182,8 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             num_heads=cfg.model.heads,
             edge_dim=getattr(cfg.model, "edge_dim", 7),
             use_group_cond=getattr(cfg.model, "use_group_cond", True),
+            add_self_loops=getattr(cfg.model, "add_self_loops", True),
+            use_skip=getattr(cfg.model, "use_skip", True),
         )
     if arch == "lmgat_hcdfgat":
         return LMGATHCDFGATVulnDetector(
@@ -683,18 +685,26 @@ def main():
             / "raw" / getattr(cfg.data, "source", "megavul") / "cwe_vocab.json"
         )
         _cwe_vocab: dict[str, int] | None = None
-        if _cwe_vocab_path.exists():
-            import json as _json
-            with open(_cwe_vocab_path, encoding="utf-8") as _f:
-                _cwe_vocab = _json.load(_f)
-        _dist_matrix_path = Path(getattr(
-            cfg.model, "cwe_dist_matrix", "data/cwe/cwe_distance_matrix.json"
-        ))
+        _use_dist_matrix = getattr(cfg.model, "supcon_use_distance_matrix", False)
+        _dist_matrix_path: Path | None = None
+        if _use_dist_matrix:
+            if _cwe_vocab_path.exists():
+                import json as _json
+                with open(_cwe_vocab_path, encoding="utf-8") as _f:
+                    _cwe_vocab = _json.load(_f)
+            _p = Path(getattr(cfg.model, "cwe_dist_matrix", "data/cwe/cwe_distance_matrix.json"))
+            _dist_matrix_path = _p if _p.exists() else None
+            if _dist_matrix_path is None:
+                print(f"[train] supcon_use_distance_matrix=true but matrix not found at {_p}; falling back to alpha.")
         supcon_fn = HierarchicalSupConLoss(
             temperature=getattr(cfg.model, "supcon_temperature", 0.07),
             alpha=getattr(cfg.model, "supcon_alpha", 0.5),
-            dist_matrix_path=_dist_matrix_path if _dist_matrix_path.exists() else None,
+            dist_matrix_path=_dist_matrix_path,
             cwe_vocab=_cwe_vocab,
+            weight_fn=getattr(cfg.model, "supcon_weight_fn", "linear"),
+            exp_scale=getattr(cfg.model, "supcon_exp_scale", 5.0),
+            power=getattr(cfg.model, "supcon_power", 2.0),
+            min_weight=getattr(cfg.model, "supcon_min_weight", 0.0),
         )
     else:
         supcon_fn = None
