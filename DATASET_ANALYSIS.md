@@ -219,7 +219,6 @@ Total: **217,007** | Benign: **206,112** | Vulnerable: **10,895**
 | Group ID | Group | CPG Files | all.parquet | Coverage |
 |---|---|---|---|---|
 | 0 | benign | 4,000 | 206,112 | subsampled |
-| -1 | UNKNOWN | 8,760 | 2,135 | 410% |
 | -1 | UNKNOWN | 8,760 | 2,135 | filtered |
 
 > All vulnerable CPG files = 100% coverage of all.parquet vulnerable.
@@ -527,14 +526,14 @@ Total: **55,868** | Benign: **27,934** | Vulnerable: **27,934**
 | 1 | memory_safety | 12,214 |
 | 3 | resource_management | 2,784 |
 | 6 | broken_access_control | 2,422 |
-| -1 | UNKNOWN | 2,139 |
+| -1 | UNKNOWN | 2,137 |
 | 2 | numeric | 2,012 |
 | 4 | input_validation | 1,943 |
 | 10 | code_quality | 1,198 |
 | 9 | concurrency | 1,195 |
 | 7 | authentication_failures | 468 |
 | 5 | injection | 437 |
-| 8 | cryptographic_failures | 386 |
+| 8 | cryptographic_failures | 388 |
 | 15 | deprecated | 258 |
 | 14 | mishandling_exceptional_conditions | 225 |
 | 11 | security_misconfiguration | 192 |
@@ -698,7 +697,7 @@ Total: **55,868** | Benign: **27,934** | Vulnerable: **27,934**
 | CWE-300 | 2 | 6 | broken_access_control |  | ✅ |
 | CWE-307 | 2 | 7 | authentication_failures |  | ✅ |
 | CWE-838 | 2 | -1 | UNKNOWN |  |  |
-| CWE-325 | 2 | -1 | UNKNOWN |  | ✅ |
+| CWE-325 | 2 | 8 | cryptographic_failures |  | ✅ |
 | CWE-349 | 1 | 8 | cryptographic_failures |  |  |
 
 ### Top 25 Most Dangerous CWEs
@@ -806,7 +805,7 @@ Total: **55,868** | Benign: **27,934** | Vulnerable: **27,934**
 | CWE-338 | 2 | 8 | A04:2025 - Cryptographic Failures |
 | CWE-300 | 2 | 6 | A07:2025 - Authentication Failures |
 | CWE-307 | 2 | 7 | A07:2025 - Authentication Failures |
-| CWE-325 | 2 | -1 | A04:2025 - Cryptographic Failures |
+| CWE-325 | 2 | 8 | A04:2025 - Cryptographic Failures |
 | **Total** | **8,431** | | |
 
 ---
@@ -846,7 +845,7 @@ Total: **77,096** | Benign: **38,548** | Vulnerable: **38,548**
 
 | CWE | Count | Group ID | Group | Top 25 | OWASP Top 10 |
 |---|---|---|---|---|---|
-| *(empty/unknown)* | 20,437 | -1 | UNKNOWN |  |  |
+| *(empty/unknown)* | 20,546 | -1 | UNKNOWN |  |  |
 | CWE-20 | 1,488 | 4 | input_validation | ✅ | ✅ |
 | CWE-119 | 1,483 | 1 | memory_safety |  |  |
 | CWE-125 | 1,395 | 1 | memory_safety | ✅ |  |
@@ -886,7 +885,6 @@ Total: **77,096** | Benign: **38,548** | Vulnerable: **38,548**
 | CWE-502 | 98 | 12 | software_or_data_integrity_failures | ✅ | ✅ |
 | CWE-295 | 88 | 7 | authentication_failures |  | ✅ |
 | CWE-613 | 87 | 7 | authentication_failures |  | ✅ |
-| NVD-CWE-OTHER | 85 | -1 | UNKNOWN |  |  |
 | CWE-601 | 81 | 6 | broken_access_control |  | ✅ |
 | CWE-770 | 74 | 3 | resource_management | ✅ |  |
 | CWE-674 | 71 | 10 | code_quality |  |  |
@@ -926,7 +924,6 @@ Total: **77,096** | Benign: **38,548** | Vulnerable: **38,548**
 | CWE-754 | 27 | 14 | mishandling_exceptional_conditions |  | ✅ |
 | CWE-88 | 25 | 5 | injection |  | ✅ |
 | CWE-640 | 24 | 7 | authentication_failures |  | ✅ |
-| NVD-CWE-NOINFO | 24 | -1 | UNKNOWN |  |  |
 | CWE-203 | 23 | 6 | broken_access_control |  |  |
 | CWE-843 | 23 | 1 | memory_safety |  |  |
 | CWE-681 | 22 | 2 | numeric |  |  |
@@ -1289,7 +1286,7 @@ Total: **176,674** | Benign: **154,205** | Vulnerable: **22,469**
 |---|---|---|
 | 0 | benign | 154,205 |
 | 1 | memory_safety | 8,962 |
-| -1 | UNKNOWN | 2,762 |
+| -1 | UNKNOWN | 2,759 |
 | 6 | broken_access_control | 2,285 |
 | 3 | resource_management | 2,100 |
 | 4 | input_validation | 1,778 |
@@ -1297,8 +1294,8 @@ Total: **176,674** | Benign: **154,205** | Vulnerable: **22,469**
 | 9 | concurrency | 824 |
 | 10 | code_quality | 703 |
 | 15 | deprecated | 339 |
+| 8 | cryptographic_failures | 313 |
 | 5 | injection | 310 |
-| 8 | cryptographic_failures | 310 |
 | 7 | authentication_failures | 173 |
 | 11 | security_misconfiguration | 149 |
 | 14 | mishandling_exceptional_conditions | 134 |
@@ -1437,7 +1434,7 @@ Total: **176,674** | Benign: **154,205** | Vulnerable: **22,469**
 | CWE-118 | 3 | 1 | memory_safety |  |  |
 | CWE-434 | 3 | 5 | injection | ✅ | ✅ |
 | CWE-707 | 3 | 4 | input_validation |  |  |
-| CWE-325 | 3 | -1 | UNKNOWN |  | ✅ |
+| CWE-325 | 3 | 8 | cryptographic_failures |  | ✅ |
 | CWE-209 | 2 | 14 | mishandling_exceptional_conditions |  | ✅ |
 | CWE-113 | 2 | 5 | injection |  | ✅ |
 | CWE-762 | 2 | -1 | UNKNOWN |  |  |
@@ -1567,7 +1564,7 @@ Total: **176,674** | Benign: **154,205** | Vulnerable: **22,469**
 | CWE-693 | 4 | 15 | A06:2025 - Insecure Design |
 | CWE-1021 | 3 | 12 | A06:2025 - Insecure Design |
 | CWE-434 | 3 | 5 | A06:2025 - Insecure Design |
-| CWE-325 | 3 | -1 | A04:2025 - Cryptographic Failures |
+| CWE-325 | 3 | 8 | A04:2025 - Cryptographic Failures |
 | CWE-209 | 2 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
 | CWE-113 | 2 | 5 | A05:2025 - Injection |
 | CWE-306 | 2 | 7 | A07:2025 - Authentication Failures |
@@ -1599,7 +1596,7 @@ Total: **176,674** | Benign: **154,205** | Vulnerable: **22,469**
 | Group ID | Group | BigVul | DiverseVul | MegaVul | TitanVul | BenchVul | Merged |
 |---|---|---|---|---|---|---|---|
 | 1 | memory_safety | 3618 | 7065 | 12214 | 6218 | 200 | 8962 |
-| -1 | UNKNOWN | 2135 | 2836 | 2139 | 20546 | 0 | 2762 |
+| -1 | UNKNOWN | 2135 | 2836 | 2137 | 20546 | 0 | 2759 |
 | 6 | broken_access_control | 1341 | 1816 | 2422 | 2500 | 350 | 2285 |
 | 3 | resource_management | 916 | 1383 | 2784 | 1279 | 50 | 2100 |
 | 4 | input_validation | 1152 | 1400 | 1943 | 1696 | 0 | 1778 |
@@ -1607,7 +1604,7 @@ Total: **176,674** | Benign: **154,205** | Vulnerable: **22,469**
 | 5 | injection | 101 | 395 | 437 | 2252 | 250 | 310 |
 | 9 | concurrency | 266 | 450 | 1195 | 412 | 0 | 824 |
 | 10 | code_quality | 121 | 393 | 1198 | 445 | 0 | 703 |
-| 8 | cryptographic_failures | 130 | 547 | 386 | 543 | 0 | 310 |
+| 8 | cryptographic_failures | 130 | 547 | 388 | 543 | 0 | 313 |
 | 14 | mishandling_exceptional_conditions | 24 | 869 | 225 | 519 | 0 | 134 |
 | 7 | authentication_failures | 36 | 304 | 468 | 512 | 100 | 173 |
 | 15 | deprecated | 271 | 179 | 258 | 164 | 0 | 339 |

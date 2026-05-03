@@ -49,11 +49,10 @@ def parse_cwe(raw) -> str:
     if isinstance(raw, list):
         raw = raw[0] if raw else ""
     s = str(raw).strip().upper()
-    if not s or s in ("NAN", "NONE", "UNKNOWN", "OTHER", "CWE-OTHER", "CWE-UNKNOWN", "NVD-CWE-NOINFO", "NVD-CWE-OTHER"):
-        return ""
     if "," in s:
         s = s.split(",")[0].strip()
-        
+    if not s or s in ("NAN", "NONE", "UNKNOWN", "OTHER", "CWE-OTHER", "CWE-UNKNOWN", "NVD-CWE-NOINFO", "NVD-CWE-OTHER"):
+        return ""
     if s.startswith("CWE-"):
         num = s[4:]
         if num.isdigit():
@@ -210,6 +209,9 @@ def cpg_coverage_table(raw_dir: Path, group_counts: dict) -> str:
                     pass
 
         for (gid, gname), cpg_cnt in sorted(grp_cpg.items(), key=lambda x: -x[1]):
+            if gid == -1: 
+                continue
+
             pq_cnt = group_counts.get((gid, gname), 0)
             if pq_cnt > 0:
                 pct = f"{100*cpg_cnt//pq_cnt}%"

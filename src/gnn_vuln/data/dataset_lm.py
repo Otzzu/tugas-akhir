@@ -131,6 +131,7 @@ CWE_GROUP_MAP: dict[str, str] = {
     "CWE-326": "cryptographic_failures",   # Inadequate Encryption Strength (child CWE-693)
     "CWE-337": "cryptographic_failures",   # Predictable PRNG Seed (child CWE-330)
     "CWE-385": "cryptographic_failures",   # Covert Timing Channel (side-channel attack)
+    "CWE-325": "cryptographic_failures",
     # 9. Concurrency (tree: CWE-362, CWE-662 subtrees)
     "CWE-362": "concurrency", "CWE-361": "concurrency",
     "CWE-367": "concurrency",   # TOCTOU Race Condition (child CWE-362)
@@ -541,7 +542,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
         self._func_short = self._func_lm.split("/")[-1]
 
         # Load dynamic XML filters
-        cwe_dir = Path(root).parent / "cwe"
+        cwe_dir = Path(root).parent / "data" / "cwe"
         if filter_owasp_top10:
             self._cwe_list.extend(_get_cwe_set_from_xml(cwe_dir / "owasptop10.xml"))
         if filter_top25:
