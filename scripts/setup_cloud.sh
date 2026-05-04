@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cloud GPU environment setup (RTX 4090, CUDA 12.4)
+# Cloud GPU environment setup — auto-detects CUDA version, supports sm_120 (Blackwell).
 # Run once after each pod restart:
 #   bash scripts/setup_cloud.sh
 
@@ -19,10 +19,35 @@ rm gdrive_linux-x64.tar.gz
 curl -s https://rclone.org/install.sh | bash
 
 echo "=== [1/6] Removing conflicting packages ==="
-pip uninstall -y torchaudio torch-scatter torch-sparse 2>/dev/null || true
+pip uninstall -y torch torchvision torchaudio torch-scatter torch-sparse 2>/dev/null || true
 
-echo "=== [2/6] Installing PyTorch 2.6 (CUDA 12.4) ==="
-pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu124
+echo "=== [2/6] Detecting CUDA version and installing PyTorch ==="
+# Detect CUDA version from nvcc (major.minor)
+if command -v nvcc &>/dev/null; then
+    CUDA_VER=$(nvcc --version | grep "release" | sed 's/.*release \([0-9]*\.[0-9]*\).*/\1/')
+else
+    CUDA_VER=$(python -c "import subprocess; out=subprocess.check_output(['nvidia-smi'],text=True); import re; m=re.search(r'CUDA Version: ([0-9]+\.[0-9]+)',out); print(m.group(1) if m else '12.4')" 2>/dev/null || echo "12.4")
+fi
+CUDA_MAJOR=$(echo "$CUDA_VER" | cut -d. -f1)
+CUDA_MINOR=$(echo "$CUDA_VER" | cut -d. -f2)
+echo "    Detected CUDA: ${CUDA_VER}"
+
+# Choose PyTorch wheel: CUDA >= 12.8 → cu128 (supports sm_120 Blackwell)
+#                       CUDA >= 12.4 → cu124
+#                       fallback      → cu121
+if [[ "$CUDA_MAJOR" -gt 12 ]] || [[ "$CUDA_MAJOR" -eq 12 && "$CUDA_MINOR" -ge 8 ]]; then
+    TORCH_CUDA="cu128"
+    TORCH_VER="2.7.0"
+elif [[ "$CUDA_MAJOR" -eq 12 && "$CUDA_MINOR" -ge 4 ]]; then
+    TORCH_CUDA="cu124"
+    TORCH_VER="2.6.0"
+else
+    TORCH_CUDA="cu121"
+    TORCH_VER="2.6.0"
+fi
+echo "    Installing PyTorch ${TORCH_VER} with ${TORCH_CUDA}"
+pip install --no-cache-dir torch==${TORCH_VER} torchvision \
+    --index-url https://download.pytorch.org/whl/${TORCH_CUDA}
 
 echo "=== [3/6] Installing PyG core ==="
 pip install --no-cache-dir torch-geometric
