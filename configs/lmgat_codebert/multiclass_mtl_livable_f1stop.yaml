@@ -39,6 +39,9 @@ model:
   binary_loss_weight: 0.2 # binary label derived from batch.y > 0, always available
   add_self_loops: true   # node attends to itself inside GAT aggregation
   use_skip: true         # residual skip around each GATv2 layer; preserves CodeBERT node features
+  use_edge_emb: true     # hierarchical trainable edge embeddings (coarse group + fine type)
+  edge_emb_dim: 32       # fine-grained edge type embedding dim (AST/CFG/CDG/DDG/PDG/CALL/REACHING_DEF)
+  edge_coarse_dim: 16    # coarse group embedding dim (structural/control/data)
 
 train:
   seed: 42

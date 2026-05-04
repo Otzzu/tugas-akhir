@@ -184,6 +184,9 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             use_group_cond=getattr(cfg.model, "use_group_cond", True),
             add_self_loops=getattr(cfg.model, "add_self_loops", True),
             use_skip=getattr(cfg.model, "use_skip", True),
+            use_edge_emb=getattr(cfg.model, "use_edge_emb", True),
+            edge_emb_dim=getattr(cfg.model, "edge_emb_dim", 32),
+            edge_coarse_dim=getattr(cfg.model, "edge_coarse_dim", 16),
         )
     if arch == "lmgat_hcdfgat":
         return LMGATHCDFGATVulnDetector(

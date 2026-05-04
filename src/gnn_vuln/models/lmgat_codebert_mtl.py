@@ -41,7 +41,8 @@ Labels required per Data object:
     binary label derived as (batch.y > 0).long() inside train.py
 
 Forward signature differs from base lmgat_codebert:
-    returns (logit_cwe, logit_group, logit_binary, stmt_scores)
+    returns (logit_cwe, logit_group, logit_binary, stmt_scores, fused)
+    fused [B, hidden_dim+768] = pre-head embedding exposed for HierarchicalSupConLoss
 """
 
 from __future__ import annotations
@@ -57,6 +58,11 @@ EDGE_FEAT_DIM = 7
 _CODEBERT_DIM = 768
 _ALPHA_MAX = 0.8
 _ALPHA_MEAN = 0.6
+
+# Edge type → coarse group: 0=structural (AST,CALL), 1=control (CFG,CDG), 2=data (DDG,PDG,REACHING_DEF)
+# Index order matches EDGE_TYPES = ["AST","CFG","CDG","DDG","PDG","CALL","REACHING_DEF"]
+_EDGE_GROUP_MAP = torch.tensor([0, 1, 1, 2, 2, 0, 2], dtype=torch.long)
+_NUM_EDGE_GROUPS = 3
 
 
 class LMGATCodeBERTMTLVulnDetector(nn.Module):
@@ -115,6 +121,9 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
         use_group_cond: bool = True,
         add_self_loops: bool = True,
         use_skip: bool = True,
+        use_edge_emb: bool = True,
+        edge_emb_dim: int = 32,
+        edge_coarse_dim: int = 16,
     ):
         super().__init__()
         self.dropout = dropout
@@ -122,9 +131,19 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
         self.num_groups = num_groups
         self.use_group_cond = use_group_cond
         self.use_skip = use_skip
+        self.use_edge_emb = use_edge_emb
 
         _func_lm = func_lm if func_lm else pretrained_lm
         self.codebert = AutoModel.from_pretrained(_func_lm, use_safetensors=True)
+
+        # ── Edge embeddings (hierarchical: coarse group + fine type) ─────────
+        if use_edge_emb:
+            self.edge_fine_emb = nn.Embedding(EDGE_FEAT_DIM, edge_emb_dim)
+            self.edge_coarse_emb = nn.Embedding(_NUM_EDGE_GROUPS, edge_coarse_dim)
+            self.register_buffer("_edge_group_map", _EDGE_GROUP_MAP)
+            _gat_edge_dim = edge_emb_dim + edge_coarse_dim
+        else:
+            _gat_edge_dim = edge_dim
 
         # ── Shared GATv2 encoder ─────────────────────────────────────────────
         self.convs = nn.ModuleList()
@@ -133,7 +152,7 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
             GATv2Conv(
                 in_channels, hidden_dim,
                 heads=num_heads, concat=False, dropout=dropout,
-                edge_dim=edge_dim, add_self_loops=add_self_loops,
+                edge_dim=_gat_edge_dim, add_self_loops=add_self_loops,
             )
         )
         self.bns.append(nn.BatchNorm1d(hidden_dim))
@@ -142,7 +161,7 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
                 GATv2Conv(
                     hidden_dim, hidden_dim,
                     heads=num_heads, concat=False, dropout=dropout,
-                    edge_dim=edge_dim, add_self_loops=add_self_loops,
+                    edge_dim=_gat_edge_dim, add_self_loops=add_self_loops,
                 )
             )
             self.bns.append(nn.BatchNorm1d(hidden_dim))
@@ -193,6 +212,14 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
         edge_index: torch.Tensor,
         edge_attr: torch.Tensor | None,
     ) -> torch.Tensor:
+        if self.use_edge_emb and edge_attr is not None and edge_attr.shape[0] > 0:
+            type_idx = edge_attr.argmax(dim=-1)                        # [E]
+            group_idx = self._edge_group_map[type_idx]                 # [E]
+            edge_attr = torch.cat([
+                self.edge_coarse_emb(group_idx),                       # [E, coarse_dim]
+                self.edge_fine_emb(type_idx),                          # [E, emb_dim]
+            ], dim=-1)                                                 # [E, coarse+emb]
+
         for i, (conv, bn) in enumerate(zip(self.convs, self.bns)):
             residual = self.res_projs[i](x) if self.use_skip else None
             x = conv(x, edge_index, edge_attr=edge_attr)
@@ -249,7 +276,7 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
         edge_attr: torch.Tensor | None = None,
         func_input_ids: torch.Tensor | None = None,
         func_attention_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[torch.Tensor] | None]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[torch.Tensor] | None, torch.Tensor]:
         """
         Parameters
         ----------
@@ -263,10 +290,11 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
 
         Returns
         -------
-        logit_cwe    : [B, num_classes]   fine-grained CWE logits (primary)
-        logit_group  : [B, num_groups]    coarse group logits (auxiliary)
-        logit_binary : [B, 2]             binary safe/vuln logits (auxiliary)
+        logit_cwe    : [B, num_classes]         fine-grained CWE logits (primary)
+        logit_group  : [B, num_groups]          coarse group logits (auxiliary)
+        logit_binary : [B, 2]                   binary safe/vuln logits (auxiliary)
         stmt_scores  : list of [n_stmts_i] | None
+        fused        : [B, hidden_dim + 768]    pre-head embedding for SupCon
         """
         h = self._encode(x, edge_index, edge_attr)
         h_graph = global_mean_pool(h, batch)  # [B, hidden_dim]
@@ -300,4 +328,4 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
             if node_line is not None else None
         )
 
-        return logit_cwe, logit_group, logit_binary, stmt_scores
+        return logit_cwe, logit_group, logit_binary, stmt_scores, fused
