@@ -32,7 +32,7 @@ model:
 train:
   seed: 42
   epochs: 100
-  batch_size: 64                 # lmgat: no live LM → low VRAM → large batch OK
+  batch_size: 32                 # RTX 5070 Ti 16GB: no live LM but safe default; bump to 48 if no OOM
   lr: 0.001
   warmup_ratio: 0.1
   grad_clip: 1.0
