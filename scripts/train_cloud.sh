@@ -5,11 +5,18 @@
 # Each --config must be paired with a --dataset (same position order).
 # Datasets are downloaded once and cached; safe to repeat same dataset across configs.
 #
+# Flags:
+#   --init   Force run setup_cloud.sh + reinstall rclone.conf (fresh server)
+#   --skip   Skip setup_cloud.sh + rclone setup entirely (already configured)
+#   (default: auto-detect — runs setup only if uv/torch missing or rclone.conf absent)
+#
 # Usage:
-#   ./scripts/train_cloud.sh \
+#   ./scripts/train_cloud.sh --init \          # fresh server, everything needs setup
 #     --config configs/lmgat_codebert/multiclass_mtl_livable_f1stop.yaml \
-#     --dataset lm_dataset_bigvul_multiclass_unixcoder-base_ft_top10 \
-#     --config configs/lmgat_codebert/multiclass_mtl_supcon.yaml \
+#     --dataset lm_dataset_bigvul_multiclass_unixcoder-base_ft_top10
+#
+#   ./scripts/train_cloud.sh --skip \          # already set up, just train
+#     --config configs/lmgat_codebert/multiclass_mtl_livable_f1stop.yaml \
 #     --dataset lm_dataset_bigvul_multiclass_unixcoder-base_ft_top10
 #
 # Dataset name = zip filename WITHOUT .zip on gdrive-mesach:tugas-akhir/
@@ -34,17 +41,26 @@ error()   { echo -e "${RED}[ERR]${NC}  $*" >&2; }
 # ─── Argument parsing ─────────────────────────────────────────────────────────
 CONFIG_LIST=()
 DATASET_LIST=()
+FLAG_INIT=false   # --init: force run setup_cloud.sh + rclone setup regardless of state
+FLAG_SKIP=false   # --skip: skip setup_cloud.sh + rclone setup entirely
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --config)   CONFIG_LIST+=("$2");  shift 2 ;;
         --dataset)  DATASET_LIST+=("$2"); shift 2 ;;
+        --init)     FLAG_INIT=true;       shift ;;
+        --skip)     FLAG_SKIP=true;       shift ;;
         -h|--help)
             sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         *) error "Unknown argument: $1"; exit 1 ;;
     esac
 done
+
+if $FLAG_INIT && $FLAG_SKIP; then
+    error "--init and --skip are mutually exclusive"
+    exit 1
+fi
 
 if [[ ${#CONFIG_LIST[@]} -eq 0 ]]; then
     error "No configs provided. Use --config <yaml> --dataset <name>"
@@ -64,6 +80,11 @@ echo ""
 
 # ─── 1. rclone check ─────────────────────────────────────────────────────────
 check_rclone() {
+    if $FLAG_SKIP; then
+        warn "rclone setup skipped (--skip)"
+        return 0
+    fi
+
     info "Checking rclone..."
 
     if ! command -v rclone &>/dev/null; then
@@ -71,8 +92,13 @@ check_rclone() {
         exit 1
     fi
 
-    if [[ ! -f ~/.config/rclone/rclone.conf ]]; then
-        warn "rclone.conf not found. Setting up from rclone.zip..."
+    # --init: force re-install rclone.conf even if it exists
+    if $FLAG_INIT || [[ ! -f ~/.config/rclone/rclone.conf ]]; then
+        if $FLAG_INIT; then
+            info "Forcing rclone setup (--init)..."
+        else
+            warn "rclone.conf not found. Setting up from rclone.zip..."
+        fi
         if [[ ! -f rclone.zip ]]; then
             error "rclone.zip not found in project root. Cannot set up rclone."
             exit 1
@@ -100,22 +126,29 @@ check_rclone() {
 
 # ─── 2. Python / env check ───────────────────────────────────────────────────
 check_setup() {
+    if $FLAG_SKIP; then
+        warn "Python env setup skipped (--skip)"
+        return 0
+    fi
+
     info "Checking Python environment..."
 
     local need_setup=false
 
-    if ! command -v uv &>/dev/null; then
-        warn "uv not found"
+    if $FLAG_INIT; then
+        info "Forcing setup_cloud.sh (--init)..."
         need_setup=true
-    fi
-
-    if ! uv run python -c "import torch, torch_geometric" &>/dev/null 2>&1; then
-        warn "torch / torch_geometric not importable"
-        need_setup=true
+    else
+        if ! command -v uv &>/dev/null; then
+            warn "uv not found"
+            need_setup=true
+        elif ! uv run python -c "import torch, torch_geometric" &>/dev/null 2>&1; then
+            warn "torch / torch_geometric not importable"
+            need_setup=true
+        fi
     fi
 
     if $need_setup; then
-        info "Running setup_cloud.sh..."
         if [[ ! -f scripts/setup_cloud.sh ]]; then
             error "scripts/setup_cloud.sh not found"
             exit 1
