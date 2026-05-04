@@ -6,7 +6,11 @@
 set -e
 
 echo "=== [0/6] Installing system tools (zip, unzip, gdrive, rclone) ==="
-apt-get update -y && apt-get install -y zip unzip wget curl
+if ! command -v zip &>/dev/null || ! command -v unzip &>/dev/null || ! command -v wget &>/dev/null || ! command -v curl &>/dev/null; then
+    apt-get update -y && apt-get install -y zip unzip wget curl
+else
+    echo "    System tools already installed, skipping apt-get"
+fi
 
 # Install gdrive
 wget -q https://github.com/glotlabs/gdrive/releases/download/3.0.0/gdrive_linux-x64.tar.gz
