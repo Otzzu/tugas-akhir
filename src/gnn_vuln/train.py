@@ -911,15 +911,17 @@ def main():
         else:
             patience_counter += 1
 
-        save_resume_checkpoint(
-            last_ckpt, model, optimizer, scheduler,
-            epoch=epoch,
-            best_val_f1=best_val_f1,
-            best_val_loss=best_val_loss,
-            patience_counter=patience_counter,
-            val_loss=val_loss, val_acc=val_acc, val_conf=val_conf,
-            val_f1=val_f1, val_f1_weighted=val_f1w,
-        )
+        save_last_every = getattr(cfg.train, "save_last_every", 1)
+        if save_last_every > 0 and epoch % save_last_every == 0:
+            save_resume_checkpoint(
+                last_ckpt, model, optimizer, scheduler,
+                epoch=epoch,
+                best_val_f1=best_val_f1,
+                best_val_loss=best_val_loss,
+                patience_counter=patience_counter,
+                val_loss=val_loss, val_acc=val_acc, val_conf=val_conf,
+                val_f1=val_f1, val_f1_weighted=val_f1w,
+            )
 
         if patience_counter >= cfg.train.patience:
             logger.info(f"Early stopping triggered after {epoch} epochs.")
