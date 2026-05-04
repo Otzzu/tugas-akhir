@@ -181,7 +181,7 @@ download_dataset() {
         [[ "$d" == "$dataset" ]] && return 0
     done
 
-    if [[ -d "$local_dir" ]]; then
+    if [[ -d "$local_dir" ]] || [[ -f "${local_dir}.pt" ]]; then
         success "Dataset already exists: $local_dir"
         DOWNLOADED_DATASETS+=("$dataset")
         return 0
