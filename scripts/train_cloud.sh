@@ -142,7 +142,7 @@ check_setup() {
         if ! command -v uv &>/dev/null; then
             warn "uv not found"
             need_setup=true
-        elif ! uv run python -c "import torch, torch_geometric" &>/dev/null 2>&1; then
+        elif ! python -c "import torch, torch_geometric" &>/dev/null 2>&1; then
             warn "torch / torch_geometric not importable"
             need_setup=true
         fi
@@ -161,7 +161,7 @@ check_setup() {
 
     # Report CUDA
     local cuda
-    cuda=$(uv run python -c "import torch; print(torch.cuda.is_available())" 2>/dev/null || echo "false")
+    cuda=$(python -c "import torch; print(torch.cuda.is_available())" 2>/dev/null || echo "false")
     if [[ "$cuda" == "True" ]]; then
         success "CUDA available"
     else
@@ -210,7 +210,7 @@ download_dataset() {
 run_train() {
     local config="$1"
     info "Training: $config"
-    PYTHONPATH=src uv run python -m gnn_vuln.train --config "$config"
+    PYTHONPATH=src python -m gnn_vuln.train --config "$config"
     success "Training done: $config"
 }
 
@@ -234,7 +234,7 @@ run_evaluate() {
     fi
 
     info "Evaluating: $model_id"
-    PYTHONPATH=src uv run python -m gnn_vuln.evaluate \
+    PYTHONPATH=src python -m gnn_vuln.evaluate \
         --checkpoint "$ckpt" \
         --config "$config_yaml"
     success "Evaluate done: $model_id"

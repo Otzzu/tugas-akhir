@@ -22,6 +22,10 @@ rm gdrive_linux-x64.tar.gz
 # Install rclone
 curl -s https://rclone.org/install.sh | bash
 
+PIP="pip"
+UVP="pip install --no-cache-dir"
+PYBIN="python"
+
 echo "=== [1/6] Removing conflicting packages ==="
 pip uninstall -y torch torchvision torchaudio torch-scatter torch-sparse 2>/dev/null || true
 
@@ -30,7 +34,7 @@ echo "=== [2/6] Detecting CUDA version and installing PyTorch ==="
 if command -v nvcc &>/dev/null; then
     CUDA_VER=$(nvcc --version | grep "release" | sed 's/.*release \([0-9]*\.[0-9]*\).*/\1/')
 else
-    CUDA_VER=$(python -c "import subprocess; out=subprocess.check_output(['nvidia-smi'],text=True); import re; m=re.search(r'CUDA Version: ([0-9]+\.[0-9]+)',out); print(m.group(1) if m else '12.4')" 2>/dev/null || echo "12.4")
+    CUDA_VER=$(nvidia-smi | grep -oP "CUDA Version: \K[0-9]+\.[0-9]+" || echo "12.4")
 fi
 CUDA_MAJOR=$(echo "$CUDA_VER" | cut -d. -f1)
 CUDA_MINOR=$(echo "$CUDA_VER" | cut -d. -f2)
@@ -49,32 +53,32 @@ else
     TORCH_CUDA="cu121"
     TORCH_VER="2.6.0"
 fi
-echo "    Installing PyTorch ${TORCH_VER} with ${TORCH_CUDA}"
-pip install --no-cache-dir torch==${TORCH_VER} torchvision \
+echo "    Installing PyTorch ${TORCH_VER} with ${TORCH_CUDA} into .venv"
+$UVP torch==${TORCH_VER} torchvision \
     --index-url https://download.pytorch.org/whl/${TORCH_CUDA}
 
 echo "=== [3/6] Installing PyG core ==="
-pip install --no-cache-dir torch-geometric
+$UVP torch-geometric
 
 echo "=== [4/6] Installing PyG extensions (scatter / sparse) ==="
-TORCH=$(python -c "import torch; print(torch.__version__.split('+')[0])")
-CUDA=$(python -c "import torch; print('cu' + torch.version.cuda.replace('.', ''))")
+TORCH=$($PYBIN -c "import torch; print(torch.__version__.split('+')[0])")
+CUDA=$($PYBIN -c "import torch; print('cu' + torch.version.cuda.replace('.', ''))")
 echo "    torch=${TORCH}  cuda=${CUDA}"
-pip install --no-cache-dir torch-scatter torch-sparse \
+$UVP torch-scatter torch-sparse \
   -f https://data.pyg.org/whl/torch-${TORCH}+${CUDA}.html
 
 echo "=== [5/6] Installing project dependencies ==="
-pip install --no-cache-dir \
+$UVP \
   transformers loguru tqdm pyyaml \
   numpy pandas scikit-learn networkx \
   datasets sentencepiece
 
 echo "=== [6/6] Installing project package ==="
-pip install --no-cache-dir -e .
+$UVP -e .
 
 echo ""
 echo "=== Verification ==="
-python -c "
+$PYBIN -c "
 import torch
 import torch_geometric
 from torch_geometric.nn import GATv2Conv
