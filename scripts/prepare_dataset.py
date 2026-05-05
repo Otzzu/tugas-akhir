@@ -160,11 +160,13 @@ _CWE_JUNK = {"CWE-unknown", "CWE-Other", "CWE-other", "unknown", "other",
 def _build_cwe_vocab(df: pd.DataFrame, top_k: int) -> dict[str, int]:
     """
     Map top-k most common CWE IDs to class indices 1..K.
+    top_k=0 means all CWEs (no limit).
     "benign" is always 0. Rows with missing/empty/unknown CWE are excluded.
     """
     vul_cwe = df[df["vul"] == 1]["CWE ID"].fillna("").astype(str).str.strip()
     vul_cwe = vul_cwe[~vul_cwe.isin(_CWE_JUNK)]
-    top_cwes = vul_cwe.value_counts().head(top_k).index.tolist()
+    counts = vul_cwe.value_counts()
+    top_cwes = counts.index.tolist() if top_k == 0 else counts.head(top_k).index.tolist()
     vocab: dict[str, int] = {"benign": 0}
     for i, cwe in enumerate(top_cwes, start=1):
         vocab[cwe] = i
@@ -188,14 +190,15 @@ def load_devign(path: Path) -> pd.DataFrame:
     """
     df = _read_file(path)
     rows = []
-    for tup in df.itertuples(index=False):
+    for tup in df.itertuples(index=True):
+        row_id = tup.Index
         code = getattr(tup, "func", None)
         target = int(getattr(tup, "target", 0))
         if code is None or (isinstance(code, float) and pd.isna(code)):
             continue
         vl = getattr(tup, "vul_lines", None)
         flaw_lines = _extract_devign_flaw_lines(vl) if target else []
-        rows.append({"code": str(code), "label": target, "flaw_lines": flaw_lines, "cwe": ""})
+        rows.append({"id": row_id, "code": str(code), "label": target, "flaw_lines": flaw_lines, "cwe": ""})
     return pd.DataFrame(rows)
 
 
@@ -279,7 +282,8 @@ def load_bigvul(
         df["flaw_lines"] = [[] for _ in range(len(df))]
 
     df = df.rename(columns={"cwe_str": "cwe"})
-    return df[["code", "label", "flaw_lines", "cwe"]], vocab
+    df["id"] = df.index
+    return df[["id", "code", "label", "flaw_lines", "cwe"]], vocab
 
 
 def load_diversevul(path: Path) -> pd.DataFrame:
@@ -299,6 +303,7 @@ def load_diversevul(path: Path) -> pd.DataFrame:
     df["label"] = df["label"].astype(int)
     df["flaw_lines"] = [[] for _ in range(len(df))]
     df["cwe"] = ""
+    df["id"] = df.index
     return df
 
 
@@ -313,6 +318,7 @@ def load_csv(path: Path, code_col: str, label_col: str) -> pd.DataFrame:
     df["label"] = df["label"].astype(int)
     df["flaw_lines"] = [[] for _ in range(len(df))]
     df["cwe"] = ""
+    df["id"] = df.index
     return df
 
 
@@ -332,6 +338,7 @@ def _run_one(
     class_id: int | None = None,
     cwe: str = "",
     is_multi_class: bool = False,
+    row_id: int = -1,
 ) -> tuple[int, Path | None, str | None]:
     """
     Parse one function with Joern, save CPG JSON, and optionally write a
@@ -344,6 +351,8 @@ def _run_one(
         ]
         if cpg_existing:
             return idx, cpg_existing[0], None
+
+    raw_func = code  # capture original before any normalization
 
     if normalize:
         code = preprocess(code, lang="c", normalize=True)
@@ -360,19 +369,14 @@ def _run_one(
             return idx, None, "process_function returned None (Joern may have failed silently)"
 
         # Build sidecar metadata dict
-        meta: dict = {}
+        meta: dict = {"id": row_id, "raw_func": raw_func}
         if is_multi_class and class_id is not None:
             meta["class_id"] = class_id
         if cwe:
             meta["cwe"] = cwe
         if flaw_lines:
             meta["flaw_lines"] = flaw_lines
-        if meta:
-            (out_dir / f"func_{idx}.meta.json").write_text(json.dumps(meta))
-        elif cwe:
-            # Always persist cwe string even in binary mode so CPGs can be
-            # re-used for multiclass training with a different vocab later.
-            (out_dir / f"func_{idx}.meta.json").write_text(json.dumps({"cwe": cwe}))
+        (out_dir / f"func_{idx}.meta.json").write_text(json.dumps(meta))
 
         return idx, dest, None
     except Exception:
@@ -393,7 +397,7 @@ def main() -> None:
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument(
         "--format", default="devign",
-        choices=["devign", "bigvul", "megavul", "diversevul", "csv", "merged"],
+        choices=["devign", "bigvul", "megavul", "diversevul", "csv", "merged", "titanvul"],
     )
     parser.add_argument("--code-col", default="func")
     parser.add_argument("--label-col", default="target")
@@ -476,7 +480,7 @@ def main() -> None:
         df = load_diversevul(args.input)
         is_multi_class = False
 
-    elif args.format in ("megavul", "merged"):
+    elif args.format in ("megavul", "merged", "titanvul"):
         # megavul / merged: same schema as BigVul (func_before, func_after, vul, CWE ID)
         is_multi_class = not args.binary
         vocab_path = args.cwe_vocab or (args.out_dir / "cwe_vocab.json")
@@ -532,13 +536,14 @@ def main() -> None:
     # -----------------------------------------------------------------------
     # Build work list
     # -----------------------------------------------------------------------
-    work: list[tuple[int, str, Path, int, list[int], str]] = []
+    work: list[tuple[int, str, Path, int, list[int], str, int]] = []
     for local_idx, row in enumerate(df.itertuples(index=False)):
         class_id = int(row.label)
         phys_dir = benign_dir if class_id == 0 else vuln_dir
         flaw_lines = list(row.flaw_lines) if hasattr(row, "flaw_lines") else []
         cwe = str(row.cwe) if hasattr(row, "cwe") else ""
-        work.append((local_idx + args.idx_offset, str(row.code), phys_dir, class_id, flaw_lines, cwe))
+        row_id = int(row.id) if hasattr(row, "id") else -1
+        work.append((local_idx + args.idx_offset, str(row.code), phys_dir, class_id, flaw_lines, cwe, row_id))
 
     logger.info(f"Workers: {args.workers}  |  resume: {args.resume}  |  jobs: {len(work)}")
     if args.workers > 1:
@@ -555,7 +560,7 @@ def main() -> None:
     skipped = 0
     start = time.monotonic()
 
-    def submit(idx: int, code: str, phys_dir: Path, class_id: int, flaw_lines: list[int], cwe: str):
+    def submit(idx: int, code: str, phys_dir: Path, class_id: int, flaw_lines: list[int], cwe: str, row_id: int = -1):
         return _run_one(
             idx=idx,
             code=code,
@@ -568,6 +573,7 @@ def main() -> None:
             class_id=class_id,
             cwe=cwe,
             is_multi_class=is_multi_class,
+            row_id=row_id,
         )
 
     if args.workers <= 1:

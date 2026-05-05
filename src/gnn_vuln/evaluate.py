@@ -397,6 +397,7 @@ def main() -> None:
 
     pretrained_lm = getattr(cfg.model, "pretrained_lm", "microsoft/codebert-base")
     add_func_tokens = getattr(cfg.model, "add_func_tokens", False)
+    func_lm_source = getattr(cfg.model, "func_lm_source", "raw")
 
     logger.info("Loading dataset…")
     dataset = CodeBERTGraphDataset(
@@ -407,6 +408,7 @@ def main() -> None:
         source=getattr(cfg.data, "source", "bigvul"),
         pretrained_lm=pretrained_lm,
         add_func_tokens=add_func_tokens,
+        func_lm_source=func_lm_source,
         top_cwe=getattr(cfg.data, "top_cwe", 0),
     )
     _, _, test_idx = dataset.get_splits(seed=cfg.train.seed)

@@ -275,6 +275,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
         pretrained_lm: str = "microsoft/codebert-base",
         func_lm: str = "",
         add_func_tokens: bool = False,
+        func_lm_source: str = "raw",   # "raw" | "normalized" — source text for func_lm tokenization
         top_cwe: int = 0,
         cwe_list: list[str] | None = None,
         cwe_groups: list[str] | None = None,
@@ -289,6 +290,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
         self._embedder_device = embedder_device
         self._pretrained_lm = pretrained_lm
         self._add_func_tokens = add_func_tokens
+        self._func_lm_source = func_lm_source
         self._source = source
         self._top_cwe = top_cwe
         self._cwe_list = list(cwe_list) if cwe_list else []
@@ -405,24 +407,29 @@ class CodeBERTGraphDataset(InMemoryDataset):
 
         # ------------------------------------------------------------------
         # Build work units
-        # Entry format: (path, label, flaw_lines, cwe_str)
+        # Entry format: (path, label, flaw_lines, cwe_str, raw_func, row_id)
         # ------------------------------------------------------------------
         # work_units: list of (cache_key, entries_list)
-        work_units: list[tuple[str, list[tuple[Path, int, list[int], str]]]] = []
+        work_units: list[tuple[str, list[tuple[Path, int, list[int], str, str, int]]]] = []
 
         for cls_name, is_benign_dir, cpg_files in class_sources:
             base_label = 0 if is_benign_dir else 1
 
             if is_benign_dir:
                 # Benign: always include, no CWE filter
-                entries: list[tuple[Path, int, list[int], str]] = []
+                entries: list[tuple[Path, int, list[int], str, str, int]] = []
                 for gf in cpg_files:
                     meta_path = gf.parent / f"{gf.stem}.meta.json"
                     flaw_lines: list[int] = []
+                    raw_func = ""
+                    row_id = -1
                     if meta_path.exists():
                         with open(meta_path) as mf:
-                            flaw_lines = json.load(mf).get("flaw_lines", [])
-                    entries.append((gf, base_label, flaw_lines, ""))
+                            _m = json.load(mf)
+                        flaw_lines = _m.get("flaw_lines", [])
+                        raw_func = _m.get("raw_func", "")
+                        row_id = _m.get("id", -1)
+                    entries.append((gf, base_label, flaw_lines, "", raw_func, row_id))
                 work_units.append((cls_name, entries))
 
             elif not is_multi:
@@ -432,20 +439,24 @@ class CodeBERTGraphDataset(InMemoryDataset):
                     meta_path = gf.parent / f"{gf.stem}.meta.json"
                     flaw_lines = []
                     cwe_str = ""
+                    raw_func = ""
+                    row_id = -1
                     if meta_path.exists():
                         with open(meta_path) as mf:
                             meta = json.load(mf)
                         flaw_lines = meta.get("flaw_lines", [])
                         cwe_str = _parse_cwe_string(meta.get("cwe", ""))
+                        raw_func = meta.get("raw_func", "")
+                        row_id = meta.get("id", -1)
                     if self._effective_cwes is not None and cwe_str not in self._effective_cwes:
                         continue
-                    entries.append((gf, base_label, flaw_lines, cwe_str))
+                    entries.append((gf, base_label, flaw_lines, cwe_str, raw_func, row_id))
                 work_units.append((cls_name, entries))
 
             elif self._mode == "multiclass":
                 # Group by CWE class_id → one cache file per CWE
                 logger.info(f"  [{cls_name}] grouping {len(cpg_files)} files by CWE class…")
-                cwe_class_groups: dict[int, list[tuple[Path, int, list[int], str]]] = {}
+                cwe_class_groups: dict[int, list[tuple[Path, int, list[int], str, str]]] = {}
                 for gf in cpg_files:
                     meta_path = gf.parent / f"{gf.stem}.meta.json"
                     if not meta_path.exists():
@@ -465,8 +476,10 @@ class CodeBERTGraphDataset(InMemoryDataset):
                     if self._effective_cwes is not None and cwe_str not in self._effective_cwes:
                         continue
                     flaw_lines = meta.get("flaw_lines", [])
+                    raw_func = meta.get("raw_func", "")
+                    row_id = meta.get("id", -1)
                     cwe_class_groups.setdefault(class_id, []).append(
-                        (gf, class_id, flaw_lines, cwe_str)
+                        (gf, class_id, flaw_lines, cwe_str, raw_func, row_id)
                     )
 
                 for class_id, grp_entries in sorted(cwe_class_groups.items()):
@@ -478,7 +491,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
             else:
                 # group mode: group by vulnerability group name → one cache file per group
                 logger.info(f"  [{cls_name}] grouping {len(cpg_files)} files by group…")
-                grp_buckets: dict[str, list[tuple[Path, int, list[int], str]]] = {}
+                grp_buckets: dict[str, list[tuple[Path, int, list[int], str, str]]] = {}
                 for gf in cpg_files:
                     meta_path = gf.parent / f"{gf.stem}.meta.json"
                     if not meta_path.exists():
@@ -494,8 +507,10 @@ class CodeBERTGraphDataset(InMemoryDataset):
                     if is_multi and cwe_str not in cwe_vocab:
                         continue
                     flaw_lines = meta.get("flaw_lines", [])
+                    raw_func = meta.get("raw_func", "")
+                    row_id = meta.get("id", -1)
                     grp_buckets.setdefault(group_name, []).append(
-                        (gf, -1, flaw_lines, cwe_str)  # label assigned later
+                        (gf, -1, flaw_lines, cwe_str, raw_func, row_id)  # label assigned later
                     )
 
                 for group_name, grp_entries in sorted(grp_buckets.items()):
@@ -558,6 +573,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
         # Cache directory
         # ------------------------------------------------------------------
         ft_suffix = "_ft" if self._add_func_tokens else ""
+        src_suffix = f"_{self._func_lm_source}" if self._add_func_tokens else ""
         top_suffix = f"_top{self._top_cwe}" if self._top_cwe > 0 else ""
         samp_suffix = (
             f"_s{self._max_per_class}r{self._resample_seed}"
@@ -565,7 +581,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
         )
         cache_dir = (
             Path(self.processed_dir)
-            / f"cls_cache_{self._mode}{ft_suffix}{top_suffix}{self._fsuffix}{samp_suffix}"
+            / f"cls_cache_{self._mode}{ft_suffix}{src_suffix}{top_suffix}{self._fsuffix}{samp_suffix}"
         )
         cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -617,10 +633,10 @@ class CodeBERTGraphDataset(InMemoryDataset):
 
             # Phase 1: Parse
             logger.info(f"  [{cache_key}] parsing {len(entries)} CPG files…")
-            parsed_entries: list[tuple[int, list[int], dict, str]] = []
+            parsed_entries: list[tuple[int, list[int], dict, str, str, int]] = []
             parse_skipped = 0
 
-            for gf, label, flaw_lines, cwe_str in tqdm(
+            for gf, label, flaw_lines, cwe_str, raw_func, row_id in tqdm(
                 entries, desc=f"  {cache_key} parse", unit="graph", leave=False
             ):
                 cpg = parse_cpg(gf, self.max_nodes)
@@ -628,7 +644,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
                     parse_skipped += 1
                     continue
                 actual_label = unit_label if unit_label is not None else label
-                parsed_entries.append((actual_label, flaw_lines, cpg, cwe_str))
+                parsed_entries.append((actual_label, flaw_lines, cpg, cwe_str, raw_func, row_id))
 
             logger.info(
                 f"  [{cache_key}] parsed {len(parsed_entries)}/{len(entries)} "
@@ -638,7 +654,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
             # Phase 2: Embed
             all_codes: list[str] = []
             offsets: list[tuple[int, int]] = []
-            for _, _, cpg, _ in parsed_entries:
+            for _, _, cpg, _, _, _ in parsed_entries:
                 start = len(all_codes)
                 all_codes.extend(cpg["codes"])
                 offsets.append((start, len(all_codes)))
@@ -663,10 +679,16 @@ class CodeBERTGraphDataset(InMemoryDataset):
 
             # Phase 3: Build
             cls_graphs = []
-            for (label, flaw_lines, cpg, cwe_str), (start, end) in zip(parsed_entries, offsets):
+            for (label, flaw_lines, cpg, cwe_str, raw_func, row_id), (start, end) in zip(parsed_entries, offsets):
                 func_input_ids = func_attention_mask = None
                 if tokenizer is not None:
-                    func_text = build_func_text(cpg)
+                    if self._func_lm_source == "normalized" and raw_func:
+                        from gnn_vuln.data.preprocess import preprocess
+                        func_text = preprocess(raw_func, lang="c", normalize=True)
+                    elif raw_func:
+                        func_text = raw_func   # "raw" — original source, line-number-safe
+                    else:
+                        func_text = build_func_text(cpg)  # backward compat: old meta without raw_func
                     enc = tokenizer(
                         func_text, max_length=512, truncation=True,
                         padding="max_length", return_tensors="pt",
@@ -685,6 +707,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
                 )
                 graph.cwe_id = torch.tensor([raw_cwe_id], dtype=torch.long)
                 graph.group_id = torch.tensor([raw_group_id], dtype=torch.long)
+                graph.parquet_id = torch.tensor([row_id], dtype=torch.long)
 
                 if self.pre_transform is not None:
                     graph = self.pre_transform(graph)

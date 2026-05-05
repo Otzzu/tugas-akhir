@@ -71,6 +71,7 @@ class ModelConfig:
     pretrained_lm: str = "microsoft/codebert-base"  # HuggingFace model ID for node embeddings (frozen)
     func_lm: str = ""               # live LM for function branch; if empty falls back to pretrained_lm
     add_func_tokens: bool = False   # tokenize full function text → stored in Data for live LM
+    func_lm_source: str = "raw"    # source for func_lm text: "raw" | "normalized" (cpg reconstruct kept for compat only)
     hidden_dim: int = 256
     num_layers: int = 4
     dropout: float = 0.3

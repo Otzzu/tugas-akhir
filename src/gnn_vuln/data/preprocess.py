@@ -72,9 +72,20 @@ _C_RESERVED: frozenset[str] = frozenset({
 # ---------------------------------------------------------------------------
 
 def strip_comments(code: str, lang: str = "c") -> str:
-    """Remove C/C++ (or Python) comments from *code*."""
+    """
+    Remove comments while preserving line count.
+
+    Block comments /* ... */ spanning N lines are replaced with N blank lines
+    so every source line number stays the same after stripping.
+    Line comments // ... are blanked in-place (newline kept).
+    """
     if lang in ("c", "cpp", "java"):
-        code = re.sub(r"/\*.*?\*/", "", code, flags=re.DOTALL)
+        def _blank_block(m: re.Match) -> str:
+            # keep one \n per original newline so line numbers are preserved
+            newlines = m.group(0).count("\n")
+            return "\n" * newlines
+
+        code = re.sub(r"/\*.*?\*/", _blank_block, code, flags=re.DOTALL)
         code = re.sub(r"//[^\n]*", "", code)
     elif lang == "python":
         code = re.sub(r"#[^\n]*", "", code)
@@ -190,5 +201,6 @@ def preprocess(
         code = normalize_identifiers(code)
     if normalize_literals_flag:
         code = normalize_literals(code)
-    code = remove_blank_lines(code)
-    return code.strip()
+    # remove_blank_lines intentionally omitted — collapsing blank lines shifts
+    # line numbers and breaks flaw_line / CPG node_line alignment
+    return code

@@ -720,6 +720,7 @@ def main():
     pretrained_lm = getattr(cfg.model, "pretrained_lm", "microsoft/codebert-base")
     func_lm = getattr(cfg.model, "func_lm", "") or pretrained_lm
     add_func_tokens = getattr(cfg.model, "add_func_tokens", False)
+    func_lm_source = getattr(cfg.model, "func_lm_source", "raw")
     source_val  = getattr(cfg.data, "source_val",  "")
     source_test = getattr(cfg.data, "source_test", "")
     use_official_splits = bool(source_val and source_test)
@@ -738,6 +739,7 @@ def main():
         pretrained_lm=pretrained_lm,
         func_lm=func_lm,
         add_func_tokens=add_func_tokens,
+        func_lm_source=func_lm_source,
         top_cwe=getattr(cfg.data, "top_cwe", 0),
         cwe_list=getattr(cfg.data, "cwe_list", None),
         cwe_groups=getattr(cfg.data, "cwe_groups", None),

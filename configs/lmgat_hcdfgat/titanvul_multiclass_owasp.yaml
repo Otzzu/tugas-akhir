@@ -1,21 +1,19 @@
-# configs/lmgat_hcdfgat/megavul_group_3000.yaml
 data:
-  source: megavul
-  mode: multiclass       
-  max_nodes: 2700
-  top_cwe: 0       
-  max_per_class: 2300   
+  source: titanvul
+  mode: multiclass
+  max_nodes: 3400
+  top_cwe: 0
+  max_per_class: 2300
   resample_seed: 42
   filter_owasp_top10: true
   filter_top25: false
-
 
 model:
   architecture: lmgat_hcdfgat
   pretrained_lm: microsoft/unixcoder-base
   func_lm: microsoft/unixcoder-base
   add_func_tokens: true
-  num_classes: 155  
+  num_classes: 155
   num_groups: 16
 
 train:
