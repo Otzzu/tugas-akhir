@@ -40,8 +40,20 @@ download_if_missing() {
 }
 
 mkdir -p "$DATA_DIR"
-download_if_missing megavul
-download_if_missing titanvul
+
+# Only download datasets actually referenced in the given configs
+needed_sources() {
+    grep -h "source:" "$@" 2>/dev/null | awk '{print $2}' | sort -u
+}
+
+if [[ $# -gt 0 ]]; then
+    for src in $(needed_sources "$@"); do
+        download_if_missing "$src"
+    done
+else
+    download_if_missing megavul
+    download_if_missing titanvul
+fi
 
 # ── 2. Process ─────────────────────────────────────────────────────────────────
 if [[ $# -eq 0 ]]; then
