@@ -5,11 +5,20 @@ from __future__ import annotations
 import torch
 
 
-def lm_hidden_dim(model) -> int:
-    """Return hidden size of the LM (d_model for T5, hidden_size for BERT)."""
+def _is_t5_like(model) -> bool:
+    """True for T5-family models (enc-dec or enc-only), False for BERT-family."""
     cfg = model.config
-    if getattr(cfg, "is_encoder_decoder", False):
-        return cfg.d_model
+    return (
+        getattr(cfg, "is_encoder_decoder", False)
+        or "t5" in getattr(cfg, "model_type", "").lower()
+    )
+
+
+def lm_hidden_dim(model) -> int:
+    """Return hidden size of the LM (d_model for T5-family, hidden_size for BERT-family)."""
+    cfg = model.config
+    if _is_t5_like(model):
+        return getattr(cfg, "d_model", cfg.hidden_size)
     return cfg.hidden_size
 
 
@@ -21,11 +30,13 @@ def lm_pool(
 ) -> torch.Tensor:
     """
     Extract fixed-size LM representation.
-    BERT-family: CLS token (position 0).
-    T5-family:   masked mean-pool over encoder output (no [CLS]).
+    BERT-family:          CLS token (position 0).
+    T5 enc-dec:           mean-pool over .encoder() output (no [CLS]).
+    T5 enc-only:          mean-pool over direct model() output (no [CLS]).
     """
-    if is_enc_dec:
-        out = model.encoder(input_ids=input_ids, attention_mask=attention_mask)
+    if _is_t5_like(model):
+        enc = model.encoder if is_enc_dec else model
+        out = enc(input_ids=input_ids, attention_mask=attention_mask)
         hs = out.last_hidden_state  # [B, seq, d_model]
         mask = (
             attention_mask.unsqueeze(-1).float()

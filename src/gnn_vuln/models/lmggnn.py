@@ -74,7 +74,7 @@ class LMGNNVulnDetector(nn.Module):
 
         # Live LM branch (fine-tuned)
         _func_lm = func_lm if func_lm else pretrained_lm
-        self.codebert = AutoModel.from_pretrained(_func_lm)
+        self.codebert = AutoModel.from_pretrained(_func_lm, trust_remote_code=True)
         self._lm_dim = lm_hidden_dim(self.codebert)
         self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
 
