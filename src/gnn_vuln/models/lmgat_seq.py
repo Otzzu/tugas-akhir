@@ -52,10 +52,15 @@ class LMGATSeqVulnDetector(nn.Module):
         num_heads: int = 4,
         edge_dim: int = EDGE_FEAT_DIM,
         stage2_node_input: str = "raw",
+        add_self_loops: bool = True,
+        use_skip: bool = False,
+        matryoshka_dim: int | None = None,
     ):
         super().__init__()
         self.dropout = dropout
         self.num_classes = num_classes
+        self.use_skip = use_skip
+        self._matryoshka_dim = matryoshka_dim
         # "loc": Stage 2 GNN receives h_loc (256D) + s_i
         # "raw": Stage 2 GNN receives x_frozen (773D) + s_i
         self._use_loc = (stage2_node_input == "loc")
@@ -66,13 +71,13 @@ class LMGATSeqVulnDetector(nn.Module):
         self.loc_bns = nn.ModuleList()
         self.loc_convs.append(
             GATv2Conv(in_channels, hidden_dim, heads=num_heads, concat=False,
-                      dropout=dropout, edge_dim=edge_dim)
+                      dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops)
         )
         self.loc_bns.append(nn.BatchNorm1d(hidden_dim))
         for _ in range(num_layers - 1):
             self.loc_convs.append(
                 GATv2Conv(hidden_dim, hidden_dim, heads=num_heads, concat=False,
-                          dropout=dropout, edge_dim=edge_dim)
+                          dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops)
             )
             self.loc_bns.append(nn.BatchNorm1d(hidden_dim))
 
@@ -85,20 +90,30 @@ class LMGATSeqVulnDetector(nn.Module):
         self.cls_bns = nn.ModuleList()
         self.cls_convs.append(
             GATv2Conv(cls_in, hidden_dim, heads=num_heads, concat=False,
-                      dropout=dropout, edge_dim=edge_dim)
+                      dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops)
         )
         self.cls_bns.append(nn.BatchNorm1d(hidden_dim))
         for _ in range(num_layers - 1):
             self.cls_convs.append(
                 GATv2Conv(hidden_dim, hidden_dim, heads=num_heads, concat=False,
-                          dropout=dropout, edge_dim=edge_dim)
+                          dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops)
             )
             self.cls_bns.append(nn.BatchNorm1d(hidden_dim))
+
+        if use_skip:
+            self.loc_res_projs = nn.ModuleList()
+            self.loc_res_projs.append(nn.Linear(in_channels, hidden_dim, bias=False))
+            for _ in range(num_layers - 1):
+                self.loc_res_projs.append(nn.Identity())
+            self.cls_res_projs = nn.ModuleList()
+            self.cls_res_projs.append(nn.Linear(cls_in, hidden_dim, bias=False))
+            for _ in range(num_layers - 1):
+                self.cls_res_projs.append(nn.Identity())
 
         # Stage 2: Live LM branch (func_lm overrides pretrained_lm if set)
         _func_lm = func_lm if func_lm else pretrained_lm
         self.codebert = AutoModel.from_pretrained(_func_lm, trust_remote_code=True)
-        self._lm_dim = lm_hidden_dim(self.codebert)
+        self._lm_dim = lm_hidden_dim(self.codebert, matryoshka_dim)
         self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
 
         # Stage 2: Function head
@@ -111,11 +126,15 @@ class LMGATSeqVulnDetector(nn.Module):
 
     # ── Shared GNN encoder ───────────────────────────────────────────────────
 
-    def _encode(self, x, edge_index, edge_attr, convs, bns):
-        for conv, bn in zip(convs, bns):
+    def _encode(self, x, edge_index, edge_attr, convs, bns, res_projs=None):
+        for i, (conv, bn) in enumerate(zip(convs, bns)):
+            residual = res_projs[i](x) if res_projs is not None else None
             x = conv(x, edge_index, edge_attr=edge_attr)
             x = bn(x)
-            x = F.relu(x)
+            if residual is not None:
+                x = F.relu(x + residual)
+            else:
+                x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
         return x
 
@@ -177,13 +196,15 @@ class LMGATSeqVulnDetector(nn.Module):
         B = int(batch.max().item()) + 1
 
         # ── Stage 1: Localization ────────────────────────────────────────────
-        h_loc = self._encode(x, edge_index, edge_attr, self.loc_convs, self.loc_bns)
+        h_loc = self._encode(x, edge_index, edge_attr, self.loc_convs, self.loc_bns,
+                             self.loc_res_projs if self.use_skip else None)
         s_i = self._node_suspicion(h_loc)  # [N]
 
         # ── Stage 2: Classification GNN on augmented features ────────────────
         stage2_base = h_loc if self._use_loc else x
         x_aug = torch.cat([stage2_base, s_i.unsqueeze(-1)], dim=-1)  # [N, 257 or 774]
-        h_cls = self._encode(x_aug, edge_index, edge_attr, self.cls_convs, self.cls_bns)
+        h_cls = self._encode(x_aug, edge_index, edge_attr, self.cls_convs, self.cls_bns,
+                             self.cls_res_projs if self.use_skip else None)
 
         # Suspicion-weighted global pooling
         s_w = s_i.unsqueeze(-1)                                  # [N, 1]
@@ -193,7 +214,7 @@ class LMGATSeqVulnDetector(nn.Module):
 
         # ── Stage 2: LM branch ───────────────────────────────────────────────
         if func_input_ids is not None:
-            lm_emb = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask)
+            lm_emb = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask, matryoshka_dim=self._matryoshka_dim)
         else:
             lm_emb = torch.zeros(B, self._lm_dim, device=x.device)
 

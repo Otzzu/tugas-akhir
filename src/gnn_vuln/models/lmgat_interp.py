@@ -72,14 +72,19 @@ class LMGATInterpVulnDetector(nn.Module):
         num_heads: int = 4,
         edge_dim: int = EDGE_FEAT_DIM,
         init_lambda: float = 0.5,
+        add_self_loops: bool = True,
+        use_skip: bool = False,
+        matryoshka_dim: int | None = None,
     ):
         super().__init__()
         self.dropout = dropout
+        self.use_skip = use_skip
+        self._matryoshka_dim = matryoshka_dim
 
         # ── Live LM branch ──────────────────────────────────────────────────
         _func_lm = func_lm if func_lm else pretrained_lm
         self.codebert = AutoModel.from_pretrained(_func_lm, trust_remote_code=True)
-        self._lm_dim = lm_hidden_dim(self.codebert)
+        self._lm_dim = lm_hidden_dim(self.codebert, matryoshka_dim)
         self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
         self.lm_head = nn.Sequential(
             nn.Linear(self._lm_dim, hidden_dim),
@@ -94,15 +99,21 @@ class LMGATInterpVulnDetector(nn.Module):
 
         self.convs.append(
             GATv2Conv(in_channels, hidden_dim, heads=num_heads, concat=False,
-                      dropout=dropout, edge_dim=edge_dim)
+                      dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops)
         )
         self.bns.append(nn.BatchNorm1d(hidden_dim))
         for _ in range(num_layers - 1):
             self.convs.append(
                 GATv2Conv(hidden_dim, hidden_dim, heads=num_heads, concat=False,
-                          dropout=dropout, edge_dim=edge_dim)
+                          dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops)
             )
             self.bns.append(nn.BatchNorm1d(hidden_dim))
+
+        if use_skip:
+            self.res_projs = nn.ModuleList()
+            self.res_projs.append(nn.Linear(in_channels, hidden_dim, bias=False))
+            for _ in range(num_layers - 1):
+                self.res_projs.append(nn.Identity())
 
         self.gnn_head = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim // 2),
@@ -130,10 +141,14 @@ class LMGATInterpVulnDetector(nn.Module):
         edge_index: torch.Tensor,
         edge_attr: torch.Tensor | None,
     ) -> torch.Tensor:
-        for conv, bn in zip(self.convs, self.bns):
+        for i, (conv, bn) in enumerate(zip(self.convs, self.bns)):
+            residual = self.res_projs[i](x) if self.use_skip else None
             x = conv(x, edge_index, edge_attr=edge_attr)
             x = bn(x)
-            x = F.relu(x)
+            if residual is not None:
+                x = F.relu(x + residual)
+            else:
+                x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
         return x
 
@@ -205,7 +220,7 @@ class LMGATInterpVulnDetector(nn.Module):
         if func_input_ids is not None:
             ids = func_input_ids.squeeze(1) if func_input_ids.dim() == 3 else func_input_ids
             mask = func_attention_mask.squeeze(1) if func_attention_mask is not None and func_attention_mask.dim() == 3 else func_attention_mask
-            cls = lm_pool(self.codebert, self._is_enc_dec, ids, mask)
+            cls = lm_pool(self.codebert, self._is_enc_dec, ids, mask, matryoshka_dim=self._matryoshka_dim)
             logit_lm = self.lm_head(cls)              # [B, num_classes]
         else:
             logit_lm = torch.zeros_like(logit_gnn)

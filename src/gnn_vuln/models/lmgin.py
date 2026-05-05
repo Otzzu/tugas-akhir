@@ -76,9 +76,11 @@ class LMGINVulnDetector(nn.Module):
         dropout: float = 0.3,
         num_classes: int = 2,
         edge_dim: int = EDGE_FEAT_DIM,
+        use_skip: bool = False,
     ):
         super().__init__()
         self.dropout = dropout
+        self.use_skip = use_skip
 
         # Edge feature projection: GINEConv expects edge_attr dim == node dim
         self.edge_proj = nn.Linear(edge_dim, in_channels)
@@ -95,6 +97,12 @@ class LMGINVulnDetector(nn.Module):
 
         # Edge proj for subsequent layers (hidden_dim → hidden_dim)
         self.edge_proj_hidden = nn.Linear(edge_dim, hidden_dim)
+
+        if use_skip:
+            self.res_projs = nn.ModuleList()
+            self.res_projs.append(nn.Linear(in_channels, hidden_dim, bias=False))
+            for _ in range(num_layers - 1):
+                self.res_projs.append(nn.Identity())
 
         # ── Head 1: function-level classifier ───────────────────────────────
         self.func_head = nn.Sequential(
@@ -115,13 +123,17 @@ class LMGINVulnDetector(nn.Module):
         edge_attr: torch.Tensor | None = None,
     ) -> torch.Tensor:
         for i, (conv, bn) in enumerate(zip(self.convs, self.bns)):
+            residual = self.res_projs[i](x) if self.use_skip else None
             if edge_attr is not None:
                 e = self.edge_proj(edge_attr) if i == 0 else self.edge_proj_hidden(edge_attr)
             else:
                 e = None
             x = conv(x, edge_index, edge_attr=e)
             x = bn(x)
-            x = F.relu(x)
+            if residual is not None:
+                x = F.relu(x + residual)
+            else:
+                x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
         return x
 

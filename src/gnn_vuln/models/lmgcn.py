@@ -79,19 +79,28 @@ class LMGCNVulnDetector(nn.Module):
         num_layers: int = 4,
         dropout: float = 0.3,
         num_classes: int = 2,
+        add_self_loops: bool = True,
+        use_skip: bool = False,
     ):
         super().__init__()
         self.dropout = dropout
+        self.use_skip = use_skip
 
         # ── Shared GCN encoder ──────────────────────────────────────────────
         self.convs = nn.ModuleList()
         self.bns = nn.ModuleList()
 
-        self.convs.append(GCNConv(in_channels, hidden_dim))
+        self.convs.append(GCNConv(in_channels, hidden_dim, add_self_loops=add_self_loops))
         self.bns.append(nn.BatchNorm1d(hidden_dim))
         for _ in range(num_layers - 1):
-            self.convs.append(GCNConv(hidden_dim, hidden_dim))
+            self.convs.append(GCNConv(hidden_dim, hidden_dim, add_self_loops=add_self_loops))
             self.bns.append(nn.BatchNorm1d(hidden_dim))
+
+        if use_skip:
+            self.res_projs = nn.ModuleList()
+            self.res_projs.append(nn.Linear(in_channels, hidden_dim, bias=False))
+            for _ in range(num_layers - 1):
+                self.res_projs.append(nn.Identity())
 
         # ── Head 1: function-level classifier ───────────────────────────────
         self.func_head = nn.Sequential(
@@ -114,10 +123,14 @@ class LMGCNVulnDetector(nn.Module):
         edge_index: torch.Tensor,
         edge_attr: torch.Tensor | None = None,  # ignored by GCNConv, kept for uniform interface
     ) -> torch.Tensor:
-        for conv, bn in zip(self.convs, self.bns):
+        for i, (conv, bn) in enumerate(zip(self.convs, self.bns)):
+            residual = self.res_projs[i](x) if self.use_skip else None
             x = conv(x, edge_index)
             x = bn(x)
-            x = F.relu(x)
+            if residual is not None:
+                x = F.relu(x + residual)
+            else:
+                x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
         return x  # [N, hidden_dim]
 

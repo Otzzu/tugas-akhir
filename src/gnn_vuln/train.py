@@ -55,6 +55,10 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
     pretrained_lm = getattr(cfg.model, "pretrained_lm", "microsoft/codebert-base")
     func_lm = getattr(cfg.model, "func_lm", "") or pretrained_lm
 
+    _add_self_loops = getattr(cfg.model, "add_self_loops", True)
+    _use_skip = getattr(cfg.model, "use_skip", False)
+    _matryoshka_dim = getattr(cfg.model, "matryoshka_dim", None)
+
     if arch == "lmgcn":
         return LMGCNVulnDetector(
             in_channels=in_channels,
@@ -62,6 +66,8 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             num_layers=cfg.model.num_layers,
             dropout=cfg.model.dropout,
             num_classes=cfg.model.num_classes,
+            add_self_loops=_add_self_loops,
+            use_skip=_use_skip,
         )
     if arch == "lmgat":
         return LMGATVulnDetector(
@@ -72,6 +78,8 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             num_classes=cfg.model.num_classes,
             num_heads=cfg.model.heads,
             edge_dim=getattr(cfg.model, "edge_dim", 7),
+            add_self_loops=_add_self_loops,
+            use_skip=_use_skip,
         )
     if arch == "lmgat_codebert":
         return LMGATCodeBERTVulnDetector(
@@ -84,6 +92,9 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             num_classes=cfg.model.num_classes,
             num_heads=cfg.model.heads,
             edge_dim=getattr(cfg.model, "edge_dim", 7),
+            add_self_loops=_add_self_loops,
+            use_skip=_use_skip,
+            matryoshka_dim=_matryoshka_dim,
         )
     if arch == "lmgat_mcs":
         return LMGATMCSVulnDetector(
@@ -96,6 +107,9 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             num_classes=cfg.model.num_classes,
             num_heads=cfg.model.heads,
             edge_dim=getattr(cfg.model, "edge_dim", 7),
+            add_self_loops=_add_self_loops,
+            use_skip=_use_skip,
+            matryoshka_dim=_matryoshka_dim,
         )
     if arch == "lmgin":
         return LMGINVulnDetector(
@@ -105,6 +119,7 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             dropout=cfg.model.dropout,
             num_classes=cfg.model.num_classes,
             edge_dim=getattr(cfg.model, "edge_dim", 7),
+            use_skip=_use_skip,
         )
     if arch == "lmgat_interp":
         return LMGATInterpVulnDetector(
@@ -118,6 +133,9 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             num_heads=cfg.model.heads,
             edge_dim=getattr(cfg.model, "edge_dim", 7),
             init_lambda=getattr(cfg.model, "init_lambda", 0.5),
+            add_self_loops=_add_self_loops,
+            use_skip=_use_skip,
+            matryoshka_dim=_matryoshka_dim,
         )
     if arch == "lmgat_seq":
         return LMGATSeqVulnDetector(
@@ -131,6 +149,9 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             num_heads=cfg.model.heads,
             edge_dim=getattr(cfg.model, "edge_dim", 7),
             stage2_node_input=getattr(cfg.model, "stage2_node_input", "raw"),
+            add_self_loops=_add_self_loops,
+            use_skip=_use_skip,
+            matryoshka_dim=_matryoshka_dim,
         )
     if arch == "lmggnn":
         return LMGNNVulnDetector(
@@ -141,6 +162,8 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             num_layers=cfg.model.num_layers,
             dropout=cfg.model.dropout,
             num_classes=cfg.model.num_classes,
+            use_skip=_use_skip,
+            matryoshka_dim=_matryoshka_dim,
             alpha=getattr(cfg.model, "alpha", 0.1),
         )
     if arch == "lmgat_waves_seq":
@@ -156,6 +179,9 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             edge_dim=getattr(cfg.model, "edge_dim", 7),
             stmt_transformer_layers=getattr(cfg.model, "stmt_transformer_layers", 2),
             stmt_transformer_heads=getattr(cfg.model, "stmt_transformer_heads", 4),
+            add_self_loops=_add_self_loops,
+            use_skip=_use_skip,
+            matryoshka_dim=_matryoshka_dim,
         )
     if arch == "lmgat_dualflow":
         return LMGATDualFlowVulnDetector(
@@ -168,6 +194,9 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             num_classes=cfg.model.num_classes,
             num_heads=cfg.model.heads,
             edge_dim=getattr(cfg.model, "edge_dim", 7),
+            add_self_loops=_add_self_loops,
+            use_skip=_use_skip,
+            matryoshka_dim=_matryoshka_dim,
         )
     if arch == "lmgat_codebert_mtl":
         return LMGATCodeBERTMTLVulnDetector(
@@ -182,11 +211,12 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             num_heads=cfg.model.heads,
             edge_dim=getattr(cfg.model, "edge_dim", 7),
             use_group_cond=getattr(cfg.model, "use_group_cond", True),
-            add_self_loops=getattr(cfg.model, "add_self_loops", True),
-            use_skip=getattr(cfg.model, "use_skip", True),
+            add_self_loops=_add_self_loops,
+            use_skip=_use_skip,
             use_edge_emb=getattr(cfg.model, "use_edge_emb", True),
             edge_emb_dim=getattr(cfg.model, "edge_emb_dim", 32),
             edge_coarse_dim=getattr(cfg.model, "edge_coarse_dim", 16),
+            matryoshka_dim=_matryoshka_dim,
         )
     if arch == "lmgat_hcdfgat":
         return LMGATHCDFGATVulnDetector(
@@ -201,11 +231,15 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             num_heads=cfg.model.heads,
             edge_dim=getattr(cfg.model, "edge_dim", 7),
             use_group_cond=getattr(cfg.model, "use_group_cond", True),
+            add_self_loops=_add_self_loops,
+            use_skip=_use_skip,
+            matryoshka_dim=_matryoshka_dim,
         )
     raise ValueError(
         f"Unknown architecture: {arch!r}. "
-        "Available: lmgcn, lmgat, lmgat_codebert, lmgat_mcs, lmgin, lmgat_interp, "
-        "lmgat_seq, lmgat_waves_seq, lmggnn, lmgat_dualflow"
+        "Available: lmgcn, lmgat, lmgat_codebert, lmgat_codebert_mtl, lmgat_mcs, "
+        "lmgin, lmgat_interp, lmgat_seq, lmgat_waves_seq, lmggnn, "
+        "lmgat_dualflow, lmgat_hcdfgat"
     )
 
 

@@ -1,0 +1,20 @@
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2700
+  top_cwe: 0
+  max_per_class: 2100
+  resample_seed: 42
+  filter_owasp_top10: true
+  filter_top25: false
+
+model:
+  architecture: lmgat_hcdfgat
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: Salesforce/codet5p-110m-embedding
+  add_func_tokens: true
+  num_classes: 155
+  num_groups: 16
+
+train:
+  device: cuda

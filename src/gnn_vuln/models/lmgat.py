@@ -79,9 +79,12 @@ class LMGATVulnDetector(nn.Module):
         num_classes: int = 2,
         num_heads: int = 4,
         edge_dim: int = EDGE_FEAT_DIM,
+        add_self_loops: bool = True,
+        use_skip: bool = False,
     ):
         super().__init__()
         self.dropout = dropout
+        self.use_skip = use_skip
 
         # ── Shared GATv2 encoder ────────────────────────────────────────────
         # concat=False: each head outputs hidden_dim, then averaged →
@@ -95,7 +98,7 @@ class LMGATVulnDetector(nn.Module):
             GATv2Conv(
                 in_channels, hidden_dim,
                 heads=num_heads, concat=False, dropout=dropout,
-                edge_dim=edge_dim,
+                edge_dim=edge_dim, add_self_loops=add_self_loops,
             )
         )
         self.bns.append(nn.BatchNorm1d(hidden_dim))
@@ -104,10 +107,16 @@ class LMGATVulnDetector(nn.Module):
                 GATv2Conv(
                     hidden_dim, hidden_dim,
                     heads=num_heads, concat=False, dropout=dropout,
-                    edge_dim=edge_dim,
+                    edge_dim=edge_dim, add_self_loops=add_self_loops,
                 )
             )
             self.bns.append(nn.BatchNorm1d(hidden_dim))
+
+        if use_skip:
+            self.res_projs = nn.ModuleList()
+            self.res_projs.append(nn.Linear(in_channels, hidden_dim, bias=False))
+            for _ in range(num_layers - 1):
+                self.res_projs.append(nn.Identity())
 
         # ── Head 1: function-level classifier ───────────────────────────────
         self.func_head = nn.Sequential(
@@ -129,10 +138,14 @@ class LMGATVulnDetector(nn.Module):
         edge_index: torch.Tensor,
         edge_attr: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        for conv, bn in zip(self.convs, self.bns):
+        for i, (conv, bn) in enumerate(zip(self.convs, self.bns)):
+            residual = self.res_projs[i](x) if self.use_skip else None
             x = conv(x, edge_index, edge_attr=edge_attr)
             x = bn(x)
-            x = F.relu(x)
+            if residual is not None:
+                x = F.relu(x + residual)
+            else:
+                x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
         return x  # [N, hidden_dim]
 

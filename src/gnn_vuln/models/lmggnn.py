@@ -60,11 +60,15 @@ class LMGNNVulnDetector(nn.Module):
         num_layers: int = 6,
         dropout: float = 0.3,
         num_classes: int = 11,
+        use_skip: bool = False,
+        matryoshka_dim: int | None = None,
         **kwargs,  # absorb unused config keys (e.g. alpha from old config)
     ):
         super().__init__()
         self.dropout = dropout
         self.num_classes = num_classes
+        self.use_skip = use_skip
+        self._matryoshka_dim = matryoshka_dim
 
         # Project node features to hidden_dim (GatedGraphConv requires in==out)
         self.input_proj = nn.Linear(in_channels, hidden_dim)
@@ -75,7 +79,7 @@ class LMGNNVulnDetector(nn.Module):
         # Live LM branch (fine-tuned)
         _func_lm = func_lm if func_lm else pretrained_lm
         self.codebert = AutoModel.from_pretrained(_func_lm, trust_remote_code=True)
-        self._lm_dim = lm_hidden_dim(self.codebert)
+        self._lm_dim = lm_hidden_dim(self.codebert, matryoshka_dim)
         self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
 
         # Function head: concat(GNN pooled, LM repr) → num_classes
@@ -139,13 +143,16 @@ class LMGNNVulnDetector(nn.Module):
         B = int(batch.max().item()) + 1
 
         # ── GNN branch ───────────────────────────────────────────────────────
-        h = self.ggnn(self.input_proj(x), edge_index)    # [N, hidden_dim]
+        proj_x = self.input_proj(x)                          # [N, hidden_dim]
+        h = self.ggnn(proj_x, edge_index)
+        if self.use_skip:
+            h = F.relu(h + proj_x)
         h = F.dropout(h, p=self.dropout, training=self.training)
         h_graph = global_mean_pool(h, batch)              # [B, hidden_dim]
 
         # ── LM branch ────────────────────────────────────────────────────────
         if func_input_ids is not None:
-            cls = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask)
+            cls = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask, matryoshka_dim=self._matryoshka_dim)
         else:
             cls = torch.zeros(B, self._lm_dim, device=x.device)
 

@@ -86,10 +86,15 @@ class LMGATWavesSeqVulnDetector(nn.Module):
         edge_dim: int = EDGE_FEAT_DIM,
         stmt_transformer_layers: int = 2,
         stmt_transformer_heads: int = 4,
+        add_self_loops: bool = True,
+        use_skip: bool = False,
+        matryoshka_dim: int | None = None,
     ):
         super().__init__()
         self.dropout    = dropout
         self.num_classes = num_classes
+        self.use_skip = use_skip
+        self._matryoshka_dim = matryoshka_dim
 
         # ── Stage 1: WAVES-style transformer statement encoder ────────────────
         enc_layer = nn.TransformerEncoderLayer(
@@ -106,24 +111,31 @@ class LMGATWavesSeqVulnDetector(nn.Module):
 
         # ── Stage 2 GNN branch (VulLMGNN-style) ──────────────────────────────
         # Input: 773D node features + 1D s_i = 774D
+        gnn_in = in_channels + 1
         self.gnn_convs = nn.ModuleList()
         self.gnn_bns   = nn.ModuleList()
         self.gnn_convs.append(
-            GATv2Conv(in_channels + 1, hidden_dim, heads=num_heads, concat=False,
-                      dropout=dropout, edge_dim=edge_dim)
+            GATv2Conv(gnn_in, hidden_dim, heads=num_heads, concat=False,
+                      dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops)
         )
         self.gnn_bns.append(nn.BatchNorm1d(hidden_dim))
         for _ in range(num_layers - 1):
             self.gnn_convs.append(
                 GATv2Conv(hidden_dim, hidden_dim, heads=num_heads, concat=False,
-                          dropout=dropout, edge_dim=edge_dim)
+                          dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops)
             )
             self.gnn_bns.append(nn.BatchNorm1d(hidden_dim))
+
+        if use_skip:
+            self.res_projs = nn.ModuleList()
+            self.res_projs.append(nn.Linear(gnn_in, hidden_dim, bias=False))
+            for _ in range(num_layers - 1):
+                self.res_projs.append(nn.Identity())
 
         # ── Stage 2 LM branch (VulLMGNN-style, live fine-tuned) ──────────────
         _func_lm = func_lm if func_lm else pretrained_lm
         self.codebert = AutoModel.from_pretrained(_func_lm, trust_remote_code=True)
-        self._lm_dim = lm_hidden_dim(self.codebert)
+        self._lm_dim = lm_hidden_dim(self.codebert, matryoshka_dim)
         self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
 
         # ── Stage 2 function head ─────────────────────────────────────────────
@@ -203,10 +215,14 @@ class LMGATWavesSeqVulnDetector(nn.Module):
         edge_index: torch.Tensor,
         edge_attr: torch.Tensor | None,
     ) -> torch.Tensor:
-        for conv, bn in zip(self.gnn_convs, self.gnn_bns):
+        for i, (conv, bn) in enumerate(zip(self.gnn_convs, self.gnn_bns)):
+            residual = self.res_projs[i](x) if self.use_skip else None
             x = conv(x, edge_index, edge_attr=edge_attr)
             x = bn(x)
-            x = F.relu(x)
+            if residual is not None:
+                x = F.relu(x + residual)
+            else:
+                x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
         return x
 
@@ -238,7 +254,7 @@ class LMGATWavesSeqVulnDetector(nn.Module):
 
         # ── Stage 2 LM branch ────────────────────────────────────────────────
         if func_input_ids is not None:
-            lm_emb = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask)
+            lm_emb = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask, matryoshka_dim=self._matryoshka_dim)
         else:
             lm_emb = torch.zeros(B, self._lm_dim, device=x.device)
 

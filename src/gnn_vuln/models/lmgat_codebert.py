@@ -30,18 +30,12 @@ import torch.nn.functional as F
 from torch_geometric.nn import GATv2Conv, global_mean_pool
 from transformers import AutoModel
 
+from gnn_vuln.models._lm_utils import lm_hidden_dim, lm_pool
+
 NODE_FEAT_DIM = 773   # 1 (node_type) + 768 (CodeBERT CLS) + 3 (dist) + 1 (danger API)
 EDGE_FEAT_DIM = 7     # one-hot: AST, CFG, CDG, DDG, PDG, CALL, REACHING_DEF
 _ALPHA_MAX = 0.8
 _ALPHA_MEAN = 0.6
-
-
-def _lm_hidden_dim(model) -> int:
-    cfg = model.config
-    # T5-family (encoder-decoder): use d_model; BERT-family: hidden_size
-    if getattr(cfg, "is_encoder_decoder", False):
-        return cfg.d_model
-    return cfg.hidden_size
 
 
 class LMGATCodeBERTVulnDetector(nn.Module):
@@ -86,14 +80,19 @@ class LMGATCodeBERTVulnDetector(nn.Module):
         num_classes: int = 2,
         num_heads: int = 4,
         edge_dim: int = EDGE_FEAT_DIM,
+        add_self_loops: bool = True,
+        use_skip: bool = False,
+        matryoshka_dim: int | None = None,
     ):
         super().__init__()
         self.dropout = dropout
+        self.use_skip = use_skip
+        self._matryoshka_dim = matryoshka_dim
 
         # ── Live fine-tuned LM for full-function context ─────────────────────
         _func_lm = func_lm if func_lm else pretrained_lm
         self.codebert = AutoModel.from_pretrained(_func_lm, trust_remote_code=True)
-        self._lm_dim = _lm_hidden_dim(self.codebert)
+        self._lm_dim = lm_hidden_dim(self.codebert, matryoshka_dim)
         self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
 
         # ── Shared GATv2 encoder ─────────────────────────────────────────────
@@ -102,7 +101,8 @@ class LMGATCodeBERTVulnDetector(nn.Module):
         self.convs.append(
             GATv2Conv(
                 in_channels, hidden_dim,
-                heads=num_heads, concat=False, dropout=dropout, edge_dim=edge_dim,
+                heads=num_heads, concat=False, dropout=dropout,
+                edge_dim=edge_dim, add_self_loops=add_self_loops,
             )
         )
         self.bns.append(nn.BatchNorm1d(hidden_dim))
@@ -110,10 +110,17 @@ class LMGATCodeBERTVulnDetector(nn.Module):
             self.convs.append(
                 GATv2Conv(
                     hidden_dim, hidden_dim,
-                    heads=num_heads, concat=False, dropout=dropout, edge_dim=edge_dim,
+                    heads=num_heads, concat=False, dropout=dropout,
+                    edge_dim=edge_dim, add_self_loops=add_self_loops,
                 )
             )
             self.bns.append(nn.BatchNorm1d(hidden_dim))
+
+        if use_skip:
+            self.res_projs = nn.ModuleList()
+            self.res_projs.append(nn.Linear(in_channels, hidden_dim, bias=False))
+            for _ in range(num_layers - 1):
+                self.res_projs.append(nn.Identity())
 
         # ── Function head: concat(GNN pooled, LM repr) → num_classes ────────
         self.func_head = nn.Sequential(
@@ -135,10 +142,14 @@ class LMGATCodeBERTVulnDetector(nn.Module):
         edge_index: torch.Tensor,
         edge_attr: torch.Tensor | None,
     ) -> torch.Tensor:
-        for conv, bn in zip(self.convs, self.bns):
+        for i, (conv, bn) in enumerate(zip(self.convs, self.bns)):
+            residual = self.res_projs[i](x) if self.use_skip else None
             x = conv(x, edge_index, edge_attr=edge_attr)
             x = bn(x)
-            x = F.relu(x)
+            if residual is not None:
+                x = F.relu(x + residual)
+            else:
+                x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
         return x  # [N, hidden_dim]
 
@@ -216,22 +227,7 @@ class LMGATCodeBERTVulnDetector(nn.Module):
 
         B = h_graph.size(0)
         if func_input_ids is not None:
-            if self._is_enc_dec:
-                cb_out = self.codebert.encoder(
-                    input_ids=func_input_ids,
-                    attention_mask=func_attention_mask,
-                )
-                # T5 has no [CLS]; mean-pool over non-padding tokens
-                mask = func_attention_mask.unsqueeze(-1).float() if func_attention_mask is not None \
-                    else torch.ones(*func_input_ids.shape, 1, device=func_input_ids.device)
-                hs = cb_out.last_hidden_state  # [B, seq, d_model]
-                cls = (hs * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)  # [B, d_model]
-            else:
-                cb_out = self.codebert(
-                    input_ids=func_input_ids,
-                    attention_mask=func_attention_mask,
-                )
-                cls = cb_out.last_hidden_state[:, 0, :]  # [B, hidden_size]
+            cls = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask, matryoshka_dim=self._matryoshka_dim)
         else:
             cls = torch.zeros(B, self._lm_dim, device=h_graph.device)
 

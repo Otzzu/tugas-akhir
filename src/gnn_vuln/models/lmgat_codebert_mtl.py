@@ -125,6 +125,7 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
         use_edge_emb: bool = True,
         edge_emb_dim: int = 32,
         edge_coarse_dim: int = 16,
+        matryoshka_dim: int | None = None,
     ):
         super().__init__()
         self.dropout = dropout
@@ -133,10 +134,11 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
         self.use_group_cond = use_group_cond
         self.use_skip = use_skip
         self.use_edge_emb = use_edge_emb
+        self._matryoshka_dim = matryoshka_dim
 
         _func_lm = func_lm if func_lm else pretrained_lm
         self.codebert = AutoModel.from_pretrained(_func_lm, trust_remote_code=True)
-        self._lm_dim = lm_hidden_dim(self.codebert)
+        self._lm_dim = lm_hidden_dim(self.codebert, matryoshka_dim)
         self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
 
         # ── Edge embeddings (hierarchical: coarse group + fine type) ─────────
@@ -304,7 +306,7 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
 
         B = h_graph.size(0)
         if func_input_ids is not None:
-            cls = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask)
+            cls = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask, matryoshka_dim=self._matryoshka_dim)
         else:
             cls = torch.zeros(B, self._lm_dim, device=h_graph.device)
 

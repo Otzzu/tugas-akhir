@@ -92,15 +92,20 @@ class LMGATMCSVulnDetector(nn.Module):
         num_classes: int = 11,
         num_heads: int = 4,
         edge_dim: int = EDGE_FEAT_DIM,
+        add_self_loops: bool = True,
+        use_skip: bool = False,
+        matryoshka_dim: int | None = None,
     ):
         super().__init__()
         self.dropout = dropout
         self.num_classes = num_classes
+        self.use_skip = use_skip
+        self._matryoshka_dim = matryoshka_dim
 
         # ── Live fine-tuned LM for full-function context ─────────────────────
         _func_lm = func_lm if func_lm else pretrained_lm
         self.codebert = AutoModel.from_pretrained(_func_lm, trust_remote_code=True)
-        self._lm_dim = lm_hidden_dim(self.codebert)
+        self._lm_dim = lm_hidden_dim(self.codebert, matryoshka_dim)
         self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
 
         # ── Shared GATv2 encoder ─────────────────────────────────────────────
@@ -109,7 +114,8 @@ class LMGATMCSVulnDetector(nn.Module):
         self.convs.append(
             GATv2Conv(
                 in_channels, hidden_dim,
-                heads=num_heads, concat=False, dropout=dropout, edge_dim=edge_dim,
+                heads=num_heads, concat=False, dropout=dropout,
+                edge_dim=edge_dim, add_self_loops=add_self_loops,
             )
         )
         self.bns.append(nn.BatchNorm1d(hidden_dim))
@@ -117,10 +123,17 @@ class LMGATMCSVulnDetector(nn.Module):
             self.convs.append(
                 GATv2Conv(
                     hidden_dim, hidden_dim,
-                    heads=num_heads, concat=False, dropout=dropout, edge_dim=edge_dim,
+                    heads=num_heads, concat=False, dropout=dropout,
+                    edge_dim=edge_dim, add_self_loops=add_self_loops,
                 )
             )
             self.bns.append(nn.BatchNorm1d(hidden_dim))
+
+        if use_skip:
+            self.res_projs = nn.ModuleList()
+            self.res_projs.append(nn.Linear(in_channels, hidden_dim, bias=False))
+            for _ in range(num_layers - 1):
+                self.res_projs.append(nn.Identity())
 
         # ── Statement head: multiclass score per line ────────────────────────
         self.stmt_max_head = nn.Linear(hidden_dim, num_classes)
@@ -143,10 +156,14 @@ class LMGATMCSVulnDetector(nn.Module):
         edge_index: torch.Tensor,
         edge_attr: torch.Tensor | None,
     ) -> torch.Tensor:
-        for conv, bn in zip(self.convs, self.bns):
+        for i, (conv, bn) in enumerate(zip(self.convs, self.bns)):
+            residual = self.res_projs[i](x) if self.use_skip else None
             x = conv(x, edge_index, edge_attr=edge_attr)
             x = bn(x)
-            x = F.relu(x)
+            if residual is not None:
+                x = F.relu(x + residual)
+            else:
+                x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
         return x  # [N, hidden_dim]
 
@@ -231,7 +248,7 @@ class LMGATMCSVulnDetector(nn.Module):
 
         # ── CodeBERT CLS for full-function context ───────────────────────────
         if func_input_ids is not None:
-            cls = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask)
+            cls = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask, matryoshka_dim=self._matryoshka_dim)
         else:
             cls = torch.zeros(B, self._lm_dim, device=h.device)
 
