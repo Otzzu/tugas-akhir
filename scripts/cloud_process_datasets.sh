@@ -46,7 +46,7 @@ download_if_missing titanvul
 # ── 2. Process ─────────────────────────────────────────────────────────────────
 if [[ $# -eq 0 ]]; then
     echo "No config specified. Extracted datasets only. Run:"
-    echo "  uv run python scripts/process_dataset.py --config <yaml> --device cuda"
+    echo "  PYTHONPATH=src python scripts/process_dataset.py --config <yaml> --device cuda"
     exit 0
 fi
 
@@ -57,7 +57,7 @@ for CONFIG in "$@"; do
     # Snapshot .pt files before processing
     before=$(ls "$PT_DIR"/*.pt 2>/dev/null | sort || true)
 
-    uv run python scripts/process_dataset.py --config "$CONFIG" --device cuda
+    PYTHONPATH=src python scripts/process_dataset.py --config "$CONFIG" --device cuda
 
     # Find newly created .pt files
     after=$(ls "$PT_DIR"/*.pt 2>/dev/null | sort || true)
