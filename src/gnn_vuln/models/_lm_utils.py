@@ -72,8 +72,12 @@ def lm_pool(
         out = model(input_ids=input_ids, attention_mask=attention_mask)
         hs = out.last_hidden_state  # [B, seq, hidden]
         if attention_mask is not None:
-            last_idx = attention_mask.sum(dim=1) - 1  # [B]
-            emb = hs[torch.arange(hs.size(0), device=hs.device), last_idx]
+            left_pad = attention_mask[:, -1].sum() == attention_mask.shape[0]
+            if left_pad:
+                emb = hs[:, -1]
+            else:
+                last_idx = attention_mask.sum(dim=1) - 1  # [B]
+                emb = hs[torch.arange(hs.size(0), device=hs.device), last_idx]
         else:
             emb = hs[:, -1]
     else:
