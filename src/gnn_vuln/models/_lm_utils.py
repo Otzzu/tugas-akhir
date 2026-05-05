@@ -5,8 +5,15 @@ from __future__ import annotations
 import torch
 
 
+def _is_codet5p_embedding(model) -> bool:
+    """True for Salesforce/codet5p-*-embedding — returns raw pooled tensor, not ModelOutput."""
+    return getattr(model.config, "model_type", "") == "codet5p_embedding"
+
+
 def _is_t5_like(model) -> bool:
     """True for T5-family models (enc-dec or enc-only), False for BERT-family."""
+    if _is_codet5p_embedding(model):
+        return False
     cfg = model.config
     return (
         getattr(cfg, "is_encoder_decoder", False)
@@ -49,7 +56,9 @@ def lm_pool(
     BERT-family: CLS token (position 0).
     Truncates to matryoshka_dim if set.
     """
-    if _is_t5_like(model):
+    if _is_codet5p_embedding(model):
+        emb = model(input_ids=input_ids, attention_mask=attention_mask)  # [B, 256] tensor
+    elif _is_t5_like(model):
         enc = model.encoder if is_enc_dec else model
         out = enc(input_ids=input_ids, attention_mask=attention_mask)
         hs = out.last_hidden_state  # [B, seq, d_model]
