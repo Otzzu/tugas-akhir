@@ -25,9 +25,10 @@ import torch.nn.functional as F
 from torch_geometric.nn import GATv2Conv, global_mean_pool
 from transformers import AutoModel
 
+from gnn_vuln.models._lm_utils import lm_hidden_dim, lm_pool
+
 NODE_FEAT_DIM = 773
 EDGE_FEAT_DIM = 7
-_CODEBERT_DIM = 768
 _ALPHA_MAX = 0.8
 _ALPHA_MEAN = 0.6
 
@@ -77,9 +78,11 @@ class LMGATInterpVulnDetector(nn.Module):
 
         # ── Live LM branch ──────────────────────────────────────────────────
         _func_lm = func_lm if func_lm else pretrained_lm
-        self.codebert = AutoModel.from_pretrained(_func_lm, use_safetensors=True)
+        self.codebert = AutoModel.from_pretrained(_func_lm)
+        self._lm_dim = lm_hidden_dim(self.codebert)
+        self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
         self.lm_head = nn.Sequential(
-            nn.Linear(_CODEBERT_DIM, hidden_dim),
+            nn.Linear(self._lm_dim, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, num_classes),
@@ -200,10 +203,9 @@ class LMGATInterpVulnDetector(nn.Module):
 
         # LM branch (requires func_input_ids)
         if func_input_ids is not None:
-            ids = func_input_ids.squeeze(1)          # [B, 512]
-            mask = func_attention_mask.squeeze(1)     # [B, 512]
-            out = self.codebert(input_ids=ids, attention_mask=mask)
-            cls = out.last_hidden_state[:, 0, :]      # [B, 768]
+            ids = func_input_ids.squeeze(1) if func_input_ids.dim() == 3 else func_input_ids
+            mask = func_attention_mask.squeeze(1) if func_attention_mask is not None and func_attention_mask.dim() == 3 else func_attention_mask
+            cls = lm_pool(self.codebert, self._is_enc_dec, ids, mask)
             logit_lm = self.lm_head(cls)              # [B, num_classes]
         else:
             logit_lm = torch.zeros_like(logit_gnn)

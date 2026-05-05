@@ -53,9 +53,10 @@ import torch.nn.functional as F
 from torch_geometric.nn import GATv2Conv, global_mean_pool
 from transformers import AutoModel
 
+from gnn_vuln.models._lm_utils import lm_hidden_dim, lm_pool
+
 NODE_FEAT_DIM = 773
 EDGE_FEAT_DIM = 7
-_CODEBERT_DIM = 768
 _ALPHA_MAX = 0.8
 _ALPHA_MEAN = 0.6
 
@@ -134,7 +135,9 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
         self.use_edge_emb = use_edge_emb
 
         _func_lm = func_lm if func_lm else pretrained_lm
-        self.codebert = AutoModel.from_pretrained(_func_lm, use_safetensors=True)
+        self.codebert = AutoModel.from_pretrained(_func_lm)
+        self._lm_dim = lm_hidden_dim(self.codebert)
+        self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
 
         # ── Edge embeddings (hierarchical: coarse group + fine type) ─────────
         if use_edge_emb:
@@ -173,7 +176,7 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
             for _ in range(num_layers - 1):
                 self.res_projs.append(nn.Identity())
 
-        fused_dim = hidden_dim + _CODEBERT_DIM
+        fused_dim = hidden_dim + self._lm_dim
 
         # ── Head 1: binary — safe vs. vulnerable ────────────────────────────
         self.binary_head = nn.Sequential(
@@ -301,13 +304,9 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
 
         B = h_graph.size(0)
         if func_input_ids is not None:
-            cb_out = self.codebert(
-                input_ids=func_input_ids,
-                attention_mask=func_attention_mask,
-            )
-            cls = cb_out.last_hidden_state[:, 0, :]  # [B, 768]
+            cls = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask)
         else:
-            cls = torch.zeros(B, _CODEBERT_DIM, device=h_graph.device)
+            cls = torch.zeros(B, self._lm_dim, device=h_graph.device)
 
         fused = torch.cat([h_graph, cls], dim=-1)  # [B, hidden_dim + 768]
 

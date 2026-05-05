@@ -31,11 +31,13 @@ import torch.nn.functional as F
 from torch_geometric.nn import GATv2Conv, global_mean_pool
 from transformers import AutoModel
 
+from gnn_vuln.models._lm_utils import lm_hidden_dim, lm_pool
+
 NODE_FEAT_DIM  = 773
 EDGE_FEAT_DIM  = 7
-_LM_DIM        = 768
-# CodeBERT occupies indices 1..768 in the 773D node feature vector
-# layout: [node_type(1)] [CodeBERT CLS(768)] [dist×3(3)] [dangerous_api(1)]
+# Pre-computed CodeBERT node features: indices 1..768 in the 773D vector.
+# Transformer statement encoder operates on this fixed 768-dim slice.
+_NODE_CB_DIM   = 768
 _CB_START, _CB_END = 1, 769
 
 
@@ -91,16 +93,16 @@ class LMGATWavesSeqVulnDetector(nn.Module):
 
         # ── Stage 1: WAVES-style transformer statement encoder ────────────────
         enc_layer = nn.TransformerEncoderLayer(
-            d_model=_LM_DIM,
+            d_model=_NODE_CB_DIM,
             nhead=stmt_transformer_heads,
-            dim_feedforward=_LM_DIM * 2,
+            dim_feedforward=_NODE_CB_DIM * 2,
             dropout=dropout,
             batch_first=True,   # input: [batch, seq, feat]
         )
         self.stmt_transformer = nn.TransformerEncoder(
             enc_layer, num_layers=stmt_transformer_layers
         )
-        self.stmt_score_head = nn.Linear(_LM_DIM, 1)  # binary suspicion logit
+        self.stmt_score_head = nn.Linear(_NODE_CB_DIM, 1)  # binary suspicion logit
 
         # ── Stage 2 GNN branch (VulLMGNN-style) ──────────────────────────────
         # Input: 773D node features + 1D s_i = 774D
@@ -120,11 +122,13 @@ class LMGATWavesSeqVulnDetector(nn.Module):
 
         # ── Stage 2 LM branch (VulLMGNN-style, live fine-tuned) ──────────────
         _func_lm = func_lm if func_lm else pretrained_lm
-        self.codebert = AutoModel.from_pretrained(_func_lm, use_safetensors=True)
+        self.codebert = AutoModel.from_pretrained(_func_lm)
+        self._lm_dim = lm_hidden_dim(self.codebert)
+        self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
 
         # ── Stage 2 function head ─────────────────────────────────────────────
         self.func_head = nn.Sequential(
-            nn.Linear(hidden_dim + _LM_DIM, hidden_dim),
+            nn.Linear(hidden_dim + self._lm_dim, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, num_classes),
@@ -234,13 +238,9 @@ class LMGATWavesSeqVulnDetector(nn.Module):
 
         # ── Stage 2 LM branch ────────────────────────────────────────────────
         if func_input_ids is not None:
-            lm_out  = self.codebert(
-                input_ids=func_input_ids,
-                attention_mask=func_attention_mask,
-            )
-            lm_emb = lm_out.last_hidden_state[:, 0, :]   # CLS [B, 768]
+            lm_emb = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask)
         else:
-            lm_emb = torch.zeros(B, _LM_DIM, device=x.device)
+            lm_emb = torch.zeros(B, self._lm_dim, device=x.device)
 
         # ── Classification head ───────────────────────────────────────────────
         logit_func = self.func_head(torch.cat([gnn_emb, lm_emb], dim=-1))

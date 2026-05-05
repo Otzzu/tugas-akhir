@@ -20,9 +20,10 @@ import torch.nn.functional as F
 from torch_geometric.nn import GATv2Conv, global_add_pool, global_mean_pool
 from transformers import AutoModel
 
+from gnn_vuln.models._lm_utils import lm_hidden_dim, lm_pool
+
 NODE_FEAT_DIM = 773
 EDGE_FEAT_DIM = 7
-_LM_DIM = 768
 _ALPHA_MAX = 0.8
 _ALPHA_MEAN = 0.6
 
@@ -98,10 +99,12 @@ class LMGATDualFlowVulnDetector(nn.Module):
 
         # ── Stage 3: Live LM branch ───────────────────────────────────────────
         _func_lm = func_lm if func_lm else pretrained_lm
-        self.codebert = AutoModel.from_pretrained(_func_lm, use_safetensors=True)
+        self.codebert = AutoModel.from_pretrained(_func_lm)
+        self._lm_dim = lm_hidden_dim(self.codebert)
+        self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
 
         # ── Stage 3: Function head (focal + context + lm) ────────────────────
-        fusion_dim = hidden_dim * 2 + _LM_DIM  # 256 + 256 + 768 = 1280
+        fusion_dim = hidden_dim * 2 + self._lm_dim
         self.func_head = nn.Sequential(
             nn.Linear(fusion_dim, 512),
             nn.ReLU(),
@@ -192,13 +195,9 @@ class LMGATDualFlowVulnDetector(nn.Module):
 
         # ── Stage 3: LM branch ───────────────────────────────────────────────
         if func_input_ids is not None:
-            lm_out = self.codebert(
-                input_ids=func_input_ids,
-                attention_mask=func_attention_mask,
-            )
-            lm_emb = lm_out.last_hidden_state[:, 0, :]            # [B, 768]
+            lm_emb = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask)
         else:
-            lm_emb = torch.zeros(B, _LM_DIM, device=x.device)
+            lm_emb = torch.zeros(B, self._lm_dim, device=x.device)
 
         # ── Tri-modal fusion ─────────────────────────────────────────────────
         logit_func = self.func_head(

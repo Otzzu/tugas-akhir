@@ -17,8 +17,9 @@ import torch.nn.functional as F
 from torch_geometric.nn import GatedGraphConv, global_mean_pool
 from transformers import AutoModel
 
+from gnn_vuln.models._lm_utils import lm_hidden_dim, lm_pool
+
 NODE_FEAT_DIM = 773
-_LM_DIM = 768
 _ALPHA_MAX = 0.8
 _ALPHA_MEAN = 0.6
 
@@ -73,11 +74,13 @@ class LMGNNVulnDetector(nn.Module):
 
         # Live LM branch (fine-tuned)
         _func_lm = func_lm if func_lm else pretrained_lm
-        self.codebert = AutoModel.from_pretrained(_func_lm, use_safetensors=True)
+        self.codebert = AutoModel.from_pretrained(_func_lm)
+        self._lm_dim = lm_hidden_dim(self.codebert)
+        self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
 
-        # Function head: concat(GNN pooled, LM CLS) → num_classes
+        # Function head: concat(GNN pooled, LM repr) → num_classes
         self.func_head = nn.Sequential(
-            nn.Linear(hidden_dim + _LM_DIM, hidden_dim),
+            nn.Linear(hidden_dim + self._lm_dim, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, num_classes),
@@ -142,13 +145,9 @@ class LMGNNVulnDetector(nn.Module):
 
         # ── LM branch ────────────────────────────────────────────────────────
         if func_input_ids is not None:
-            lm_out = self.codebert(
-                input_ids=func_input_ids,
-                attention_mask=func_attention_mask,
-            )
-            cls = lm_out.last_hidden_state[:, 0, :]      # CLS [B, 768]
+            cls = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask)
         else:
-            cls = torch.zeros(B, _LM_DIM, device=x.device)
+            cls = torch.zeros(B, self._lm_dim, device=x.device)
 
         # ── Function head ─────────────────────────────────────────────────────
         logit_func = self.func_head(torch.cat([h_graph, cls], dim=-1))

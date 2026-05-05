@@ -17,9 +17,10 @@ import torch.nn.functional as F
 from torch_geometric.nn import GATv2Conv, global_add_pool
 from transformers import AutoModel
 
+from gnn_vuln.models._lm_utils import lm_hidden_dim, lm_pool
+
 NODE_FEAT_DIM = 773
 EDGE_FEAT_DIM = 7
-_LM_DIM = 768
 _ALPHA_MAX = 0.8
 _ALPHA_MEAN = 0.6
 
@@ -96,11 +97,13 @@ class LMGATSeqVulnDetector(nn.Module):
 
         # Stage 2: Live LM branch (func_lm overrides pretrained_lm if set)
         _func_lm = func_lm if func_lm else pretrained_lm
-        self.codebert = AutoModel.from_pretrained(_func_lm, use_safetensors=True)
+        self.codebert = AutoModel.from_pretrained(_func_lm)
+        self._lm_dim = lm_hidden_dim(self.codebert)
+        self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
 
         # Stage 2: Function head
         self.func_head = nn.Sequential(
-            nn.Linear(hidden_dim + _LM_DIM, hidden_dim),
+            nn.Linear(hidden_dim + self._lm_dim, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, num_classes),
@@ -190,13 +193,9 @@ class LMGATSeqVulnDetector(nn.Module):
 
         # ── Stage 2: LM branch ───────────────────────────────────────────────
         if func_input_ids is not None:
-            lm_out = self.codebert(
-                input_ids=func_input_ids,
-                attention_mask=func_attention_mask,
-            )
-            lm_emb = lm_out.last_hidden_state[:, 0, :]  # CLS [B, 768]
+            lm_emb = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask)
         else:
-            lm_emb = torch.zeros(B, _LM_DIM, device=x.device)
+            lm_emb = torch.zeros(B, self._lm_dim, device=x.device)
 
         # ── Classification head ──────────────────────────────────────────────
         func_in = torch.cat([graph_emb, lm_emb], dim=-1)  # [B, hidden_dim + 768]
