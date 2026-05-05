@@ -4,7 +4,7 @@ data:
   mode: multiclass       
   max_nodes: 2700
   top_cwe: 0       
-  max_per_class: 2300   
+  max_per_class: 2100   
   resample_seed: 42
   filter_owasp_top10: true
   filter_top25: false

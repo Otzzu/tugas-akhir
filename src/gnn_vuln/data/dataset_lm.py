@@ -604,8 +604,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
         if self._add_func_tokens and pending_keys:
             from transformers import AutoTokenizer
             logger.info(f"Initialising function tokenizer ({self._func_lm})…")
-            tokenizer_name = "Salesforce/codet5-base" if "codet5p" in self._func_lm else self._func_lm
-            tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+            tokenizer = AutoTokenizer.from_pretrained(self._func_lm)
 
         # ------------------------------------------------------------------
         # Process each work unit

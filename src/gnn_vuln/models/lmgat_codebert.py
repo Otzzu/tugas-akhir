@@ -32,9 +32,16 @@ from transformers import AutoModel
 
 NODE_FEAT_DIM = 773   # 1 (node_type) + 768 (CodeBERT CLS) + 3 (dist) + 1 (danger API)
 EDGE_FEAT_DIM = 7     # one-hot: AST, CFG, CDG, DDG, PDG, CALL, REACHING_DEF
-_CODEBERT_DIM = 768
 _ALPHA_MAX = 0.8
 _ALPHA_MEAN = 0.6
+
+
+def _lm_hidden_dim(model) -> int:
+    cfg = model.config
+    # T5-family (encoder-decoder): use d_model; BERT-family: hidden_size
+    if getattr(cfg, "is_encoder_decoder", False):
+        return cfg.d_model
+    return cfg.hidden_size
 
 
 class LMGATCodeBERTVulnDetector(nn.Module):
@@ -85,7 +92,9 @@ class LMGATCodeBERTVulnDetector(nn.Module):
 
         # ── Live fine-tuned LM for full-function context ─────────────────────
         _func_lm = func_lm if func_lm else pretrained_lm
-        self.codebert = AutoModel.from_pretrained(_func_lm, use_safetensors=True)
+        self.codebert = AutoModel.from_pretrained(_func_lm)
+        self._lm_dim = _lm_hidden_dim(self.codebert)
+        self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
 
         # ── Shared GATv2 encoder ─────────────────────────────────────────────
         self.convs = nn.ModuleList()
@@ -106,9 +115,9 @@ class LMGATCodeBERTVulnDetector(nn.Module):
             )
             self.bns.append(nn.BatchNorm1d(hidden_dim))
 
-        # ── Function head: concat(GNN pooled, CodeBERT CLS) → num_classes ───
+        # ── Function head: concat(GNN pooled, LM repr) → num_classes ────────
         self.func_head = nn.Sequential(
-            nn.Linear(hidden_dim + _CODEBERT_DIM, hidden_dim),
+            nn.Linear(hidden_dim + self._lm_dim, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, num_classes),
@@ -207,21 +216,26 @@ class LMGATCodeBERTVulnDetector(nn.Module):
 
         B = h_graph.size(0)
         if func_input_ids is not None:
-            if getattr(self.codebert.config, "is_encoder_decoder", False):
+            if self._is_enc_dec:
                 cb_out = self.codebert.encoder(
                     input_ids=func_input_ids,
                     attention_mask=func_attention_mask,
                 )
+                # T5 has no [CLS]; mean-pool over non-padding tokens
+                mask = func_attention_mask.unsqueeze(-1).float() if func_attention_mask is not None \
+                    else torch.ones(*func_input_ids.shape, 1, device=func_input_ids.device)
+                hs = cb_out.last_hidden_state  # [B, seq, d_model]
+                cls = (hs * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)  # [B, d_model]
             else:
                 cb_out = self.codebert(
                     input_ids=func_input_ids,
                     attention_mask=func_attention_mask,
                 )
-            cls = cb_out.last_hidden_state[:, 0, :]  # [B, 768]
+                cls = cb_out.last_hidden_state[:, 0, :]  # [B, hidden_size]
         else:
-            cls = torch.zeros(B, _CODEBERT_DIM, device=h_graph.device)
+            cls = torch.zeros(B, self._lm_dim, device=h_graph.device)
 
-        func_in = torch.cat([h_graph, cls], dim=-1)  # [B, hidden_dim + 768]
+        func_in = torch.cat([h_graph, cls], dim=-1)  # [B, hidden_dim + lm_dim]
         logit_func = self.func_head(func_in)
 
         stmt_scores = (
