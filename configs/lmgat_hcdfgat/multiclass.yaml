@@ -54,6 +54,9 @@ model:
   # supcon_exp_scale: 5.0
   # supcon_power: 2.0
   # supcon_min_weight: 0.0
+  use_self_loops: false
+  use_skip: false
+  use_edge_emb: false
 
 train:
   seed: 42
