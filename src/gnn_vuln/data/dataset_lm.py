@@ -484,6 +484,8 @@ class CodeBERTGraphDataset(InMemoryDataset):
 
         # Reindex to contiguous 0..N-1 — preserves sort order by original index
         # (benign stays 0; ordering of CWE classes unchanged; safe even when already contiguous)
+        # _orig_cwe_vocab keeps pre-reindex indices so graph.cwe_id matches cwe_vocab.json
+        _orig_cwe_vocab = dict(cwe_vocab)
         if is_multi:
             _sorted = sorted(cwe_vocab.items(), key=lambda kv: kv[1])
             cwe_vocab = {k: new_i for new_i, (k, _) in enumerate(_sorted)}
@@ -783,8 +785,8 @@ class CodeBERTGraphDataset(InMemoryDataset):
                     cpg, all_embeddings[start:end], label, flaw_lines,
                     func_input_ids, func_attention_mask,
                 )
-                # Attach CWE metadata
-                raw_cwe_id = cwe_vocab.get(cwe_str, -1) if cwe_str else -1
+                # Attach CWE metadata — cwe_id uses original vocab index (matches cwe_vocab.json)
+                raw_cwe_id = _orig_cwe_vocab.get(cwe_str, -1) if cwe_str else -1
                 raw_group_name = CWE_GROUP_MAP.get(cwe_str, "") if cwe_str else ""
                 raw_group_id = GROUP_VOCAB.get(raw_group_name, -1) if raw_group_name else (
                     GROUP_VOCAB["benign"] if is_benign_unit else -1
