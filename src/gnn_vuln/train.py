@@ -55,7 +55,7 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
     pretrained_lm = getattr(cfg.model, "pretrained_lm", "microsoft/codebert-base")
     func_lm = getattr(cfg.model, "func_lm", "") or pretrained_lm
 
-    _add_self_loops = getattr(cfg.model, "add_self_loops", True)
+    _add_self_loops = getattr(cfg.model, "add_self_loops", False)
     _use_skip = getattr(cfg.model, "use_skip", False)
     _matryoshka_dim = getattr(cfg.model, "matryoshka_dim", None)
 
@@ -213,7 +213,7 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             use_group_cond=getattr(cfg.model, "use_group_cond", True),
             add_self_loops=_add_self_loops,
             use_skip=_use_skip,
-            use_edge_emb=getattr(cfg.model, "use_edge_emb", True),
+            use_edge_emb=getattr(cfg.model, "use_edge_emb", False),
             edge_emb_dim=getattr(cfg.model, "edge_emb_dim", 32),
             edge_coarse_dim=getattr(cfg.model, "edge_coarse_dim", 16),
             matryoshka_dim=_matryoshka_dim,

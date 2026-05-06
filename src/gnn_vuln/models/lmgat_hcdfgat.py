@@ -96,7 +96,7 @@ class LMGATHCDFGATVulnDetector(nn.Module):
         num_heads: int = 4,
         edge_dim: int = EDGE_FEAT_DIM,
         use_group_cond: bool = True,
-        add_self_loops: bool = True,
+        add_self_loops: bool = False,
         use_skip: bool = False,
         matryoshka_dim: int | None = None,
     ):
