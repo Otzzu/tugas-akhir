@@ -81,7 +81,7 @@ def patch_file(pt_path: Path, cwe_vocab: dict[str, int]) -> None:
     y_before = data.y.unique().tolist()
     data.y = apply_remap_tensor(data.y, remap)
     y_after = data.y.unique().tolist()
-    print(f"  data.y: {sorted(y_before)[:10]}... → {sorted(y_after)[:10]}...")
+    print(f"  data.y: {sorted(y_before)[:10]}... -> {sorted(y_after)[:10]}...")
 
     # data.cwe_id left unchanged — keeps original cwe_vocab.json index for traceability
 
