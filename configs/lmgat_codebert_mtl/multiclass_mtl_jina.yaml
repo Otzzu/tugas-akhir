@@ -2,7 +2,7 @@
 #
 # Base: Arch11 v3 best (F1=0.6819, IFA=4.60, Effort=0.0338)
 #   use_group_cond=true, group_loss=0.3, rank=0.2, LIVABLE, F1-stop
-# Change: func_lm = jinaai/jina-embeddings-v2-base-code (768D, Matryoshka-capable)
+# Change: func_lm = jinaai/jina-code-embeddings-0.5b (768D, Matryoshka-capable)
 #
 # pretrained_lm (node embeddings) stays microsoft/unixcoder-base — matches existing .pt.
 # matryoshka_dim: null → uses full 768D output (same dim as UniXcoder — fair comparison).
@@ -23,7 +23,7 @@ data:
 model:
   architecture: lmgat_codebert_mtl
   pretrained_lm: microsoft/unixcoder-base
-  func_lm: jinaai/jina-embeddings-v2-base-code
+  func_lm: jinaai/jina-code-embeddings-0.5b
   add_func_tokens: true
   matryoshka_dim: null   # null = full 768D; set 512 if OOM
   hidden_dim: 256
