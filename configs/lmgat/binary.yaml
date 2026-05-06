@@ -40,3 +40,4 @@ train:
   patience: 15
   use_class_weights: true
   device: cuda
+  save_last_every: 10

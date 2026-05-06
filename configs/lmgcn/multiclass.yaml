@@ -59,3 +59,4 @@ train:
   use_class_weights: true
   focal_loss_gamma: 2.0
   device: cuda              # set to "cpu" if no GPU is available
+  save_last_every: 10

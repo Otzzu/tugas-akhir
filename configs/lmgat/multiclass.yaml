@@ -44,3 +44,4 @@ train:
   use_class_weights: true   # inverse-frequency weights — fixes minority CWE collapse
   focal_loss_gamma: 2.0     # focal loss: down-weights easy examples, forces learning on rare CWEs
   device: cuda
+  save_last_every: 10

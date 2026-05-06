@@ -49,3 +49,4 @@ train:
   focal_loss_gamma: 2.0
   livable_loss: false       # set true to use LIVABLE epoch-adaptive weights instead of static
   device: cuda
+  save_last_every: 10

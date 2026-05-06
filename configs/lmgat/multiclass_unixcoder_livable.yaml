@@ -39,7 +39,7 @@ train:
   weight_decay: 0.0001
   patience: 25
   early_stop_metric: f1
-  save_last_every: 0
+  save_last_every: 10
   use_class_weights: true
   focal_loss_gamma: 2.0
   livable_loss: true

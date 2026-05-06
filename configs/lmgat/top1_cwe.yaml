@@ -40,3 +40,4 @@ train:
   use_class_weights: false
   focal_loss_gamma: 0.0
   device: cuda
+  save_last_every: 10

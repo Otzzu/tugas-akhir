@@ -40,3 +40,4 @@ train:
   focal_loss_gamma: 2.0
   livable_loss: true
   device: cuda
+  save_last_every: 10

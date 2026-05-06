@@ -52,3 +52,4 @@ train:
   focal_loss_gamma: 2.0
   livable_loss: true            # LIVABLE epoch-adaptive class weights enabled
   device: cuda
+  save_last_every: 10
