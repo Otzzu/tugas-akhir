@@ -39,7 +39,7 @@ model:
   dropout: 0.3
   heads: 4
   edge_dim: 7
-  num_classes: 775      
+  num_classes: 26        # titanvul top25 filter: 25 CWE labels + benign
   num_groups: 16
   use_group_cond: true
   mil_weight: 0.5
