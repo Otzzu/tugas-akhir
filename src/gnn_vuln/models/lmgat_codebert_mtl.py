@@ -51,7 +51,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GATv2Conv, global_mean_pool
-from transformers import AutoModel
+from transformers import AutoConfig, AutoModel
 
 from gnn_vuln.models._lm_utils import lm_hidden_dim, lm_pool
 
@@ -137,7 +137,10 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
         self._matryoshka_dim = matryoshka_dim
 
         _func_lm = func_lm if func_lm else pretrained_lm
-        self.codebert = AutoModel.from_pretrained(_func_lm, trust_remote_code=True)
+        _lm_cfg = AutoConfig.from_pretrained(_func_lm, trust_remote_code=True)
+        if not hasattr(_lm_cfg, "is_decoder"):
+            _lm_cfg.is_decoder = False
+        self.codebert = AutoModel.from_pretrained(_func_lm, config=_lm_cfg, trust_remote_code=True)
         self._lm_dim = lm_hidden_dim(self.codebert, matryoshka_dim)
         self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
 
