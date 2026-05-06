@@ -23,7 +23,7 @@ import torch
 
 
 def is_already_local(data, slices) -> bool:
-    """Check first few graphs — if max local edge_index < num_nodes, already local."""
+    """Return True if stored edge_index is already local (0..n_nodes-1 per graph)."""
     n_graphs = len(slices["y"]) - 1
     checks = min(50, n_graphs)
     for i in range(checks):
@@ -31,9 +31,9 @@ def is_already_local(data, slices) -> bool:
         e0, e1 = int(slices["edge_index"][i]), int(slices["edge_index"][i + 1])
         if e1 > e0:
             ei_raw = data.edge_index[:, e0:e1]
-            ei_local = ei_raw - int(slices["x"][i])
-            if ei_local.max().item() >= n_nodes or ei_local.min().item() < 0:
-                return False  # still global
+            # Local indices must be in [0, n_nodes). If any exceed that, still global.
+            if ei_raw.max().item() >= n_nodes or ei_raw.min().item() < 0:
+                return False
     return True
 
 

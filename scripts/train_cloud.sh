@@ -174,19 +174,23 @@ DOWNLOADED_DATASETS=()
 
 download_dataset() {
     local dataset="$1"
-    local local_dir="${PROCESSED_DIR}/${dataset}"
+    # Remote names include timestamp (_YYYYMMDD_HHMMSS); local .pt files do not.
+    # Strip timestamp for local existence check.
+    local local_name
+    local_name=$(echo "$dataset" | sed 's/_[0-9]\{8\}_[0-9]\{6\}$//')
+    local local_dir="${PROCESSED_DIR}/${local_name}"
 
     # Already downloaded this session
     for d in "${DOWNLOADED_DATASETS[@]:-}"; do
         [[ "$d" == "$dataset" ]] && return 0
     done
 
-    if [[ -d "$local_dir" ]] || compgen -G "${PROCESSED_DIR}/${dataset}*.pt" > /dev/null 2>&1; then
-        success "Dataset already exists: $dataset"
+    if [[ -d "$local_dir" ]] || compgen -G "${PROCESSED_DIR}/${local_name}*.pt" > /dev/null 2>&1; then
+        success "Dataset already exists: $local_name"
         DOWNLOADED_DATASETS+=("$dataset")
         return 0
     fi
-    info "Not found locally (checked: ${local_dir}/ and ${PROCESSED_DIR}/${dataset}*.pt)"
+    info "Not found locally (checked: ${local_dir}/ and ${PROCESSED_DIR}/${local_name}*.pt)"
 
     info "Downloading dataset: $dataset"
     mkdir -p "$PROCESSED_DIR"
