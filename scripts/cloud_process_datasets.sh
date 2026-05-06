@@ -88,7 +88,8 @@ for CONFIG in "$@"; do
         echo "Uploading $archive to $REMOTE_PT ..."
         rclone copy "$archive" "$REMOTE_PT" --progress
         rm -f "$archive"
-        echo "Uploaded and cleaned: $archive"
+        rm -f "$pt_file"
+        echo "Uploaded and cleaned: $archive + $pt_file"
     done
 done
 
