@@ -27,7 +27,12 @@ else
 fi
 
 # Install rclone
-curl -s https://rclone.org/install.sh | bash || true
+if ! command -v rclone &>/dev/null; then
+    echo "    Installing rclone..."
+    curl -s --max-time 30 https://rclone.org/install.sh | bash || true
+else
+    echo "    rclone already installed, skipping"
+fi
 
 PIP="pip"
 UVP="pip install --no-cache-dir"
