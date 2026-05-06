@@ -12,13 +12,16 @@ else
     echo "    System tools already installed, skipping apt-get"
 fi
 
-# Install gdrive
+# Install gdrive (optional — training pipeline uses rclone; gdrive only for manual tasks)
 if ! command -v gdrive &>/dev/null; then
-    wget -q https://github.com/glotlabs/gdrive/releases/download/3.0.0/gdrive_linux-x64.tar.gz
-    tar -xf gdrive_linux-x64.tar.gz
-    chmod +x gdrive
-    mv gdrive /usr/local/bin/
-    rm gdrive_linux-x64.tar.gz
+    echo "    Downloading gdrive from GitHub (optional, non-fatal)..."
+    if wget --timeout=20 --tries=1 -q \
+        https://github.com/glotlabs/gdrive/releases/download/3.0.0/gdrive_linux-x64.tar.gz 2>/dev/null; then
+        tar -xf gdrive_linux-x64.tar.gz && chmod +x gdrive && mv gdrive /usr/local/bin/ && rm gdrive_linux-x64.tar.gz
+        echo "    gdrive installed"
+    else
+        echo "    gdrive download failed — skipping (not required for training)"
+    fi
 else
     echo "    gdrive already installed, skipping"
 fi
