@@ -42,11 +42,15 @@ def build_remap(class_names: list[str], cwe_vocab: dict[str, int]) -> dict[int, 
 
 
 def apply_remap_tensor(t: torch.Tensor, remap: dict[int, int], sentinel: int = -1) -> torch.Tensor:
-    """Remap values in tensor; sentinel values (e.g. -1) are left unchanged."""
-    out = t.clone()
+    """Remap values via lookup table — O(N) single pass, no per-class mask loop."""
+    max_old = max(remap.keys())
+    lut = torch.arange(max_old + 1, dtype=torch.long)
     for old, new in remap.items():
-        out[t == old] = new
-    return out
+        lut[old] = new
+    sentinel_mask = t == sentinel
+    result = lut[t.clamp(min=0)]
+    result[sentinel_mask] = sentinel
+    return result
 
 
 def patch_file(pt_path: Path, cwe_vocab: dict[str, int]) -> None:

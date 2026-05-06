@@ -70,7 +70,7 @@ $UVP torch==${TORCH_VER} torchvision \
     --index-url https://download.pytorch.org/whl/${TORCH_CUDA}
 
 echo "=== [3/6] Installing PyG core ==="
-$UVP torch-geometric
+$UVP torch-geometric==2.7.0
 
 echo "=== [4/6] Installing PyG extensions (scatter / sparse) ==="
 TORCH=$($PYBIN -c "import torch; print(torch.__version__.split('+')[0])")

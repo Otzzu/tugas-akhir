@@ -181,11 +181,12 @@ download_dataset() {
         [[ "$d" == "$dataset" ]] && return 0
     done
 
-    if [[ -d "$local_dir" ]] || [[ -f "${local_dir}.pt" ]]; then
+    if [[ -d "$local_dir" ]] || compgen -G "${PROCESSED_DIR}/${dataset}*.pt" > /dev/null 2>&1; then
         success "Dataset already exists: $dataset"
         DOWNLOADED_DATASETS+=("$dataset")
         return 0
     fi
+    info "Not found locally (checked: ${local_dir}/ and ${PROCESSED_DIR}/${dataset}*.pt)"
 
     info "Downloading dataset: $dataset"
     mkdir -p "$PROCESSED_DIR"

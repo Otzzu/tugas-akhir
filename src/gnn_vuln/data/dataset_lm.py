@@ -208,7 +208,6 @@ def _streaming_collate_cache_files(
             continue
         cls_graphs: list[Data] = torch.load(cache_file, weights_only=False)
         for g in cls_graphs:
-            node_off = int(slices["x"][graph_idx]) if has_x else 0
             for key in sizes:
                 val = g[key]
                 if val is None or not isinstance(val, torch.Tensor):
@@ -218,10 +217,7 @@ def _streaming_collate_cache_files(
                 off = write_offs[key]
                 slc: list = [slice(None)] * val.dim()
                 slc[cat_dim] = slice(off, off + sz)
-                if key == "edge_index" and has_x:
-                    out_data[key][tuple(slc)] = val + node_off
-                else:
-                    out_data[key][tuple(slc)] = val
+                out_data[key][tuple(slc)] = val
                 write_offs[key] += sz
             graph_idx += 1
         del cls_graphs
