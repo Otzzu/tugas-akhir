@@ -182,7 +182,7 @@ download_dataset() {
     done
 
     if [[ -d "$local_dir" ]] || [[ -f "${local_dir}.pt" ]]; then
-        success "Dataset already exists: $local_dir"
+        success "Dataset already exists: $dataset"
         DOWNLOADED_DATASETS+=("$dataset")
         return 0
     fi
@@ -190,20 +190,35 @@ download_dataset() {
     info "Downloading dataset: $dataset"
     mkdir -p "$PROCESSED_DIR"
 
+    # Try 1: .zip at gdrive root (legacy)
     local remote_zip="${GDRIVE_REMOTE}/${dataset}.zip"
-    local local_zip="${PROCESSED_DIR}/${dataset}.zip"
-
-    if ! rclone copy "$remote_zip" "$PROCESSED_DIR" --progress; then
-        error "Failed to download $remote_zip"
-        exit 1
+    if rclone lsf "$remote_zip" &>/dev/null 2>&1; then
+        local local_zip="${PROCESSED_DIR}/${dataset}.zip"
+        rclone copy "$remote_zip" "$PROCESSED_DIR" --progress
+        unzip -o "$local_zip" -d "$PROCESSED_DIR"
+        rm -f "$local_zip"
+        success "Dataset ready: $dataset"
+        DOWNLOADED_DATASETS+=("$dataset")
+        return 0
     fi
 
-    info "Extracting $local_zip..."
-    unzip -o "$local_zip" -d "$PROCESSED_DIR"
-    rm -f "$local_zip"
+    # Try 2: .tar.gz in data/processed/ — match by prefix (handles timestamp suffix)
+    local remote_proc="${GDRIVE_REMOTE}/data/processed"
+    local remote_tar
+    remote_tar=$(rclone lsf "$remote_proc" 2>/dev/null | grep "^${dataset}.*\.tar\.gz$" | sort | tail -1)
+    if [[ -n "$remote_tar" ]]; then
+        local local_tar="${PROCESSED_DIR}/${remote_tar}"
+        info "Found: ${remote_proc}/${remote_tar}"
+        rclone copy "${remote_proc}/${remote_tar}" "$PROCESSED_DIR" --progress
+        tar -xzf "$local_tar" -C "$PROCESSED_DIR"
+        rm -f "$local_tar"
+        success "Dataset ready: $dataset"
+        DOWNLOADED_DATASETS+=("$dataset")
+        return 0
+    fi
 
-    success "Dataset ready: $local_dir"
-    DOWNLOADED_DATASETS+=("$dataset")
+    error "Dataset not found on gdrive: $dataset (tried zip at root and tar.gz in data/processed/)"
+    exit 1
 }
 
 # ─── 4. Train ────────────────────────────────────────────────────────────────
