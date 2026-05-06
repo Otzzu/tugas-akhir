@@ -53,7 +53,7 @@ model:
   supcon_temperature: 0.07
   supcon_alpha: 0.5
   supcon_use_distance_matrix: false
-  use_self_loops: false
+  add_self_loops: false
   use_skip: false
   use_edge_emb: false
 

@@ -73,13 +73,15 @@ class LMGATDualFlowVulnDetector(nn.Module):
         self.loc_bns = nn.ModuleList()
         self.loc_convs.append(
             GATv2Conv(in_channels, hidden_dim, heads=num_heads, concat=False,
-                      dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops)
+                      dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops,
+                          fill_value=0.0)
         )
         self.loc_bns.append(nn.BatchNorm1d(hidden_dim))
         for _ in range(num_layers - 1):
             self.loc_convs.append(
                 GATv2Conv(hidden_dim, hidden_dim, heads=num_heads, concat=False,
-                          dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops)
+                          dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops,
+                          fill_value=0.0)
             )
             self.loc_bns.append(nn.BatchNorm1d(hidden_dim))
 
@@ -92,13 +94,15 @@ class LMGATDualFlowVulnDetector(nn.Module):
         self.cls_bns = nn.ModuleList()
         self.cls_convs.append(
             GATv2Conv(in_channels + 1, hidden_dim, heads=num_heads, concat=False,
-                      dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops)
+                      dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops,
+                          fill_value=0.0)
         )
         self.cls_bns.append(nn.BatchNorm1d(hidden_dim))
         for _ in range(num_layers - 1):
             self.cls_convs.append(
                 GATv2Conv(hidden_dim, hidden_dim, heads=num_heads, concat=False,
-                          dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops)
+                          dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops,
+                          fill_value=0.0)
             )
             self.cls_bns.append(nn.BatchNorm1d(hidden_dim))
 

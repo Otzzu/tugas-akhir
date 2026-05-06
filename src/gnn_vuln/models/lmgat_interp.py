@@ -99,13 +99,15 @@ class LMGATInterpVulnDetector(nn.Module):
 
         self.convs.append(
             GATv2Conv(in_channels, hidden_dim, heads=num_heads, concat=False,
-                      dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops)
+                      dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops,
+                          fill_value=0.0)
         )
         self.bns.append(nn.BatchNorm1d(hidden_dim))
         for _ in range(num_layers - 1):
             self.convs.append(
                 GATv2Conv(hidden_dim, hidden_dim, heads=num_heads, concat=False,
-                          dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops)
+                          dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops,
+                          fill_value=0.0)
             )
             self.bns.append(nn.BatchNorm1d(hidden_dim))
 

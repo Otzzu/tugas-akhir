@@ -116,13 +116,15 @@ class LMGATWavesSeqVulnDetector(nn.Module):
         self.gnn_bns   = nn.ModuleList()
         self.gnn_convs.append(
             GATv2Conv(gnn_in, hidden_dim, heads=num_heads, concat=False,
-                      dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops)
+                      dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops,
+                          fill_value=0.0)
         )
         self.gnn_bns.append(nn.BatchNorm1d(hidden_dim))
         for _ in range(num_layers - 1):
             self.gnn_convs.append(
                 GATv2Conv(hidden_dim, hidden_dim, heads=num_heads, concat=False,
-                          dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops)
+                          dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops,
+                          fill_value=0.0)
             )
             self.gnn_bns.append(nn.BatchNorm1d(hidden_dim))
 
