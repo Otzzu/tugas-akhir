@@ -13,14 +13,18 @@ else
 fi
 
 # Install gdrive
-wget -q https://github.com/glotlabs/gdrive/releases/download/3.0.0/gdrive_linux-x64.tar.gz
-tar -xf gdrive_linux-x64.tar.gz
-chmod +x gdrive
-mv gdrive /usr/local/bin/
-rm gdrive_linux-x64.tar.gz
+if ! command -v gdrive &>/dev/null; then
+    wget -q https://github.com/glotlabs/gdrive/releases/download/3.0.0/gdrive_linux-x64.tar.gz
+    tar -xf gdrive_linux-x64.tar.gz
+    chmod +x gdrive
+    mv gdrive /usr/local/bin/
+    rm gdrive_linux-x64.tar.gz
+else
+    echo "    gdrive already installed, skipping"
+fi
 
 # Install rclone
-curl -s https://rclone.org/install.sh | bash
+curl -s https://rclone.org/install.sh | bash || true
 
 PIP="pip"
 UVP="pip install --no-cache-dir"
