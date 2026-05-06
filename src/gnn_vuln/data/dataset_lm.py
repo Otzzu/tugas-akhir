@@ -482,6 +482,12 @@ class CodeBERTGraphDataset(InMemoryDataset):
                 if k == "benign" or k in self._effective_cwes
             }
 
+        # Reindex to contiguous 0..N-1 — preserves sort order by original index
+        # (benign stays 0; ordering of CWE classes unchanged; safe even when already contiguous)
+        if is_multi:
+            _sorted = sorted(cwe_vocab.items(), key=lambda kv: kv[1])
+            cwe_vocab = {k: new_i for new_i, (k, _) in enumerate(_sorted)}
+
         id_to_cwe: dict[int, str] = {v: k for k, v in cwe_vocab.items()}
 
         # ------------------------------------------------------------------
