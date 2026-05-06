@@ -205,7 +205,7 @@ class LMGATCodeBERTVulnDetector(nn.Module):
         edge_attr: torch.Tensor | None = None,
         func_input_ids: torch.Tensor | None = None,
         func_attention_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, list[torch.Tensor] | None]:
+    ) -> tuple[torch.Tensor, list[torch.Tensor] | None, torch.Tensor]:
         """
         Parameters
         ----------
@@ -221,6 +221,7 @@ class LMGATCodeBERTVulnDetector(nn.Module):
         -------
         logit_func  : [B, num_classes]
         stmt_scores : list of [n_stmts_i] | None
+        z           : [B, hidden_dim + lm_dim]  pre-head embedding for SupCon
         """
         h = self._encode(x, edge_index, edge_attr)
         h_graph = global_mean_pool(h, batch)  # [B, hidden_dim]
@@ -238,4 +239,4 @@ class LMGATCodeBERTVulnDetector(nn.Module):
             self._statement_scores(h, batch, node_line)
             if node_line is not None else None
         )
-        return logit_func, stmt_scores
+        return logit_func, stmt_scores, func_in

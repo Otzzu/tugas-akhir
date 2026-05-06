@@ -192,7 +192,7 @@ class LMGATSeqVulnDetector(nn.Module):
         edge_attr: torch.Tensor | None = None,
         func_input_ids: torch.Tensor | None = None,
         func_attention_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, list[torch.Tensor] | None]:
+    ) -> tuple[torch.Tensor, list[torch.Tensor] | None, torch.Tensor]:
         B = int(batch.max().item()) + 1
 
         # ── Stage 1: Localization ────────────────────────────────────────────
@@ -228,4 +228,4 @@ class LMGATSeqVulnDetector(nn.Module):
             if node_line is not None else None
         )
 
-        return logit_func, stmt_scores
+        return logit_func, stmt_scores, func_in

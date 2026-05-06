@@ -1,0 +1,328 @@
+# configs/TEMPLATE.yaml — All configurable fields with descriptions and model support.
+#
+# Copy this file and remove/override only the fields you need.
+# Fields not specified fall back to code defaults (shown as comments).
+#
+# Architecture keys:
+#   lmgcn              — GCN + frozen node embeddings (no live LM)
+#   lmgat              — GATv2 + frozen node embeddings (no live LM)
+#   lmgat_codebert     — Arch3:  GATv2 + live LM + binary stmt head
+#   lmgat_mcs          — Arch4:  GATv2 + live LM + multiclass stmt head
+#   lmgin              — Arch5:  GIN + live LM
+#   lmgat_interp       — Arch6:  GATv2 + live LM + interpolation gate
+#   lmgat_seq          — Arch7:  Stage1 loc GNN → s_i → Stage2 cls GNN + live LM
+#   lmggnn             — Arch8:  GGNN + live LM
+#   lmgat_waves_seq    — Arch9:  GATv2 + in-line transformer stmt encoder + live LM
+#   lmgat_dualflow     — Arch10: Stage1 loc GNN → s_i → Stage2 cls GNN, dual pooling + live LM
+#   lmgat_codebert_mtl — Arch11: Arch3 + group/binary MTL heads + edge embeddings
+#   lmgat_hcdfgat      — Arch12: HC-DFGAT dual-flow + group/binary MTL heads
+
+# ---------------------------------------------------------------------------
+# DATA
+# ---------------------------------------------------------------------------
+data:
+  # Dataset source directory name under data/raw/ and data/processed/.
+  # Values: bigvul | megavul | titanvul (or any custom dir name)
+  # Support: all architectures
+  source: bigvul
+
+  # Optional separate validation/test source dirs.
+  # When both are non-empty, official splits are used (no 70/15/15 random split).
+  # Leave empty for datasets without dedicated val/test parquets.
+  # Support: all architectures
+  source_val: ""
+  source_test: ""
+
+  # Dataset task mode. Controls which processed .pt cache is used.
+  # Values: binary | multiclass
+  # Support: all architectures
+  mode: multiclass
+
+  # Drop graphs with more nodes than this (memory guard).
+  # Typical: 1000 for BigVul, 2700 for MegaVul (larger functions)
+  # Support: all architectures
+  max_nodes: 1000
+
+  # Narrow multiclass vocab to top-K most frequent CWE classes (0 = keep all).
+  # Example: top_cwe: 10 → 10 CWEs + benign = 11 classes
+  # Support: multiclass mode only
+  top_cwe: 10
+
+  # Explicit CWE whitelist. Unioned with cwe_groups / filter_* flags.
+  # Example: ["CWE-119", "CWE-787"]
+  # Support: multiclass mode only
+  cwe_list: null
+
+  # CWE group whitelist, expanded via CWE_GROUP_MAP.
+  # Example: ["memory_safety", "injection"]
+  # Support: multiclass mode only
+  cwe_groups: null
+
+  # Keep only CWEs that appear in OWASP Top 10 (2025). Unioned with cwe_list/cwe_groups.
+  # Support: multiclass mode only
+  filter_owasp_top10: false
+
+  # Keep only CWEs that appear in MITRE Top 25. Unioned with cwe_list/cwe_groups.
+  # Support: multiclass mode only
+  filter_top25: false
+
+  # Cap graphs per class/CWE bucket during .pt build (0 = no cap).
+  # Use to balance heavily skewed class distributions.
+  # Support: all architectures
+  max_per_class: 0
+
+  # Random seed for max_per_class subsampling. Change for different samples.
+  # Support: all architectures
+  resample_seed: 42
+
+# ---------------------------------------------------------------------------
+# MODEL
+# ---------------------------------------------------------------------------
+model:
+  # Architecture key (see top of file for full list).
+  architecture: lmgat_hcdfgat
+
+  # HuggingFace model ID for frozen node embedding generation and as fallback
+  # func_lm if func_lm is empty. Node embeddings are pre-computed and cached.
+  # Common values: microsoft/codebert-base | microsoft/unixcoder-base |
+  #                jinaai/jina-embeddings-v2-base-code | Salesforce/codet5p-110m-embedding
+  # Support: all architectures that use LM-derived node features
+  pretrained_lm: microsoft/unixcoder-base
+
+  # Live (fine-tuned) LM for full-function branch. Overrides pretrained_lm if set.
+  # Must match the tokenizer used when add_func_tokens=true.
+  # Leave empty to share pretrained_lm for both node embeddings and function branch.
+  # Support: lmgat_codebert | lmgat_mcs | lmgin | lmgat_interp | lmgat_seq |
+  #          lmggnn | lmgat_waves_seq | lmgat_dualflow | lmgat_codebert_mtl | lmgat_hcdfgat
+  func_lm: microsoft/unixcoder-base
+
+  # Tokenize full function text and store func_input_ids/func_attention_mask in Data.
+  # Required for any architecture with a live LM branch.
+  # Support: all architectures with func_lm (listed above)
+  add_func_tokens: true
+
+  # Text source for function tokenization.
+  # Values: raw (original source) | normalized (identifier-normalized source)
+  # Support: all architectures with func_lm
+  func_lm_source: raw
+
+  # GNN hidden layer width (node representations after each GATv2/GCN layer).
+  # Support: all architectures
+  hidden_dim: 256
+
+  # Number of message-passing layers (depth of the GNN stack).
+  # Support: all architectures
+  num_layers: 4
+
+  # Dropout probability applied after each GNN layer and inside MLP heads.
+  # Support: all architectures
+  dropout: 0.3
+
+  # Number of GATv2 attention heads (concat=False → output stays hidden_dim).
+  # Support: lmgat | lmgat_codebert | lmgat_mcs | lmgat_interp | lmgat_seq |
+  #          lmgat_waves_seq | lmgat_dualflow | lmgat_codebert_mtl | lmgat_hcdfgat
+  heads: 4
+
+  # Edge feature dimension injected into GATv2 attention computation.
+  # Default 7 = one-hot CPG edge types (AST/CFG/CDG/DDG/PDG/CALL/REACHING_DEF).
+  # Support: all lmgat* architectures
+  edge_dim: 7
+
+  # Number of output classes. 2 = binary (benign/vuln). 11 = 10 CWE + benign.
+  # Must match the dataset class count (top_cwe + 1, or cwe_list length + 1).
+  # Support: all architectures
+  num_classes: 11
+
+  # Number of coarse CWE groups for the auxiliary group head (GROUP_VOCAB size).
+  # Default 16 = 15 CWE groups + benign (matches GROUP_VOCAB in dataset).
+  # Support: lmgat_codebert_mtl | lmgat_hcdfgat
+  num_groups: 16
+
+  # Add self-loops so each node attends to itself inside GATv2 aggregation.
+  # Disabling helps ablations isolating edge-only attention. Default: true.
+  # Support: all lmgat* architectures
+  add_self_loops: true
+
+  # Residual skip connection around each GATv2 layer (preserves early features).
+  # First layer: learned linear projection; subsequent layers: identity.
+  # Support: all architectures (lmgcn also supports this)
+  use_skip: false
+
+  # Truncate LM embedding to first N dimensions (for Matryoshka LMs like Jina).
+  # null = use full embedding dimension.
+  # Support: all architectures with live LM (func_lm set)
+  matryoshka_dim: null
+
+  # ── Statement-level MIL localisation ──────────────────────────────────────
+  # Weight of statement-level MIL loss relative to function-level CE loss.
+  # 0.0 disables MIL. Typical: 0.3–0.5.
+  # Support: all architectures with a statement head (Arch3/4/7/10/11/12)
+  mil_weight: 0.5
+
+  # Top-K statements selected per function for MIL pseudo-labelling.
+  # Support: same as mil_weight
+  mil_k: 3
+
+  # Pairwise ranking loss weight. 0.0 disables. Needs flaw_line_mask in dataset
+  # (available in BigVul/MegaVul). Only for binary (1D) statement heads.
+  # Support: Arch3 | Arch7 | Arch10 | Arch11 | Arch12
+  rank_loss_weight: 0.2
+
+  # ── MTL auxiliary heads (Arch11 / Arch12 only) ────────────────────────────
+  # Weight of coarse group-head CE loss. 0.0 disables group supervision.
+  # group_id must be present in dataset (megavul/bigvul with cwe_groups mapping).
+  # Support: lmgat_codebert_mtl | lmgat_hcdfgat
+  group_loss_weight: 0.3
+
+  # Weight of auxiliary binary-head CE loss (derived from batch.y > 0).
+  # Support: lmgat_codebert_mtl | lmgat_hcdfgat
+  binary_loss_weight: 0.2
+
+  # Condition the CWE head on coarse group probabilities (routing mechanism).
+  # false = CWE head receives zeros instead of group_probs → no group guidance.
+  # Support: lmgat_codebert_mtl | lmgat_hcdfgat
+  use_group_cond: true
+
+  # ── Hierarchical edge embeddings (Arch11 only) ────────────────────────────
+  # Replace one-hot edge_attr with trainable hierarchical edge embeddings.
+  # Embeds coarse group (structural/control/data) + fine type (7 types) separately.
+  # Support: lmgat_codebert_mtl only
+  use_edge_emb: true
+
+  # Fine-grained edge type embedding dim (one of 7 CPG edge types).
+  # Support: lmgat_codebert_mtl (use_edge_emb=true)
+  edge_emb_dim: 32
+
+  # Coarse edge group embedding dim (structural / control / data).
+  # Support: lmgat_codebert_mtl (use_edge_emb=true)
+  edge_coarse_dim: 16
+
+  # ── Architecture-specific fields ──────────────────────────────────────────
+  # Stage 2 GNN node input for lmgat_seq.
+  # Values: raw (concat x_frozen + s_i, 774D) | loc (concat h_loc + s_i, 257D)
+  # Support: lmgat_seq only
+  stage2_node_input: raw
+
+  # Initial interpolation gate weight λ between frozen node features and GNN repr.
+  # Support: lmgat_interp only
+  init_lambda: 0.5
+
+  # GGNN-style residual alpha (learned residual weight).
+  # Support: lmggnn only
+  alpha: 0.1
+
+  # Number of in-line Transformer layers for statement-level encoding.
+  # Support: lmgat_waves_seq only
+  stmt_transformer_layers: 2
+
+  # Number of attention heads in the in-line Transformer.
+  # Support: lmgat_waves_seq only
+  stmt_transformer_heads: 4
+
+  # ── HierarchicalSupConLoss ─────────────────────────────────────────────────
+  # Enable Hierarchical Supervised Contrastive Loss on the pre-head embedding z.
+  # When false, supcon_weight and all supcon_* fields below are ignored.
+  # Support: Arch3 (lmgat_codebert) | Arch7 (lmgat_seq) | Arch10 (lmgat_dualflow) |
+  #          Arch11 (lmgat_codebert_mtl) | Arch12 (lmgat_hcdfgat)
+  use_supcon: false
+
+  # SupCon loss weight (relative to total CE loss). Active only when use_supcon=true.
+  # Typical: 0.1
+  supcon_weight: 0.1
+
+  # InfoNCE temperature for SupCon (lower = harder contrastive).
+  # Typical: 0.07
+  supcon_temperature: 0.07
+
+  # Same-group fallback weight when no distance matrix is loaded.
+  # Pairs in the same CWE group get weight alpha; exact-class pairs get weight 1.0.
+  # Support: use_supcon=true
+  supcon_alpha: 0.5
+
+  # Load CWE tree distance matrix for continuous positive-pair weights.
+  # When false, uses binary alpha weights (same group vs. exact class).
+  # Requires cwe_dist_matrix file to exist.
+  # Support: use_supcon=true
+  supcon_use_distance_matrix: false
+
+  # Path to the precomputed CWE distance matrix JSON (tree-edit distances).
+  # Only used when supcon_use_distance_matrix=true.
+  # Support: use_supcon=true and supcon_use_distance_matrix=true
+  cwe_dist_matrix: data/cwe/cwe_distance_matrix.json
+
+  # Distance-to-weight mapping function.
+  # Values: linear (1 - d/d_max) | exp (e^(-scale*d)) | power (1 - d^power)
+  # Support: use_supcon=true and supcon_use_distance_matrix=true
+  supcon_weight_fn: linear
+
+  # Scale factor for exp weight function.
+  # Support: use_supcon=true, supcon_weight_fn=exp
+  supcon_exp_scale: 5.0
+
+  # Exponent for power weight function.
+  # Support: use_supcon=true, supcon_weight_fn=power
+  supcon_power: 2.0
+
+  # Minimum positive-pair weight (clips very distant pairs to this floor).
+  # Support: use_supcon=true and supcon_use_distance_matrix=true
+  supcon_min_weight: 0.0
+
+# ---------------------------------------------------------------------------
+# TRAIN
+# ---------------------------------------------------------------------------
+train:
+  # Random seed for dataset split, weight init, and sampler.
+  seed: 42
+
+  # Maximum training epochs (subject to early stopping).
+  epochs: 100
+
+  # Graphs per batch. Reduce if OOM; dual-GNN (Arch10/11/12) needs ~12–20.
+  batch_size: 20
+
+  # GNN / head learning rate. Used by Adam (no-LM archs) or AdamW GNN group.
+  lr: 0.001
+
+  # Live LM (CodeBERT / UniXcoder) learning rate for the AdamW LM param group.
+  # Only applied to architectures with a live func_lm (is_ft_arch in train.py).
+  # Support: lmgat_codebert | lmgat_mcs | lmgat_seq | lmgat_waves_seq | lmggnn |
+  #          lmgat_codebert_mtl | lmgat_dualflow | lmgat_hcdfgat
+  lm_lr: 0.00001
+
+  # Fraction of total training steps used for linear LR warmup (0 = no warmup).
+  # Only applies to is_ft_arch architectures (linear schedule, not ReduceLROnPlateau).
+  warmup_ratio: 0.1
+
+  # Gradient clipping max norm (0 = disabled). Recommended 1.0 with live LM.
+  grad_clip: 1.0
+
+  # AdamW / Adam weight decay.
+  weight_decay: 0.0001
+
+  # Early stopping patience in epochs (stop if metric does not improve).
+  patience: 25
+
+  # Metric to monitor for early stopping and best-checkpoint saving.
+  # Values: f1 (macro F1, maximize) | loss (val loss, minimize)
+  early_stop_metric: f1
+
+  # Save a resume checkpoint (last.pt) every N epochs. 0 = never.
+  # Allows --resume to continue interrupted runs.
+  save_last_every: 0
+
+  # Compute inverse-frequency class weights for CE / focal loss.
+  # Required for livable_loss=true. Recommended for imbalanced datasets.
+  use_class_weights: true
+
+  # Focal loss gamma (0 = standard CE, 2.0 = standard focal).
+  # Downweights easy examples; helps with class imbalance.
+  focal_loss_gamma: 2.0
+
+  # LIVABLE epoch-adaptive class weights (arXiv:2306.06935).
+  # w_i(t) = (N/(K*n_i))^(t/T): starts uniform, anneals to inverse-freq over T epochs.
+  # Requires use_class_weights=true.
+  livable_loss: true
+
+  # Compute device.
+  # Values: cpu | cuda | cuda:0 | cuda:1 etc.
+  device: cuda

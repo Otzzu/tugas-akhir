@@ -486,9 +486,10 @@ def _forward(
     Single forward pass returning (logit_func, total_loss).
 
     Handles:
-      - Standard 2-tuple  (logit, stmt_scores)
-      - MTL 4-tuple       (logit_cwe, logit_group, logit_binary, stmt_scores)
-      - HC-DFGAT 5-tuple  (logit_cwe, logit_group, logit_binary, stmt_scores, z_combined)
+      - Standard 2-tuple  (logit, stmt_scores)                                   Arch1/2/4/5/6/8/9
+      - SupCon 3-tuple    (logit, stmt_scores, z)                                Arch3/7/10
+      - MTL 4-tuple       (logit_cwe, logit_group, logit_binary, stmt_scores)    (unused — kept for compat)
+      - MTL+SupCon 5-tuple (logit_cwe, logit_group, logit_binary, stmt_scores, z) Arch11/12
     """
     node_line = getattr(batch, "node_line", None)
     edge_attr = getattr(batch, "edge_attr", None)
@@ -511,6 +512,9 @@ def _forward(
     elif len(out) == 4:
         logit_func, logit_group, logit_binary, stmt_scores = out
         z_combined = None
+    elif len(out) == 3:
+        logit_func, stmt_scores, z_combined = out
+        logit_group = logit_binary = None
     else:
         logit_func, stmt_scores = out
         logit_group = logit_binary = z_combined = None
@@ -714,8 +718,9 @@ def main():
     rank_loss_weight = getattr(cfg.model, "rank_loss_weight", 0.0)
     group_loss_weight = getattr(cfg.model, "group_loss_weight", 0.0)
     binary_loss_weight = getattr(cfg.model, "binary_loss_weight", 0.0)
-    supcon_weight = getattr(cfg.model, "supcon_weight", 0.0)
-    if supcon_weight > 0.0:
+    use_supcon = getattr(cfg.model, "use_supcon", False)
+    supcon_weight = getattr(cfg.model, "supcon_weight", 0.1) if use_supcon else 0.0
+    if use_supcon:
         # Load CWE vocab from raw dir so the matrix lookup can map vocab_idx → matrix_idx
         _cwe_vocab_path = (
             Path(getattr(cfg.data, "processed_dir", Path("data/processed"))).parent

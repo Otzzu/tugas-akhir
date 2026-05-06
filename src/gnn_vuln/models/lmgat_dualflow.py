@@ -193,7 +193,7 @@ class LMGATDualFlowVulnDetector(nn.Module):
         edge_attr: torch.Tensor | None = None,
         func_input_ids: torch.Tensor | None = None,
         func_attention_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, list[torch.Tensor] | None]:
+    ) -> tuple[torch.Tensor, list[torch.Tensor] | None, torch.Tensor]:
         B = int(batch.max().item()) + 1
 
         # ── Stage 1: Localization ─────────────────────────────────────────────
@@ -221,9 +221,8 @@ class LMGATDualFlowVulnDetector(nn.Module):
             lm_emb = torch.zeros(B, self._lm_dim, device=x.device)
 
         # ── Tri-modal fusion ─────────────────────────────────────────────────
-        logit_func = self.func_head(
-            torch.cat([focal_emb, context_emb, lm_emb], dim=-1)   # [B, 1280]
-        )
+        z = torch.cat([focal_emb, context_emb, lm_emb], dim=-1)  # [B, 1280]
+        logit_func = self.func_head(z)
 
         # ── Stage 1 stmt scores for MIL / ranking loss ───────────────────────
         stmt_scores = (
@@ -231,4 +230,4 @@ class LMGATDualFlowVulnDetector(nn.Module):
             if node_line is not None else None
         )
 
-        return logit_func, stmt_scores
+        return logit_func, stmt_scores, z
