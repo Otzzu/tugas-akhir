@@ -36,6 +36,13 @@ def lm_hidden_dim(model, matryoshka_dim: int | None = None) -> int:
     """Return hidden size of the LM; returns matryoshka_dim if set."""
     if matryoshka_dim is not None:
         return matryoshka_dim
+    if _is_codet5p_embedding(model):
+        # Internal T5 hidden_size (768) != projected output (256). Probe to get real dim.
+        device = next(model.parameters()).device
+        dummy = torch.zeros(1, 2, dtype=torch.long, device=device)
+        with torch.no_grad():
+            out = model(input_ids=dummy)
+        return out.shape[-1]
     cfg = model.config
     if _is_t5_like(model):
         return getattr(cfg, "d_model", cfg.hidden_size)
