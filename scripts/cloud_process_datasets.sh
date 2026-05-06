@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # Download megavul + titanvul from Google Drive, extract, then build .pt caches.
-# Run once per process_dataset config — pass CONFIG as argument.
 #
-# Usage (run twice, once per config):
-#   bash scripts/cloud_process_datasets.sh configs/lmgat_hcdfgat/megavul_multiclass_top25.yaml
-#   bash scripts/cloud_process_datasets.sh configs/lmgat_hcdfgat/titanvul_multiclass_owasp.yaml
+# Usage:
+#   bash scripts/cloud_process_datasets.sh [--keep-pt] <config> [<config> ...]
 #
-# Or run both in sequence (no GPU needed for dataset build — embeddings need GPU):
-#   bash scripts/cloud_process_datasets.sh \
-#       configs/lmgat_hcdfgat/megavul_multiclass_top25.yaml \
-#       configs/lmgat_hcdfgat/titanvul_multiclass_owasp.yaml
+# Flags:
+#   --delete-pt      After upload, also delete local .pt to free disk space (default: keep).
+#   --force-rebuild  Skip patch fast-path; rebuild .pt from scratch (passed to process_dataset.py).
+#
+# Examples:
+#   bash scripts/cloud_process_datasets.sh configs/data/megavul_multiclass_top25.yaml
+#   bash scripts/cloud_process_datasets.sh --delete-pt configs/data/megavul_multiclass_top25.yaml
+#   bash scripts/cloud_process_datasets.sh --force-rebuild --delete-pt configs/data/megavul_multiclass_top25.yaml
 
 set -euo pipefail
 
@@ -20,6 +22,19 @@ TITANVUL_TAR="titanvul_20260505_120148.tar.gz"
 DATA_DIR="data/raw"
 PT_DIR="data/processed"
 TS=$(date +"%Y%m%d_%H%M%S")
+DELETE_PT=false
+FORCE_REBUILD=false
+
+# Parse flags
+CONFIGS=()
+for arg in "$@"; do
+    case "$arg" in
+        --delete-pt)     DELETE_PT=true ;;
+        --force-rebuild) FORCE_REBUILD=true ;;
+        *)               CONFIGS+=("$arg") ;;
+    esac
+done
+set -- "${CONFIGS[@]+"${CONFIGS[@]}"}"
 
 # ── 1. Download ────────────────────────────────────────────────────────────────
 download_if_missing() {
@@ -69,7 +84,9 @@ for CONFIG in "$@"; do
     # Snapshot .pt files before processing
     before=$(ls "$PT_DIR"/*.pt 2>/dev/null | sort || true)
 
-    PYTHONPATH=src python scripts/process_dataset.py --config "$CONFIG" --device cuda
+    REBUILD_FLAG=""
+    [[ "$FORCE_REBUILD" == "true" ]] && REBUILD_FLAG="--force-rebuild"
+    PYTHONPATH=src python scripts/process_dataset.py --config "$CONFIG" --device cuda $REBUILD_FLAG
 
     # Find newly created .pt files
     after=$(ls "$PT_DIR"/*.pt 2>/dev/null | sort || true)
@@ -88,8 +105,12 @@ for CONFIG in "$@"; do
         echo "Uploading $archive to $REMOTE_PT ..."
         rclone copy "$archive" "$REMOTE_PT" --progress
         rm -f "$archive"
-        rm -f "$pt_file"
-        echo "Uploaded and cleaned: $archive + $pt_file"
+        if [[ "$DELETE_PT" == "true" ]]; then
+            rm -f "$pt_file"
+            echo "Uploaded and cleaned: $archive + $pt_file"
+        else
+            echo "Uploaded and cleaned: $archive (keeping $pt_file)"
+        fi
     done
 done
 

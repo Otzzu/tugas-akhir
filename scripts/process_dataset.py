@@ -29,6 +29,11 @@ def main() -> None:
         default="train",
         help="Which source split to build (default: train)",
     )
+    parser.add_argument(
+        "--force-rebuild",
+        action="store_true",
+        help="Delete existing .pt and rebuild from scratch (skip patch fast-path)",
+    )
     args = parser.parse_args()
 
     cfg = Config.from_yaml(args.config) if Path(args.config).exists() else load_default_config()
@@ -90,6 +95,7 @@ def main() -> None:
         filter_top25=filter_top25,
         max_per_class=max_per_class,
         resample_seed=resample_seed,
+        force_rebuild=args.force_rebuild,
     )
 
     print(f"\nDone: {len(dataset)} graphs cached.")

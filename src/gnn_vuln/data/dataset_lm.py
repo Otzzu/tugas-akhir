@@ -144,6 +144,7 @@ def _streaming_collate_cache_files(
     cat_dims: dict[str, int] = {}
     dtypes: dict[str, torch.dtype] = {}
     example_shapes: dict[str, list[int]] = {}
+    raw_funcs: list[str] = []
     n_graphs = 0
 
     for cache_file in tqdm(cache_files, desc="  pass-1 scan", unit="class"):
@@ -153,6 +154,7 @@ def _streaming_collate_cache_files(
         cls_graphs: list[Data] = torch.load(cache_file, weights_only=False)
         for g in cls_graphs:
             n_graphs += 1
+            raw_funcs.append(getattr(g, "raw_func", "") or "")
             for key in g.keys():
                 val = g[key]
                 if not isinstance(val, torch.Tensor):
@@ -226,7 +228,7 @@ def _streaming_collate_cache_files(
         gc.collect()
 
     logger.info(f"  Saving {n_graphs} graphs → {out_path}")
-    torch.save((out_data, slices, class_names), out_path)
+    torch.save((out_data, slices, class_names, raw_funcs), out_path)
     logger.info("  Saved.")
     return n_graphs
 
@@ -283,9 +285,11 @@ class CodeBERTGraphDataset(InMemoryDataset):
         filter_top25: bool = False,
         max_per_class: int = 0,
         resample_seed: int = 42,
+        force_rebuild: bool = False,
         transform=None,
         pre_transform=None,
     ):
+        self._force_rebuild = force_rebuild
         self.max_nodes = max_nodes
         self._embedder_device = embedder_device
         self._pretrained_lm = pretrained_lm
@@ -326,11 +330,15 @@ class CodeBERTGraphDataset(InMemoryDataset):
         super().__init__(str(root), transform, pre_transform)
 
         result = torch.load(self.processed_paths[0], weights_only=False)
-        if len(result) == 3:
+        if len(result) == 4:
+            self.data, self.slices, self.class_names, self.raw_funcs = result
+        elif len(result) == 3:
             self.data, self.slices, self.class_names = result
+            self.raw_funcs = None
         else:
             self.data, self.slices = result
             self.class_names = None
+            self.raw_funcs = None
 
     # ------------------------------------------------------------------
     # PyG hooks
@@ -357,7 +365,76 @@ class CodeBERTGraphDataset(InMemoryDataset):
     def download(self) -> None:
         pass
 
+    # ------------------------------------------------------------------
+    # Patch fast-path: re-tokenize existing .pt when only func_lm changed
+    # ------------------------------------------------------------------
+
+    def _try_patch_from_existing(self, out_path: Path) -> bool:
+        """
+        Find a compatible processed .pt (same config, different func_lm) that
+        contains raw_funcs, re-tokenize with the new func_lm, and save as
+        out_path. Skips the expensive CodeBERT node-embedding step entirely.
+
+        Returns True if patched successfully, False if no compatible base found.
+        """
+        if not self._add_func_tokens or self._force_rebuild:
+            return False
+
+        ft_suffix = "_ft"
+        top_suffix = f"_top{self._top_cwe}" if self._top_cwe > 0 else ""
+        samp_suffix = (
+            f"_s{self._max_per_class}r{self._resample_seed}"
+            if self._max_per_class > 0 else ""
+        )
+        prefix = f"lm_dataset_{self._source}_{self._mode}_{self._lm_short}"
+        suffix = f"{ft_suffix}{top_suffix}{self._fsuffix}{samp_suffix}.pt"
+
+        candidates = [
+            p for p in out_path.parent.glob(f"{prefix}*.pt")
+            if p != out_path and p.name.endswith(suffix)
+        ]
+        if not candidates:
+            return False
+
+        base_pt = candidates[0]
+        logger.info(f"Patch fast-path: compatible base found → {base_pt.name}")
+
+        result = torch.load(base_pt, weights_only=False)
+        if len(result) < 4 or not result[3]:
+            logger.warning("Base .pt has no raw_funcs — falling back to full build")
+            return False
+
+        data, slices, class_names, raw_funcs = result
+        n = len(raw_funcs)
+        logger.info(f"  Re-tokenizing {n} functions with {self._func_lm} …")
+
+        from transformers import AutoTokenizer
+        tokenizer = AutoTokenizer.from_pretrained(self._func_lm, trust_remote_code=True)
+
+        ids_list, mask_list = [], []
+        batch_sz = 64
+        for i in tqdm(range(0, n, batch_sz), desc="  patch tokenize", unit="batch"):
+            enc = tokenizer(
+                raw_funcs[i : i + batch_sz],
+                max_length=512, truncation=True,
+                padding="max_length", return_tensors="pt",
+            )
+            ids_list.append(enc["input_ids"])
+            mask_list.append(enc["attention_mask"])
+
+        data.func_input_ids = torch.cat(ids_list, dim=0)       # [n, 512]
+        data.func_attention_mask = torch.cat(mask_list, dim=0) # [n, 512]
+        # slices unchanged — same tensor shape [n, 512]
+
+        logger.info(f"  Saving patched .pt → {out_path}")
+        torch.save((data, slices, class_names, raw_funcs), out_path)
+        logger.info("  Patch complete.")
+        return True
+
     def process(self) -> None:
+        if self._try_patch_from_existing(Path(self.processed_paths[0])):
+            return
+
         source_dir = Path(self.raw_dir) / self._source
         if not source_dir.is_dir():
             raise RuntimeError(
@@ -707,6 +784,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
                 graph.cwe_id = torch.tensor([raw_cwe_id], dtype=torch.long)
                 graph.group_id = torch.tensor([raw_group_id], dtype=torch.long)
                 graph.parquet_id = torch.tensor([row_id], dtype=torch.long)
+                graph.raw_func = raw_func or ""
 
                 if self.pre_transform is not None:
                     graph = self.pre_transform(graph)
