@@ -30,6 +30,10 @@ def main() -> None:
         help="Which source split to build (default: train)",
     )
     parser.add_argument(
+        "--max-length", type=int, default=512,
+        help="Tokenizer max sequence length for func tokens (default: 512).",
+    )
+    parser.add_argument(
         "--force-rebuild",
         action="store_true",
         help="Delete existing .pt and rebuild from scratch (skip patch fast-path)",
@@ -95,6 +99,7 @@ def main() -> None:
         filter_top25=filter_top25,
         max_per_class=max_per_class,
         resample_seed=resample_seed,
+        func_max_length=args.max_length,
         force_rebuild=args.force_rebuild,
     )
 

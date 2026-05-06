@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Download megavul + titanvul from Google Drive, extract, then build .pt caches.
+# Download bigvul + megavul + titanvul from Google Drive, extract, then build .pt caches.
 #
 # Usage:
 #   bash scripts/cloud_process_datasets.sh [--keep-pt] <config> [<config> ...]
@@ -9,6 +9,7 @@
 #   --force-rebuild  Skip patch fast-path; rebuild .pt from scratch (passed to process_dataset.py).
 #
 # Examples:
+#   bash scripts/cloud_process_datasets.sh configs/data/bigvul_multiclass_top10.yaml
 #   bash scripts/cloud_process_datasets.sh configs/data/megavul_multiclass_top25.yaml
 #   bash scripts/cloud_process_datasets.sh --delete-pt configs/data/megavul_multiclass_top25.yaml
 #   bash scripts/cloud_process_datasets.sh --force-rebuild --delete-pt configs/data/megavul_multiclass_top25.yaml
@@ -17,6 +18,7 @@ set -euo pipefail
 
 REMOTE_RAW="gdrive-mesach:tugas-akhir/data/raw"
 REMOTE_PT="gdrive-mesach:tugas-akhir/data/processed"
+BIGVUL_TAR="bigvul_20260505_120148.tar.gz"
 MEGAVUL_TAR="megavul_20260505_120148.tar.gz"
 TITANVUL_TAR="titanvul_20260505_120148.tar.gz"
 DATA_DIR="data/raw"
@@ -66,6 +68,7 @@ if [[ $# -gt 0 ]]; then
         download_if_missing "$src"
     done
 else
+    download_if_missing bigvul
     download_if_missing megavul
     download_if_missing titanvul
 fi
@@ -101,10 +104,16 @@ for CONFIG in "$@"; do
         stem=$(basename "$pt_file" .pt)
         archive="${stem}_${TS}.tar.gz"
         echo "Zipping $pt_file -> $archive ..."
-        tar -czf "$archive" -C "$PT_DIR" "$(basename "$pt_file")"
+        
+        # ---------------------------------------------------------
+        # NEW: Stream tar into pv for a live progress bar, then gzip
+        # ---------------------------------------------------------
+        tar -cf - -C "$PT_DIR" "$(basename "$pt_file")" | pv -s $(du -sb "$pt_file" | awk '{print $1}') | gzip > "$archive"
+        
         echo "Uploading $archive to $REMOTE_PT ..."
         rclone copy "$archive" "$REMOTE_PT" --progress
         rm -f "$archive"
+        
         if [[ "$DELETE_PT" == "true" ]]; then
             rm -f "$pt_file"
             echo "Uploaded and cleaned: $archive + $pt_file"

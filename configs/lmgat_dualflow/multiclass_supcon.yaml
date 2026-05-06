@@ -1,0 +1,54 @@
+# configs/lmgat_dualflow/multiclass_supcon.yaml — Arch10 + SupCon + LIVABLE + F1-stop
+#
+# Base: Arch10 v1 (F1=0.4461, Effort@20%=0.0786 — best localization before LIVABLE)
+# Adds: use_supcon=true, LIVABLE, F1-stop
+#
+# Rationale: HC-DFGAT (Arch12) achieves F1=0.6952 with SupCon on its dual-flow repr.
+# Arch10 shares the same dual-flow encoding (focal + context + lm_emb = z [B, 1280]).
+# SupCon applied to z should tighten CWE clusters without fighting MIL (unlike shared-
+# encoder Arch11 v6 where SupCon conflicted with localization gradient).
+#
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train \
+#     --config configs/lmgat_dualflow/multiclass_supcon.yaml
+
+data:
+  source: bigvul
+  mode: multiclass
+  top_cwe: 10
+  max_nodes: 1000
+
+model:
+  architecture: lmgat_dualflow
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 7
+  num_classes: 11
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.1
+  use_supcon: true
+  supcon_weight: 0.1
+  supcon_temperature: 0.07
+  supcon_alpha: 0.5
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 12
+  lr: 0.001
+  lm_lr: 0.00001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.0001
+  patience: 25
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 2.0
+  livable_loss: true
+  device: cuda

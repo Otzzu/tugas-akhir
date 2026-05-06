@@ -1,0 +1,71 @@
+# configs/lmgat_hcdfgat/multiclass_titanvul_owasp.yaml — HC-DFGAT (Arch12) on TitanVul OWASP
+#
+# Dataset: lm_dataset_titanvul_multiclass_unixcoder-base_ft_f01075040_s1500r42_*.pt
+#   source=titanvul, filter_owasp_top10=true, max_per_class=1500, resample_seed=42
+#   max_nodes=3400 (TitanVul has larger functions than BigVul)
+#
+# Model: HC-DFGAT v1 best recipe applied to the new dataset
+#   LIVABLE + F1-stop + group routing + supcon (alpha-only)
+#
+# rank_loss_weight=0.0 — TitanVul CPGs may not include flaw_line_mask.
+#   If flaw_line_mask IS present, set rank_loss_weight: 0.2 to enable ranking supervision.
+#
+# num_classes: check from loaded .pt → len(class_names). Set to actual value before training.
+#   Placeholder 775 from data config (titanvul OWASP CWE count + benign; verify!).
+#
+# batch_size=8 — larger graphs (max_nodes=3400) need smaller batches to avoid OOM.
+#   Increase to 12 if GPU memory allows.
+#
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train \
+#     --config configs/lmgat_hcdfgat/multiclass_titanvul_owasp.yaml
+
+data:
+  source: titanvul
+  mode: multiclass
+  max_nodes: 3400
+  top_cwe: 0
+  filter_owasp_top10: true
+  filter_top25: false
+  max_per_class: 1500
+  resample_seed: 42
+
+model:
+  architecture: lmgat_hcdfgat
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 7
+  num_classes: 775       # VERIFY: python -c "import torch; d=torch.load('...pt',weights_only=False); print(len(d[2]))"
+  num_groups: 16
+  use_group_cond: true
+  mil_weight: 0.5
+  mil_k: 3
+  rank_loss_weight: 0.0  # set 0.2 only if titanvul CPGs include flaw_line_mask
+  group_loss_weight: 0.3
+  binary_loss_weight: 0.2
+  use_supcon: true
+  supcon_weight: 0.1
+  supcon_temperature: 0.07
+  supcon_alpha: 0.5
+  supcon_use_distance_matrix: false
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 4
+  lr: 0.001
+  lm_lr: 0.00001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.0001
+  patience: 25
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 2.0
+  livable_loss: true
+  device: cuda

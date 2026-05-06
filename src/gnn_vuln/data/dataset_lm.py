@@ -285,11 +285,13 @@ class CodeBERTGraphDataset(InMemoryDataset):
         filter_top25: bool = False,
         max_per_class: int = 0,
         resample_seed: int = 42,
+        func_max_length: int = 512,
         force_rebuild: bool = False,
         transform=None,
         pre_transform=None,
     ):
         self._force_rebuild = force_rebuild
+        self._func_max_length = func_max_length
         self.max_nodes = max_nodes
         self._embedder_device = embedder_device
         self._pretrained_lm = pretrained_lm
@@ -416,15 +418,15 @@ class CodeBERTGraphDataset(InMemoryDataset):
         for i in tqdm(range(0, n, batch_sz), desc="  patch tokenize", unit="batch"):
             enc = tokenizer(
                 raw_funcs[i : i + batch_sz],
-                max_length=512, truncation=True,
+                max_length=self._func_max_length, truncation=True,
                 padding="max_length", return_tensors="pt",
             )
             ids_list.append(enc["input_ids"])
             mask_list.append(enc["attention_mask"])
 
-        data.func_input_ids = torch.cat(ids_list, dim=0)       # [n, 512]
-        data.func_attention_mask = torch.cat(mask_list, dim=0) # [n, 512]
-        # slices unchanged — same tensor shape [n, 512]
+        data.func_input_ids = torch.cat(ids_list, dim=0)
+        data.func_attention_mask = torch.cat(mask_list, dim=0)
+        # slices unchanged — same tensor shape [n, func_max_length]
 
         logger.info(f"  Saving patched .pt → {out_path}")
         torch.save((data, slices, class_names, raw_funcs), out_path)
@@ -766,7 +768,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
                     else:
                         func_text = build_func_text(cpg)  # backward compat: old meta without raw_func
                     enc = tokenizer(
-                        func_text, max_length=512, truncation=True,
+                        func_text, max_length=self._func_max_length, truncation=True,
                         padding="max_length", return_tensors="pt",
                     )
                     func_input_ids = enc["input_ids"]

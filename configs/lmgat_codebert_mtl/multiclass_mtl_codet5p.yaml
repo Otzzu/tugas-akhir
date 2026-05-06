@@ -1,0 +1,56 @@
+# configs/lmgat_codebert_mtl/multiclass_mtl_codet5p.yaml — Arch11 v3 recipe + CodeT5+ func_lm
+#
+# Base: Arch11 v3 best (F1=0.6819, IFA=4.60, Effort=0.0338)
+#   use_group_cond=true, group_loss=0.3, rank=0.2, LIVABLE, F1-stop
+# Change: func_lm = Salesforce/codet5p-110m-embedding (256D output vs 768D UniXcoder)
+#
+# pretrained_lm (node embeddings) stays microsoft/unixcoder-base — matches existing .pt.
+# func_lm only affects the live text branch (full function CLS/pool).
+# lm_dim auto-detected: 256D → fusion_dim = 256 + 256 + 256 = 768 (smaller than UniXcoder run)
+#
+# No structural mods (no self_loops/skip/edge_emb) — isolates LM-swap effect vs v3.
+#
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train \
+#     --config configs/lmgat_codebert_mtl/multiclass_mtl_codet5p.yaml
+
+data:
+  source: bigvul
+  mode: multiclass
+  max_nodes: 1000
+  top_cwe: 10
+
+model:
+  architecture: lmgat_codebert_mtl
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: Salesforce/codet5p-110m-embedding
+  add_func_tokens: true
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 7
+  num_classes: 11
+  num_groups: 16
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  use_group_cond: true
+  group_loss_weight: 0.3
+  binary_loss_weight: 0.2
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 12
+  lr: 0.001
+  lm_lr: 0.00001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.0001
+  patience: 25
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 2.0
+  livable_loss: true
+  device: cuda

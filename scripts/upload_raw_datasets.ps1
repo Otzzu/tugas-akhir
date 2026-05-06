@@ -4,12 +4,13 @@
 
 param(
     [string]$Remote   = "gdrive-mesach:tugas-akhir/data/raw",
-    [string]$DataRoot = "$PSScriptRoot\..\data\raw"
+    [string]$DataRoot = "$PSScriptRoot\..\data\raw",
+    [string[]]$Datasets = @("bigvul", "megavul", "titanvul")
 )
 
 $DataRoot = Resolve-Path $DataRoot
 $ts       = Get-Date -Format "yyyyMMdd_HHmmss"
-$datasets = @("bigvul", "megavul", "titanvul")
+$datasets = $Datasets
 
 foreach ($ds in $datasets) {
     $srcDir  = Join-Path $DataRoot $ds

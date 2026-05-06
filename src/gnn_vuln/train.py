@@ -896,6 +896,7 @@ def main():
     elif args.resume:
         logger.warning(f"--resume set but {last_ckpt} not found — starting from scratch.")
 
+    train_start = time.time()
     for epoch in range(start_epoch, cfg.train.epochs + 1):
         if use_livable and train_counts is not None:
             class_weight = livable_weights(
@@ -980,6 +981,10 @@ def main():
         f"Test accuracy: {test_acc:.4f} | f1: {test_f1:.4f} | "
         f"f1_weighted: {test_f1w:.4f} | confidence: {test_conf:.4f}"
     )
+    total_secs = time.time() - train_start
+    hours, rem = divmod(int(total_secs), 3600)
+    mins, secs = divmod(rem, 60)
+    logger.info(f"Total training time: {hours:02d}h {mins:02d}m {secs:02d}s ({total_secs:.1f}s)")
     logger.info(f"Best checkpoint → {best_ckpt}")
     logger.info(
         f"To evaluate:  uv run evaluate "

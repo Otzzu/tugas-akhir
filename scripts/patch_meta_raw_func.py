@@ -69,6 +69,8 @@ def main() -> None:
     parser.add_argument("--limit",            type=int, default=None)
     parser.add_argument("--dry-run",          action="store_true",
                         help="Show what would be patched without writing")
+    parser.add_argument("--force",            action="store_true",
+                        help="Overwrite files that already have id+raw_func (re-patch everything)")
     args = parser.parse_args()
 
     logger.info(f"Loading {args.format} from {args.input}")
@@ -125,7 +127,7 @@ def main() -> None:
         if meta_path.exists():
             with open(meta_path) as f:
                 meta = json.load(f)
-            if "raw_func" in meta and "id" in meta:
+            if "raw_func" in meta and "id" in meta and not args.force:
                 skipped_already += 1
                 continue
         else:

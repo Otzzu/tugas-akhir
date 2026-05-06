@@ -28,8 +28,8 @@ Usage
 
 Slices
 ------
-PyG InMemoryDataset stores each per-graph [1, 512] func token tensor concatenated
-along dim=0 into [N, 512]. Slices = [0, 1, 2, ..., N] (one row per graph).
+PyG InMemoryDataset stores each per-graph [1, max_length] func token tensor concatenated
+along dim=0 into [N, max_length]. Slices = [0, 1, 2, ..., N] (one row per graph).
 """
 
 from __future__ import annotations
