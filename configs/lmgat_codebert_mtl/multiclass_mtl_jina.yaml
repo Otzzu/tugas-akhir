@@ -39,6 +39,9 @@ model:
   use_group_cond: true
   group_loss_weight: 0.3
   binary_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: false
+  use_edge_emb: false
 
 train:
   seed: 42
