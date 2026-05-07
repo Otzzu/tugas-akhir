@@ -141,6 +141,11 @@ class LMGATCodeBERTMTLVulnDetector(nn.Module):
         if not hasattr(_lm_cfg, "is_decoder"):
             _lm_cfg.is_decoder = False
         self.codebert = AutoModel.from_pretrained(_func_lm, config=_lm_cfg, trust_remote_code=True)
+        # Gradient checkpointing: recomputes activations on backward instead of storing them.
+        # Trades ~20% compute overhead for large reduction in activation VRAM — critical for
+        # decoder-only LMs like Jina (28 layers × causal attn × full seq stored per layer).
+        if hasattr(self.codebert, "gradient_checkpointing_enable"):
+            self.codebert.gradient_checkpointing_enable()
         self._lm_dim = lm_hidden_dim(self.codebert, matryoshka_dim)
         self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
 

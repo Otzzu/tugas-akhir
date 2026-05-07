@@ -25,7 +25,7 @@ model:
   pretrained_lm: microsoft/unixcoder-base
   func_lm: jinaai/jina-code-embeddings-0.5b
   add_func_tokens: true
-  matryoshka_dim: null   # null = full 768D; set 512 if OOM
+  matryoshka_dim: null    # Jina Matryoshka: truncate output to 512D to reduce LM activation peak
   hidden_dim: 256
   num_layers: 4
   dropout: 0.3
@@ -46,7 +46,7 @@ model:
 train:
   seed: 42
   epochs: 100
-  batch_size: 10
+  batch_size: 4    # reduced from 10 — Jina decoder OOM fix (causal attn is O(seq²) × B)
   lr: 0.001
   lm_lr: 0.00001
   warmup_ratio: 0.1
