@@ -48,6 +48,7 @@ model:
   rank_loss_weight: 0.0  # set 0.2 only if titanvul CPGs include flaw_line_mask
   group_loss_weight: 0.3
   binary_loss_weight: 0.2
+  active_heads: [binary, group, cwe]
   use_supcon: true
   supcon_weight: 0.1
   supcon_temperature: 0.07

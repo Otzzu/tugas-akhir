@@ -58,7 +58,7 @@ from gnn_vuln.data.dataset_lm import CodeBERTGraphDataset
 from gnn_vuln.metrics import compute_all_localization_metrics, make_func_loc_result
 import torch.nn as nn
 from gnn_vuln.models.lmgcn import LMGCNVulnDetector
-from gnn_vuln.train import build_model
+from gnn_vuln.models.registry import build_model
 from gnn_vuln.utils import get_device, load_checkpoint, setup_logging
 
 

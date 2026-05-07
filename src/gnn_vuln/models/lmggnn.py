@@ -1,168 +1,46 @@
-"""
-lmggnn.py — Architecture 9: LM-GAT-CodeBERT with GATv2 → GatedGraphConv
-
-Arch3 (lmgat_codebert) with GATv2Conv replaced by GatedGraphConv (GGNN).
-GatedGraphConv requires in_channels == out_channels, so node features are
-projected to hidden_dim via input_proj before GGNN.
-
-Fusion: concat(pool(h_gnn), lm_cls) → single func_head (same as Arch3).
-Statement head: binary per-line scorer (same as Arch3).
-"""
-
+"""lmggnn.py — LM-GGNN: GatedGraphConv + live LM."""
 from __future__ import annotations
-
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch_geometric.nn import GatedGraphConv, global_mean_pool
-from transformers import AutoModel
-
-from gnn_vuln.models._lm_utils import lm_hidden_dim, lm_pool
+from torch_geometric.nn import global_mean_pool
+from gnn_vuln.models.base import VulnDetectorBase
+from gnn_vuln.models.encoders import GGNNEncoder
+from gnn_vuln.models.heads import FuncHead, StmtHead
 
 NODE_FEAT_DIM = 773
-_ALPHA_MAX = 0.8
-_ALPHA_MEAN = 0.6
 
-
-class LMGNNVulnDetector(nn.Module):
-    """
-    GatedGraphConv vulnerability detector with pre-computed node embeddings
-    and a live fine-tuned LM branch for full-function context.
-
-    Arch3 (lmgat_codebert) equivalent with GATv2Conv replaced by
-    GatedGraphConv. input_proj maps 773D → hidden_dim before GGNN since
-    GatedGraphConv requires in_channels == out_channels.
-
-    Parameters
-    ----------
-    pretrained_lm : str
-        HuggingFace model for frozen node embeddings (preprocessing only).
-    func_lm : str
-        HuggingFace model for live LM branch. Falls back to pretrained_lm.
-    in_channels : int
-        Node feature dimension (773D).
-    hidden_dim : int
-        GatedGraphConv output dimension.
-    num_layers : int
-        GatedGraphConv steps.
-    dropout : float
-        Dropout probability.
-    num_classes : int
-        Output classes.
-    """
-
-    def __init__(
-        self,
-        pretrained_lm: str = "microsoft/codebert-base",
-        func_lm: str = "",
-        in_channels: int = NODE_FEAT_DIM,
-        hidden_dim: int = 256,
-        num_layers: int = 6,
-        dropout: float = 0.3,
-        num_classes: int = 11,
-        use_skip: bool = False,
-        matryoshka_dim: int | None = None,
-        **kwargs,  # absorb unused config keys (e.g. alpha from old config)
-    ):
+class LMGNNVulnDetector(VulnDetectorBase):
+    def __init__(self, pretrained_lm="microsoft/unixcoder-base", func_lm="",
+                 in_channels=NODE_FEAT_DIM, hidden_dim=256, num_layers=6,
+                 dropout=0.3, num_classes=11, use_skip=False,
+                 matryoshka_dim=None, **kwargs):
         super().__init__()
-        self.dropout = dropout
-        self.num_classes = num_classes
-        self.use_skip = use_skip
-        self._matryoshka_dim = matryoshka_dim
+        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim)
+        self.encoder   = GGNNEncoder(in_channels, hidden_dim, num_layers, dropout, use_skip)
+        self.func_head = FuncHead(hidden_dim + self._lm_dim, hidden_dim, num_classes, dropout)
+        self.stmt_head = StmtHead(hidden_dim)
 
-        # Project node features to hidden_dim (GatedGraphConv requires in==out)
-        self.input_proj = nn.Linear(in_channels, hidden_dim)
+    def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
+                func_input_ids=None, func_attention_mask=None):
+        h = self.encoder(x, edge_index, edge_attr)
+        h_graph = global_mean_pool(h, batch)
+        lm_emb = self._lm_embed(func_input_ids, func_attention_mask, h_graph.size(0), x.device)
+        logit = self.func_head(torch.cat([h_graph, lm_emb], dim=-1))
+        stmt_scores = self.stmt_head.score(h, batch, node_line) if node_line is not None else None
+        return logit, stmt_scores
 
-        # GatedGraphConv backbone
-        self.ggnn = GatedGraphConv(out_channels=hidden_dim, num_layers=num_layers)
-
-        # Live LM branch (fine-tuned)
-        _func_lm = func_lm if func_lm else pretrained_lm
-        self.codebert = AutoModel.from_pretrained(_func_lm, trust_remote_code=True)
-        self._lm_dim = lm_hidden_dim(self.codebert, matryoshka_dim)
-        self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
-
-        # Function head: concat(GNN pooled, LM repr) → num_classes
-        self.func_head = nn.Sequential(
-            nn.Linear(hidden_dim + self._lm_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, num_classes),
+    @classmethod
+    def from_config(cls, cfg, in_channels, **kwargs):
+        pretrained_lm = getattr(cfg.model, "pretrained_lm", "microsoft/unixcoder-base")
+        func_lm = getattr(cfg.model, "func_lm", "") or pretrained_lm
+        return cls(
+            pretrained_lm=pretrained_lm, func_lm=func_lm,
+            in_channels=in_channels,
+            hidden_dim=cfg.model.hidden_dim,
+            num_layers=cfg.model.num_layers,
+            dropout=cfg.model.dropout,
+            num_classes=cfg.model.num_classes,
+            use_skip=getattr(cfg.model, "use_skip", False),
+            matryoshka_dim=getattr(cfg.model, "matryoshka_dim", None),
+            alpha=getattr(cfg.model, "alpha", 0.1),
         )
-
-        # Statement head: binary per-line suspicious score
-        self.stmt_max_head = nn.Linear(hidden_dim, 1)
-        self.stmt_mean_head = nn.Linear(hidden_dim, 1)
-
-    def _statement_scores(
-        self,
-        h: torch.Tensor,
-        batch: torch.Tensor,
-        node_line: torch.Tensor,
-    ) -> list[torch.Tensor]:
-        device = h.device
-        batch_size = int(batch.max().item()) + 1
-        result: list[torch.Tensor] = []
-
-        for b in range(batch_size):
-            mask = batch == b
-            h_b = h[mask]
-            lines_b = node_line[mask]
-            valid = lines_b >= 0
-            if not valid.any():
-                result.append(torch.zeros(0, device=device))
-                continue
-            h_b = h_b[valid]
-            lines_b = lines_b[valid]
-            unique_lines = lines_b.unique(sorted=True)
-            scores: list[torch.Tensor] = []
-            for line in unique_lines:
-                node_mask = lines_b == line
-                h_line = h_b[node_mask]
-                h_max = h_line.max(dim=0).values
-                h_mean = h_line.mean(dim=0)
-                s = (
-                    _ALPHA_MAX  * self.stmt_max_head(h_max).squeeze(-1)
-                    + _ALPHA_MEAN * self.stmt_mean_head(h_mean).squeeze(-1)
-                )
-                scores.append(s)
-            result.append(torch.stack(scores))
-
-        return result
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        edge_index: torch.Tensor,
-        batch: torch.Tensor,
-        node_line: torch.Tensor | None = None,
-        edge_attr: torch.Tensor | None = None,  # unused: GGNN ignores edge_attr
-        func_input_ids: torch.Tensor | None = None,
-        func_attention_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, list[torch.Tensor] | None]:
-        B = int(batch.max().item()) + 1
-
-        # ── GNN branch ───────────────────────────────────────────────────────
-        proj_x = self.input_proj(x)                          # [N, hidden_dim]
-        h = self.ggnn(proj_x, edge_index)
-        if self.use_skip:
-            h = F.relu(h + proj_x)
-        h = F.dropout(h, p=self.dropout, training=self.training)
-        h_graph = global_mean_pool(h, batch)              # [B, hidden_dim]
-
-        # ── LM branch ────────────────────────────────────────────────────────
-        if func_input_ids is not None:
-            cls = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask, matryoshka_dim=self._matryoshka_dim)
-        else:
-            cls = torch.zeros(B, self._lm_dim, device=x.device)
-
-        # ── Function head ─────────────────────────────────────────────────────
-        logit_func = self.func_head(torch.cat([h_graph, cls], dim=-1))
-
-        # ── Statement scores for MIL loss ────────────────────────────────────
-        stmt_scores = (
-            self._statement_scores(h, batch, node_line)
-            if node_line is not None else None
-        )
-
-        return logit_func, stmt_scores

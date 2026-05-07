@@ -1,237 +1,83 @@
-"""
-lmgat_dualflow.py — Architecture 10: LM-GAT-DualFlow
-
-Stage 1: GATv2 binary localization → per-node suspicion s_i  (Arch7 v1)
-Stage 2: GATv2(concat[x, s_i]) → h_cls, then TWO parallel poolings:
-    focal_emb   = suspicion-weighted pool(h_cls)   — highlights the flaw
-    context_emb = global_mean_pool(h_cls)          — preserves surrounding logic
-Stage 3: concat(focal_emb, context_emb, lm_emb) → MLP → CWE logits
-
-Motivation: Arch7 v1 drops F1 because suspicion-weighted pool discards
-safe-context nodes that carry CWE-discriminating structural information.
-Adding context_emb restores that information without disturbing localization.
-"""
-
+"""lmgat_dualflow.py — Arch10: Dual-flow GATv2 + live LM."""
 from __future__ import annotations
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GATv2Conv, global_add_pool, global_mean_pool
-from transformers import AutoModel
-
-from gnn_vuln.models._lm_utils import lm_hidden_dim, lm_pool
+from torch_geometric.nn import global_add_pool, global_mean_pool
+from gnn_vuln.models.base import VulnDetectorBase
+from gnn_vuln.models.encoders import GATEncoder
+from gnn_vuln.models.heads import FuncHead, StmtHead
 
 NODE_FEAT_DIM = 773
-EDGE_FEAT_DIM = 7
 _ALPHA_MAX = 0.8
 _ALPHA_MEAN = 0.6
 
 
-class LMGATDualFlowVulnDetector(nn.Module):
-    """
-    Dual-flow sequential detector.
-
-    Stage 1 (binary localization):
-        frozen node features → GATv2 × num_layers → h_loc
-        binary stmt head → s_i per node
-
-    Stage 2 (dual-flow encoding):
-        concat(x, s_i) → GATv2 × num_layers → h_cls
-        focal_emb   = weighted_mean_pool(h_cls, s_i)   [B, hidden_dim]
-        context_emb = global_mean_pool(h_cls)           [B, hidden_dim]
-
-    Stage 3 (tri-modal fusion):
-        live LM → CLS → lm_emb                         [B, 768]
-        concat(focal_emb, context_emb, lm_emb)          [B, hidden_dim*2 + 768]
-        → func_head MLP → logit_func                    [B, num_classes]
-    """
-
-    def __init__(
-        self,
-        pretrained_lm: str = "microsoft/unixcoder-base",
-        func_lm: str = "",
-        in_channels: int = NODE_FEAT_DIM,
-        hidden_dim: int = 256,
-        num_layers: int = 4,
-        dropout: float = 0.3,
-        num_classes: int = 11,
-        num_heads: int = 4,
-        edge_dim: int = EDGE_FEAT_DIM,
-        add_self_loops: bool = True,
-        use_skip: bool = False,
-        matryoshka_dim: int | None = None,
-    ):
+class LMGATDualFlowVulnDetector(VulnDetectorBase):
+    def __init__(self, pretrained_lm="microsoft/unixcoder-base", func_lm="",
+                 in_channels=NODE_FEAT_DIM, hidden_dim=256, num_layers=4,
+                 dropout=0.3, num_classes=11, num_heads=4, edge_dim=7,
+                 add_self_loops=False, use_skip=False, matryoshka_dim=None):
         super().__init__()
+        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim)
         self.dropout = dropout
-        self.num_classes = num_classes
-        self.use_skip = use_skip
-        self._matryoshka_dim = matryoshka_dim
 
-        # ── Stage 1: Localization GNN (input: 773D) ──────────────────────────
-        self.loc_convs = nn.ModuleList()
-        self.loc_bns = nn.ModuleList()
-        self.loc_convs.append(
-            GATv2Conv(in_channels, hidden_dim, heads=num_heads, concat=False,
-                      dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops,
-                          fill_value=0.0)
-        )
-        self.loc_bns.append(nn.BatchNorm1d(hidden_dim))
-        for _ in range(num_layers - 1):
-            self.loc_convs.append(
-                GATv2Conv(hidden_dim, hidden_dim, heads=num_heads, concat=False,
-                          dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops,
-                          fill_value=0.0)
-            )
-            self.loc_bns.append(nn.BatchNorm1d(hidden_dim))
-
-        # Stage 1 binary stmt head
+        # Stage 1: localization GNN
+        self.loc_encoder = GATEncoder(in_channels, hidden_dim, num_layers, num_heads,
+                                      dropout, edge_dim, add_self_loops, use_skip)
         self.loc_stmt_max  = nn.Linear(hidden_dim, 1)
         self.loc_stmt_mean = nn.Linear(hidden_dim, 1)
 
-        # ── Stage 2: Classification GNN (input: 773D + 1D s_i = 774D) ────────
-        self.cls_convs = nn.ModuleList()
-        self.cls_bns = nn.ModuleList()
-        self.cls_convs.append(
-            GATv2Conv(in_channels + 1, hidden_dim, heads=num_heads, concat=False,
-                      dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops,
-                          fill_value=0.0)
-        )
-        self.cls_bns.append(nn.BatchNorm1d(hidden_dim))
-        for _ in range(num_layers - 1):
-            self.cls_convs.append(
-                GATv2Conv(hidden_dim, hidden_dim, heads=num_heads, concat=False,
-                          dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops,
-                          fill_value=0.0)
-            )
-            self.cls_bns.append(nn.BatchNorm1d(hidden_dim))
+        # Stage 2: classification GNN (input: 773+1=774)
+        self.cls_encoder = GATEncoder(in_channels + 1, hidden_dim, num_layers, num_heads,
+                                      dropout, edge_dim, add_self_loops, use_skip)
 
-        if use_skip:
-            self.loc_res_projs = nn.ModuleList()
-            self.loc_res_projs.append(nn.Linear(in_channels, hidden_dim, bias=False))
-            for _ in range(num_layers - 1):
-                self.loc_res_projs.append(nn.Identity())
-            self.cls_res_projs = nn.ModuleList()
-            self.cls_res_projs.append(nn.Linear(in_channels + 1, hidden_dim, bias=False))
-            for _ in range(num_layers - 1):
-                self.cls_res_projs.append(nn.Identity())
-
-        # ── Stage 3: Live LM branch ───────────────────────────────────────────
-        _func_lm = func_lm if func_lm else pretrained_lm
-        self.codebert = AutoModel.from_pretrained(_func_lm, trust_remote_code=True)
-        self._lm_dim = lm_hidden_dim(self.codebert, matryoshka_dim)
-        self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
-
-        # ── Stage 3: Function head (focal + context + lm) ────────────────────
-        fusion_dim = hidden_dim * 2 + self._lm_dim
-        self.func_head = nn.Sequential(
-            nn.Linear(fusion_dim, 512),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(512, num_classes),
-        )
-
-    # ── Shared GNN encoder ───────────────────────────────────────────────────
-
-    def _encode(self, x, edge_index, edge_attr, convs, bns, res_projs=None):
-        for i, (conv, bn) in enumerate(zip(convs, bns)):
-            residual = res_projs[i](x) if res_projs is not None else None
-            x = conv(x, edge_index, edge_attr=edge_attr)
-            x = bn(x)
-            if residual is not None:
-                x = F.relu(x + residual)
-            else:
-                x = F.relu(x)
-            x = F.dropout(x, p=self.dropout, training=self.training)
-        return x
-
-    # ── Stage 1: per-node suspicion ──────────────────────────────────────────
+        # Fusion: focal [hidden] + context [hidden] + lm [lm_dim]
+        self.func_head = FuncHead(hidden_dim * 2 + self._lm_dim, hidden_dim * 2, num_classes, dropout)
+        self.stmt_head = StmtHead(hidden_dim)  # uses loc_encoder features for MIL
 
     def _node_suspicion(self, h_loc: torch.Tensor) -> torch.Tensor:
         raw = _ALPHA_MAX * self.loc_stmt_max(h_loc) + _ALPHA_MEAN * self.loc_stmt_mean(h_loc)
         return torch.sigmoid(raw).squeeze(-1)  # [N]
 
-    # ── Stage 1: per-line statement scores for MIL loss ─────────────────────
-
-    def _statement_scores(
-        self,
-        h_loc: torch.Tensor,
-        batch: torch.Tensor,
-        node_line: torch.Tensor,
-    ) -> list[torch.Tensor]:
-        device = h_loc.device
-        batch_size = int(batch.max().item()) + 1
-        result: list[torch.Tensor] = []
-
-        for b in range(batch_size):
-            mask = batch == b
-            h_b = h_loc[mask]
-            lines_b = node_line[mask]
-            valid = lines_b >= 0
-            if not valid.any():
-                result.append(torch.zeros(0, device=device))
-                continue
-            h_b, lines_b = h_b[valid], lines_b[valid]
-            unique_lines = lines_b.unique(sorted=True)
-            scores: list[torch.Tensor] = []
-            for line in unique_lines:
-                nm = lines_b == line
-                h_line = h_b[nm]
-                s = (
-                    _ALPHA_MAX  * self.loc_stmt_max(h_line.max(0).values)
-                    + _ALPHA_MEAN * self.loc_stmt_mean(h_line.mean(0))
-                )
-                scores.append(s.squeeze(-1))
-            result.append(torch.stack(scores))
-
-        return result
-
-    # ── Forward ──────────────────────────────────────────────────────────────
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        edge_index: torch.Tensor,
-        batch: torch.Tensor,
-        node_line: torch.Tensor | None = None,
-        edge_attr: torch.Tensor | None = None,
-        func_input_ids: torch.Tensor | None = None,
-        func_attention_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, list[torch.Tensor] | None, torch.Tensor]:
-        B = int(batch.max().item()) + 1
-
-        # ── Stage 1: Localization ─────────────────────────────────────────────
-        h_loc = self._encode(x, edge_index, edge_attr, self.loc_convs, self.loc_bns,
-                             self.loc_res_projs if self.use_skip else None)
+    def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
+                func_input_ids=None, func_attention_mask=None):
+        # Stage 1
+        h_loc = self.loc_encoder(x, edge_index, edge_attr)
         s_i = self._node_suspicion(h_loc)  # [N]
 
-        # ── Stage 2: Classification GNN on x_aug ─────────────────────────────
+        # Stage 2
         x_aug = torch.cat([x, s_i.unsqueeze(-1)], dim=-1)  # [N, 774]
-        h_cls = self._encode(x_aug, edge_index, edge_attr, self.cls_convs, self.cls_bns,
-                             self.cls_res_projs if self.use_skip else None)
+        h_cls = self.cls_encoder(x_aug, edge_index, edge_attr)
 
-        # Flow A: focal — suspicion-weighted mean pool
-        s_w = s_i.unsqueeze(-1)                                   # [N, 1]
-        focal_emb = global_add_pool(h_cls * s_w, batch)           # [B, 256]
-        focal_emb = focal_emb / global_add_pool(s_w, batch).clamp(min=1e-6)
+        # Dual pooling
+        s_w = s_i.unsqueeze(-1)
+        focal_emb   = global_add_pool(h_cls * s_w, batch) / global_add_pool(s_w, batch).clamp(min=1e-6)
+        context_emb = global_mean_pool(h_cls, batch)
 
-        # Flow B: context — uniform mean pool
-        context_emb = global_mean_pool(h_cls, batch)              # [B, 256]
+        B = focal_emb.size(0)
+        lm_emb = self._lm_embed(func_input_ids, func_attention_mask, B, x.device)
 
-        # ── Stage 3: LM branch ───────────────────────────────────────────────
-        if func_input_ids is not None:
-            lm_emb = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask, matryoshka_dim=self._matryoshka_dim)
-        else:
-            lm_emb = torch.zeros(B, self._lm_dim, device=x.device)
+        z_combined = torch.cat([focal_emb, context_emb, lm_emb], dim=-1)
+        logit = self.func_head(z_combined)
 
-        # ── Tri-modal fusion ─────────────────────────────────────────────────
-        z = torch.cat([focal_emb, context_emb, lm_emb], dim=-1)  # [B, 1280]
-        logit_func = self.func_head(z)
+        stmt_scores = self.stmt_head.score(h_loc, batch, node_line) if node_line is not None else None
+        return logit, stmt_scores, z_combined
 
-        # ── Stage 1 stmt scores for MIL / ranking loss ───────────────────────
-        stmt_scores = (
-            self._statement_scores(h_loc, batch, node_line)
-            if node_line is not None else None
+    @classmethod
+    def from_config(cls, cfg, in_channels, **kwargs):
+        pretrained_lm = getattr(cfg.model, "pretrained_lm", "microsoft/unixcoder-base")
+        func_lm = getattr(cfg.model, "func_lm", "") or pretrained_lm
+        return cls(
+            pretrained_lm=pretrained_lm, func_lm=func_lm,
+            in_channels=in_channels,
+            hidden_dim=cfg.model.hidden_dim,
+            num_layers=cfg.model.num_layers,
+            dropout=cfg.model.dropout,
+            num_classes=cfg.model.num_classes,
+            num_heads=cfg.model.heads,
+            edge_dim=getattr(cfg.model, "edge_dim", 7),
+            add_self_loops=getattr(cfg.model, "add_self_loops", False),
+            use_skip=getattr(cfg.model, "use_skip", False),
+            matryoshka_dim=getattr(cfg.model, "matryoshka_dim", None),
         )
-
-        return logit_func, stmt_scores, z

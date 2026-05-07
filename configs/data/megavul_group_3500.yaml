@@ -14,6 +14,7 @@ model:
   add_func_tokens: true
   num_classes: 16   # = num groups (benign + 15 vuln groups)
   num_groups: 16
+  active_heads: [binary, group, cwe]
 
 train:
   device: cuda

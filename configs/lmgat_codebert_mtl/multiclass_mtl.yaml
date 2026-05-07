@@ -41,6 +41,7 @@ model:
   use_group_cond: false    # false = no group PT; cwe_head gets zeros instead of random group probs
   group_loss_weight: 0.0  # 0.0 = no group_id in existing PT; set >0 only with group-mode PT
   binary_loss_weight: 0.2  # binary label derived from batch.y > 0, always available
+  active_heads: [binary, cwe]
 
 train:
   seed: 42

@@ -15,6 +15,7 @@ model:
   add_func_tokens: true
   num_classes: 155
   num_groups: 16
+  active_heads: [binary, group, cwe]
   matryoshka_dim: 512
 
 train:

@@ -16,6 +16,7 @@
 #   lmgat_dualflow     — Arch10: Stage1 loc GNN → s_i → Stage2 cls GNN, dual pooling + live LM
 #   lmgat_codebert_mtl — Arch11: Arch3 + group/binary MTL heads + edge embeddings
 #   lmgat_hcdfgat      — Arch12: HC-DFGAT dual-flow + group/binary MTL heads
+#   lmrgcn             — Arch13: Relational GCN + live LM (one weight matrix per edge type)
 
 # ---------------------------------------------------------------------------
 # DATA
@@ -178,8 +179,18 @@ model:
   # Support: lmgat_codebert_mtl | lmgat_hcdfgat
   binary_loss_weight: 0.2
 
+  # Which MTL heads to activate. Controls which losses are computed.
+  # Values: any subset of [binary, group, cwe]
+  # Constraints: data.mode=multiclass → 'cwe' required | data.mode=group → 'group' required
+  # Omitting this field defaults to all three heads active.
+  # When 'group' is excluded: group_loss_weight zeroed + use_group_cond forced false.
+  # When 'binary' is excluded: binary_loss_weight zeroed.
+  # Support: lmgat_codebert_mtl | lmgat_hcdfgat
+  active_heads: [binary, group, cwe]
+
   # Condition the CWE head on coarse group probabilities (routing mechanism).
   # false = CWE head receives zeros instead of group_probs → no group guidance.
+  # Auto-derived from active_heads: true only when both 'group' and 'cwe' are active.
   # Support: lmgat_codebert_mtl | lmgat_hcdfgat
   use_group_cond: true
 

@@ -40,6 +40,7 @@ model:
   rank_loss_weight: 0.2
   group_loss_weight: 0.3
   binary_loss_weight: 0.2
+  active_heads: [binary, group, cwe]
   use_supcon: true
   supcon_weight: 0.1
   supcon_temperature: 0.07

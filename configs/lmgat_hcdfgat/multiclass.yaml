@@ -44,6 +44,7 @@ model:
   rank_loss_weight: 0.2  # enabled: BigVul has flaw_line_mask
   group_loss_weight: 0.3
   binary_loss_weight: 0.2
+  active_heads: [binary, group, cwe]
   supcon_weight: 0.1
   supcon_temperature: 0.07
   supcon_alpha: 0.5                  # same-group fallback weight (always used)

@@ -77,11 +77,29 @@ def get_cwe_set_from_xml(filepath: Path) -> set[str]:
         return set()
 
 
-def group_dist_table(group_counts: dict[tuple[int, str], int]) -> str:
+def group_dist_table(group_counts: dict[tuple[int, str], int], cwe_rows: list[tuple[str, int, int, str]] = None, owasp_map: dict[str, str] = None) -> str:
     rows = sorted(group_counts.items(), key=lambda x: -x[1])
-    lines = ["| Group ID | Group | Count |", "|---|---|---|"]
-    for (gid, gname), cnt in rows:
-        lines.append(f"| {gid} | {gname} | {cnt:,} |")
+    
+    if cwe_rows and owasp_map:
+        import re
+        gid_to_owasp = defaultdict(set)
+        for cwe, cnt, gid, gname in cwe_rows:
+            if cwe in owasp_map:
+                m = re.match(r'(A\d+)', owasp_map[cwe])
+                if m:
+                    gid_to_owasp[gid].add(m.group(1))
+                else:
+                    gid_to_owasp[gid].add(owasp_map[cwe])
+                    
+        lines = ["| Group ID | Group | Count | OWASP Top 10 |", "|---|---|---|---|"]
+        for (gid, gname), cnt in rows:
+            owasps = ", ".join(sorted(gid_to_owasp.get(gid, [])))
+            lines.append(f"| {gid} | {gname} | {cnt:,} | {owasps} |")
+    else:
+        lines = ["| Group ID | Group | Count |", "|---|---|---|"]
+        for (gid, gname), cnt in rows:
+            lines.append(f"| {gid} | {gname} | {cnt:,} |")
+            
     lines.append(f"\n> **Unique Groups**: {len(rows):,}")
     return "\n".join(lines)
 
@@ -114,16 +132,24 @@ def subset_dist_table(cwe_rows: list[tuple[str, int, int, str]], subset: set[str
     if not subset_rows:
         return f"*(No {subset_name} CWEs found)*"
         
-    lines = ["| CWE | Count | Group ID | Group |", "|---|---|---|---|"]
+    if group_override:
+        lines = ["| CWE | Count | Group | OWASP |", "|---|---|---|---|"]
+    else:
+        lines = ["| CWE | Count | Group ID | Group |", "|---|---|---|---|"]
+        
     total_cnt = 0
     group_counts = defaultdict(int)
     for cwe, cnt, gid, gname in subset_rows:
         if group_override and cwe in group_override:
-            gname = group_override[cwe]
-            gid = "OWASP"  # Override ID so they merge properly
-        lines.append(f"| {cwe} | {cnt:,} | {gid} | {gname} |")
+            owasp_cat = group_override[cwe]
+            # gname is still the original functional group from CWE_GROUP_MAP
+            lines.append(f"| {cwe} | {cnt:,} | {gname} | {owasp_cat} |")
+            group_counts[owasp_cat] += cnt
+        else:
+            lines.append(f"| {cwe} | {cnt:,} | {gid} | {gname} |")
+            group_counts[(gid, gname)] += cnt
+            
         total_cnt += cnt
-        group_counts[(gid, gname)] += cnt
         
     lines.append(f"| **Total** | **{total_cnt:,}** | | |")
     
@@ -131,14 +157,20 @@ def subset_dist_table(cwe_rows: list[tuple[str, int, int, str]], subset: set[str
     lines.append(f"> **Unique Groups**: {len(group_counts):,}")
     
     lines.append(f"\n#### {subset_name} Group Distribution\n")
-    lines.append("| Group ID | Group | Count |")
-    lines.append("|---|---|---|")
-    for (gid, gname), cnt in sorted(group_counts.items(), key=lambda x: -x[1]):
-        lines.append(f"| {gid} | {gname} | {cnt:,} |")
+    if group_override:
+        lines.append("| OWASP Category | Count |")
+        lines.append("|---|---|")
+        for owasp_cat, cnt in sorted(group_counts.items(), key=lambda x: -x[1]):
+            lines.append(f"| {owasp_cat} | {cnt:,} |")
+    else:
+        lines.append("| Group ID | Group | Count |")
+        lines.append("|---|---|---|")
+        for (gid, gname), cnt in sorted(group_counts.items(), key=lambda x: -x[1]):
+            lines.append(f"| {gid} | {gname} | {cnt:,} |")
+            
     lines.append(f"| **Total** | **{total_cnt:,}** |")
     
     return "\n".join(lines)
-
 
 
 def cwe_dist_table(cwe_rows: list[tuple[str, int, int, str]], top25: set[str], owasp: set[str]) -> str:
@@ -321,7 +353,7 @@ Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
 
 ### Group Distribution
 
-{group_dist_table(gc)}
+{group_dist_table(gc, cr, OWASP_MAP)}
 
 ### CWE Distribution (all vulnerable)
 
@@ -371,7 +403,7 @@ Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
 
 ### Group Distribution
 
-{group_dist_table(gc)}
+{group_dist_table(gc, cr, OWASP_MAP)}
 
 ### CWE Distribution (all vulnerable, primary CWE)
 
@@ -403,7 +435,7 @@ Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
 
 ### Group Distribution
 
-{group_dist_table(gc)}
+{group_dist_table(gc, cr, OWASP_MAP)}
 
 ### CWE Distribution (all vulnerable)
 
@@ -477,7 +509,7 @@ Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
 
 ### Group Distribution
 
-{group_dist_table(gc)}
+{group_dist_table(gc, cr, OWASP_MAP)}
 
 ### CWE Distribution (all vulnerable)
 
@@ -518,7 +550,7 @@ Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
 
 ### Group Distribution
 
-{group_dist_table(gc)}
+{group_dist_table(gc, cr, OWASP_MAP)}
 
 ### CWE Distribution (all vulnerable)
 

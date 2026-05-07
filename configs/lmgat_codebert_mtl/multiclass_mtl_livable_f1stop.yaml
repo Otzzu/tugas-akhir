@@ -37,6 +37,7 @@ model:
   use_group_cond: true # false = no group PT; cwe_head gets zeros instead of random group probs
   group_loss_weight: 0.3 # 0.0 = no group_id in existing PT
   binary_loss_weight: 0.2 # binary label derived from batch.y > 0, always available
+  active_heads: [binary, group, cwe]
   add_self_loops: true   # node attends to itself inside GAT aggregation
   use_skip: true         # residual skip around each GATv2 layer; preserves CodeBERT node features
   use_edge_emb: true     # hierarchical trainable edge embeddings (coarse group + fine type)

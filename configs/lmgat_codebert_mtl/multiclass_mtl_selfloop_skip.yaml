@@ -30,6 +30,7 @@ model:
   use_group_cond: true
   group_loss_weight: 0.3
   binary_loss_weight: 0.2
+  active_heads: [binary, group, cwe]
   add_self_loops: true
   use_skip: true
   use_edge_emb: false

@@ -1,266 +1,113 @@
-"""
-lmgat_waves_seq.py — Architecture 8: WAVES localization → VulLMGNN classification
-
-Stage 1 (WAVES-inspired, transformer-only):
-    Group CPG nodes by source line → extract CodeBERT slice from frozen node features
-    → Transformer encoder over statement sequence → per-statement suspicion score
-    → MIL binary localization loss
-
-Stage 2 (VulLMGNN-style, two branches):
-    GNN branch : node features (773D) + s_i per node → GATv2Conv → pool
-    LM  branch : full function text → live LM → CLS token
-    concat(gnn_emb, lm_emb) → CWE head
-
-Stage 1 → Stage 2 connection:
-    s_i (per-statement suspicion) mapped to node level via node_line.
-    Detached before Stage 2 so classification loss only updates Stage 2 params
-    and localization loss only updates Stage 1 params.
-
-Config keys:
-    pretrained_lm        : node embedder LM (frozen, preprocessing only)
-    func_lm              : live LM for Stage 2 function branch (fine-tuned)
-    stmt_transformer_layers : Transformer encoder depth for Stage 1 (default 2)
-    stmt_transformer_heads  : attention heads in Stage 1 transformer (default 4)
-"""
-
+"""lmgat_waves_seq.py — Arch8: Transformer stmt localiser + GATv2 classifier + live LM."""
 from __future__ import annotations
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GATv2Conv, global_mean_pool
-from transformers import AutoModel
+from torch_geometric.nn import global_mean_pool
+from gnn_vuln.models.base import VulnDetectorBase
+from gnn_vuln.models.encoders import GATEncoder
+from gnn_vuln.models.heads import FuncHead
 
-from gnn_vuln.models._lm_utils import lm_hidden_dim, lm_pool
-
-NODE_FEAT_DIM  = 773
-EDGE_FEAT_DIM  = 7
-# Pre-computed CodeBERT node features: indices 1..768 in the 773D vector.
-# Transformer statement encoder operates on this fixed 768-dim slice.
-_NODE_CB_DIM   = 768
-_CB_START, _CB_END = 1, 769
+NODE_FEAT_DIM = 773
+CODEBERT_DIM  = 768  # slice [1:769] of node features
 
 
-class LMGATWavesSeqVulnDetector(nn.Module):
-    """
-    Arch8: WAVES-style transformer localization → VulLMGNN-style classification.
-
-    Parameters
-    ----------
-    pretrained_lm : str
-        HuggingFace model used for frozen node embeddings (preprocessing only).
-        Not loaded at runtime — just recorded for reference.
-    func_lm : str
-        HuggingFace model for the live Stage 2 LM branch. If empty, falls back
-        to pretrained_lm.
-    in_channels : int
-        Node feature dimension (773D).
-    hidden_dim : int
-        GATv2 hidden width for Stage 2 GNN branch.
-    num_layers : int
-        GATv2 message-passing steps in Stage 2.
-    dropout : float
-        Dropout probability.
-    num_classes : int
-        Output classes (11 for 10-CWE + benign).
-    num_heads : int
-        Attention heads for GATv2Conv.
-    edge_dim : int
-        Edge feature dimension (7 for CPG edge types).
-    stmt_transformer_layers : int
-        Transformer encoder depth for Stage 1 statement encoding.
-    stmt_transformer_heads : int
-        Multi-head attention heads for Stage 1 transformer.
-    """
-
+class LMGATWavesSeqVulnDetector(VulnDetectorBase):
     def __init__(
         self,
-        pretrained_lm: str = "microsoft/codebert-base",
-        func_lm: str = "",
-        in_channels: int = NODE_FEAT_DIM,
-        hidden_dim: int = 256,
-        num_layers: int = 4,
-        dropout: float = 0.3,
-        num_classes: int = 11,
-        num_heads: int = 4,
-        edge_dim: int = EDGE_FEAT_DIM,
-        stmt_transformer_layers: int = 2,
-        stmt_transformer_heads: int = 4,
-        add_self_loops: bool = True,
-        use_skip: bool = False,
-        matryoshka_dim: int | None = None,
+        pretrained_lm="microsoft/unixcoder-base",
+        func_lm="",
+        in_channels=NODE_FEAT_DIM,
+        hidden_dim=256,
+        num_layers=4,
+        dropout=0.3,
+        num_classes=11,
+        num_heads=4,
+        edge_dim=7,
+        stmt_transformer_layers=2,
+        stmt_transformer_heads=4,
+        add_self_loops=False,
+        use_skip=False,
+        matryoshka_dim=None,
     ):
         super().__init__()
-        self.dropout    = dropout
-        self.num_classes = num_classes
-        self.use_skip = use_skip
-        self._matryoshka_dim = matryoshka_dim
+        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim)
+        self.dropout = dropout
 
-        # ── Stage 1: WAVES-style transformer statement encoder ────────────────
+        # Stage 1: transformer-based statement encoder
         enc_layer = nn.TransformerEncoderLayer(
-            d_model=_NODE_CB_DIM,
-            nhead=stmt_transformer_heads,
-            dim_feedforward=_NODE_CB_DIM * 2,
-            dropout=dropout,
-            batch_first=True,   # input: [batch, seq, feat]
+            d_model=CODEBERT_DIM, nhead=stmt_transformer_heads,
+            dropout=dropout, batch_first=True,
         )
-        self.stmt_transformer = nn.TransformerEncoder(
-            enc_layer, num_layers=stmt_transformer_layers
-        )
-        self.stmt_score_head = nn.Linear(_NODE_CB_DIM, 1)  # binary suspicion logit
+        self.stmt_transformer  = nn.TransformerEncoder(enc_layer, num_layers=stmt_transformer_layers)
+        self.stmt_score_head   = nn.Linear(CODEBERT_DIM, 1)
 
-        # ── Stage 2 GNN branch (VulLMGNN-style) ──────────────────────────────
-        # Input: 773D node features + 1D s_i = 774D
-        gnn_in = in_channels + 1
-        self.gnn_convs = nn.ModuleList()
-        self.gnn_bns   = nn.ModuleList()
-        self.gnn_convs.append(
-            GATv2Conv(gnn_in, hidden_dim, heads=num_heads, concat=False,
-                      dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops,
-                          fill_value=0.0)
-        )
-        self.gnn_bns.append(nn.BatchNorm1d(hidden_dim))
-        for _ in range(num_layers - 1):
-            self.gnn_convs.append(
-                GATv2Conv(hidden_dim, hidden_dim, heads=num_heads, concat=False,
-                          dropout=dropout, edge_dim=edge_dim, add_self_loops=add_self_loops,
-                          fill_value=0.0)
-            )
-            self.gnn_bns.append(nn.BatchNorm1d(hidden_dim))
+        # Stage 2: GNN on x + suspicion (774D)
+        self.gnn_encoder = GATEncoder(in_channels + 1, hidden_dim, num_layers, num_heads, dropout, edge_dim, add_self_loops, use_skip)
 
-        if use_skip:
-            self.res_projs = nn.ModuleList()
-            self.res_projs.append(nn.Linear(gnn_in, hidden_dim, bias=False))
-            for _ in range(num_layers - 1):
-                self.res_projs.append(nn.Identity())
+        self.func_head = FuncHead(hidden_dim + self._lm_dim, hidden_dim, num_classes, dropout)
 
-        # ── Stage 2 LM branch (VulLMGNN-style, live fine-tuned) ──────────────
-        _func_lm = func_lm if func_lm else pretrained_lm
-        self.codebert = AutoModel.from_pretrained(_func_lm, trust_remote_code=True)
-        self._lm_dim = lm_hidden_dim(self.codebert, matryoshka_dim)
-        self._is_enc_dec = getattr(self.codebert.config, "is_encoder_decoder", False)
-
-        # ── Stage 2 function head ─────────────────────────────────────────────
-        self.func_head = nn.Sequential(
-            nn.Linear(hidden_dim + self._lm_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, num_classes),
-        )
-
-    # ── Stage 1 helpers ──────────────────────────────────────────────────────
-
-    def _stage1(
-        self,
-        x: torch.Tensor,
-        batch: torch.Tensor,
-        node_line: torch.Tensor,
-    ) -> tuple[torch.Tensor, list[torch.Tensor]]:
-        """
-        Returns
-        -------
-        node_suspicion : [N] float  — per-node suspicion score (detached)
-        stmt_scores    : list[tensor]  — per-statement raw logits for MIL loss
-        """
-        N = x.shape[0]
+    def _stage1(self, x, batch, node_line):
+        """Transformer over per-statement CodeBERT embeddings -> node suspicion + stmt scores."""
         device = x.device
-        batch_size = int(batch.max().item()) + 1
+        B = int(batch.max().item()) + 1
+        node_susp = torch.zeros(x.size(0), device=device)
+        stmt_scores_list = []
 
-        node_susp = torch.zeros(N, device=device)
-        stmt_scores_list: list[torch.Tensor] = []
+        cb_feats = x[:, 1:769]  # [N, 768] CodeBERT slice
 
-        for b in range(batch_size):
-            mask      = batch == b
-            x_b       = x[mask]           # [N_b, 773]
-            lines_b   = node_line[mask]   # [N_b]
-            valid     = lines_b >= 0
-
+        for b in range(B):
+            mask  = batch == b
+            h_b   = cb_feats[mask]  # [n_b, 768]
+            lines = node_line[mask] if node_line is not None else torch.full((h_b.size(0),), -1, device=device)
+            valid = lines >= 0
             if not valid.any():
                 stmt_scores_list.append(torch.zeros(0, device=device))
                 continue
 
-            x_bv     = x_b[valid]
-            lines_bv = lines_b[valid]
-            # Global indices of valid nodes in this graph
-            node_idx = mask.nonzero(as_tuple=True)[0][valid]
+            h_v, l_v = h_b[valid], lines[valid]
+            unique_lines = l_v.unique(sorted=True)
+            stmt_feats = torch.stack([h_v[l_v == line].mean(dim=0) for line in unique_lines])  # [S, 768]
+            out = self.stmt_transformer(stmt_feats.unsqueeze(0)).squeeze(0)  # [S, 768]
+            scores = self.stmt_score_head(out).squeeze(-1)  # [S]
+            stmt_scores_list.append(scores)
 
-            unique_lines = lines_bv.unique(sorted=True)
-            n_stmts = len(unique_lines)
-
-            # Build statement embeddings from CodeBERT slice [n_stmts, 768]
-            stmt_embs = torch.stack([
-                x_bv[lines_bv == line, _CB_START:_CB_END].mean(0)
-                for line in unique_lines
-            ])  # [n_stmts, 768]
-
-            # Transformer encoder: [1, n_stmts, 768] → [1, n_stmts, 768]
-            out = self.stmt_transformer(stmt_embs.unsqueeze(0)).squeeze(0)  # [n_stmts, 768]
-
-            # Per-statement suspicion logits and scores
-            logits     = self.stmt_score_head(out).squeeze(-1)   # [n_stmts]
-            suspicion  = torch.sigmoid(logits)                    # [n_stmts]
-
-            stmt_scores_list.append(logits)
-
-            # Map statement → node level via node_line (detach: Stage 2 is independent)
-            for stmt_i, line in enumerate(unique_lines):
-                nm = lines_bv == line
-                node_susp[node_idx[nm]] = suspicion[stmt_i].detach()
+            # Assign suspicion to nodes by line
+            for i, line in enumerate(unique_lines):
+                node_susp[mask.nonzero(as_tuple=True)[0][l_v == line]] = torch.sigmoid(scores[i]).detach()
 
         return node_susp, stmt_scores_list
 
-    # ── Stage 2 GNN encoder ──────────────────────────────────────────────────
+    def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
+                func_input_ids=None, func_attention_mask=None):
+        node_susp, stmt_scores = self._stage1(x, batch, node_line)
 
-    def _gnn_encode(
-        self,
-        x: torch.Tensor,
-        edge_index: torch.Tensor,
-        edge_attr: torch.Tensor | None,
-    ) -> torch.Tensor:
-        for i, (conv, bn) in enumerate(zip(self.gnn_convs, self.gnn_bns)):
-            residual = self.res_projs[i](x) if self.use_skip else None
-            x = conv(x, edge_index, edge_attr=edge_attr)
-            x = bn(x)
-            if residual is not None:
-                x = F.relu(x + residual)
-            else:
-                x = F.relu(x)
-            x = F.dropout(x, p=self.dropout, training=self.training)
-        return x
+        x_aug  = torch.cat([x, node_susp.unsqueeze(-1)], dim=-1)
+        h      = self.gnn_encoder(x_aug, edge_index, edge_attr)
+        h_graph = global_mean_pool(h, batch)
 
-    # ── Forward ──────────────────────────────────────────────────────────────
+        B      = h_graph.size(0)
+        lm_emb = self._lm_embed(func_input_ids, func_attention_mask, B, x.device)
 
-    def forward(
-        self,
-        x: torch.Tensor,
-        edge_index: torch.Tensor,
-        batch: torch.Tensor,
-        node_line: torch.Tensor | None = None,
-        edge_attr: torch.Tensor | None = None,
-        func_input_ids: torch.Tensor | None = None,
-        func_attention_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, list[torch.Tensor] | None]:
-        B = int(batch.max().item()) + 1
+        logit = self.func_head(torch.cat([h_graph, lm_emb], dim=-1))
+        return logit, stmt_scores
 
-        # ── Stage 1: WAVES transformer localization ───────────────────────────
-        stmt_scores = None
-        if node_line is not None:
-            node_suspicion, stmt_scores = self._stage1(x, batch, node_line)
-        else:
-            node_suspicion = torch.zeros(x.shape[0], device=x.device)
-
-        # ── Stage 2 GNN branch ────────────────────────────────────────────────
-        x_aug   = torch.cat([x, node_suspicion.unsqueeze(-1)], dim=-1)  # [N, 774]
-        h       = self._gnn_encode(x_aug, edge_index, edge_attr)
-        gnn_emb = global_mean_pool(h, batch)                             # [B, hidden_dim]
-
-        # ── Stage 2 LM branch ────────────────────────────────────────────────
-        if func_input_ids is not None:
-            lm_emb = lm_pool(self.codebert, self._is_enc_dec, func_input_ids, func_attention_mask, matryoshka_dim=self._matryoshka_dim)
-        else:
-            lm_emb = torch.zeros(B, self._lm_dim, device=x.device)
-
-        # ── Classification head ───────────────────────────────────────────────
-        logit_func = self.func_head(torch.cat([gnn_emb, lm_emb], dim=-1))
-
-        return logit_func, stmt_scores
+    @classmethod
+    def from_config(cls, cfg, in_channels, **kwargs):
+        pretrained_lm = getattr(cfg.model, "pretrained_lm", "microsoft/unixcoder-base")
+        func_lm = getattr(cfg.model, "func_lm", "") or pretrained_lm
+        return cls(
+            pretrained_lm=pretrained_lm, func_lm=func_lm,
+            in_channels=in_channels,
+            hidden_dim=cfg.model.hidden_dim,
+            num_layers=cfg.model.num_layers,
+            dropout=cfg.model.dropout,
+            num_classes=cfg.model.num_classes,
+            num_heads=cfg.model.heads,
+            edge_dim=getattr(cfg.model, "edge_dim", 7),
+            stmt_transformer_layers=getattr(cfg.model, "stmt_transformer_layers", 2),
+            stmt_transformer_heads=getattr(cfg.model, "stmt_transformer_heads", 4),
+            add_self_loops=getattr(cfg.model, "add_self_loops", False),
+            use_skip=getattr(cfg.model, "use_skip", False),
+            matryoshka_dim=getattr(cfg.model, "matryoshka_dim", None),
+        )
