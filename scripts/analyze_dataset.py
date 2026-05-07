@@ -82,6 +82,7 @@ def group_dist_table(group_counts: dict[tuple[int, str], int]) -> str:
     lines = ["| Group ID | Group | Count |", "|---|---|---|"]
     for (gid, gname), cnt in rows:
         lines.append(f"| {gid} | {gname} | {cnt:,} |")
+    lines.append(f"\n> **Unique Groups**: {len(rows):,}")
     return "\n".join(lines)
 
 
@@ -115,24 +116,44 @@ def subset_dist_table(cwe_rows: list[tuple[str, int, int, str]], subset: set[str
         
     lines = ["| CWE | Count | Group ID | Group |", "|---|---|---|---|"]
     total_cnt = 0
+    group_counts = defaultdict(int)
     for cwe, cnt, gid, gname in subset_rows:
         if group_override and cwe in group_override:
             gname = group_override[cwe]
         lines.append(f"| {cwe} | {cnt:,} | {gid} | {gname} |")
         total_cnt += cnt
+        group_counts[(gid, gname)] += cnt
         
     lines.append(f"| **Total** | **{total_cnt:,}** | | |")
+    
+    lines.append(f"\n> **Unique CWEs**: {len(subset_rows):,}")
+    lines.append(f"> **Unique Groups**: {len(group_counts):,}")
+    
+    lines.append(f"\n#### {subset_name} Group Distribution\n")
+    lines.append("| Group ID | Group | Count |")
+    lines.append("|---|---|---|")
+    for (gid, gname), cnt in sorted(group_counts.items(), key=lambda x: -x[1]):
+        lines.append(f"| {gid} | {gname} | {cnt:,} |")
+    lines.append(f"| **Total** | **{total_cnt:,}** |")
+    
     return "\n".join(lines)
 
 
 
 def cwe_dist_table(cwe_rows: list[tuple[str, int, int, str]], top25: set[str], owasp: set[str]) -> str:
     lines = ["| CWE | Count | Group ID | Group | Top 25 | OWASP Top 10 |", "|---|---|---|---|---|---|"]
+    unique_groups = set()
     for cwe, cnt, gid, gname in cwe_rows:
         label = cwe if cwe else "*(empty/unknown)*"
         is_top25 = "✅" if cwe in top25 else ""
         is_owasp = "✅" if cwe in owasp else ""
         lines.append(f"| {label} | {cnt:,} | {gid} | {gname} | {is_top25} | {is_owasp} |")
+        if cwe:
+            unique_groups.add(gid)
+    
+    unique_cwes = len([c for c in cwe_rows if c[0]])
+    lines.append(f"\n> **Unique CWEs**: {unique_cwes:,}")
+    lines.append(f"> **Unique Groups**: {len(unique_groups):,}")
     return "\n".join(lines)
 
 

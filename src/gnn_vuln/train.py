@@ -20,7 +20,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast
+from torch.cuda.amp import GradScaler
 from sklearn.metrics import f1_score
 from torch_geometric.loader import DataLoader
 from loguru import logger
@@ -595,18 +596,19 @@ def train_one_epoch(
     binary_loss_weight: float = 0.0,
     supcon_fn: nn.Module | None = None,
     supcon_weight: float = 0.0,
+    use_amp: bool = False,
+    amp_dtype: torch.dtype = torch.float16,
     scaler: GradScaler | None = None,
 ) -> float:
     model.train()
     total_loss = 0.0
-    use_amp = scaler is not None and device.type == "cuda"
     pbar = tqdm(loader, desc=f"  Train {epoch:03d}/{total_epochs}", unit="batch", leave=False)
     for batch in pbar:
         batch = batch.to(device)
         optimizer.zero_grad()
-        with autocast(enabled=use_amp):
+        with autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
             _, loss = _forward(model, batch, mil_k, mil_weight, class_weight, rank_loss_weight, focal_gamma, group_loss_weight, binary_loss_weight, supcon_fn, supcon_weight)
-        if use_amp:
+        if use_amp and scaler is not None:
             scaler.scale(loss).backward()
             if grad_clip > 0.0:
                 scaler.unscale_(optimizer)
@@ -858,9 +860,10 @@ def main():
 
     # AMP GradScaler — only active on CUDA; disabled automatically on CPU/MPS
     use_amp = device.type == "cuda"
-    scaler = GradScaler() if use_amp else None
+    amp_dtype = torch.bfloat16 if use_amp and torch.cuda.is_bf16_supported() else torch.float16
+    scaler = GradScaler() if use_amp and amp_dtype == torch.float16 else None
     if use_amp:
-        logger.info("AMP (automatic mixed precision) enabled — halves LM activation VRAM")
+        logger.info(f"AMP (automatic mixed precision) enabled — dtype={amp_dtype}")
 
     total_steps = len(train_loader) * cfg.train.epochs
     optimizer, scheduler, step_per_batch = build_optimizer_and_scheduler(
@@ -932,6 +935,8 @@ def main():
             binary_loss_weight=binary_loss_weight,
             supcon_fn=supcon_fn,
             supcon_weight=supcon_weight,
+            use_amp=use_amp,
+            amp_dtype=amp_dtype,
             scaler=scaler,
         )
         val_loss, val_acc, val_conf, val_f1, val_f1w = evaluate(
