@@ -120,6 +120,7 @@ def subset_dist_table(cwe_rows: list[tuple[str, int, int, str]], subset: set[str
     for cwe, cnt, gid, gname in subset_rows:
         if group_override and cwe in group_override:
             gname = group_override[cwe]
+            gid = "OWASP"  # Override ID so they merge properly
         lines.append(f"| {cwe} | {cnt:,} | {gid} | {gname} |")
         total_cnt += cnt
         group_counts[(gid, gname)] += cnt

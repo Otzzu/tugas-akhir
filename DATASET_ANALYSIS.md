@@ -186,82 +186,70 @@ Total: **217,007** | Benign: **206,112** | Vulnerable: **10,895**
 
 | CWE | Count | Group ID | Group |
 |---|---|---|---|
-| CWE-20 | 1,136 | 4 | A05:2025 - Injection |
-| CWE-200 | 508 | 6 | A01:2025 - Broken Access Control |
-| CWE-362 | 266 | 9 | A06:2025 - Insecure Design |
-| CWE-476 | 225 | 1 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-284 | 169 | 6 | A01:2025 - Broken Access Control |
-| CWE-732 | 65 | 11 | A01:2025 - Broken Access Control |
-| CWE-59 | 55 | 6 | A01:2025 - Broken Access Control |
-| CWE-79 | 53 | 5 | A05:2025 - Injection |
-| CWE-22 | 40 | 6 | A01:2025 - Broken Access Control |
-| CWE-269 | 31 | 6 | A06:2025 - Insecure Design |
-| CWE-369 | 31 | 2 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-285 | 24 | 6 | A01:2025 - Broken Access Control |
-| CWE-287 | 22 | 7 | A07:2025 - Authentication Failures |
-| CWE-311 | 18 | 8 | A06:2025 - Insecure Design |
-| CWE-77 | 13 | 5 | A05:2025 - Injection |
-| CWE-78 | 13 | 5 | A05:2025 - Injection |
-| CWE-754 | 10 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-94 | 10 | 5 | A05:2025 - Injection |
-| CWE-281 | 9 | 6 | A01:2025 - Broken Access Control |
-| CWE-347 | 8 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-611 | 7 | 11 | A02:2025 - Security Misconfiguration |
-| CWE-89 | 5 | 5 | A05:2025 - Injection |
-| CWE-74 | 5 | 5 | A05:2025 - Injection |
-| CWE-862 | 5 | 6 | A01:2025 - Broken Access Control |
-| CWE-346 | 5 | 7 | A07:2025 - Authentication Failures |
-| CWE-129 | 4 | 2 | A05:2025 - Injection |
-| CWE-436 | 4 | 4 | A06:2025 - Insecure Design |
-| CWE-601 | 3 | 6 | A01:2025 - Broken Access Control |
-| CWE-522 | 3 | 8 | A06:2025 - Insecure Design |
-| CWE-426 | 3 | 10 | A08:2025 - Software or Data Integrity Failures |
-| CWE-327 | 3 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-494 | 3 | 12 | A08:2025 - Software or Data Integrity Failures |
-| CWE-295 | 3 | 7 | A07:2025 - Authentication Failures |
-| CWE-345 | 2 | 11 | A08:2025 - Software or Data Integrity Failures |
-| CWE-755 | 2 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-918 | 2 | 6 | A01:2025 - Broken Access Control |
-| CWE-90 | 2 | 5 | A05:2025 - Injection |
-| CWE-330 | 2 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-502 | 1 | 12 | A08:2025 - Software or Data Integrity Failures |
-| CWE-1021 | 1 | 12 | A06:2025 - Insecure Design |
-| CWE-693 | 1 | 15 | A06:2025 - Insecure Design |
-| CWE-532 | 1 | 13 | A09:2025 - Logging & Alerting Failures |
-| CWE-668 | 1 | 6 | A01:2025 - Broken Access Control |
-| CWE-352 | 1 | 6 | A01:2025 - Broken Access Control |
-| CWE-252 | 1 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-209 | 1 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-20 | 1,136 | OWASP | A05:2025 - Injection |
+| CWE-200 | 508 | OWASP | A01:2025 - Broken Access Control |
+| CWE-362 | 266 | OWASP | A06:2025 - Insecure Design |
+| CWE-476 | 225 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-284 | 169 | OWASP | A01:2025 - Broken Access Control |
+| CWE-732 | 65 | OWASP | A01:2025 - Broken Access Control |
+| CWE-59 | 55 | OWASP | A01:2025 - Broken Access Control |
+| CWE-79 | 53 | OWASP | A05:2025 - Injection |
+| CWE-22 | 40 | OWASP | A01:2025 - Broken Access Control |
+| CWE-269 | 31 | OWASP | A06:2025 - Insecure Design |
+| CWE-369 | 31 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-285 | 24 | OWASP | A01:2025 - Broken Access Control |
+| CWE-287 | 22 | OWASP | A07:2025 - Authentication Failures |
+| CWE-311 | 18 | OWASP | A06:2025 - Insecure Design |
+| CWE-77 | 13 | OWASP | A05:2025 - Injection |
+| CWE-78 | 13 | OWASP | A05:2025 - Injection |
+| CWE-754 | 10 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-94 | 10 | OWASP | A05:2025 - Injection |
+| CWE-281 | 9 | OWASP | A01:2025 - Broken Access Control |
+| CWE-347 | 8 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-611 | 7 | OWASP | A02:2025 - Security Misconfiguration |
+| CWE-89 | 5 | OWASP | A05:2025 - Injection |
+| CWE-74 | 5 | OWASP | A05:2025 - Injection |
+| CWE-862 | 5 | OWASP | A01:2025 - Broken Access Control |
+| CWE-346 | 5 | OWASP | A07:2025 - Authentication Failures |
+| CWE-129 | 4 | OWASP | A05:2025 - Injection |
+| CWE-436 | 4 | OWASP | A06:2025 - Insecure Design |
+| CWE-601 | 3 | OWASP | A01:2025 - Broken Access Control |
+| CWE-522 | 3 | OWASP | A06:2025 - Insecure Design |
+| CWE-426 | 3 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-327 | 3 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-494 | 3 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-295 | 3 | OWASP | A07:2025 - Authentication Failures |
+| CWE-345 | 2 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-755 | 2 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-918 | 2 | OWASP | A01:2025 - Broken Access Control |
+| CWE-90 | 2 | OWASP | A05:2025 - Injection |
+| CWE-330 | 2 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-502 | 1 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-1021 | 1 | OWASP | A06:2025 - Insecure Design |
+| CWE-693 | 1 | OWASP | A06:2025 - Insecure Design |
+| CWE-532 | 1 | OWASP | A09:2025 - Logging & Alerting Failures |
+| CWE-668 | 1 | OWASP | A01:2025 - Broken Access Control |
+| CWE-352 | 1 | OWASP | A01:2025 - Broken Access Control |
+| CWE-252 | 1 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-209 | 1 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
 | **Total** | **2,777** | | |
 
 > **Unique CWEs**: 46
-> **Unique Groups**: 21
+> **Unique Groups**: 9
 
 #### OWASP Top 10 Group Distribution
 
 | Group ID | Group | Count |
 |---|---|---|
-| 4 | A05:2025 - Injection | 1,136 |
-| 6 | A01:2025 - Broken Access Control | 817 |
-| 9 | A06:2025 - Insecure Design | 266 |
-| 1 | A10:2025 - Mishandling of Exceptional Conditions | 225 |
-| 5 | A05:2025 - Injection | 101 |
-| 11 | A01:2025 - Broken Access Control | 65 |
-| 6 | A06:2025 - Insecure Design | 31 |
-| 2 | A10:2025 - Mishandling of Exceptional Conditions | 31 |
-| 7 | A07:2025 - Authentication Failures | 30 |
-| 8 | A06:2025 - Insecure Design | 21 |
-| 14 | A10:2025 - Mishandling of Exceptional Conditions | 14 |
-| 8 | A04:2025 - Cryptographic Failures | 13 |
-| 11 | A02:2025 - Security Misconfiguration | 7 |
-| 2 | A05:2025 - Injection | 4 |
-| 4 | A06:2025 - Insecure Design | 4 |
-| 12 | A08:2025 - Software or Data Integrity Failures | 4 |
-| 10 | A08:2025 - Software or Data Integrity Failures | 3 |
-| 11 | A08:2025 - Software or Data Integrity Failures | 2 |
-| 12 | A06:2025 - Insecure Design | 1 |
-| 15 | A06:2025 - Insecure Design | 1 |
-| 13 | A09:2025 - Logging & Alerting Failures | 1 |
+| OWASP | A05:2025 - Injection | 1,241 |
+| OWASP | A01:2025 - Broken Access Control | 882 |
+| OWASP | A06:2025 - Insecure Design | 324 |
+| OWASP | A10:2025 - Mishandling of Exceptional Conditions | 270 |
+| OWASP | A07:2025 - Authentication Failures | 30 |
+| OWASP | A04:2025 - Cryptographic Failures | 13 |
+| OWASP | A08:2025 - Software or Data Integrity Failures | 9 |
+| OWASP | A02:2025 - Security Misconfiguration | 7 |
+| OWASP | A09:2025 - Logging & Alerting Failures | 1 |
 | **Total** | **2,777** |
 
 ### CPG Files vs all.parquet (data/raw/bigvul/)
@@ -507,111 +495,95 @@ Total: **330,492** | Benign: **311,547** | Vulnerable: **18,945**
 
 | CWE | Count | Group ID | Group |
 |---|---|---|---|
-| CWE-20 | 1,315 | 4 | A05:2025 - Injection |
-| CWE-476 | 915 | 1 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-703 | 735 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-200 | 717 | 6 | A01:2025 - Broken Access Control |
-| CWE-362 | 398 | 9 | A06:2025 - Insecure Design |
-| CWE-284 | 286 | 6 | A01:2025 - Broken Access Control |
-| CWE-59 | 164 | 6 | A01:2025 - Broken Access Control |
-| CWE-369 | 158 | 2 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-22 | 140 | 6 | A01:2025 - Broken Access Control |
-| CWE-269 | 111 | 6 | A06:2025 - Insecure Design |
-| CWE-287 | 105 | 7 | A07:2025 - Authentication Failures |
-| CWE-295 | 101 | 7 | A07:2025 - Authentication Failures |
-| CWE-94 | 84 | 5 | A05:2025 - Injection |
-| CWE-78 | 76 | 5 | A05:2025 - Injection |
-| CWE-444 | 60 | 5 | A06:2025 - Insecure Design |
-| CWE-89 | 54 | 5 | A05:2025 - Injection |
-| CWE-755 | 46 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-862 | 42 | 6 | A01:2025 - Broken Access Control |
-| CWE-613 | 40 | 7 | A07:2025 - Authentication Failures |
-| CWE-330 | 39 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-732 | 38 | 11 | A01:2025 - Broken Access Control |
-| CWE-327 | 38 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-319 | 35 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-601 | 35 | 6 | A01:2025 - Broken Access Control |
-| CWE-77 | 31 | 5 | A05:2025 - Injection |
-| CWE-754 | 30 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-79 | 27 | 5 | A05:2025 - Injection |
-| CWE-74 | 25 | 5 | A05:2025 - Injection |
-| CWE-326 | 25 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-347 | 25 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-252 | 24 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-290 | 23 | 7 | A07:2025 - Authentication Failures |
-| CWE-345 | 20 | 11 | A08:2025 - Software or Data Integrity Failures |
-| CWE-276 | 19 | 11 | A01:2025 - Broken Access Control |
-| CWE-209 | 18 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-863 | 18 | 6 | A01:2025 - Broken Access Control |
-| CWE-434 | 15 | 5 | A06:2025 - Insecure Design |
-| CWE-611 | 14 | 11 | A02:2025 - Security Misconfiguration |
-| CWE-288 | 13 | 7 | A07:2025 - Authentication Failures |
-| CWE-323 | 13 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-668 | 12 | 6 | A01:2025 - Broken Access Control |
-| CWE-522 | 11 | 8 | A06:2025 - Insecure Design |
-| CWE-552 | 10 | 6 | A01:2025 - Broken Access Control |
-| CWE-116 | 9 | 5 | A05:2025 - Injection |
-| CWE-532 | 7 | 13 | A09:2025 - Logging & Alerting Failures |
-| CWE-294 | 7 | 7 | A07:2025 - Authentication Failures |
-| CWE-297 | 6 | 6 | A07:2025 - Authentication Failures |
-| CWE-918 | 6 | 6 | A01:2025 - Broken Access Control |
-| CWE-281 | 6 | 6 | A01:2025 - Broken Access Control |
-| CWE-346 | 6 | 7 | A07:2025 - Authentication Failures |
-| CWE-502 | 4 | 12 | A08:2025 - Software or Data Integrity Failures |
-| CWE-1021 | 4 | 12 | A06:2025 - Insecure Design |
-| CWE-61 | 4 | 6 | A01:2025 - Broken Access Control |
-| CWE-303 | 4 | 7 | A07:2025 - Authentication Failures |
-| CWE-88 | 4 | 5 | A05:2025 - Injection |
-| CWE-91 | 4 | 5 | A05:2025 - Injection |
-| CWE-311 | 4 | 8 | A06:2025 - Insecure Design |
-| CWE-331 | 4 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-352 | 4 | 6 | A01:2025 - Broken Access Control |
-| CWE-129 | 3 | 2 | A05:2025 - Injection |
-| CWE-426 | 3 | 10 | A08:2025 - Software or Data Integrity Failures |
-| CWE-113 | 3 | 5 | A05:2025 - Injection |
-| CWE-776 | 2 | 3 | A02:2025 - Security Misconfiguration |
-| CWE-307 | 2 | 7 | A07:2025 - Authentication Failures |
-| CWE-693 | 2 | 15 | A06:2025 - Insecure Design |
-| CWE-266 | 2 | 6 | A06:2025 - Insecure Design |
-| CWE-93 | 2 | 5 | A05:2025 - Injection |
-| CWE-285 | 2 | 6 | A01:2025 - Broken Access Control |
-| CWE-565 | 1 | 7 | A08:2025 - Software or Data Integrity Failures |
-| CWE-436 | 1 | 4 | A06:2025 - Insecure Design |
-| CWE-798 | 1 | 7 | A07:2025 - Authentication Failures |
+| CWE-20 | 1,315 | OWASP | A05:2025 - Injection |
+| CWE-476 | 915 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-703 | 735 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-200 | 717 | OWASP | A01:2025 - Broken Access Control |
+| CWE-362 | 398 | OWASP | A06:2025 - Insecure Design |
+| CWE-284 | 286 | OWASP | A01:2025 - Broken Access Control |
+| CWE-59 | 164 | OWASP | A01:2025 - Broken Access Control |
+| CWE-369 | 158 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-22 | 140 | OWASP | A01:2025 - Broken Access Control |
+| CWE-269 | 111 | OWASP | A06:2025 - Insecure Design |
+| CWE-287 | 105 | OWASP | A07:2025 - Authentication Failures |
+| CWE-295 | 101 | OWASP | A07:2025 - Authentication Failures |
+| CWE-94 | 84 | OWASP | A05:2025 - Injection |
+| CWE-78 | 76 | OWASP | A05:2025 - Injection |
+| CWE-444 | 60 | OWASP | A06:2025 - Insecure Design |
+| CWE-89 | 54 | OWASP | A05:2025 - Injection |
+| CWE-755 | 46 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-862 | 42 | OWASP | A01:2025 - Broken Access Control |
+| CWE-613 | 40 | OWASP | A07:2025 - Authentication Failures |
+| CWE-330 | 39 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-732 | 38 | OWASP | A01:2025 - Broken Access Control |
+| CWE-327 | 38 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-319 | 35 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-601 | 35 | OWASP | A01:2025 - Broken Access Control |
+| CWE-77 | 31 | OWASP | A05:2025 - Injection |
+| CWE-754 | 30 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-79 | 27 | OWASP | A05:2025 - Injection |
+| CWE-74 | 25 | OWASP | A05:2025 - Injection |
+| CWE-326 | 25 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-347 | 25 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-252 | 24 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-290 | 23 | OWASP | A07:2025 - Authentication Failures |
+| CWE-345 | 20 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-276 | 19 | OWASP | A01:2025 - Broken Access Control |
+| CWE-209 | 18 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-863 | 18 | OWASP | A01:2025 - Broken Access Control |
+| CWE-434 | 15 | OWASP | A06:2025 - Insecure Design |
+| CWE-611 | 14 | OWASP | A02:2025 - Security Misconfiguration |
+| CWE-288 | 13 | OWASP | A07:2025 - Authentication Failures |
+| CWE-323 | 13 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-668 | 12 | OWASP | A01:2025 - Broken Access Control |
+| CWE-522 | 11 | OWASP | A06:2025 - Insecure Design |
+| CWE-552 | 10 | OWASP | A01:2025 - Broken Access Control |
+| CWE-116 | 9 | OWASP | A05:2025 - Injection |
+| CWE-532 | 7 | OWASP | A09:2025 - Logging & Alerting Failures |
+| CWE-294 | 7 | OWASP | A07:2025 - Authentication Failures |
+| CWE-297 | 6 | OWASP | A07:2025 - Authentication Failures |
+| CWE-918 | 6 | OWASP | A01:2025 - Broken Access Control |
+| CWE-281 | 6 | OWASP | A01:2025 - Broken Access Control |
+| CWE-346 | 6 | OWASP | A07:2025 - Authentication Failures |
+| CWE-502 | 4 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-1021 | 4 | OWASP | A06:2025 - Insecure Design |
+| CWE-61 | 4 | OWASP | A01:2025 - Broken Access Control |
+| CWE-303 | 4 | OWASP | A07:2025 - Authentication Failures |
+| CWE-88 | 4 | OWASP | A05:2025 - Injection |
+| CWE-91 | 4 | OWASP | A05:2025 - Injection |
+| CWE-311 | 4 | OWASP | A06:2025 - Insecure Design |
+| CWE-331 | 4 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-352 | 4 | OWASP | A01:2025 - Broken Access Control |
+| CWE-129 | 3 | OWASP | A05:2025 - Injection |
+| CWE-426 | 3 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-113 | 3 | OWASP | A05:2025 - Injection |
+| CWE-776 | 2 | OWASP | A02:2025 - Security Misconfiguration |
+| CWE-307 | 2 | OWASP | A07:2025 - Authentication Failures |
+| CWE-693 | 2 | OWASP | A06:2025 - Insecure Design |
+| CWE-266 | 2 | OWASP | A06:2025 - Insecure Design |
+| CWE-93 | 2 | OWASP | A05:2025 - Injection |
+| CWE-285 | 2 | OWASP | A01:2025 - Broken Access Control |
+| CWE-565 | 1 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-436 | 1 | OWASP | A06:2025 - Insecure Design |
+| CWE-798 | 1 | OWASP | A07:2025 - Authentication Failures |
 | **Total** | **6,212** | | |
 
 > **Unique CWEs**: 71
-> **Unique Groups**: 25
+> **Unique Groups**: 9
 
 #### OWASP Top 10 Group Distribution
 
 | Group ID | Group | Count |
 |---|---|---|
-| 6 | A01:2025 - Broken Access Control | 1,446 |
-| 4 | A05:2025 - Injection | 1,315 |
-| 1 | A10:2025 - Mishandling of Exceptional Conditions | 915 |
-| 14 | A10:2025 - Mishandling of Exceptional Conditions | 853 |
-| 9 | A06:2025 - Insecure Design | 398 |
-| 5 | A05:2025 - Injection | 319 |
-| 7 | A07:2025 - Authentication Failures | 302 |
-| 8 | A04:2025 - Cryptographic Failures | 179 |
-| 2 | A10:2025 - Mishandling of Exceptional Conditions | 158 |
-| 6 | A06:2025 - Insecure Design | 113 |
-| 5 | A06:2025 - Insecure Design | 75 |
-| 11 | A01:2025 - Broken Access Control | 57 |
-| 11 | A08:2025 - Software or Data Integrity Failures | 20 |
-| 8 | A06:2025 - Insecure Design | 15 |
-| 11 | A02:2025 - Security Misconfiguration | 14 |
-| 13 | A09:2025 - Logging & Alerting Failures | 7 |
-| 6 | A07:2025 - Authentication Failures | 6 |
-| 12 | A08:2025 - Software or Data Integrity Failures | 4 |
-| 12 | A06:2025 - Insecure Design | 4 |
-| 2 | A05:2025 - Injection | 3 |
-| 10 | A08:2025 - Software or Data Integrity Failures | 3 |
-| 3 | A02:2025 - Security Misconfiguration | 2 |
-| 15 | A06:2025 - Insecure Design | 2 |
-| 7 | A08:2025 - Software or Data Integrity Failures | 1 |
-| 4 | A06:2025 - Insecure Design | 1 |
+| OWASP | A10:2025 - Mishandling of Exceptional Conditions | 1,926 |
+| OWASP | A05:2025 - Injection | 1,637 |
+| OWASP | A01:2025 - Broken Access Control | 1,503 |
+| OWASP | A06:2025 - Insecure Design | 608 |
+| OWASP | A07:2025 - Authentication Failures | 308 |
+| OWASP | A04:2025 - Cryptographic Failures | 179 |
+| OWASP | A08:2025 - Software or Data Integrity Failures | 28 |
+| OWASP | A02:2025 - Security Misconfiguration | 16 |
+| OWASP | A09:2025 - Logging & Alerting Failures | 7 |
 | **Total** | **6,212** |
 
 ---
@@ -859,113 +831,96 @@ Total: **55,868** | Benign: **27,934** | Vulnerable: **27,934**
 
 | CWE | Count | Group ID | Group |
 |---|---|---|---|
-| CWE-476 | 2,026 | 1 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-20 | 1,778 | 4 | A05:2025 - Injection |
-| CWE-362 | 968 | 9 | A06:2025 - Insecure Design |
-| CWE-200 | 889 | 6 | A01:2025 - Broken Access Control |
-| CWE-287 | 327 | 7 | A07:2025 - Authentication Failures |
-| CWE-22 | 193 | 6 | A01:2025 - Broken Access Control |
-| CWE-369 | 188 | 2 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-269 | 151 | 6 | A06:2025 - Insecure Design |
-| CWE-59 | 148 | 6 | A01:2025 - Broken Access Control |
-| CWE-295 | 117 | 7 | A07:2025 - Authentication Failures |
-| CWE-78 | 102 | 5 | A05:2025 - Injection |
-| CWE-284 | 96 | 6 | A01:2025 - Broken Access Control |
-| CWE-863 | 87 | 6 | A01:2025 - Broken Access Control |
-| CWE-732 | 84 | 11 | A01:2025 - Broken Access Control |
-| CWE-74 | 78 | 5 | A05:2025 - Injection |
-| CWE-252 | 77 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-79 | 71 | 5 | A05:2025 - Injection |
-| CWE-89 | 65 | 5 | A05:2025 - Injection |
-| CWE-330 | 63 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-862 | 63 | 6 | A01:2025 - Broken Access Control |
-| CWE-668 | 62 | 6 | A01:2025 - Broken Access Control |
-| CWE-754 | 62 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-327 | 59 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-755 | 56 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-129 | 42 | 2 | A05:2025 - Injection |
-| CWE-77 | 41 | 5 | A05:2025 - Injection |
-| CWE-326 | 40 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-502 | 40 | 12 | A08:2025 - Software or Data Integrity Failures |
-| CWE-611 | 38 | 11 | A02:2025 - Security Misconfiguration |
-| CWE-776 | 36 | 3 | A02:2025 - Security Misconfiguration |
-| CWE-436 | 36 | 4 | A06:2025 - Insecure Design |
-| CWE-345 | 32 | 11 | A08:2025 - Software or Data Integrity Failures |
-| CWE-276 | 28 | 11 | A01:2025 - Broken Access Control |
-| CWE-601 | 26 | 6 | A01:2025 - Broken Access Control |
-| CWE-444 | 22 | 5 | A06:2025 - Insecure Design |
-| CWE-347 | 21 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-552 | 18 | 6 | A01:2025 - Broken Access Control |
-| CWE-116 | 18 | 5 | A05:2025 - Injection |
-| CWE-426 | 16 | 10 | A08:2025 - Software or Data Integrity Failures |
-| CWE-94 | 16 | 5 | A05:2025 - Injection |
-| CWE-319 | 13 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-331 | 12 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-346 | 12 | 7 | A07:2025 - Authentication Failures |
-| CWE-337 | 10 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-532 | 9 | 13 | A09:2025 - Logging & Alerting Failures |
-| CWE-918 | 8 | 6 | A01:2025 - Broken Access Control |
-| CWE-90 | 8 | 5 | A05:2025 - Injection |
-| CWE-494 | 6 | 12 | A08:2025 - Software or Data Integrity Failures |
-| CWE-434 | 6 | 5 | A06:2025 - Insecure Design |
-| CWE-693 | 6 | 15 | A06:2025 - Insecure Design |
-| CWE-522 | 5 | 8 | A06:2025 - Insecure Design |
-| CWE-113 | 4 | 5 | A05:2025 - Injection |
-| CWE-306 | 4 | 7 | A07:2025 - Authentication Failures |
-| CWE-324 | 4 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-1021 | 4 | 12 | A06:2025 - Insecure Design |
-| CWE-285 | 4 | 6 | A01:2025 - Broken Access Control |
-| CWE-88 | 4 | 5 | A05:2025 - Injection |
-| CWE-639 | 4 | 6 | A01:2025 - Broken Access Control |
-| CWE-628 | 2 | 10 | A06:2025 - Insecure Design |
-| CWE-248 | 2 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-460 | 2 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-290 | 2 | 7 | A07:2025 - Authentication Failures |
-| CWE-73 | 2 | 6 | A06:2025 - Insecure Design |
-| CWE-93 | 2 | 5 | A05:2025 - Injection |
-| CWE-117 | 2 | 13 | A09:2025 - Logging & Alerting Failures |
-| CWE-209 | 2 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-282 | 2 | 6 | A01:2025 - Broken Access Control |
-| CWE-610 | 2 | 6 | A05:2025 - Injection |
-| CWE-338 | 2 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-300 | 2 | 6 | A07:2025 - Authentication Failures |
-| CWE-307 | 2 | 7 | A07:2025 - Authentication Failures |
-| CWE-325 | 2 | 8 | A04:2025 - Cryptographic Failures |
+| CWE-476 | 2,026 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-20 | 1,778 | OWASP | A05:2025 - Injection |
+| CWE-362 | 968 | OWASP | A06:2025 - Insecure Design |
+| CWE-200 | 889 | OWASP | A01:2025 - Broken Access Control |
+| CWE-287 | 327 | OWASP | A07:2025 - Authentication Failures |
+| CWE-22 | 193 | OWASP | A01:2025 - Broken Access Control |
+| CWE-369 | 188 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-269 | 151 | OWASP | A06:2025 - Insecure Design |
+| CWE-59 | 148 | OWASP | A01:2025 - Broken Access Control |
+| CWE-295 | 117 | OWASP | A07:2025 - Authentication Failures |
+| CWE-78 | 102 | OWASP | A05:2025 - Injection |
+| CWE-284 | 96 | OWASP | A01:2025 - Broken Access Control |
+| CWE-863 | 87 | OWASP | A01:2025 - Broken Access Control |
+| CWE-732 | 84 | OWASP | A01:2025 - Broken Access Control |
+| CWE-74 | 78 | OWASP | A05:2025 - Injection |
+| CWE-252 | 77 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-79 | 71 | OWASP | A05:2025 - Injection |
+| CWE-89 | 65 | OWASP | A05:2025 - Injection |
+| CWE-330 | 63 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-862 | 63 | OWASP | A01:2025 - Broken Access Control |
+| CWE-668 | 62 | OWASP | A01:2025 - Broken Access Control |
+| CWE-754 | 62 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-327 | 59 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-755 | 56 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-129 | 42 | OWASP | A05:2025 - Injection |
+| CWE-77 | 41 | OWASP | A05:2025 - Injection |
+| CWE-326 | 40 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-502 | 40 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-611 | 38 | OWASP | A02:2025 - Security Misconfiguration |
+| CWE-776 | 36 | OWASP | A02:2025 - Security Misconfiguration |
+| CWE-436 | 36 | OWASP | A06:2025 - Insecure Design |
+| CWE-345 | 32 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-276 | 28 | OWASP | A01:2025 - Broken Access Control |
+| CWE-601 | 26 | OWASP | A01:2025 - Broken Access Control |
+| CWE-444 | 22 | OWASP | A06:2025 - Insecure Design |
+| CWE-347 | 21 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-552 | 18 | OWASP | A01:2025 - Broken Access Control |
+| CWE-116 | 18 | OWASP | A05:2025 - Injection |
+| CWE-426 | 16 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-94 | 16 | OWASP | A05:2025 - Injection |
+| CWE-319 | 13 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-331 | 12 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-346 | 12 | OWASP | A07:2025 - Authentication Failures |
+| CWE-337 | 10 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-532 | 9 | OWASP | A09:2025 - Logging & Alerting Failures |
+| CWE-918 | 8 | OWASP | A01:2025 - Broken Access Control |
+| CWE-90 | 8 | OWASP | A05:2025 - Injection |
+| CWE-494 | 6 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-434 | 6 | OWASP | A06:2025 - Insecure Design |
+| CWE-693 | 6 | OWASP | A06:2025 - Insecure Design |
+| CWE-522 | 5 | OWASP | A06:2025 - Insecure Design |
+| CWE-113 | 4 | OWASP | A05:2025 - Injection |
+| CWE-306 | 4 | OWASP | A07:2025 - Authentication Failures |
+| CWE-324 | 4 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-1021 | 4 | OWASP | A06:2025 - Insecure Design |
+| CWE-285 | 4 | OWASP | A01:2025 - Broken Access Control |
+| CWE-88 | 4 | OWASP | A05:2025 - Injection |
+| CWE-639 | 4 | OWASP | A01:2025 - Broken Access Control |
+| CWE-628 | 2 | OWASP | A06:2025 - Insecure Design |
+| CWE-248 | 2 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-460 | 2 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-290 | 2 | OWASP | A07:2025 - Authentication Failures |
+| CWE-73 | 2 | OWASP | A06:2025 - Insecure Design |
+| CWE-93 | 2 | OWASP | A05:2025 - Injection |
+| CWE-117 | 2 | OWASP | A09:2025 - Logging & Alerting Failures |
+| CWE-209 | 2 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-282 | 2 | OWASP | A01:2025 - Broken Access Control |
+| CWE-610 | 2 | OWASP | A05:2025 - Injection |
+| CWE-338 | 2 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-300 | 2 | OWASP | A07:2025 - Authentication Failures |
+| CWE-307 | 2 | OWASP | A07:2025 - Authentication Failures |
+| CWE-325 | 2 | OWASP | A04:2025 - Cryptographic Failures |
 | **Total** | **8,431** | | |
 
 > **Unique CWEs**: 72
-> **Unique Groups**: 26
+> **Unique Groups**: 9
 
 #### OWASP Top 10 Group Distribution
 
 | Group ID | Group | Count |
 |---|---|---|
-| 1 | A10:2025 - Mishandling of Exceptional Conditions | 2,026 |
-| 4 | A05:2025 - Injection | 1,778 |
-| 6 | A01:2025 - Broken Access Control | 1,600 |
-| 9 | A06:2025 - Insecure Design | 968 |
-| 7 | A07:2025 - Authentication Failures | 464 |
-| 5 | A05:2025 - Injection | 409 |
-| 8 | A04:2025 - Cryptographic Failures | 226 |
-| 14 | A10:2025 - Mishandling of Exceptional Conditions | 201 |
-| 2 | A10:2025 - Mishandling of Exceptional Conditions | 188 |
-| 6 | A06:2025 - Insecure Design | 153 |
-| 11 | A01:2025 - Broken Access Control | 112 |
-| 12 | A08:2025 - Software or Data Integrity Failures | 46 |
-| 2 | A05:2025 - Injection | 42 |
-| 11 | A02:2025 - Security Misconfiguration | 38 |
-| 3 | A02:2025 - Security Misconfiguration | 36 |
-| 4 | A06:2025 - Insecure Design | 36 |
-| 11 | A08:2025 - Software or Data Integrity Failures | 32 |
-| 5 | A06:2025 - Insecure Design | 28 |
-| 10 | A08:2025 - Software or Data Integrity Failures | 16 |
-| 13 | A09:2025 - Logging & Alerting Failures | 11 |
-| 15 | A06:2025 - Insecure Design | 6 |
-| 8 | A06:2025 - Insecure Design | 5 |
-| 12 | A06:2025 - Insecure Design | 4 |
-| 10 | A06:2025 - Insecure Design | 2 |
-| 6 | A05:2025 - Injection | 2 |
-| 6 | A07:2025 - Authentication Failures | 2 |
+| OWASP | A10:2025 - Mishandling of Exceptional Conditions | 2,415 |
+| OWASP | A05:2025 - Injection | 2,231 |
+| OWASP | A01:2025 - Broken Access Control | 1,712 |
+| OWASP | A06:2025 - Insecure Design | 1,202 |
+| OWASP | A07:2025 - Authentication Failures | 466 |
+| OWASP | A04:2025 - Cryptographic Failures | 226 |
+| OWASP | A08:2025 - Software or Data Integrity Failures | 94 |
+| OWASP | A02:2025 - Security Misconfiguration | 74 |
+| OWASP | A09:2025 - Logging & Alerting Failures | 11 |
 | **Total** | **8,431** |
 
 ---
@@ -1247,140 +1202,120 @@ Total: **77,096** | Benign: **38,548** | Vulnerable: **38,548**
 
 | CWE | Count | Group ID | Group |
 |---|---|---|---|
-| CWE-20 | 1,488 | 4 | A05:2025 - Injection |
-| CWE-79 | 871 | 5 | A05:2025 - Injection |
-| CWE-200 | 705 | 6 | A01:2025 - Broken Access Control |
-| CWE-476 | 692 | 1 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-89 | 560 | 5 | A05:2025 - Injection |
-| CWE-703 | 397 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-362 | 368 | 9 | A06:2025 - Insecure Design |
-| CWE-94 | 306 | 5 | A05:2025 - Injection |
-| CWE-22 | 302 | 6 | A01:2025 - Broken Access Control |
-| CWE-78 | 238 | 5 | A05:2025 - Injection |
-| CWE-284 | 154 | 6 | A01:2025 - Broken Access Control |
-| CWE-369 | 147 | 2 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-352 | 136 | 6 | A01:2025 - Broken Access Control |
-| CWE-918 | 128 | 6 | A01:2025 - Broken Access Control |
-| CWE-863 | 119 | 6 | A01:2025 - Broken Access Control |
-| CWE-287 | 113 | 7 | A07:2025 - Authentication Failures |
-| CWE-59 | 112 | 6 | A01:2025 - Broken Access Control |
-| CWE-269 | 111 | 6 | A06:2025 - Insecure Design |
-| CWE-384 | 103 | 7 | A07:2025 - Authentication Failures |
-| CWE-502 | 98 | 12 | A08:2025 - Software or Data Integrity Failures |
-| CWE-295 | 88 | 7 | A07:2025 - Authentication Failures |
-| CWE-613 | 87 | 7 | A07:2025 - Authentication Failures |
-| CWE-601 | 81 | 6 | A01:2025 - Broken Access Control |
-| CWE-74 | 71 | 5 | A05:2025 - Injection |
-| CWE-327 | 63 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-347 | 56 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-732 | 52 | 11 | A01:2025 - Broken Access Control |
-| CWE-862 | 51 | 6 | A01:2025 - Broken Access Control |
-| CWE-77 | 45 | 5 | A05:2025 - Injection |
-| CWE-755 | 36 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-345 | 36 | 11 | A08:2025 - Software or Data Integrity Failures |
-| CWE-276 | 35 | 11 | A01:2025 - Broken Access Control |
-| CWE-434 | 35 | 5 | A06:2025 - Insecure Design |
-| CWE-330 | 35 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-444 | 35 | 5 | A06:2025 - Insecure Design |
-| CWE-319 | 32 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-668 | 31 | 6 | A01:2025 - Broken Access Control |
-| CWE-611 | 31 | 11 | A02:2025 - Security Misconfiguration |
-| CWE-326 | 31 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-252 | 29 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-285 | 29 | 6 | A01:2025 - Broken Access Control |
-| CWE-639 | 27 | 6 | A01:2025 - Broken Access Control |
-| CWE-754 | 27 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-88 | 25 | 5 | A05:2025 - Injection |
-| CWE-640 | 24 | 7 | A07:2025 - Authentication Failures |
-| CWE-290 | 21 | 7 | A07:2025 - Authentication Failures |
-| CWE-116 | 20 | 5 | A05:2025 - Injection |
-| CWE-346 | 19 | 7 | A07:2025 - Authentication Failures |
-| CWE-377 | 15 | 6 | A01:2025 - Broken Access Control |
-| CWE-209 | 14 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-129 | 13 | 2 | A05:2025 - Injection |
-| CWE-1021 | 11 | 12 | A06:2025 - Insecure Design |
-| CWE-532 | 11 | 13 | A09:2025 - Logging & Alerting Failures |
-| CWE-798 | 10 | 7 | A07:2025 - Authentication Failures |
-| CWE-91 | 10 | 5 | A05:2025 - Injection |
-| CWE-331 | 10 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-521 | 8 | 7 | A07:2025 - Authentication Failures |
-| CWE-307 | 8 | 7 | A07:2025 - Authentication Failures |
-| CWE-281 | 8 | 6 | A01:2025 - Broken Access Control |
-| CWE-917 | 7 | 5 | A05:2025 - Injection |
-| CWE-323 | 7 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-470 | 7 | 4 | A05:2025 - Injection |
-| CWE-916 | 7 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-311 | 7 | 8 | A06:2025 - Insecure Design |
-| CWE-522 | 7 | 8 | A06:2025 - Insecure Design |
-| CWE-288 | 6 | 7 | A07:2025 - Authentication Failures |
-| CWE-294 | 6 | 7 | A07:2025 - Authentication Failures |
-| CWE-494 | 6 | 12 | A08:2025 - Software or Data Integrity Failures |
-| CWE-338 | 6 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-93 | 6 | 5 | A05:2025 - Injection |
-| CWE-426 | 5 | 10 | A08:2025 - Software or Data Integrity Failures |
-| CWE-427 | 5 | 10 | A08:2025 - Software or Data Integrity Failures |
-| CWE-306 | 5 | 7 | A07:2025 - Authentication Failures |
-| CWE-915 | 5 | 4 | A08:2025 - Software or Data Integrity Failures |
-| CWE-436 | 4 | 4 | A06:2025 - Insecure Design |
-| CWE-776 | 3 | 3 | A02:2025 - Security Misconfiguration |
-| CWE-552 | 3 | 6 | A01:2025 - Broken Access Control |
-| CWE-359 | 3 | 6 | A01:2025 - Broken Access Control |
-| CWE-829 | 3 | 5 | A08:2025 - Software or Data Integrity Failures |
-| CWE-312 | 3 | 8 | A06:2025 - Insecure Design |
-| CWE-303 | 3 | 7 | A07:2025 - Authentication Failures |
-| CWE-90 | 3 | 5 | A05:2025 - Injection |
-| CWE-565 | 3 | 7 | A08:2025 - Software or Data Integrity Failures |
-| CWE-61 | 3 | 6 | A01:2025 - Broken Access Control |
-| CWE-73 | 2 | 6 | A06:2025 - Insecure Design |
-| CWE-676 | 2 | 10 | A06:2025 - Insecure Design |
-| CWE-335 | 2 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-297 | 2 | 6 | A07:2025 - Authentication Failures |
-| CWE-922 | 1 | 8 | A01:2025 - Broken Access Control |
-| CWE-266 | 1 | 6 | A06:2025 - Insecure Design |
-| CWE-80 | 1 | 5 | A05:2025 - Injection |
-| CWE-538 | 1 | 6 | A01:2025 - Broken Access Control |
-| CWE-113 | 1 | 5 | A05:2025 - Injection |
-| CWE-425 | 1 | 6 | A01:2025 - Broken Access Control |
-| CWE-321 | 1 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-526 | 1 | 8 | A02:2025 - Security Misconfiguration |
+| CWE-20 | 1,488 | OWASP | A05:2025 - Injection |
+| CWE-79 | 871 | OWASP | A05:2025 - Injection |
+| CWE-200 | 705 | OWASP | A01:2025 - Broken Access Control |
+| CWE-476 | 692 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-89 | 560 | OWASP | A05:2025 - Injection |
+| CWE-703 | 397 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-362 | 368 | OWASP | A06:2025 - Insecure Design |
+| CWE-94 | 306 | OWASP | A05:2025 - Injection |
+| CWE-22 | 302 | OWASP | A01:2025 - Broken Access Control |
+| CWE-78 | 238 | OWASP | A05:2025 - Injection |
+| CWE-284 | 154 | OWASP | A01:2025 - Broken Access Control |
+| CWE-369 | 147 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-352 | 136 | OWASP | A01:2025 - Broken Access Control |
+| CWE-918 | 128 | OWASP | A01:2025 - Broken Access Control |
+| CWE-863 | 119 | OWASP | A01:2025 - Broken Access Control |
+| CWE-287 | 113 | OWASP | A07:2025 - Authentication Failures |
+| CWE-59 | 112 | OWASP | A01:2025 - Broken Access Control |
+| CWE-269 | 111 | OWASP | A06:2025 - Insecure Design |
+| CWE-384 | 103 | OWASP | A07:2025 - Authentication Failures |
+| CWE-502 | 98 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-295 | 88 | OWASP | A07:2025 - Authentication Failures |
+| CWE-613 | 87 | OWASP | A07:2025 - Authentication Failures |
+| CWE-601 | 81 | OWASP | A01:2025 - Broken Access Control |
+| CWE-74 | 71 | OWASP | A05:2025 - Injection |
+| CWE-327 | 63 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-347 | 56 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-732 | 52 | OWASP | A01:2025 - Broken Access Control |
+| CWE-862 | 51 | OWASP | A01:2025 - Broken Access Control |
+| CWE-77 | 45 | OWASP | A05:2025 - Injection |
+| CWE-755 | 36 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-345 | 36 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-276 | 35 | OWASP | A01:2025 - Broken Access Control |
+| CWE-434 | 35 | OWASP | A06:2025 - Insecure Design |
+| CWE-330 | 35 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-444 | 35 | OWASP | A06:2025 - Insecure Design |
+| CWE-319 | 32 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-668 | 31 | OWASP | A01:2025 - Broken Access Control |
+| CWE-611 | 31 | OWASP | A02:2025 - Security Misconfiguration |
+| CWE-326 | 31 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-252 | 29 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-285 | 29 | OWASP | A01:2025 - Broken Access Control |
+| CWE-639 | 27 | OWASP | A01:2025 - Broken Access Control |
+| CWE-754 | 27 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-88 | 25 | OWASP | A05:2025 - Injection |
+| CWE-640 | 24 | OWASP | A07:2025 - Authentication Failures |
+| CWE-290 | 21 | OWASP | A07:2025 - Authentication Failures |
+| CWE-116 | 20 | OWASP | A05:2025 - Injection |
+| CWE-346 | 19 | OWASP | A07:2025 - Authentication Failures |
+| CWE-377 | 15 | OWASP | A01:2025 - Broken Access Control |
+| CWE-209 | 14 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-129 | 13 | OWASP | A05:2025 - Injection |
+| CWE-1021 | 11 | OWASP | A06:2025 - Insecure Design |
+| CWE-532 | 11 | OWASP | A09:2025 - Logging & Alerting Failures |
+| CWE-798 | 10 | OWASP | A07:2025 - Authentication Failures |
+| CWE-91 | 10 | OWASP | A05:2025 - Injection |
+| CWE-331 | 10 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-521 | 8 | OWASP | A07:2025 - Authentication Failures |
+| CWE-307 | 8 | OWASP | A07:2025 - Authentication Failures |
+| CWE-281 | 8 | OWASP | A01:2025 - Broken Access Control |
+| CWE-917 | 7 | OWASP | A05:2025 - Injection |
+| CWE-323 | 7 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-470 | 7 | OWASP | A05:2025 - Injection |
+| CWE-916 | 7 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-311 | 7 | OWASP | A06:2025 - Insecure Design |
+| CWE-522 | 7 | OWASP | A06:2025 - Insecure Design |
+| CWE-288 | 6 | OWASP | A07:2025 - Authentication Failures |
+| CWE-294 | 6 | OWASP | A07:2025 - Authentication Failures |
+| CWE-494 | 6 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-338 | 6 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-93 | 6 | OWASP | A05:2025 - Injection |
+| CWE-426 | 5 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-427 | 5 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-306 | 5 | OWASP | A07:2025 - Authentication Failures |
+| CWE-915 | 5 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-436 | 4 | OWASP | A06:2025 - Insecure Design |
+| CWE-776 | 3 | OWASP | A02:2025 - Security Misconfiguration |
+| CWE-552 | 3 | OWASP | A01:2025 - Broken Access Control |
+| CWE-359 | 3 | OWASP | A01:2025 - Broken Access Control |
+| CWE-829 | 3 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-312 | 3 | OWASP | A06:2025 - Insecure Design |
+| CWE-303 | 3 | OWASP | A07:2025 - Authentication Failures |
+| CWE-90 | 3 | OWASP | A05:2025 - Injection |
+| CWE-565 | 3 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-61 | 3 | OWASP | A01:2025 - Broken Access Control |
+| CWE-73 | 2 | OWASP | A06:2025 - Insecure Design |
+| CWE-676 | 2 | OWASP | A06:2025 - Insecure Design |
+| CWE-335 | 2 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-297 | 2 | OWASP | A07:2025 - Authentication Failures |
+| CWE-922 | 1 | OWASP | A01:2025 - Broken Access Control |
+| CWE-266 | 1 | OWASP | A06:2025 - Insecure Design |
+| CWE-80 | 1 | OWASP | A05:2025 - Injection |
+| CWE-538 | 1 | OWASP | A01:2025 - Broken Access Control |
+| CWE-113 | 1 | OWASP | A05:2025 - Injection |
+| CWE-425 | 1 | OWASP | A01:2025 - Broken Access Control |
+| CWE-321 | 1 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-526 | 1 | OWASP | A02:2025 - Security Misconfiguration |
 | **Total** | **8,557** | | |
 
 > **Unique CWEs**: 96
-> **Unique Groups**: 29
+> **Unique Groups**: 9
 
 #### OWASP Top 10 Group Distribution
 
 | Group ID | Group | Count |
 |---|---|---|
-| 5 | A05:2025 - Injection | 2,164 |
-| 6 | A01:2025 - Broken Access Control | 1,909 |
-| 4 | A05:2025 - Injection | 1,495 |
-| 1 | A10:2025 - Mishandling of Exceptional Conditions | 692 |
-| 14 | A10:2025 - Mishandling of Exceptional Conditions | 503 |
-| 7 | A07:2025 - Authentication Failures | 501 |
-| 9 | A06:2025 - Insecure Design | 368 |
-| 8 | A04:2025 - Cryptographic Failures | 250 |
-| 2 | A10:2025 - Mishandling of Exceptional Conditions | 147 |
-| 6 | A06:2025 - Insecure Design | 114 |
-| 12 | A08:2025 - Software or Data Integrity Failures | 104 |
-| 11 | A01:2025 - Broken Access Control | 87 |
-| 5 | A06:2025 - Insecure Design | 70 |
-| 11 | A08:2025 - Software or Data Integrity Failures | 36 |
-| 11 | A02:2025 - Security Misconfiguration | 31 |
-| 8 | A06:2025 - Insecure Design | 17 |
-| 2 | A05:2025 - Injection | 13 |
-| 12 | A06:2025 - Insecure Design | 11 |
-| 13 | A09:2025 - Logging & Alerting Failures | 11 |
-| 10 | A08:2025 - Software or Data Integrity Failures | 10 |
-| 4 | A08:2025 - Software or Data Integrity Failures | 5 |
-| 4 | A06:2025 - Insecure Design | 4 |
-| 3 | A02:2025 - Security Misconfiguration | 3 |
-| 5 | A08:2025 - Software or Data Integrity Failures | 3 |
-| 7 | A08:2025 - Software or Data Integrity Failures | 3 |
-| 10 | A06:2025 - Insecure Design | 2 |
-| 6 | A07:2025 - Authentication Failures | 2 |
-| 8 | A01:2025 - Broken Access Control | 1 |
-| 8 | A02:2025 - Security Misconfiguration | 1 |
+| OWASP | A05:2025 - Injection | 3,672 |
+| OWASP | A01:2025 - Broken Access Control | 1,997 |
+| OWASP | A10:2025 - Mishandling of Exceptional Conditions | 1,342 |
+| OWASP | A06:2025 - Insecure Design | 586 |
+| OWASP | A07:2025 - Authentication Failures | 503 |
+| OWASP | A04:2025 - Cryptographic Failures | 250 |
+| OWASP | A08:2025 - Software or Data Integrity Failures | 161 |
+| OWASP | A02:2025 - Security Misconfiguration | 35 |
+| OWASP | A09:2025 - Logging & Alerting Failures | 11 |
 | **Total** | **8,557** |
 
 ---
@@ -1483,38 +1418,37 @@ Total: **2,100** | Benign: **1,050** | Vulnerable: **1,050**
 
 | CWE | Count | Group ID | Group |
 |---|---|---|---|
-| CWE-79 | 50 | 5 | A05:2025 - Injection |
-| CWE-89 | 50 | 5 | A05:2025 - Injection |
-| CWE-22 | 50 | 6 | A01:2025 - Broken Access Control |
-| CWE-78 | 50 | 5 | A05:2025 - Injection |
-| CWE-502 | 50 | 12 | A08:2025 - Software or Data Integrity Failures |
-| CWE-94 | 50 | 5 | A05:2025 - Injection |
-| CWE-863 | 50 | 6 | A01:2025 - Broken Access Control |
-| CWE-352 | 50 | 6 | A01:2025 - Broken Access Control |
-| CWE-306 | 50 | 7 | A07:2025 - Authentication Failures |
-| CWE-476 | 50 | 1 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-269 | 50 | 6 | A06:2025 - Insecure Design |
-| CWE-798 | 50 | 7 | A07:2025 - Authentication Failures |
-| CWE-862 | 50 | 6 | A01:2025 - Broken Access Control |
-| CWE-434 | 50 | 5 | A06:2025 - Insecure Design |
-| CWE-918 | 50 | 6 | A01:2025 - Broken Access Control |
-| CWE-200 | 50 | 6 | A01:2025 - Broken Access Control |
+| CWE-79 | 50 | OWASP | A05:2025 - Injection |
+| CWE-89 | 50 | OWASP | A05:2025 - Injection |
+| CWE-22 | 50 | OWASP | A01:2025 - Broken Access Control |
+| CWE-78 | 50 | OWASP | A05:2025 - Injection |
+| CWE-502 | 50 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-94 | 50 | OWASP | A05:2025 - Injection |
+| CWE-863 | 50 | OWASP | A01:2025 - Broken Access Control |
+| CWE-352 | 50 | OWASP | A01:2025 - Broken Access Control |
+| CWE-306 | 50 | OWASP | A07:2025 - Authentication Failures |
+| CWE-476 | 50 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-269 | 50 | OWASP | A06:2025 - Insecure Design |
+| CWE-798 | 50 | OWASP | A07:2025 - Authentication Failures |
+| CWE-862 | 50 | OWASP | A01:2025 - Broken Access Control |
+| CWE-434 | 50 | OWASP | A06:2025 - Insecure Design |
+| CWE-918 | 50 | OWASP | A01:2025 - Broken Access Control |
+| CWE-200 | 50 | OWASP | A01:2025 - Broken Access Control |
 | **Total** | **800** | | |
 
 > **Unique CWEs**: 16
-> **Unique Groups**: 7
+> **Unique Groups**: 6
 
 #### OWASP Top 10 Group Distribution
 
 | Group ID | Group | Count |
 |---|---|---|
-| 6 | A01:2025 - Broken Access Control | 300 |
-| 5 | A05:2025 - Injection | 200 |
-| 7 | A07:2025 - Authentication Failures | 100 |
-| 12 | A08:2025 - Software or Data Integrity Failures | 50 |
-| 1 | A10:2025 - Mishandling of Exceptional Conditions | 50 |
-| 6 | A06:2025 - Insecure Design | 50 |
-| 5 | A06:2025 - Insecure Design | 50 |
+| OWASP | A01:2025 - Broken Access Control | 300 |
+| OWASP | A05:2025 - Injection | 200 |
+| OWASP | A07:2025 - Authentication Failures | 100 |
+| OWASP | A06:2025 - Insecure Design | 100 |
+| OWASP | A08:2025 - Software or Data Integrity Failures | 50 |
+| OWASP | A10:2025 - Mishandling of Exceptional Conditions | 50 |
 | **Total** | **800** |
 
 ---
@@ -1784,119 +1718,102 @@ Total: **176,674** | Benign: **154,205** | Vulnerable: **22,469**
 
 | CWE | Count | Group ID | Group |
 |---|---|---|---|
-| CWE-20 | 1,688 | 4 | A05:2025 - Injection |
-| CWE-476 | 1,189 | 1 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-200 | 840 | 6 | A01:2025 - Broken Access Control |
-| CWE-362 | 708 | 9 | A06:2025 - Insecure Design |
-| CWE-284 | 186 | 6 | A01:2025 - Broken Access Control |
-| CWE-369 | 130 | 2 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-22 | 126 | 6 | A01:2025 - Broken Access Control |
-| CWE-59 | 121 | 6 | A01:2025 - Broken Access Control |
-| CWE-269 | 102 | 6 | A06:2025 - Insecure Design |
-| CWE-287 | 99 | 7 | A07:2025 - Authentication Failures |
-| CWE-732 | 91 | 11 | A01:2025 - Broken Access Control |
-| CWE-79 | 66 | 5 | A05:2025 - Injection |
-| CWE-78 | 63 | 5 | A05:2025 - Injection |
-| CWE-295 | 52 | 7 | A07:2025 - Authentication Failures |
-| CWE-74 | 50 | 5 | A05:2025 - Injection |
-| CWE-754 | 42 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-863 | 42 | 6 | A01:2025 - Broken Access Control |
-| CWE-89 | 40 | 5 | A05:2025 - Injection |
-| CWE-252 | 40 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-862 | 34 | 6 | A01:2025 - Broken Access Control |
-| CWE-668 | 34 | 6 | A01:2025 - Broken Access Control |
-| CWE-330 | 33 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-77 | 31 | 5 | A05:2025 - Injection |
-| CWE-327 | 31 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-755 | 29 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-285 | 25 | 6 | A01:2025 - Broken Access Control |
-| CWE-129 | 25 | 2 | A05:2025 - Injection |
-| CWE-611 | 22 | 11 | A02:2025 - Security Misconfiguration |
-| CWE-436 | 22 | 4 | A06:2025 - Insecure Design |
-| CWE-347 | 21 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-326 | 20 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-345 | 19 | 11 | A08:2025 - Software or Data Integrity Failures |
-| CWE-502 | 18 | 12 | A08:2025 - Software or Data Integrity Failures |
-| CWE-776 | 18 | 3 | A02:2025 - Security Misconfiguration |
-| CWE-444 | 18 | 5 | A06:2025 - Insecure Design |
-| CWE-311 | 16 | 8 | A06:2025 - Insecure Design |
-| CWE-601 | 15 | 6 | A01:2025 - Broken Access Control |
-| CWE-94 | 15 | 5 | A05:2025 - Injection |
-| CWE-426 | 11 | 10 | A08:2025 - Software or Data Integrity Failures |
-| CWE-276 | 11 | 11 | A01:2025 - Broken Access Control |
-| CWE-116 | 11 | 5 | A05:2025 - Injection |
-| CWE-346 | 9 | 7 | A07:2025 - Authentication Failures |
-| CWE-552 | 8 | 6 | A01:2025 - Broken Access Control |
-| CWE-331 | 8 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-319 | 7 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-281 | 6 | 6 | A01:2025 - Broken Access Control |
-| CWE-522 | 6 | 8 | A06:2025 - Insecure Design |
-| CWE-532 | 6 | 13 | A09:2025 - Logging & Alerting Failures |
-| CWE-494 | 6 | 12 | A08:2025 - Software or Data Integrity Failures |
-| CWE-90 | 6 | 5 | A05:2025 - Injection |
-| CWE-918 | 5 | 6 | A01:2025 - Broken Access Control |
-| CWE-337 | 5 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-693 | 4 | 15 | A06:2025 - Insecure Design |
-| CWE-1021 | 3 | 12 | A06:2025 - Insecure Design |
-| CWE-434 | 3 | 5 | A06:2025 - Insecure Design |
-| CWE-325 | 3 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-209 | 2 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-113 | 2 | 5 | A05:2025 - Injection |
-| CWE-306 | 2 | 7 | A07:2025 - Authentication Failures |
-| CWE-88 | 2 | 5 | A05:2025 - Injection |
-| CWE-639 | 2 | 6 | A01:2025 - Broken Access Control |
-| CWE-307 | 2 | 7 | A07:2025 - Authentication Failures |
-| CWE-757 | 2 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-99 | 2 | 5 | A05:2025 - Injection |
-| CWE-352 | 1 | 6 | A01:2025 - Broken Access Control |
-| CWE-628 | 1 | 10 | A06:2025 - Insecure Design |
-| CWE-248 | 1 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-460 | 1 | 14 | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-290 | 1 | 7 | A07:2025 - Authentication Failures |
-| CWE-73 | 1 | 6 | A06:2025 - Insecure Design |
-| CWE-324 | 1 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-93 | 1 | 5 | A05:2025 - Injection |
-| CWE-117 | 1 | 13 | A09:2025 - Logging & Alerting Failures |
-| CWE-282 | 1 | 6 | A01:2025 - Broken Access Control |
-| CWE-610 | 1 | 6 | A05:2025 - Injection |
-| CWE-338 | 1 | 8 | A04:2025 - Cryptographic Failures |
-| CWE-300 | 1 | 6 | A07:2025 - Authentication Failures |
-| CWE-114 | 1 | 6 | A05:2025 - Injection |
+| CWE-20 | 1,688 | OWASP | A05:2025 - Injection |
+| CWE-476 | 1,189 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-200 | 840 | OWASP | A01:2025 - Broken Access Control |
+| CWE-362 | 708 | OWASP | A06:2025 - Insecure Design |
+| CWE-284 | 186 | OWASP | A01:2025 - Broken Access Control |
+| CWE-369 | 130 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-22 | 126 | OWASP | A01:2025 - Broken Access Control |
+| CWE-59 | 121 | OWASP | A01:2025 - Broken Access Control |
+| CWE-269 | 102 | OWASP | A06:2025 - Insecure Design |
+| CWE-287 | 99 | OWASP | A07:2025 - Authentication Failures |
+| CWE-732 | 91 | OWASP | A01:2025 - Broken Access Control |
+| CWE-79 | 66 | OWASP | A05:2025 - Injection |
+| CWE-78 | 63 | OWASP | A05:2025 - Injection |
+| CWE-295 | 52 | OWASP | A07:2025 - Authentication Failures |
+| CWE-74 | 50 | OWASP | A05:2025 - Injection |
+| CWE-754 | 42 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-863 | 42 | OWASP | A01:2025 - Broken Access Control |
+| CWE-89 | 40 | OWASP | A05:2025 - Injection |
+| CWE-252 | 40 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-862 | 34 | OWASP | A01:2025 - Broken Access Control |
+| CWE-668 | 34 | OWASP | A01:2025 - Broken Access Control |
+| CWE-330 | 33 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-77 | 31 | OWASP | A05:2025 - Injection |
+| CWE-327 | 31 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-755 | 29 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-285 | 25 | OWASP | A01:2025 - Broken Access Control |
+| CWE-129 | 25 | OWASP | A05:2025 - Injection |
+| CWE-611 | 22 | OWASP | A02:2025 - Security Misconfiguration |
+| CWE-436 | 22 | OWASP | A06:2025 - Insecure Design |
+| CWE-347 | 21 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-326 | 20 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-345 | 19 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-502 | 18 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-776 | 18 | OWASP | A02:2025 - Security Misconfiguration |
+| CWE-444 | 18 | OWASP | A06:2025 - Insecure Design |
+| CWE-311 | 16 | OWASP | A06:2025 - Insecure Design |
+| CWE-601 | 15 | OWASP | A01:2025 - Broken Access Control |
+| CWE-94 | 15 | OWASP | A05:2025 - Injection |
+| CWE-426 | 11 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-276 | 11 | OWASP | A01:2025 - Broken Access Control |
+| CWE-116 | 11 | OWASP | A05:2025 - Injection |
+| CWE-346 | 9 | OWASP | A07:2025 - Authentication Failures |
+| CWE-552 | 8 | OWASP | A01:2025 - Broken Access Control |
+| CWE-331 | 8 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-319 | 7 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-281 | 6 | OWASP | A01:2025 - Broken Access Control |
+| CWE-522 | 6 | OWASP | A06:2025 - Insecure Design |
+| CWE-532 | 6 | OWASP | A09:2025 - Logging & Alerting Failures |
+| CWE-494 | 6 | OWASP | A08:2025 - Software or Data Integrity Failures |
+| CWE-90 | 6 | OWASP | A05:2025 - Injection |
+| CWE-918 | 5 | OWASP | A01:2025 - Broken Access Control |
+| CWE-337 | 5 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-693 | 4 | OWASP | A06:2025 - Insecure Design |
+| CWE-1021 | 3 | OWASP | A06:2025 - Insecure Design |
+| CWE-434 | 3 | OWASP | A06:2025 - Insecure Design |
+| CWE-325 | 3 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-209 | 2 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-113 | 2 | OWASP | A05:2025 - Injection |
+| CWE-306 | 2 | OWASP | A07:2025 - Authentication Failures |
+| CWE-88 | 2 | OWASP | A05:2025 - Injection |
+| CWE-639 | 2 | OWASP | A01:2025 - Broken Access Control |
+| CWE-307 | 2 | OWASP | A07:2025 - Authentication Failures |
+| CWE-757 | 2 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-99 | 2 | OWASP | A05:2025 - Injection |
+| CWE-352 | 1 | OWASP | A01:2025 - Broken Access Control |
+| CWE-628 | 1 | OWASP | A06:2025 - Insecure Design |
+| CWE-248 | 1 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-460 | 1 | OWASP | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-290 | 1 | OWASP | A07:2025 - Authentication Failures |
+| CWE-73 | 1 | OWASP | A06:2025 - Insecure Design |
+| CWE-324 | 1 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-93 | 1 | OWASP | A05:2025 - Injection |
+| CWE-117 | 1 | OWASP | A09:2025 - Logging & Alerting Failures |
+| CWE-282 | 1 | OWASP | A01:2025 - Broken Access Control |
+| CWE-610 | 1 | OWASP | A05:2025 - Injection |
+| CWE-338 | 1 | OWASP | A04:2025 - Cryptographic Failures |
+| CWE-300 | 1 | OWASP | A07:2025 - Authentication Failures |
+| CWE-114 | 1 | OWASP | A05:2025 - Injection |
 | **Total** | **6,269** | | |
 
 > **Unique CWEs**: 78
-> **Unique Groups**: 26
+> **Unique Groups**: 9
 
 #### OWASP Top 10 Group Distribution
 
 | Group ID | Group | Count |
 |---|---|---|
-| 4 | A05:2025 - Injection | 1,688 |
-| 6 | A01:2025 - Broken Access Control | 1,446 |
-| 1 | A10:2025 - Mishandling of Exceptional Conditions | 1,189 |
-| 9 | A06:2025 - Insecure Design | 708 |
-| 5 | A05:2025 - Injection | 289 |
-| 7 | A07:2025 - Authentication Failures | 165 |
-| 8 | A04:2025 - Cryptographic Failures | 132 |
-| 2 | A10:2025 - Mishandling of Exceptional Conditions | 130 |
-| 14 | A10:2025 - Mishandling of Exceptional Conditions | 115 |
-| 6 | A06:2025 - Insecure Design | 103 |
-| 11 | A01:2025 - Broken Access Control | 102 |
-| 2 | A05:2025 - Injection | 25 |
-| 12 | A08:2025 - Software or Data Integrity Failures | 24 |
-| 11 | A02:2025 - Security Misconfiguration | 22 |
-| 4 | A06:2025 - Insecure Design | 22 |
-| 8 | A06:2025 - Insecure Design | 22 |
-| 5 | A06:2025 - Insecure Design | 21 |
-| 11 | A08:2025 - Software or Data Integrity Failures | 19 |
-| 3 | A02:2025 - Security Misconfiguration | 18 |
-| 10 | A08:2025 - Software or Data Integrity Failures | 11 |
-| 13 | A09:2025 - Logging & Alerting Failures | 7 |
-| 15 | A06:2025 - Insecure Design | 4 |
-| 12 | A06:2025 - Insecure Design | 3 |
-| 6 | A05:2025 - Injection | 2 |
-| 10 | A06:2025 - Insecure Design | 1 |
-| 6 | A07:2025 - Authentication Failures | 1 |
+| OWASP | A05:2025 - Injection | 2,004 |
+| OWASP | A01:2025 - Broken Access Control | 1,548 |
+| OWASP | A10:2025 - Mishandling of Exceptional Conditions | 1,434 |
+| OWASP | A06:2025 - Insecure Design | 884 |
+| OWASP | A07:2025 - Authentication Failures | 166 |
+| OWASP | A04:2025 - Cryptographic Failures | 132 |
+| OWASP | A08:2025 - Software or Data Integrity Failures | 54 |
+| OWASP | A02:2025 - Security Misconfiguration | 40 |
+| OWASP | A09:2025 - Logging & Alerting Failures | 7 |
 | **Total** | **6,269** |
 
 ---
