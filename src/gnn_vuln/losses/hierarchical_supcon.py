@@ -2,11 +2,24 @@
 hierarchical_supcon.py — Hierarchical Supervised Contrastive Loss
 
 Positive pair weighting based on CWE tree distance (when matrix provided):
-  - Same CWE class (y_i == y_j, both > 0)                → weight 1.0
-  - Different CWE, both in distance matrix                 → weight_fn(norm_dist(i, j))
-  - Different CWE, one/both not in matrix, same group      → weight alpha (fallback)
-  - Different group / disconnected in tree (norm_dist=1.0) → weight ≈ 0.0
-  - Benign                                                 → pure negative (weight 0.0)
+
+  With intragroup_only=True (default — recommended):
+    Distance matrix is used ONLY for within-group positive pairs (same group_id,
+    different CWE). Cross-group pairs are always 0.0 (negatives), regardless of
+    their tree distance. This is correct because CWE groups are anchored at
+    different depths in the CWE tree, making cross-group distances non-comparable.
+    Using cross-group matrix distances dilutes the contrastive signal with noisy
+    weak positives (observed: v2 with matrix < v1 alpha-only on all metrics).
+
+    - Same CWE (both > 0)              → weight 1.0
+    - Same group, both in matrix       → weight_fn(norm_dist(i, j))
+    - Same group, one/both not in mat  → weight alpha (fallback)
+    - Different group / benign         → weight 0.0 (always, even if in matrix)
+
+  With intragroup_only=False (legacy behavior):
+    Matrix weights are applied to ALL pairs where both CWEs are in the matrix,
+    including cross-group pairs. This produced worse results due to depth-
+    asymmetric group anchors polluting cross-group pair weights.
 
 Without matrix (alpha-only fallback):
   - Same CWE                       → weight 1.0
@@ -68,6 +81,12 @@ class HierarchicalSupConLoss(nn.Module):
         Floor applied to all matrix-derived weights before using them
         (default 0.0). Set > 0 to keep a weak positive signal for all
         in-matrix pairs regardless of distance.
+    intragroup_only : bool
+        When True (default), matrix-derived weights are restricted to within-group
+        positive pairs only. Cross-group pairs are zeroed even if both CWEs are in
+        the distance matrix. Recommended: CWE groups are anchored at different tree
+        depths, making cross-group distances non-comparable and the weighting noisy.
+        Set False to restore the legacy behavior (matrix weights for all pairs).
     """
 
     def __init__(
@@ -80,6 +99,7 @@ class HierarchicalSupConLoss(nn.Module):
         exp_scale: float = 5.0,
         power: float = 2.0,
         min_weight: float = 0.0,
+        intragroup_only: bool = True,
     ) -> None:
         super().__init__()
         self.temperature = temperature
@@ -88,6 +108,7 @@ class HierarchicalSupConLoss(nn.Module):
         self.exp_scale = exp_scale
         self.power = power
         self.min_weight = min_weight
+        self.intragroup_only = intragroup_only
         self._has_matrix = False
 
         if dist_matrix_path is not None and cwe_vocab is not None:
@@ -244,15 +265,20 @@ class HierarchicalSupConLoss(nn.Module):
             weights, in_matrix = self._continuous_weights(
                 cwe_vocab_ids, vuln_mask, anc_idx, n_vuln, B, device
             )
-            # Same-CWE pairs: force weight 1.0 (distance=0 should already give 1.0,
-            # but be explicit to guard against floating-point edge cases).
+            # Same-CWE pairs: force weight 1.0
             weights[same_cwe] = 1.0
 
-            # Pairs not in matrix but in same group → alpha fallback
+            if self.intragroup_only:
+                # Cross-group pairs must be 0 — CWE groups sit at different depths
+                # in the CWE tree, so inter-group tree distances are not comparable.
+                # Zero out any matrix weight that leaked through to cross-group pairs.
+                cross_group = ~(same_group | same_cwe | self_mask)
+                weights[cross_group] = 0.0
+
+            # Within-group pairs not in matrix → alpha fallback
             fallback = same_group & ~in_matrix
             weights[fallback] = self.alpha
 
-            # Self-pairs and benign already excluded by in_matrix logic / same_cwe masks.
             weights[self_mask] = 0.0
 
         else:

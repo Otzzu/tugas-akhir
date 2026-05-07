@@ -1,0 +1,52 @@
+# configs/lmrgcn/multiclass_unixcoder_livable.yaml — LM-RGCN + live UniXcoder + LIVABLE
+#
+# Like configs/lmgat/multiclass_unixcoder_livable.yaml but uses RGCNConv instead of
+# GATv2Conv. RGCNConv learns a separate weight matrix per CPG edge type (7 types:
+# AST, CFG, CDG, DDG, PDG, CALL, REACHING_DEF) — no attention, no edge_attr padding.
+#
+# Has a live LM branch (same as lmgat_codebert / Arch3).
+# Frozen UniXcoder node embeddings + live UniXcoder func_lm.
+#
+# Loss = LIVABLE_CE(cwe) + mil_weight * MIL(stmt_scores) + rank_loss_weight * RankLoss
+#
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train \
+#     --config configs/lmrgcn/multiclass_unixcoder_livable.yaml
+
+data:
+  source: bigvul
+  mode: multiclass
+  max_nodes: 1000
+  top_cwe: 10
+
+model:
+  architecture: lmrgcn
+  pretrained_lm: microsoft/unixcoder-base   # frozen node embeddings (selects dataset)
+  func_lm: microsoft/unixcoder-base         # live LM branch
+  add_func_tokens: true
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  num_classes: 11                           # 10 CWE + benign
+  num_relations: 7                          # CPG edge types
+  # num_bases: 4                            # optional: basis decomposition to reduce params
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 16              # live LM — keep batch moderate
+  lr: 0.001
+  lm_lr: 0.00001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.0001
+  patience: 25
+  early_stop_metric: f1
+  save_last_every: 10
+  use_class_weights: true
+  focal_loss_gamma: 2.0
+  livable_loss: true
+  device: cuda

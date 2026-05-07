@@ -1,0 +1,70 @@
+# configs/lmgat_hcdfgat/multiclass_v3_distmatrix.yaml — Arch12 v3
+#
+# Base: Arch12 v1 best (F1=0.6952, IFA=4.86, alpha-only supcon)
+# Change: supcon_use_distance_matrix=true + intragroup_only=true (fixed cross-group bug)
+#
+# Root cause of v2 failure: CWE groups anchor at different tree depths →
+#   cross-group tree distances non-comparable → distance matrix assigned non-zero
+#   weights to cross-group pairs that should be pure negatives.
+# Fix (HierarchicalSupConLoss): intragroup_only=True (default) zeros cross-group
+#   matrix weights; distance refinement now applies only within-group pairs.
+#
+# Uses weight_fn=exp (sharper falloff than linear) to concentrate weight on
+# tree-close CWE pairs within the same group.
+#
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train \
+#     --config configs/lmgat_hcdfgat/multiclass_v3_distmatrix.yaml
+
+data:
+  source: bigvul
+  mode: multiclass
+  max_nodes: 1000
+  top_cwe: 10
+
+model:
+  architecture: lmgat_hcdfgat
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 7
+  num_classes: 11
+  num_groups: 16
+  use_group_cond: true
+  mil_weight: 0.5
+  mil_k: 3
+  rank_loss_weight: 0.2
+  group_loss_weight: 0.3
+  binary_loss_weight: 0.2
+  use_supcon: true
+  supcon_weight: 0.1
+  supcon_temperature: 0.07
+  supcon_alpha: 0.5
+  supcon_use_distance_matrix: true
+  supcon_intragroup_only: true      # fix: zero cross-group matrix weights
+  supcon_weight_fn: exp
+  supcon_exp_scale: 5.0
+  add_self_loops: false
+  use_skip: false
+  use_edge_emb: false
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 12
+  lr: 0.001
+  lm_lr: 0.00001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.0001
+  patience: 25
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 2.0
+  livable_loss: true
+  device: cuda
+  save_last_every: 10

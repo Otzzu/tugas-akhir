@@ -1,0 +1,47 @@
+# configs/lmgcn/multiclass_unixcoder_livable.yaml — LM-GCN + frozen UniXcoder + LIVABLE
+#
+# Matches the recipe in configs/lmgat/multiclass_unixcoder_livable.yaml but uses
+# GCNConv (no attention heads, no edge features) instead of GATv2Conv.
+# Frozen UniXcoder node embeddings via lm_dataset_bigvul_multiclass_unixcoder-base_ft_top10.pt.
+#
+# Loss = LIVABLE_CE(cwe) + mil_weight * MIL(stmt_scores) + rank_loss_weight * RankLoss
+#
+# No live LM — larger batch (32) is safe.
+#
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train \
+#     --config configs/lmgcn/multiclass_unixcoder_livable.yaml
+
+data:
+  source: bigvul
+  mode: multiclass
+  max_nodes: 1000
+  top_cwe: 10
+
+model:
+  architecture: lmgcn
+  pretrained_lm: microsoft/unixcoder-base
+  add_func_tokens: true       # selects _ft_top10.pt dataset
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  num_classes: 11             # 10 CWE + benign
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32              # no live LM — safe to use large batch
+  lr: 0.001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.0001
+  patience: 25
+  early_stop_metric: f1
+  save_last_every: 10
+  use_class_weights: true
+  focal_loss_gamma: 2.0
+  livable_loss: true
+  device: cuda

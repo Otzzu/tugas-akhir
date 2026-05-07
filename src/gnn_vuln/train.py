@@ -41,6 +41,7 @@ from gnn_vuln.models.lmgat_waves_seq import LMGATWavesSeqVulnDetector
 from gnn_vuln.models.lmgat_dualflow import LMGATDualFlowVulnDetector
 from gnn_vuln.models.lmgat_codebert_mtl import LMGATCodeBERTMTLVulnDetector
 from gnn_vuln.models.lmgat_hcdfgat import LMGATHCDFGATVulnDetector
+from gnn_vuln.models.lmrgcn import LMRGCNVulnDetector
 from gnn_vuln.losses import HierarchicalSupConLoss
 from gnn_vuln.utils import (
     set_seed, setup_logging, get_device,
@@ -49,10 +50,58 @@ from gnn_vuln.utils import (
 
 
 # ---------------------------------------------------------------------------
+# MTL head selection helpers
+# ---------------------------------------------------------------------------
+
+_MTL_ARCHS = frozenset({"lmgat_codebert_mtl", "lmgat_hcdfgat"})
+_VALID_HEADS = frozenset({"binary", "group", "cwe"})
+
+
+def _parse_active_heads(cfg: Config) -> frozenset[str]:
+    """
+    Parse model.active_heads from config for MTL architectures.
+
+    Returns frozenset of active head names.
+    Empty frozenset for non-MTL archs (callers treat empty = not applicable).
+
+    Validation rules:
+      data.mode='group'      → 'group' must be in active_heads
+      data.mode='multiclass' → 'cwe'   must be in active_heads
+    """
+    arch = getattr(cfg.model, "architecture", "").lower()
+    if arch not in _MTL_ARCHS:
+        return frozenset()
+
+    raw = getattr(cfg.model, "active_heads", None)
+    if raw is None:
+        return frozenset({"binary", "group", "cwe"})  # default: all on
+
+    active = frozenset(str(h).lower() for h in raw)
+    unknown = active - _VALID_HEADS
+    if unknown:
+        raise ValueError(
+            f"model.active_heads contains unknown heads: {sorted(unknown)}. "
+            f"Valid: {sorted(_VALID_HEADS)}"
+        )
+
+    mode = getattr(cfg.data, "mode", "multiclass")
+    if mode == "group" and "group" not in active:
+        raise ValueError(
+            "Conflict: data.mode='group' requires 'group' in model.active_heads"
+        )
+    if mode == "multiclass" and "cwe" not in active:
+        raise ValueError(
+            "Conflict: data.mode='multiclass' requires 'cwe' in model.active_heads"
+        )
+
+    return active
+
+
+# ---------------------------------------------------------------------------
 # Model factory
 # ---------------------------------------------------------------------------
 
-def build_model(cfg: Config, in_channels: int) -> nn.Module:
+def build_model(cfg: Config, in_channels: int, active_heads: frozenset[str] = frozenset()) -> nn.Module:
     arch = cfg.model.architecture.lower()
     pretrained_lm = getattr(cfg.model, "pretrained_lm", "microsoft/codebert-base")
     func_lm = getattr(cfg.model, "func_lm", "") or pretrained_lm
@@ -201,6 +250,11 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             matryoshka_dim=_matryoshka_dim,
         )
     if arch == "lmgat_codebert_mtl":
+        # use_group_cond: both group AND cwe heads must be active; config can still force False
+        _use_group_cond = (
+            ("group" in active_heads and "cwe" in active_heads)
+            if active_heads else True
+        ) and getattr(cfg.model, "use_group_cond", True)
         return LMGATCodeBERTMTLVulnDetector(
             pretrained_lm=pretrained_lm,
             func_lm=func_lm,
@@ -212,7 +266,7 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             num_groups=getattr(cfg.model, "num_groups", 16),
             num_heads=cfg.model.heads,
             edge_dim=getattr(cfg.model, "edge_dim", 7),
-            use_group_cond=getattr(cfg.model, "use_group_cond", True),
+            use_group_cond=_use_group_cond,
             add_self_loops=_add_self_loops,
             use_skip=_use_skip,
             use_edge_emb=getattr(cfg.model, "use_edge_emb", False),
@@ -221,6 +275,10 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             matryoshka_dim=_matryoshka_dim,
         )
     if arch == "lmgat_hcdfgat":
+        _use_group_cond = (
+            ("group" in active_heads and "cwe" in active_heads)
+            if active_heads else True
+        ) and getattr(cfg.model, "use_group_cond", True)
         return LMGATHCDFGATVulnDetector(
             pretrained_lm=pretrained_lm,
             func_lm=func_lm,
@@ -232,14 +290,28 @@ def build_model(cfg: Config, in_channels: int) -> nn.Module:
             num_groups=getattr(cfg.model, "num_groups", 16),
             num_heads=cfg.model.heads,
             edge_dim=getattr(cfg.model, "edge_dim", 7),
-            use_group_cond=getattr(cfg.model, "use_group_cond", True),
+            use_group_cond=_use_group_cond,
             add_self_loops=_add_self_loops,
+            use_skip=_use_skip,
+            matryoshka_dim=_matryoshka_dim,
+        )
+    if arch == "lmrgcn":
+        return LMRGCNVulnDetector(
+            pretrained_lm=pretrained_lm,
+            func_lm=func_lm,
+            in_channels=in_channels,
+            hidden_dim=cfg.model.hidden_dim,
+            num_layers=cfg.model.num_layers,
+            dropout=cfg.model.dropout,
+            num_classes=cfg.model.num_classes,
+            num_relations=getattr(cfg.model, "num_relations", 7),
+            num_bases=getattr(cfg.model, "num_bases", None),
             use_skip=_use_skip,
             matryoshka_dim=_matryoshka_dim,
         )
     raise ValueError(
         f"Unknown architecture: {arch!r}. "
-        "Available: lmgcn, lmgat, lmgat_codebert, lmgat_codebert_mtl, lmgat_mcs, "
+        "Available: lmgcn, lmrgcn, lmgat, lmgat_codebert, lmgat_codebert_mtl, lmgat_mcs, "
         "lmgin, lmgat_interp, lmgat_seq, lmgat_waves_seq, lmggnn, "
         "lmgat_dualflow, lmgat_hcdfgat"
     )
@@ -264,7 +336,7 @@ def build_optimizer_and_scheduler(
                                      after validation.
     """
     arch = cfg.model.architecture.lower()
-    is_ft_arch = arch in ("lmgat_codebert", "lmgat_mcs", "lmgat_seq", "lmgat_waves_seq", "lmggnn", "lmgat_codebert_mtl", "lmgat_dualflow", "lmgat_hcdfgat")
+    is_ft_arch = arch in ("lmgat_codebert", "lmgat_mcs", "lmgat_seq", "lmgat_waves_seq", "lmggnn", "lmgat_codebert_mtl", "lmgat_dualflow", "lmgat_hcdfgat", "lmrgcn")
 
     if is_ft_arch:
         lm_lr = getattr(cfg.train, "lm_lr", 2e-5)
@@ -727,11 +799,21 @@ def main():
     setup_logging(cfg.train.log_dir)
     device = get_device(cfg.train.device)
 
+    active_heads = _parse_active_heads(cfg)
+
     mil_k = getattr(cfg.model, "mil_k", 3)
     mil_weight = getattr(cfg.model, "mil_weight", 0.5)
     rank_loss_weight = getattr(cfg.model, "rank_loss_weight", 0.0)
     group_loss_weight = getattr(cfg.model, "group_loss_weight", 0.0)
     binary_loss_weight = getattr(cfg.model, "binary_loss_weight", 0.0)
+
+    # Gate auxiliary-head losses by active_heads
+    if active_heads:
+        if "group" not in active_heads:
+            group_loss_weight = 0.0
+        if "binary" not in active_heads:
+            binary_loss_weight = 0.0
+        logger.info(f"MTL active_heads: {sorted(active_heads)}")
     use_supcon = getattr(cfg.model, "use_supcon", False)
     supcon_weight = getattr(cfg.model, "supcon_weight", 0.1) if use_supcon else 0.0
     if use_supcon:
@@ -761,6 +843,7 @@ def main():
             exp_scale=getattr(cfg.model, "supcon_exp_scale", 5.0),
             power=getattr(cfg.model, "supcon_power", 2.0),
             min_weight=getattr(cfg.model, "supcon_min_weight", 0.0),
+            intragroup_only=getattr(cfg.model, "supcon_intragroup_only", True),
         )
     else:
         supcon_fn = None
@@ -848,7 +931,7 @@ def main():
             ).to(device)
             logger.info(f"Static class weights: {[f'{w:.3f}' for w in class_weight.tolist()]}")
 
-    model = build_model(cfg, in_channels).to(device)
+    model = build_model(cfg, in_channels, active_heads).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     loss_mode = "livable" if use_livable else ("focal" if focal_gamma > 0 else "ce")
     logger.info(
