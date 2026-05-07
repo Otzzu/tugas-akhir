@@ -105,6 +105,7 @@ def main() -> None:
             min_weight     = getattr(cfg.model, "supcon_min_weight",     0.0),
             intragroup_only= getattr(cfg.model, "supcon_intragroup_only", True),
         )
+        supcon_fn = supcon_fn.to(device)  # move buffers (_vocab_to_mat, _dist_matrix) to CUDA
 
     # ── Dataset ───────────────────────────────────────────────────────────────
     pretrained_lm    = getattr(cfg.model, "pretrained_lm", "microsoft/codebert-base")
@@ -235,11 +236,13 @@ def main() -> None:
             ewc._star  = {k: v.cpu() for k, v in ewc._star.items()}  # already CPU
 
     # ── AMP ───────────────────────────────────────────────────────────────────
-    use_amp   = device.type == "cuda"
+    use_amp   = device.type == "cuda" and getattr(cfg.train, "use_amp", True)
     amp_dtype = torch.bfloat16 if use_amp and torch.cuda.is_bf16_supported() else torch.float16
     scaler    = GradScaler() if use_amp and amp_dtype == torch.float16 else None
     if use_amp:
         logger.info(f"AMP enabled — dtype={amp_dtype}")
+    else:
+        logger.info("AMP disabled (use_amp=false in config or CPU device)")
 
     # ── Optimizer + scheduler ─────────────────────────────────────────────────
     total_steps = len(train_loader) * cfg.train.epochs

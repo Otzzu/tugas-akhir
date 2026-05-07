@@ -68,4 +68,5 @@ train:
   focal_loss_gamma: 2.0
   livable_loss: true
   device: cuda
+  use_amp: false
   save_last_every: 10

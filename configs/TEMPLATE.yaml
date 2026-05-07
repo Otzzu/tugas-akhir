@@ -337,3 +337,49 @@ train:
   # Compute device.
   # Values: cpu | cuda | cuda:0 | cuda:1 etc.
   device: cuda
+
+  # Automatic Mixed Precision. Default true on CUDA (bfloat16 preferred, float16 fallback).
+  # Set false to disable — trades VRAM for numerical stability.
+  # Use false for large decoder-only LMs (Jina) prone to OOM or bfloat16 instability.
+  # Note: T5/codet5p encoder forward is always float32 regardless of this flag.
+  use_amp: true
+
+# ---------------------------------------------------------------------------
+# EWC-DR — Continual Learning (optional, omit entire section to disable)
+# ---------------------------------------------------------------------------
+# Elastic Weight Consolidation Done Right (arXiv:2603.18596).
+# Prevents catastrophic forgetting when fine-tuning on a new dataset/task
+# by penalizing changes to weights that were important for the previous task.
+#
+# Usage: train task A first (e.g. BigVul-v2), then set source_checkpoint to
+# the task-A best checkpoint and train task B (e.g. TitanVul-OWASP).
+# EWC adds: L_ewc = (weight/2) * Σ Ω_i * (θ_i - θ*_i)²
+# where Ω is computed via Logits Reversal (fixes gradient-vanishing in FIM).
+ewc:
+  # Master switch. false = EWC disabled, no performance overhead.
+  enabled: false
+
+  # Regularization strength λ. Higher = more conservative (less forgetting,
+  # less plasticity). Typical range: 100–10000. Start with 1000.
+  weight: 1000.0
+
+  # Which parameters to protect.
+  # Values: all | lm (only codebert branch) | gnn (only GNN layers)
+  # "lm"  — protects pretrained code knowledge in UniXcoder/CodeT5+ branch
+  # "gnn" — protects structural vulnerability patterns learned from task A
+  # "all" — full model protection (most conservative)
+  scope: all
+
+  # Path to task-A best checkpoint (e.g. checkpoints/.../best_*.pt).
+  # Required when importance_cache is empty or missing.
+  source_checkpoint: ""
+
+  # Batches of task-A training data used to estimate weight importance.
+  # 0 = use entire training set (accurate but slow for large datasets).
+  # 50–200 = fast approximation, usually sufficient.
+  n_batches: 0
+
+  # Optional: cache computed importance to disk to avoid recomputing.
+  # Leave empty to recompute every run. Path is created automatically.
+  # Example: data/ewc/bigvul_to_titanvul_importance.pt
+  importance_cache: ""
