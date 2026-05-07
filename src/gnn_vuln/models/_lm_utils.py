@@ -67,8 +67,14 @@ def lm_pool(
         emb = model(input_ids=input_ids, attention_mask=attention_mask)  # [B, 256] tensor
     elif _is_t5_like(model):
         enc = model.encoder if is_enc_dec else model
-        out = enc(input_ids=input_ids, attention_mask=attention_mask)
-        hs = out.last_hidden_state  # [B, seq, d_model]
+        # T5 relative-position bias overflows in fp16/bf16 → NaN loss under AMP.
+        # Force float32 for just the encoder forward regardless of outer autocast.
+        with torch.autocast(device_type=input_ids.device.type, enabled=False):
+            out = enc(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+            )
+        hs = out.last_hidden_state.float()  # [B, seq, d_model]
         mask = (
             attention_mask.unsqueeze(-1).float()
             if attention_mask is not None
