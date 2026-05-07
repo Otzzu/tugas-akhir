@@ -399,6 +399,8 @@ def main() -> None:
     add_func_tokens = getattr(cfg.model, "add_func_tokens", False)
     func_lm_source = getattr(cfg.model, "func_lm_source", "raw")
 
+    func_lm = getattr(cfg.model, "func_lm", "") or pretrained_lm
+
     logger.info("Loading dataset…")
     dataset = CodeBERTGraphDataset(
         root=str(cfg.data.processed_dir.parent),
@@ -407,9 +409,16 @@ def main() -> None:
         mode=cfg.data.mode,
         source=getattr(cfg.data, "source", "bigvul"),
         pretrained_lm=pretrained_lm,
+        func_lm=func_lm,
         add_func_tokens=add_func_tokens,
         func_lm_source=func_lm_source,
         top_cwe=getattr(cfg.data, "top_cwe", 0),
+        cwe_list=getattr(cfg.data, "cwe_list", None),
+        cwe_groups=getattr(cfg.data, "cwe_groups", None),
+        filter_owasp_top10=getattr(cfg.data, "filter_owasp_top10", False),
+        filter_top25=getattr(cfg.data, "filter_top25", False),
+        max_per_class=getattr(cfg.data, "max_per_class", 0),
+        resample_seed=getattr(cfg.data, "resample_seed", 42),
     )
     _, _, test_idx = dataset.get_splits(seed=cfg.train.seed)
     test_loader = DataLoader(dataset[test_idx], batch_size=cfg.train.batch_size)
