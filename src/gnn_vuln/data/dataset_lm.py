@@ -61,22 +61,71 @@ from gnn_vuln.data.graph_builder_lm import build_from_parsed, build_func_text, p
 from gnn_vuln.data.cwe_taxonomy import CWE_GROUP_MAP, GROUP_VOCAB, _GROUP_TO_CWES, _expand_cwe_filter
 from gnn_vuln.data.node_embedder import CodeBERTNodeEmbedder
 
+def _fix_special_tokens_map(v):
+    """Recursively convert dict-valued special tokens to their string content.
+    codet5p-220m stores tokens as {'content': '...', 'single_word': False, ...}
+    instead of plain strings, which breaks the tokenizers Rust backend."""
+    if isinstance(v, dict):
+        return v.get("content", "")
+    if isinstance(v, list):
+        return [_fix_special_tokens_map(x) for x in v]
+    return v
+
+
 def _load_tokenizer(model_name: str):
-    """Load AutoTokenizer, falling back to use_fast=False when the fast
-    tokenizer crashes on dict-valued special tokens (e.g. codet5p-220m)."""
+    """Load AutoTokenizer with 3-tier fallback for broken special_tokens_map.json.
+
+    Tier 1: Normal fast tokenizer (default, fastest).
+    Tier 2: Slow Python tokenizer (use_fast=False).
+    Tier 3: Fix special_tokens_map.json in a temp copy of the HF cache
+            and load from there. Handles codet5p-220m and similar models
+            that store special tokens as dicts instead of strings.
+    """
+    import json
+    import shutil
+    import tempfile
     from transformers import AutoTokenizer
+
+    _is_addedtoken_err = lambda e: "AddedToken" in str(e) or "Input must be" in str(e)
+
+    # Tier 1 — fast tokenizer
     try:
         return AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     except TypeError as e:
-        if "AddedToken" in str(e) or "Input must be" in str(e):
-            logger.warning(
-                f"Fast tokenizer failed for {model_name} ({e}), "
-                "retrying with use_fast=False …"
-            )
-            return AutoTokenizer.from_pretrained(
-                model_name, trust_remote_code=True, use_fast=False
-            )
-        raise
+        if not _is_addedtoken_err(e):
+            raise
+        logger.warning(f"Fast tokenizer failed for {model_name} ({e}), retrying slow …")
+
+    # Tier 2 — slow Python tokenizer
+    try:
+        return AutoTokenizer.from_pretrained(
+            model_name, trust_remote_code=True, use_fast=False
+        )
+    except TypeError as e:
+        if not _is_addedtoken_err(e):
+            raise
+        logger.warning(
+            f"Slow tokenizer also failed for {model_name} ({e}). "
+            "Patching special_tokens_map.json in HF cache …"
+        )
+
+    # Tier 3 — patch special_tokens_map.json: copy HF snapshot to tmp, fix dicts, load
+    from huggingface_hub import snapshot_download
+    cache_path = snapshot_download(model_name)
+    tmp_dir = tempfile.mkdtemp(prefix="hf_tok_fix_")
+    try:
+        shutil.copytree(cache_path, tmp_dir, dirs_exist_ok=True)
+        smap_path = Path(tmp_dir) / "special_tokens_map.json"
+        if smap_path.exists():
+            with open(smap_path, encoding="utf-8") as f:
+                smap = json.load(f)
+            fixed = {k: _fix_special_tokens_map(v) for k, v in smap.items()}
+            with open(smap_path, "w", encoding="utf-8") as f:
+                json.dump(fixed, f, indent=2)
+            logger.info(f"Fixed special_tokens_map.json in {tmp_dir}")
+        return AutoTokenizer.from_pretrained(tmp_dir, trust_remote_code=True)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def _get_cwe_set_from_xml(filepath: Path) -> set[str]:
