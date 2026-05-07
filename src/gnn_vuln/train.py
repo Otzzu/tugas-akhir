@@ -26,6 +26,7 @@ from gnn_vuln.config import Config, load_default_config
 from gnn_vuln.data.dataset_lm import CodeBERTGraphDataset
 from gnn_vuln.losses import HierarchicalSupConLoss
 from gnn_vuln.models.registry import build_model, _parse_active_heads
+from gnn_vuln.training.ewc import EWCDR
 from gnn_vuln.training.losses import livable_weights
 from gnn_vuln.training.optimizer import build_optimizer_and_scheduler
 from gnn_vuln.training.trainer import Trainer
@@ -188,6 +189,51 @@ def main() -> None:
         f"class_weights={use_class_weights} | loss={loss_mode}"
     )
 
+    # ── EWC-DR continual learning (optional) ──────────────────────────────────
+    ewc = None
+    _ewc_cfg = getattr(cfg, "ewc", None)
+    if _ewc_cfg is not None and getattr(_ewc_cfg, "enabled", False):
+        _ewc_weight  = getattr(_ewc_cfg, "weight",     1000.0)
+        _ewc_scope   = getattr(_ewc_cfg, "scope",      "all")
+        _ewc_cache   = getattr(_ewc_cfg, "importance_cache", "")
+        _ewc_ckpt    = getattr(_ewc_cfg, "source_checkpoint", "")
+        _ewc_nbatch  = getattr(_ewc_cfg, "n_batches",  0)
+
+        if _ewc_cache and Path(_ewc_cache).exists():
+            logger.info(f"EWC-DR: loading cached importance from {_ewc_cache}")
+            ewc = EWCDR.from_file(_ewc_cache, ewc_weight=_ewc_weight)
+        else:
+            if not _ewc_ckpt or not Path(_ewc_ckpt).exists():
+                raise ValueError(
+                    f"EWC enabled but source_checkpoint not found: {_ewc_ckpt!r}. "
+                    "Provide a valid path to the task-A best checkpoint."
+                )
+            logger.info(f"EWC-DR: loading task-A model from {_ewc_ckpt}")
+            from gnn_vuln.utils import load_checkpoint as _load_ckpt
+            _load_ckpt(_ewc_ckpt, model, device=str(device))
+
+            logger.info(
+                f"EWC-DR: computing importance (scope={_ewc_scope}, "
+                f"n_batches={'all' if _ewc_nbatch == 0 else _ewc_nbatch}) …"
+            )
+            ewc = EWCDR(
+                model=model,
+                dataloader=train_loader,
+                device=device,
+                ewc_weight=_ewc_weight,
+                scope=_ewc_scope,
+                n_batches=_ewc_nbatch,
+            )
+
+            if _ewc_cache:
+                Path(_ewc_cache).parent.mkdir(parents=True, exist_ok=True)
+                ewc.save(_ewc_cache)
+
+            # Reload task-B model weights (EWC computation overwrites with task-A weights)
+            logger.info("EWC-DR: reloading task-B model initialisation …")
+            model = build_model(cfg, in_channels, active_heads).to(device)
+            ewc._star  = {k: v.cpu() for k, v in ewc._star.items()}  # already CPU
+
     # ── AMP ───────────────────────────────────────────────────────────────────
     use_amp   = device.type == "cuda"
     amp_dtype = torch.bfloat16 if use_amp and torch.cuda.is_bf16_supported() else torch.float16
@@ -217,6 +263,7 @@ def main() -> None:
         use_amp=use_amp,
         amp_dtype=amp_dtype,
         scaler=scaler,
+        ewc=ewc,
     )
     trainer.set_grad_clip(grad_clip)
 

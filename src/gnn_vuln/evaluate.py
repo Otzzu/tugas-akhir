@@ -454,8 +454,15 @@ def main() -> None:
         if is_binary:
             auc_roc = roc_auc_score(y_true, y_prob[:, 1])
         else:
+            # Restrict to classes present in test set — OvR fails when a class
+            # has zero positive samples (common with many classes + small test set).
+            # Renormalize sliced probs so they sum to 1 (sklearn requirement).
+            present = np.unique(y_true)
+            y_prob_present = y_prob[:, present]
+            y_prob_present = y_prob_present / y_prob_present.sum(axis=1, keepdims=True)
             auc_roc = roc_auc_score(
-                y_true, y_prob, multi_class="ovr", average="macro"
+                y_true, y_prob_present,
+                multi_class="ovr", average="macro", labels=present,
             )
     except ValueError:
         auc_roc = float("nan")

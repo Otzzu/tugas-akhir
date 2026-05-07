@@ -14,7 +14,8 @@ Three distinct datasets used across experiments. Results across datasets are **N
 | ---------------- | --------- | ------------------------- | ----------------------- | ------- | --------- | -------------------------------------------------- |
 | **BigVul-v1**    | BigVul    | `train.parquet` only      | 2000 benign + 5494 vuln | 11      | ~1124     | No `top_cwe` filter; vocab naturally small         |
 | **BigVul-v2**    | BigVul    | `all.parquet` (train+val+test combined) | 2200 benign + 8760 vuln | 11 | ~1363 | `top_cwe: 10` filter; 9089 total (6889 top-10 + 2200 benign) |
-| **TitanVul-OWASP** | TitanVul | TitanVul CPGs            | larger functions (max_nodes=3400) | 90 | ~1499 | `filter_owasp_top10=true`; 89 CWE labels + benign |
+| **TitanVul-OWASP**  | TitanVul | TitanVul CPGs | larger functions (max_nodes=3400) | 90 | ~1499 | `filter_owasp_top10=true`; 89 CWE labels + benign |
+| **TitanVul-Top25**  | TitanVul | TitanVul CPGs | larger functions (max_nodes=3400) | 26 | ~1681 | `filter_top25=true`; 25 CWE Top25 labels + benign |
 
 **Cross-dataset comparisons are invalid.** BigVul-v1 → BigVul-v2 jump (F1=0.272→0.58+) is confounded: LM change + dataset size increase + cleaner split. TitanVul-OWASP is a structurally different task (90 classes vs 11).
 
@@ -253,11 +254,21 @@ Three distinct datasets used across experiments. Results across datasets are **N
 
 ## Full Comparison — TitanVul-OWASP (90-class, ~1499 test)
 
-> Different task — 89 CWEs + benign under OWASP Top10 filter. Random baseline F1 ≈ 1.1%. Not comparable to BigVul tables. AUC=null: evaluate.py OvR fails at 90 classes (needs fix).
+> 89 CWEs + benign under OWASP Top10 filter. Random baseline F1 ≈ 1.1%. Not comparable to BigVul. AUC computed over 72/90 classes present in test (18 absent → OvR restricted + renormalized).
 
 | Rank | Model                                                              | Folder                                   | F1↑    | AUC-ROC↑ | IFA↓   | Top-1↑ | Effort@20%↓ | Recall@20%loc↑ |
 | ---- | ------------------------------------------------------------------ | ---------------------------------------- | ------ | -------- | ------ | ------ | ----------- | -------------- |
-| 1    | **Arch12 v1** HC-DFGAT LIVABLE+F1-stop+supcon alpha-only          | 20260506_203551_lmgat_hcdfgat_multiclass | 0.4340 | null     | 13.625 | 0.2545 | 0.1473      | 0.2532         |
+| 1    | **Arch12 v1** HC-DFGAT LIVABLE+F1-stop+supcon alpha-only          | 20260506_203551_lmgat_hcdfgat_multiclass | 0.4340 | 0.8929   | 13.625 | 0.2545 | 0.1473      | 0.2532         |
+
+---
+
+## Full Comparison — TitanVul-Top25 (26-class, ~1681 test)
+
+> 25 MITRE Top25 CWEs + benign. Random baseline F1 ≈ 3.8%. Not comparable to BigVul. AUC computed over 25/26 classes present in test (1 absent).
+
+| Rank | Model                                                              | Folder                                   | F1↑    | AUC-ROC↑ | IFA↓   | Top-1↑ | Effort@20%↓ | Recall@20%loc↑ |
+| ---- | ------------------------------------------------------------------ | ---------------------------------------- | ------ | -------- | ------ | ------ | ----------- | -------------- |
+| 1    | **Arch12 v1** HC-DFGAT LIVABLE+F1-stop+supcon alpha-only          | 20260507_071026_lmgat_hcdfgat_multiclass | 0.5231 | 0.8681   | 16.637 | 0.2016 | 0.1181      | 0.3069         |
 
 ---
 
@@ -349,7 +360,8 @@ Three distinct datasets used across experiments. Results across datasets are **N
 - ~~Arch2 v4 frozen UniXcoder + LIVABLE + F1-stop~~ — Done: F1=0.6401, AUC=0.9040, IFA=5.22, Effort=0.0527 (folder 20260504_120447) — frozen baseline now competitive on F1, weak on localization
 - ~~Arch11 v7 edge_emb only ablation (no self_loops/skip)~~ — Done: F1=0.6764, AUC=0.9084 (new best), IFA=4.62, Effort=0.0410 (folder 20260505_141404) — edge_emb alone no localization gain; AUC record; self_loops+skip are the source of Effort improvements
 - ~~Arch11 v8 CodeT5p-110m-embedding func_lm~~ — Done: F1=0.7484 (new #1), AUC=0.9381 (new #1), IFA=5.769, Effort=0.0523 (folder 20260507_043309) — best classification, worse localization vs UniXcoder v3
-- ~~HC-DFGAT TitanVul OWASP 90-class~~ — Done: F1=0.4340, IFA=13.625, AUC=null (folder 20260506_203551) — new task established; AUC/evaluate.py fix needed for >11 classes
+- ~~HC-DFGAT TitanVul OWASP 90-class~~ — Done: F1=0.4340, IFA=13.625, AUC=0.8929 (folder 20260506_203551)
+- ~~HC-DFGAT TitanVul Top25 26-class~~ — Done: F1=0.5231, IFA=16.637, AUC=0.8681 (folder 20260507_071026)
 - Arch12 v3 HC-DFGAT + distance matrix (intragroup_only=True, exp weight_fn) — root cause of v2 failure confirmed (cross-group depth asymmetry); fix applied, need to retrain to verify within-group refinement helps vs alpha-only
 - Arch11 v8 CodeT5p + localization fix — investigate: does CodeT5p localization weakness come from 256D dim (try matryoshka_dim=768 on a 768D model) or from the embedding model's optimization target (similarity vs token-level)?
 - evaluate.py fix for AUC with >11 classes — OvR computation fails silently (returns null); needs `labels` param or per-class exclusion of missing classes

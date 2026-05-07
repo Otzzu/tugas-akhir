@@ -64,7 +64,11 @@ def lm_pool(
     Truncates to matryoshka_dim if set.
     """
     if _is_codet5p_embedding(model):
-        emb = model(input_ids=input_ids, attention_mask=attention_mask)  # [B, 256] tensor
+        # codet5p-110m-embedding uses T5 attention internally — relative-position
+        # bias overflows in fp16/bf16 under AMP → NaN. Force float32.
+        with torch.autocast(device_type=input_ids.device.type, enabled=False):
+            emb = model(input_ids=input_ids, attention_mask=attention_mask)
+        emb = emb.float()
     elif _is_t5_like(model):
         enc = model.encoder if is_enc_dec else model
         # T5 relative-position bias overflows in fp16/bf16 → NaN loss under AMP.

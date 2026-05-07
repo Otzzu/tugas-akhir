@@ -19,6 +19,17 @@ from gnn_vuln.training.losses import (
     ranking_loss,
 )
 
+# Import lazily to avoid circular imports; resolved at runtime
+_EWCDR_TYPE = None
+
+
+def _ewcdr_type():
+    global _EWCDR_TYPE
+    if _EWCDR_TYPE is None:
+        from gnn_vuln.training.ewc import EWCDR
+        _EWCDR_TYPE = EWCDR
+    return _EWCDR_TYPE
+
 
 class Trainer:
     """
@@ -51,6 +62,7 @@ class Trainer:
         use_amp: bool = False,
         amp_dtype: torch.dtype = torch.float16,
         scaler: GradScaler | None = None,
+        ewc=None,   # EWCDR | None
     ):
         self.model              = model
         self.optimizer          = optimizer
@@ -68,6 +80,7 @@ class Trainer:
         self.use_amp            = use_amp
         self.amp_dtype          = amp_dtype
         self.scaler             = scaler
+        self.ewc                = ewc
 
     # ── Forward ──────────────────────────────────────────────────────────────
 
@@ -159,6 +172,10 @@ class Trainer:
                 cwe_vocab_ids = getattr(batch, "cwe_id", None)
                 sc = self.supcon_fn(z_combined, batch.y, group_ids, cwe_vocab_ids)
                 loss = loss + self.supcon_weight * sc
+
+        # EWC-DR continual learning regularization
+        if self.ewc is not None:
+            loss = loss + self.ewc.penalty(self.model)
 
         return logit_func, loss
 

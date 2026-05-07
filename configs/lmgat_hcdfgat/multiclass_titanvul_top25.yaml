@@ -7,8 +7,8 @@
 # Model: HC-DFGAT v1 best recipe applied to the new dataset
 #   LIVABLE + F1-stop + group routing + supcon (alpha-only)
 #
-# rank_loss_weight=0.0 — TitanVul CPGs may not include flaw_line_mask.
-#   If flaw_line_mask IS present, set rank_loss_weight: 0.2 to enable ranking supervision.
+# rank_loss_weight=0.2 — flaw_line_mask confirmed present in TitanVul (checked 2026-05-08).
+
 #
 # num_classes: check from loaded .pt → len(class_names). Set to actual value before training.
 #   VERIFY: python -c "import torch; d=torch.load('...pt',weights_only=False); print(len(d[2]))"
@@ -44,7 +44,7 @@ model:
   use_group_cond: true
   mil_weight: 0.5
   mil_k: 3
-  rank_loss_weight: 0.0  # set 0.2 only if titanvul CPGs include flaw_line_mask
+  rank_loss_weight: 0.2  # flaw_line_mask confirmed present in TitanVul dataset
   group_loss_weight: 0.3
   binary_loss_weight: 0.2
   active_heads: [binary, group, cwe]
