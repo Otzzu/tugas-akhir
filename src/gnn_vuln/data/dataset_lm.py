@@ -61,6 +61,24 @@ from gnn_vuln.data.graph_builder_lm import build_from_parsed, build_func_text, p
 from gnn_vuln.data.cwe_taxonomy import CWE_GROUP_MAP, GROUP_VOCAB, _GROUP_TO_CWES, _expand_cwe_filter
 from gnn_vuln.data.node_embedder import CodeBERTNodeEmbedder
 
+def _load_tokenizer(model_name: str):
+    """Load AutoTokenizer, falling back to use_fast=False when the fast
+    tokenizer crashes on dict-valued special tokens (e.g. codet5p-220m)."""
+    from transformers import AutoTokenizer
+    try:
+        return AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    except TypeError as e:
+        if "AddedToken" in str(e) or "Input must be" in str(e):
+            logger.warning(
+                f"Fast tokenizer failed for {model_name} ({e}), "
+                "retrying with use_fast=False …"
+            )
+            return AutoTokenizer.from_pretrained(
+                model_name, trust_remote_code=True, use_fast=False
+            )
+        raise
+
+
 def _get_cwe_set_from_xml(filepath: Path) -> set[str]:
     """Parse CWE XML files and return a set of CWE string IDs."""
     if not filepath.exists():
@@ -406,8 +424,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
         n = len(raw_funcs)
         logger.info(f"  Re-tokenizing {n} functions with {self._func_lm} …")
 
-        from transformers import AutoTokenizer
-        tokenizer = AutoTokenizer.from_pretrained(self._func_lm, trust_remote_code=True)
+        tokenizer = _load_tokenizer(self._func_lm)
 
         ids_list, mask_list = [], []
         batch_sz = 64
@@ -685,9 +702,8 @@ class CodeBERTGraphDataset(InMemoryDataset):
 
         tokenizer = None
         if self._add_func_tokens and pending_keys:
-            from transformers import AutoTokenizer
             logger.info(f"Initialising function tokenizer ({self._func_lm})…")
-            tokenizer = AutoTokenizer.from_pretrained(self._func_lm, trust_remote_code=True)
+            tokenizer = _load_tokenizer(self._func_lm)
 
         # ------------------------------------------------------------------
         # Process each work unit
