@@ -4,9 +4,12 @@ joern_runner.py
 Subprocess wrapper around the Joern CLI for CPG extraction.
 
 Joern pipeline per function:
-    source .c file
+    source file (auto-detected: .c / .cpp / .java / .js / .py)
         -> joern-parse   -> <name>.bin  (binary CPG)
         -> joern-export  -> <name>.graphml  (graph for GNN)
+
+Language is auto-detected from source code via detect_language().
+Supported: C, C++, Java, JavaScript (beta), Python (limited).
 
 Requires Joern 1.1+ with joern-parse and joern-export on PATH,
 or provide the joern-cli directory explicitly.
@@ -17,12 +20,73 @@ Download Joern: https://joern.io/docs/installation/
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Optional
+
+
+# ---------------------------------------------------------------------------
+# Language auto-detection
+# ---------------------------------------------------------------------------
+
+def detect_language(code: str) -> str:
+    """
+    Infer the programming language from source code and return the file
+    extension Joern expects for its language-specific frontend.
+
+    Priority order avoids false positives:
+      Java  → very distinctive keywords
+      Python → def + colon blocks, no semicolons
+      JS    → module/arrow patterns
+      C++   → std:: / nullptr / templates
+      C     → default fallback (Joern's most reliable frontend)
+
+    Returns one of: "java" | "py" | "js" | "cpp" | "c"
+    """
+    # ── Java ─────────────────────────────────────────────────────────────────
+    if re.search(r'\bpublic\s+(?:class|interface|enum|record|abstract)\b', code):
+        return "java"
+    if re.search(r'\bimport\s+java\.', code):
+        return "java"
+    if re.search(r'\b(?:@Override|@Deprecated|@SuppressWarnings|@NotNull)\b', code):
+        return "java"
+    if re.search(r'\bthrows\s+\w*Exception\b', code):
+        return "java"
+    if re.search(r'\b(?:extends|implements)\s+\w', code) and 'public' in code:
+        return "java"
+
+    # ── Python ───────────────────────────────────────────────────────────────
+    if re.search(r'^def\s+\w+\s*\(', code, re.MULTILINE):
+        # Confirm Python: uses : block delimiter and no statement-ending semicolons
+        has_colon_block = bool(re.search(r'\):\s*$', code, re.MULTILINE))
+        has_semicolons  = bool(re.search(r';\s*\n', code))
+        if has_colon_block and not has_semicolons:
+            return "py"
+
+    # ── JavaScript ───────────────────────────────────────────────────────────
+    if re.search(r'\bmodule\.exports\s*=|\brequire\s*\(', code):
+        return "js"
+    if re.search(r'=>\s*[\{\w]', code) and not re.search(r'#include', code):
+        return "js"
+    if re.search(r'^(?:export\s+(?:default\s+)?|import\s+)', code, re.MULTILINE):
+        return "js"
+    if re.search(r'\b(?:const|let)\s+\w+\s*=\s*(?:function|\()', code):
+        return "js"
+
+    # ── C++ ──────────────────────────────────────────────────────────────────
+    if re.search(r'\bstd::\w+|\bnullptr\b', code):
+        return "cpp"
+    if re.search(r'template\s*<\s*(?:typename|class)\b', code):
+        return "cpp"
+    if re.search(r'::\w+\s*\(', code) and re.search(r'#include\s*<\w+>', code):
+        return "cpp"
+
+    # ── C (default) ──────────────────────────────────────────────────────────
+    return "c"
 
 
 # ---------------------------------------------------------------------------
@@ -186,19 +250,28 @@ def process_function(
     java_home: Optional[str] = None,
     tmp_root: Optional[Path] = None,
     fmt: str = "graphml",
+    lang: Optional[str] = None,
 ) -> Optional[Path]:
     """
-    Write a C function to a temp file, run Joern parse + export, copy
-    the resulting CPG file to out_dir.
+    Write a function to a temp file (auto-detecting language), run Joern
+    parse + export, copy the resulting CPG file to out_dir.
+
+    Parameters
+    ----------
+    lang : str | None
+        File extension hint ("c", "cpp", "java", "js", "py").
+        If None, inferred automatically from code via detect_language().
 
     Returns the destination Path on success, None on any failure.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    ext = lang if lang else detect_language(code)
+
     with tempfile.TemporaryDirectory(dir=tmp_root) as tmp:
         tmp_path = Path(tmp)
 
-        src_file = tmp_path / f"func_{idx}.c"
+        src_file = tmp_path / f"func_{idx}.{ext}"
         src_file.write_text(code, encoding="utf-8")
 
         cpg_bin = tmp_path / f"func_{idx}.bin"

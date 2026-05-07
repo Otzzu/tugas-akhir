@@ -354,8 +354,14 @@ def _run_one(
 
     raw_func = code  # capture original before any normalization
 
+    # Auto-detect language for correct Joern frontend selection
+    from gnn_vuln.data.joern_runner import detect_language as _detect_lang
+    detected_lang = _detect_lang(code)
+
     if normalize:
-        code = preprocess(code, lang="c", normalize=True)
+        # Normalization only meaningful for C/C++ — skip for other languages
+        if detected_lang in ("c", "cpp"):
+            code = preprocess(code, lang="c", normalize=True)
 
     try:
         dest = process_function(
@@ -364,6 +370,7 @@ def _run_one(
             out_dir=out_dir,
             joern_cli_dir=joern_cli_dir,
             java_home=java_home,
+            lang=detected_lang,
         )
         if dest is None:
             return idx, None, "process_function returned None (Joern may have failed silently)"
