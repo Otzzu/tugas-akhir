@@ -1,39 +1,45 @@
 #!/usr/bin/env bash
-# Download bigvul + megavul + titanvul from Google Drive, extract, then build .pt caches.
+# Download datasets from Google Drive, build .pt caches, upload each .pt.
 #
 # Usage:
-#   bash scripts/cloud_process_datasets.sh [--keep-pt] <config> [<config> ...]
+#   bash scripts/cloud_process_datasets.sh [flags] <config> [<config> ...]
 #
 # Flags:
-#   --delete-pt      After upload, also delete local .pt to free disk space (default: keep).
-#   --force-rebuild  Skip patch fast-path; rebuild .pt from scratch (passed to process_dataset.py).
+#   --delete-pt        Delete .pt after upload (default: keep).
+#   --force-rebuild    Rebuild .pt from scratch.
+#   --clear-after N    After processing the Nth config, delete ALL local .pt files
+#                      before continuing. Useful when configs share a node LM:
+#                      process group-1 (same node LM) → upload → clear → process group-2.
 #
-# Examples:
-#   bash scripts/cloud_process_datasets.sh configs/data/bigvul_multiclass_top10.yaml
-#   bash scripts/cloud_process_datasets.sh configs/data/megavul_multiclass_top25.yaml
-#   bash scripts/cloud_process_datasets.sh --delete-pt configs/data/megavul_multiclass_top25.yaml
-#   bash scripts/cloud_process_datasets.sh --force-rebuild --delete-pt configs/data/megavul_multiclass_top25.yaml
+# Example — 4 configs, 2 per node LM, clear between groups:
+#   bash scripts/cloud_process_datasets.sh --clear-after 2 \
+#     configs/data/titanvul_top25.yaml \
+#     configs/data/titanvul_top25_codet5p.yaml \
+#     configs/data/titanvul_top25_codet5p_node.yaml \
+#     configs/data/titanvul_top25_codet5p_full.yaml
 
 set -euo pipefail
 
 REMOTE_RAW="gdrive-mesach:tugas-akhir/data/raw"
 REMOTE_PT="gdrive-mesach:tugas-akhir/data/processed"
-BIGVUL_TAR="bigvul_20260505_120148.tar.gz"
-MEGAVUL_TAR="megavul_20260505_120148.tar.gz"
-TITANVUL_TAR="titanvul_20260505_120148.tar.gz"
 DATA_DIR="data/raw"
 PT_DIR="data/processed"
 TS=$(date +"%Y%m%d_%H%M%S")
 DELETE_PT=false
 FORCE_REBUILD=false
+CLEAR_AFTER=0   # 0 = disabled
 
-# Parse flags
+# ── Parse flags ────────────────────────────────────────────────────────────────
 CONFIGS=()
-for arg in "$@"; do
-    case "$arg" in
+skip_next=false
+args=("$@")
+for i in "${!args[@]}"; do
+    if $skip_next; then skip_next=false; continue; fi
+    case "${args[$i]}" in
         --delete-pt)     DELETE_PT=true ;;
         --force-rebuild) FORCE_REBUILD=true ;;
-        *)               CONFIGS+=("$arg") ;;
+        --clear-after)   CLEAR_AFTER="${args[$((i+1))]}"; skip_next=true ;;
+        *)               CONFIGS+=("${args[$i]}") ;;
     esac
 done
 set -- "${CONFIGS[@]+"${CONFIGS[@]}"}"
@@ -45,7 +51,13 @@ download_if_missing() {
         echo "[skip] $name already extracted"
         return
     fi
-    local tar="${name}_20260505_120148.tar.gz"
+    # Find latest matching tar on remote (sorted chronologically by name)
+    local tar
+    tar=$(rclone ls "$REMOTE_RAW" 2>/dev/null | grep "${name}_" | grep "\.tar\.gz" | awk '{print $2}' | sort | tail -1)
+    if [[ -z "$tar" ]]; then
+        echo "[error] No tar found for '$name' in $REMOTE_RAW" >&2
+        return 1
+    fi
     if [[ ! -f "$tar" ]]; then
         echo "Downloading $tar ..."
         rclone copy "$REMOTE_RAW/$tar" . --progress
@@ -58,7 +70,6 @@ download_if_missing() {
 
 mkdir -p "$DATA_DIR"
 
-# Only download datasets actually referenced in the given configs
 needed_sources() {
     grep -h "source:" "$@" 2>/dev/null | awk '{print $2}' | sort -u
 }
@@ -73,54 +84,60 @@ else
     download_if_missing titanvul
 fi
 
-# ── 2. Process ─────────────────────────────────────────────────────────────────
+# ── 2. Process + upload ────────────────────────────────────────────────────────
 if [[ $# -eq 0 ]]; then
-    echo "No config specified. Extracted datasets only. Run:"
-    echo "  PYTHONPATH=src python scripts/process_dataset.py --config <yaml> --device cuda"
+    echo "No config specified. Extracted datasets only."
     exit 0
 fi
 
-for CONFIG in "$@"; do
-    echo ""
-    echo "=== Processing: $CONFIG ==="
+REBUILD_FLAG=""
+[[ "$FORCE_REBUILD" == "true" ]] && REBUILD_FLAG="--force-rebuild"
 
-    # Snapshot .pt files before processing
+config_idx=0
+for CONFIG in "$@"; do
+    config_idx=$((config_idx + 1))
+    echo ""
+    echo "=== [$config_idx/$#] Processing: $CONFIG ==="
+
     before=$(ls "$PT_DIR"/*.pt 2>/dev/null | sort || true)
 
-    REBUILD_FLAG=""
-    [[ "$FORCE_REBUILD" == "true" ]] && REBUILD_FLAG="--force-rebuild"
     PYTHONPATH=src python scripts/process_dataset.py --config "$CONFIG" --device cuda $REBUILD_FLAG
 
-    # Find newly created .pt files
     after=$(ls "$PT_DIR"/*.pt 2>/dev/null | sort || true)
     new_pts=$(comm -13 <(echo "$before") <(echo "$after"))
 
     if [[ -z "$new_pts" ]]; then
-        echo "[warn] No new .pt file detected — skipping upload"
-        continue
+        echo "[warn] No new .pt file — skipping upload"
+    else
+        for pt_file in $new_pts; do
+            stem=$(basename "$pt_file" .pt)
+            archive="${stem}_${TS}.tar.gz"
+            echo "Compressing $pt_file → $archive ..."
+            tar -cf - -C "$PT_DIR" "$(basename "$pt_file")" \
+                | pv -s "$(du -sb "$pt_file" | awk '{print $1}')" \
+                | gzip > "$archive"
+            echo "Uploading $archive → $REMOTE_PT ..."
+            rclone copy "$archive" "$REMOTE_PT" --progress
+            rm -f "$archive"
+            if [[ "$DELETE_PT" == "true" ]]; then
+                rm -f "$pt_file"
+                echo "Deleted local $pt_file"
+            fi
+        done
     fi
 
-    for pt_file in $new_pts; do
-        stem=$(basename "$pt_file" .pt)
-        archive="${stem}_${TS}.tar.gz"
-        echo "Zipping $pt_file -> $archive ..."
-        
-        # ---------------------------------------------------------
-        # NEW: Stream tar into pv for a live progress bar, then gzip
-        # ---------------------------------------------------------
-        tar -cf - -C "$PT_DIR" "$(basename "$pt_file")" | pv -s $(du -sb "$pt_file" | awk '{print $1}') | gzip > "$archive"
-        
-        echo "Uploading $archive to $REMOTE_PT ..."
-        rclone copy "$archive" "$REMOTE_PT" --progress
-        rm -f "$archive"
-        
-        if [[ "$DELETE_PT" == "true" ]]; then
-            rm -f "$pt_file"
-            echo "Uploaded and cleaned: $archive + $pt_file"
+    # --clear-after N: delete ALL local .pt after the Nth config to free disk space
+    if [[ "$CLEAR_AFTER" -gt 0 && "$config_idx" -eq "$CLEAR_AFTER" ]]; then
+        echo ""
+        echo "=== --clear-after $CLEAR_AFTER reached — deleting all local .pt files ==="
+        local_pts=$(ls "$PT_DIR"/*.pt 2>/dev/null || true)
+        if [[ -n "$local_pts" ]]; then
+            echo "$local_pts" | xargs rm -f
+            echo "Cleared: $local_pts"
         else
-            echo "Uploaded and cleaned: $archive (keeping $pt_file)"
+            echo "(no .pt files to clear)"
         fi
-    done
+    fi
 done
 
 echo ""

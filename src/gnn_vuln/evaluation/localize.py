@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from torch_geometric.loader import DataLoader
 
-from gnn_vuln.metrics import make_func_loc_result
+from gnn_vuln.metrics import LocalizationMetrics
 
 
 class LocalizationExtractor:
@@ -67,7 +67,7 @@ class LocalizationExtractor:
             else:
                 B = int(batch.batch.max().item()) + 1
                 for _ in range(B):
-                    loc_results.append(make_func_loc_result([], [], []))
+                    loc_results.append(LocalizationMetrics.make_result([], [], []))
 
         import numpy as np
         return (
@@ -105,7 +105,7 @@ class LocalizationExtractor:
     def _extract_func(scores_b, batch_idx, node_line, flaw_mask, b) -> dict:
         """Extract per-function localization data for graph b."""
         if len(scores_b) == 0:
-            return make_func_loc_result([], [], [])
+            return LocalizationMetrics.make_result([], [], [])
 
         if scores_b.dim() == 2:
             probs = torch.softmax(scores_b, dim=-1)
@@ -122,7 +122,7 @@ class LocalizationExtractor:
 
         valid = node_line_b >= 0
         if not valid.any():
-            return make_func_loc_result([], [], [])
+            return LocalizationMetrics.make_result([], [], [])
 
         lines_b = node_line_b[valid]
         flaw_b  = flaw_b[valid]
@@ -135,7 +135,7 @@ class LocalizationExtractor:
             line_scores.append(scores_scalar[mask].max().item())
             line_labels.append(int(flaw_b[mask].any().item()))
 
-        return make_func_loc_result(
+        return LocalizationMetrics.make_result(
             unique_lines.cpu().tolist(),
             line_scores,
             line_labels,
