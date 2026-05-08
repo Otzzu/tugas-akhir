@@ -342,6 +342,23 @@ _EXT_TO_LANG = {
     "cs": "C#",
 }
 
+# Full language name OR raw extension → Joern file extension.
+# Covers all Joern-supported languages. Unsupported (Rust, Lua, Scala, ObjC)
+# are omitted — they fall back to detect_language() → "c".
+_LANG_TO_EXT: dict[str, str] = {
+    # full names (from download parquet language column)
+    "c": "c", "c++": "cpp", "java": "java", "kotlin": "kt",
+    "javascript": "js", "typescript": "js", "python": "py", "ruby": "rb",
+    "php": "php", "go": "go", "swift": "swift", "c#": "cs",
+    # raw extensions (from parquet extension column)
+    "cpp": "cpp", "cc": "cpp", "cxx": "cpp",
+    "h": "c", "hpp": "cpp",
+    "js": "js", "jsx": "js", "ts": "js",
+    "py": "py", "rb": "rb",
+    "kt": "kt", "kts": "kt",
+    "go": "go", "swift": "swift", "cs": "cs", "php": "php",
+}
+
 
 def _run_one(
     idx: int,
@@ -372,18 +389,29 @@ def _run_one(
 
     raw_func = code  # capture original before any normalization
 
-    # Resolve language: ground-truth from caller → detect_language() fallback → never null
     from gnn_vuln.data.joern_runner import detect_language as _detect_lang
-    detected_lang = _detect_lang(code)  # always returns non-empty (min: "c")
+
+    # Resolve Joern extension
+    lang_lower = language.lower() if language else ""
+    is_unknown = lang_lower in ("", "unknown")
+
+    if not is_unknown:
+        joern_ext = _LANG_TO_EXT.get(lang_lower)
+        if joern_ext is None:
+            # Known language, not supported by Joern (Rust, Scala, Lua, ObjC…) → skip
+            return idx, None, f"skipped: '{language}' not supported by Joern"
+    else:
+        # Empty/unknown → detect from code; detect_language always returns a supported ext
+        joern_ext = _detect_lang(code)
+
     lang_name = (
-        language                                        # parquet ground truth
-        or _EXT_TO_LANG.get(detected_lang, detected_lang.upper())  # heuristic
-        or "C"                                          # absolute fallback
+        language                                         # parquet ground truth
+        or _EXT_TO_LANG.get(joern_ext, joern_ext.upper())  # heuristic
+        or "C"                                           # absolute fallback
     )
 
     if normalize:
-        # Normalization only meaningful for C/C++ — skip for other languages
-        if detected_lang in ("c", "cpp"):
+        if joern_ext in ("c", "cpp"):
             code = preprocess(code, lang="c", normalize=True)
 
     try:
@@ -393,7 +421,7 @@ def _run_one(
             out_dir=out_dir,
             joern_cli_dir=joern_cli_dir,
             java_home=java_home,
-            lang=detected_lang,
+            lang=joern_ext,
         )
         if dest is None:
             return idx, None, "process_function returned None (Joern may have failed silently)"
@@ -566,9 +594,10 @@ def main() -> None:
     # -----------------------------------------------------------------------
     # Build work list
     # -----------------------------------------------------------------------
-    # Normalise lang/extension column to consistent language name
-    _LANG_COL = next((c for c in df.columns if c in ("lang", "language", "extension")), None)
-    _EXT_NORM = {"C": "C", "CPP": "C++", "C++": "C++"}  # BigVul lang values
+    # Resolve language column — iterate priority tuple (not df.columns order)
+    # so "language" (full names, already mapped by download) beats "extension"
+    _LANG_COL = next((c for c in ("lang", "language", "extension") if c in df.columns), None)
+    _EXT_NORM = {"C": "C", "CPP": "C++", "C++": "C++"}  # BigVul lang column values
 
     work: list[tuple[int, str, Path, int, list[int], str, int, str]] = []
     for local_idx, row in enumerate(df.itertuples(index=False)):

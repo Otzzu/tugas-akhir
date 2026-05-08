@@ -438,6 +438,7 @@ def main() -> None:
     class_names: list[str] | None = getattr(dataset, "class_names", None)
     target_names = class_names or [str(i) for i in range(num_classes)]
     correct_mask = y_true == y_pred
+    raw_funcs = getattr(dataset, "raw_funcs", None)  # parallel list of source strings
 
     # ── Function-level report ───────────────────────────────────────────────
     print("\n" + "=" * 65)
@@ -505,6 +506,29 @@ def main() -> None:
         print(f"  Recall@1%LOC       : {loc_metrics['recall_at_1pct_loc']:.4f}")
         print(f"  Recall@5%LOC       : {loc_metrics['recall_at_5pct_loc']:.4f}")
         print(f"  Recall@20%LOC      : {loc_metrics['recall_at_20pct_loc']:.4f}")
+
+        # Show sample: top-3 suspicious lines with code for first 3 vulnerable functions
+        print()
+        print("  Sample — top-3 suspicious lines (first 3 vulnerable functions):")
+        shown = 0
+        for func_idx, (r, yt) in enumerate(zip(loc_results, y_true)):
+            if int(yt) == 0 or shown >= 3:
+                continue
+            raw_func = ""
+            if raw_funcs is not None:
+                ds_idx = test_idx[func_idx]
+                raw_func = raw_funcs[ds_idx] if ds_idx < len(raw_funcs) else ""
+            src_lines = raw_func.splitlines() if raw_func else []
+            print(f"  func {func_idx} (class={int(yt)}):")
+            for ln, sc, lab in zip(
+                r["ranked_line_numbers"][:3],
+                r["ranked_scores"][:3],
+                r["ranked_labels"][:3],
+            ):
+                code = src_lines[ln - 1].strip() if 0 < ln <= len(src_lines) else "<no code>"
+                marker = "FLAW" if lab else "    "
+                print(f"    [{marker}] line {ln:4d} score={sc:.3f}  {code[:60]}")
+            shown += 1
     print("=" * 65 + "\n")
 
     # ── Baseline comparison ─────────────────────────────────────────────────
@@ -545,7 +569,15 @@ def main() -> None:
     # localization_scores.csv
     loc_rows: list[dict] = []
     for func_idx, (r, yt, yp) in enumerate(zip(loc_results, y_true, y_pred)):
+        # Retrieve source code for this function
+        raw_func = ""
+        if raw_funcs is not None:
+            ds_idx = test_idx[func_idx]
+            raw_func = raw_funcs[ds_idx] if ds_idx < len(raw_funcs) else ""
+        src_lines = raw_func.splitlines() if raw_func else []
+
         for ln, sc, lab in zip(r["line_numbers"], r["line_scores"], r["line_labels"]):
+            code = src_lines[ln - 1].strip() if 0 < ln <= len(src_lines) else ""
             loc_rows.append({
                 "func_idx": func_idx,
                 "y_true": int(yt),
@@ -553,6 +585,7 @@ def main() -> None:
                 "line_number": int(ln),
                 "score": round(float(sc), 6),
                 "is_flaw_line": int(lab),
+                "code": code,
             })
     if loc_rows:
         loc_df = pd.DataFrame(loc_rows)

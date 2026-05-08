@@ -39,7 +39,7 @@ model:
   num_layers: 4
   dropout: 0.3
   heads: 4
-  edge_dim: 7
+  edge_dim: 18
   num_classes: 90        # titanvul OWASP filter: 89 CWE labels + benign
   num_groups: 16
   use_group_cond: true

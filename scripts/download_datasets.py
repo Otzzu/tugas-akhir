@@ -64,7 +64,7 @@ def download_one(name: str, cfg: dict) -> None:
 
 def download_megavul() -> None:
     """
-    Stream MegaVul (672K rows), filter to C rows with extracted function code,
+    Stream MegaVul (672K rows), keep all languages with extracted function code,
     and save in BigVul-compatible column layout so prepare_dataset.py can consume
     it with --format bigvul.
 
@@ -75,6 +75,7 @@ def download_megavul() -> None:
                        None                            (vul=0 rows)
         vul          — 1 = vulnerable, 0 = benign
         CWE ID       — CWE string (e.g. "CWE-416"), empty for benign rows
+        language     — full language name ("C", "C++") for correct Joern frontend
     """
     import pandas as pd
     from datasets import load_dataset
@@ -88,13 +89,13 @@ def download_megavul() -> None:
 
     print(f"\n{'='*60}")
     print("  Downloading: megavul  (hitoshura25/megavul)")
-    print("  Streaming 672K rows — saving raw + C-filtered train parquets…")
+    print("  Streaming 672K rows — saving raw + all-language train parquets…")
     print(f"{'='*60}")
 
     ds = load_dataset("hitoshura25/megavul", split="train", streaming=True)
 
     raw_rows: list[dict] = []   # all languages, all original columns
-    train_rows: list[dict] = [] # C-only, renamed for pipeline
+    train_rows: list[dict] = [] # all languages with code, renamed for pipeline
     total_seen = 0
 
     for row in tqdm(ds, desc="  streaming", unit="row"):
@@ -106,14 +107,10 @@ def download_megavul() -> None:
         # raw.parquet — all columns, all languages
         raw_rows.append(dict(row))
 
-        # train.parquet — C-only, BigVul-compatible layout
-        if row.get("language") != "C":
-            continue
-
         fixed_code = row.get("fixed_code")
         cwe    = row.get("cwe_id")  or ""
         cve_id = row.get("cve_id")  or ""
-        lang   = row.get("language") or "C"
+        lang   = row.get("language") or ""
 
         train_rows.append({"func_before": vuln_code, "func_after": fixed_code or None,
                            "vul": 1, "CWE ID": cwe, "CVE ID": cve_id, "language": lang})
@@ -132,12 +129,15 @@ def download_megavul() -> None:
     vuln_n  = (df["vul"] == 1).sum()
     benign_n = (df["vul"] == 0).sum()
     print(f"  Streamed {total_seen:,} rows total")
-    print(f"  train.parquet: {len(df):,} rows (C-only, vulnerable={vuln_n:,} benign={benign_n:,})")
+    print(f"  train.parquet: {len(df):,} rows (vulnerable={vuln_n:,} benign={benign_n:,})")
     print(f"  -> {out_file.relative_to(PROJECT_ROOT)}")
+    print("\n  Language distribution:")
+    for lang, cnt in df[df["vul"] == 1]["language"].value_counts().items():
+        print(f"    {lang}: {cnt:,}")
     print("\n  CWE distribution (top 15):")
     for cwe, cnt in df[df["vul"] == 1]["CWE ID"].value_counts().head(15).items():
         print(f"    {cwe}: {cnt}")
-    print(f"\n  Use with prepare_dataset.py --format bigvul --input {out_file.relative_to(PROJECT_ROOT)}")
+    print(f"\n  Use with prepare_dataset.py --format megavul --input {out_file.relative_to(PROJECT_ROOT)}")
 
 
 def download_titanvul() -> None:

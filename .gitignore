@@ -52,3 +52,13 @@ diagram.md
 src/LineVul/
 src/VulChecker/
 src/vul-LMGNN/
+src/gnn_vuln/joern/
+
+# Downloaded tools / secrets
+gdrive.exe
+gdrive3.zip
+gdrive*.zip
+rclone.zip
+rclone*/
+secret.txt
+*.secret

@@ -25,7 +25,7 @@ model:
   num_layers: 4
   dropout: 0.3
   heads: 4
-  edge_dim: 7
+  edge_dim: 18
   num_classes: 11
   stmt_transformer_layers: 2    # Stage 1 transformer depth
   stmt_transformer_heads: 4     # Stage 1 transformer attention heads

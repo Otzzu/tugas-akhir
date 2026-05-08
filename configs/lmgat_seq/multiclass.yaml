@@ -26,7 +26,7 @@ model:
   num_layers: 4
   dropout: 0.3
   heads: 4
-  edge_dim: 7
+  edge_dim: 18
   num_classes: 11
   stage2_node_input: loc        # Stage 2 gets 256D h_loc + s_i — smoother than raw 773D + random s_i
   mil_weight: 0.1               # reduced — let classification loss dominate early training

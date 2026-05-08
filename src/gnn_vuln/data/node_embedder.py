@@ -3,42 +3,66 @@ from __future__ import annotations
 import torch
 from transformers import AutoModel, AutoTokenizer
 
-# CPG node type vocabulary (Joern labels)
+# CPG node type vocabulary — all Joern/MegaVul node labels + UNKNOWN fallback
 NODE_TYPES = [
+    "BINDING",
+    "BLOCK",
+    "CALL",
+    "COMMENT",
+    "CONTROL_STRUCTURE",
+    "FIELD_IDENTIFIER",
+    "FILE",
+    "IDENTIFIER",
+    "JUMP_TARGET",
+    "LITERAL",
+    "LOCAL",
+    "META_DATA",
     "METHOD",
     "METHOD_PARAMETER_IN",
     "METHOD_PARAMETER_OUT",
-    "BLOCK",
-    "CALL",
-    "IDENTIFIER",
-    "LITERAL",
-    "RETURN",
-    "CONTROL_STRUCTURE",
-    "FIELD_IDENTIFIER",
+    "METHOD_REF",
     "METHOD_RETURN",
-    "LOCAL",
-    "UNKNOWN",
+    "MODIFIER",
+    "NAMESPACE",
+    "NAMESPACE_BLOCK",
+    "RETURN",
+    "TYPE",
+    "TYPE_DECL",
+    "UNKNOWN",  # fallback for unseen labels
 ]
 NODE_TYPE_TO_IDX = {t: i for i, t in enumerate(NODE_TYPES)}
 
+# Non-LM feature dimensions (fixed regardless of which LM is used):
+#   node_type(22 one-hot) + dist(3) + dangerous_api(1)
+#   + is_external(1) + ctrl_struct_type(12 one-hot) + has_type(1) + type_feats(3)
+#   + eval_strategy(4 one-hot) + arg_idx(1) + dispatch_type(3 one-hot)
+#   + is_variadic(1) + span_normalized(1)
+NON_LM_FEAT_DIM = 24 + 3 + 1 + 1 + 12 + 1 + 3 + 4 + 1 + 3 + 1 + 1  # = 55
+
+# Default LM embedding dim (CodeBERT / UniXcoder / GraphCodeBERT)
 CODEBERT_DIM = 768
-NODE_FEAT_DIM = 1 + CODEBERT_DIM + 3 + 1  # node_type + CodeBERT CLS + distances + dangerous_api = 773
+
+# Default total node feature dim (CodeBERT). Changes with different LMs.
+NODE_FEAT_DIM = NON_LM_FEAT_DIM + CODEBERT_DIM  # = 823
 
 
-class CodeBERTNodeEmbedder:
+def compute_node_feat_dim(lm_dim: int) -> int:
+    """Total node feature dimension for a given LM embedding size."""
+    return NON_LM_FEAT_DIM + lm_dim
+
+
+class LMNodeEmbedder:
     """
-    Embeds CPG node code strings using CodeBERT's CLS token (frozen weights).
+    Embeds CPG node code strings using a frozen LM CLS token.
 
-    Each node produces a (773,) vector:
-        [node_type_idx (1)] + [CodeBERT CLS (768)] + [dist_entry, dist_exit, dist_call (3)] + [dangerous_api (1)]
+    Supports any HuggingFace encoder (CodeBERT, UniXcoder, CodeT5p-embedding,
+    Jina with matryoshka_dim, etc.). The actual embedding dimension is resolved
+    at init time and exposed as self.lm_dim.
 
-    GPU optimisations applied during embed_batch:
-    - max_length=128  (CPG nodes are short statements; 512 wastes GPU on padding)
-    - AMP float16     (halves VRAM, enables larger batches on RTX cards)
-    - non_blocking transfer (overlaps CPU->GPU copy with GPU compute)
+    Each node produces a (NON_LM_FEAT_DIM + lm_dim,) vector:
+        [node_type_idx(1)] + [LM CLS(lm_dim)] + [dist(3)] + [danger(1)] + [extra(9)]
 
-    Weights are never updated — call this only during dataset preprocessing,
-    not inside the training loop.
+    Weights are never updated — call only during dataset preprocessing.
     """
 
     def __init__(
@@ -46,19 +70,27 @@ class CodeBERTNodeEmbedder:
         model_name: str = "microsoft/codebert-base",
         device: str = "cpu",
         max_length: int = 128,
+        matryoshka_dim: int | None = None,
     ):
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModel.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+        self.model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
         self.model.eval()
         self.device = torch.device(device)
         self.model.to(self.device)
         self.max_length = max_length
         self._use_amp = self.device.type == "cuda"
+        self.matryoshka_dim = matryoshka_dim
+
+        # Resolve actual LM output dimension
+        cfg = self.model.config
+        full_dim = getattr(cfg, "hidden_size", getattr(cfg, "d_model", CODEBERT_DIM))
+        self.lm_dim = matryoshka_dim if matryoshka_dim and matryoshka_dim < full_dim else full_dim
+        self.node_feat_dim = compute_node_feat_dim(self.lm_dim)
 
     @torch.no_grad()
     def embed_batch(self, codes: list[str]) -> torch.Tensor:
         """
-        Returns (N, 768) float32 CLS embeddings for a list of code strings.
+        Returns (N, lm_dim) float32 CLS embeddings for a list of code strings.
         Empty / whitespace strings are treated as a single space.
         """
         safe_codes = [c if c.strip() else " " for c in codes]
@@ -69,13 +101,15 @@ class CodeBERTNodeEmbedder:
             truncation=True,
             padding=True,
         )
-        # non_blocking overlaps CPU->GPU transfer with GPU compute
         inputs = {k: v.to(self.device, non_blocking=True) for k, v in inputs.items()}
         with torch.amp.autocast("cuda", enabled=self._use_amp):
             out = self.model(**inputs)
-        return out.last_hidden_state[:, 0, :].float().cpu()  # (N, 768) float32
+        cls = out.last_hidden_state[:, 0, :].float().cpu()  # (N, full_dim)
+        if self.matryoshka_dim and self.matryoshka_dim < cls.shape[1]:
+            cls = cls[:, :self.matryoshka_dim]
+        return cls  # (N, lm_dim)
 
     @torch.no_grad()
     def embed(self, code: str) -> torch.Tensor:
-        """Returns (768,) CLS embedding for a single code string."""
+        """Returns (lm_dim,) CLS embedding for a single code string."""
         return self.embed_batch([code])[0]

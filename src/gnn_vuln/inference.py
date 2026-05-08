@@ -59,7 +59,7 @@ import torch.nn.functional as F
 
 from gnn_vuln.config import Config, load_default_config
 from gnn_vuln.data.graph_builder_lm import build_func_text, build_from_parsed, parse_cpg
-from gnn_vuln.data.node_embedder import CodeBERTNodeEmbedder
+from gnn_vuln.data.node_embedder import LMNodeEmbedder
 from gnn_vuln.models.registry import build_model
 from gnn_vuln.utils import get_device, load_checkpoint
 
@@ -300,7 +300,7 @@ def predict_from_file(
     if cpg is None:
         return None
 
-    embedder = CodeBERTNodeEmbedder(model_name=pretrained_lm, device=str(device))
+    embedder = LMNodeEmbedder(model_name=pretrained_lm, device=str(device))
     codes = cpg["codes"]
     embed_batch = 256
     parts = [

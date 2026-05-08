@@ -32,7 +32,7 @@ model:
   num_layers: 4
   dropout: 0.3
   heads: 4
-  edge_dim: 7
+  edge_dim: 18
   num_classes: 11        # fine-grained: 10 CWE + benign
   num_groups: 16         # coarse: 15 CWE groups + benign
   mil_weight: 0.3

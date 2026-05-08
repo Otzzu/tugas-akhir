@@ -15,11 +15,15 @@ The resulting Data objects are cached to disk so CodeBERT is only run once.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import xml.etree.ElementTree as ET
 from collections import deque
 from pathlib import Path
 from typing import Optional
+
+_log = logging.getLogger(__name__)
+_unknown_enum_seen: set[str] = set()  # track unknown enum values, warn once per value
 
 import torch
 from torch_geometric.data import Data
@@ -27,11 +31,31 @@ from torch_geometric.data import Data
 from gnn_vuln.data.node_embedder import (
     CODEBERT_DIM,
     NODE_FEAT_DIM,
+    NODE_TYPES,
     NODE_TYPE_TO_IDX,
-    CodeBERTNodeEmbedder,
+    LMNodeEmbedder,
 )
 
-EDGE_TYPES = ["AST", "CFG", "CDG", "DDG", "PDG", "CALL", "REACHING_DEF"]
+# All Joern/MegaVul edge types from SPECIFICATION.md + IMPORTS (Java graphs)
+EDGE_TYPES = [
+    "ARGUMENT",       # call → arguments
+    "AST",            # abstract syntax tree
+    "BINDS",          # type binding
+    "CALL",           # function calls
+    "CDG",            # control dependence
+    "CFG",            # control flow
+    "CONDITION",      # control structure → condition expr
+    "CONTAINS",       # containment
+    "DOMINATE",       # dominance
+    "EVAL_TYPE",      # type evaluation
+    "IMPORTS",        # import/include (Java/Python)
+    "PARAMETER_LINK", # call arg → formal param
+    "POST_DOMINATE",  # post-dominance
+    "REACHING_DEF",   # data dependence (DDG)
+    "RECEIVER",       # method call receiver
+    "REF",            # identifier → declaration
+    "SOURCE_FILE",    # source file link
+]
 EDGE_TYPE_TO_IDX = {et: i for i, et in enumerate(EDGE_TYPES)}
 
 _GRAPHML_NS = "http://graphml.graphdrawing.org/xmlns"
@@ -111,18 +135,33 @@ def _parse_graphml(path: str | Path) -> dict:
     return {"nodes": nodes, "edges": edges}
 
 
-def _node_type_idx(attrs: dict) -> float:
-    # Joern v4 GraphML uses 'labelV'; flat JSON uses 'label'
+_NUM_NODE_TYPES = len(NODE_TYPES)  # 22
+
+
+def _node_type_onehot(attrs: dict) -> list[float]:
+    """22D one-hot vector for node label. Unknown → UNKNOWN bucket."""
     label = str(attrs.get("labelV", attrs.get("label", "UNKNOWN")))
-    return float(NODE_TYPE_TO_IDX.get(label, NODE_TYPE_TO_IDX["UNKNOWN"]))
+    if label not in NODE_TYPE_TO_IDX:
+        _check_enum("node_label", label, set(NODE_TYPE_TO_IDX))
+    idx = NODE_TYPE_TO_IDX.get(label, NODE_TYPE_TO_IDX["UNKNOWN"])
+    vec = [0.0] * _NUM_NODE_TYPES
+    vec[idx] = 1.0
+    return vec
 
 
 def _edge_attr(edge_attrs: dict) -> list[float]:
-    etype = edge_attrs.get("label", "AST")
-    idx = EDGE_TYPE_TO_IDX.get(etype, 0)
-    one_hot = [0.0] * len(EDGE_TYPES)
-    one_hot[idx] = 1.0
-    return one_hot
+    etype = edge_attrs.get("label", "")
+    if etype not in EDGE_TYPE_TO_IDX:
+        _check_enum("edge_type", etype, set(EDGE_TYPE_TO_IDX))
+        one_hot = [0.0] * len(EDGE_TYPES)
+    else:
+        one_hot = [0.0] * len(EDGE_TYPES)
+        one_hot[EDGE_TYPE_TO_IDX[etype]] = 1.0
+    # has_variable: 1 if REACHING_DEF edge carries a tracked variable name
+    # GraphML stores it as "property"; MegaVul JSON stores it as "variable"
+    var = edge_attrs.get("variable", edge_attrs.get("VARIABLE", edge_attrs.get("property", "")))
+    has_var = 1.0 if var and str(var).strip() else 0.0
+    return one_hot + [has_var]  # 18D total
 
 
 def _node_line(attrs: dict) -> int:
@@ -202,16 +241,126 @@ def _compute_distance_features(
     return torch.tensor(feats, dtype=torch.float)  # (N, 3)
 
 
-def _dangerous_api_flags(codes: list[str]) -> torch.Tensor:
-    """
-    Returns (N, 1) float32 tensor: 1.0 if the node code contains a known
-    dangerous API name (matched as a whole word), else 0.0.
-    """
-    flags = [
-        1.0 if any(t in DANGEROUS_APIS for t in _TOKEN_RE.findall(code)) else 0.0
-        for code in codes
-    ]
+_CST_TO_IDX = {
+    "IF": 1, "ELSE": 2, "WHILE": 3, "FOR": 4,
+    "SWITCH": 5, "BREAK": 6, "CONTINUE": 7, "GOTO": 8,
+    "TRY": 9, "CATCH": 10, "FINALLY": 11,  # Java exception handling
+}
+# 0 = missing/not-applicable, positive = actual value (ensures 0 is unambiguous)
+_EVAL_TO_IDX  = {"BY_VALUE": 1, "BY_REFERENCE": 2, "BY_SHARING": 3}  # max=3
+_DISPATCH_IDX = {"STATIC_DISPATCH": 1, "DYNAMIC_DISPATCH": 2}         # max=2
+_DISPATCH_VALS = set(_DISPATCH_IDX)
+
+
+def _check_enum(field: str, value: str, known: set | dict) -> None:
+    """Warn once when an unknown enum value is encountered."""
+    known_set = set(known) if not isinstance(known, set) else known
+    if value and value not in known_set:
+        key = f"{field}:{value}"
+        if key not in _unknown_enum_seen:
+            _unknown_enum_seen.add(key)
+            _log.warning(
+                "Unknown enum value for %s: %r — not in known set %s. "
+                "Add it to the mapping in graph_builder_lm.py.",
+                field, value, sorted(known_set)
+            )
+_INTEGER_TYPES = frozenset({
+    "int", "long", "short", "char",
+    "unsigned int", "unsigned long", "unsigned short", "unsigned char",
+    "size_t", "ssize_t", "ptrdiff_t", "intptr_t", "uintptr_t",
+    "uint8_t", "uint16_t", "uint32_t", "uint64_t",
+    "int8_t", "int16_t", "int32_t", "int64_t",
+})
+_MAX_ARG_IDX = 16.0  # normalisation cap; shifted by 1 so -1→0.0, 0→1/17, 1→2/17, ..., 16→1.0
+
+
+def _dangerous_api_flags(nodes: list[dict], codes: list[str]) -> torch.Tensor:
+    """(N,1): 1 if node code or methodFullName matches a known dangerous API."""
+    flags = []
+    for node, code in zip(nodes, codes):
+        code_hit = any(t in DANGEROUS_APIS for t in _TOKEN_RE.findall(code))
+        mfn = str(node.get("methodFullName", node.get("METHOD_FULL_NAME", "")))
+        mfn_name = mfn.split(".")[-1].split(":")[0].split("<")[0]
+        mfn_hit = mfn_name in DANGEROUS_APIS
+        flags.append(1.0 if code_hit or mfn_hit else 0.0)
     return torch.tensor(flags, dtype=torch.float).unsqueeze(1)  # (N, 1)
+
+
+def _extra_node_features(nodes: list[dict]) -> torch.Tensor:
+    """
+    (N, 27) float32 tensor of additional CPG node attributes:
+      [0]    is_external         — binary: isExternal flag (library/API call)
+      [1-12] ctrl_struct_type   — 12D one-hot: [none, IF, ELSE, WHILE, FOR, SWITCH, BREAK, CONTINUE, GOTO, TRY, CATCH, FINALLY]
+      [13]   has_type_info       — binary: 1 if typeFullName present and non-empty
+      [14]   is_pointer_type     — binary: typeFullName contains pointer
+      [15]   is_integer_type     — binary: typeFullName is known integer type
+      [16]   is_void_type        — binary: typeFullName is void/ANY
+      [17-20] evaluation_strategy — 4D one-hot: [missing, BY_VALUE, BY_REFERENCE, BY_SHARING]
+      [21]   argument_index      — continuous [0,1]: (raw+1)/17 shift; 0=missing/-1
+      [22-24] dispatch_type      — 3D one-hot: [missing, STATIC_DISPATCH, DYNAMIC_DISPATCH]
+      [25]   is_variadic         — binary: variadic parameter (..., va_list)
+      [26]   span_normalized     — continuous [0,1]: (lineNumberEnd-lineNumber)/50, capped at 1
+    """
+    rows = []
+    for n in nodes:
+        # isExternal
+        is_ext = 1.0 if str(n.get("isExternal", n.get("IS_EXTERNAL", "false"))).lower() == "true" else 0.0
+
+        # controlStructureType — 12D one-hot [none, IF, ELSE, WHILE, FOR, SWITCH, BREAK, CONTINUE, GOTO, TRY, CATCH, FINALLY]
+        cst = str(n.get("controlStructureType", n.get("CONTROL_STRUCTURE_TYPE", ""))).upper()
+        if cst:
+            _check_enum("controlStructureType", cst, _CST_TO_IDX)
+        cst_vec = [0.0] * 12
+        cst_vec[_CST_TO_IDX.get(cst, 0)] = 1.0
+
+        # typeFullName features — has_type disambiguates missing from "other type"
+        tfn = str(n.get("typeFullName", n.get("TYPE_FULL_NAME", ""))).strip()
+        if tfn:
+            has_type = 1.0
+            is_ptr  = 1.0 if ("*" in tfn or "[]" in tfn) else 0.0
+            is_int  = 1.0 if tfn.lower() in _INTEGER_TYPES else 0.0
+            is_void = 1.0 if tfn.lower() in ("void", "any") else 0.0
+        else:
+            has_type = is_ptr = is_int = is_void = 0.0  # missing → no signal
+
+        # evaluationStrategy — 4D one-hot [missing, BY_VALUE, BY_REFERENCE, BY_SHARING]
+        es = str(n.get("evaluationStrategy", n.get("EVALUATION_STRATEGY", ""))).upper()
+        if es:
+            _check_enum("evaluationStrategy", es, _EVAL_TO_IDX)
+        es_vec = [0.0] * 4
+        es_vec[_EVAL_TO_IDX.get(es, 0)] = 1.0
+
+        # argumentIndex — shift by 1: -1→0.0, 0→1/17, 1→2/17, ..., 16→1.0
+        try:
+            _raw = n.get("argumentIndex", n.get("ARGUMENT_INDEX", None))
+            raw_ai = float(_raw) if _raw is not None else -1.0
+            raw_ai = max(-1.0, min(raw_ai, _MAX_ARG_IDX))
+            ai = (raw_ai + 1.0) / (_MAX_ARG_IDX + 1.0)
+        except (ValueError, TypeError):
+            ai = 0.0
+
+        # dispatchType — 3D one-hot [missing, STATIC_DISPATCH, DYNAMIC_DISPATCH]
+        dt = str(n.get("dispatchType", n.get("DISPATCH_TYPE", ""))).upper()
+        if dt:
+            _check_enum("dispatchType", dt, _DISPATCH_VALS)
+        dt_vec = [0.0] * 3
+        dt_vec[_DISPATCH_IDX.get(dt, 0)] = 1.0
+
+        # isVariadic — binary: marks variadic params (..., va_list) → vararg/format-string vulns
+        is_var = 1.0 if str(n.get("isVariadic", n.get("IS_VARIADIC", "false"))).lower() == "true" else 0.0
+
+        # span_normalized — multi-line node size: 0=single-line/missing, normalized by cap
+        try:
+            ln_start = int(n.get("lineNumber", n.get("LINE_NUMBER", 0)) or 0)
+            ln_end   = int(n.get("lineNumberEnd", n.get("LINE_NUMBER_END", ln_start)) or ln_start)
+            span = max(0, ln_end - ln_start)
+            span_norm = min(span, 50) / 50.0  # cap at 50 lines
+        except (ValueError, TypeError):
+            span_norm = 0.0
+
+        rows.append([is_ext] + cst_vec + [has_type, is_ptr, is_int, is_void] + es_vec + [ai] + dt_vec + [is_var, span_norm])
+
+    return torch.tensor(rows, dtype=torch.float)  # (N, 27)
 
 
 def parse_cpg(path: str | Path, max_nodes: int = 500) -> Optional[dict]:
@@ -278,7 +427,7 @@ def build_from_parsed(
 
     Returns
     -------
-    Data with x=[N,773], edge_index=[2,E], edge_attr=[E,7], y=[1],
+    Data with x=[N, NON_LM_FEAT_DIM+lm_dim], edge_index=[2,E], edge_attr=[E,18], y=[1],
     node_line=[N], flaw_line_mask=[N]
     """
     nodes = cpg["nodes"]
@@ -288,17 +437,29 @@ def build_from_parsed(
     node_ids = [n["id"] for n in nodes]
     node_idx = {nid: i for i, nid in enumerate(node_ids)}
 
-    type_idxs    = torch.tensor([_node_type_idx(n) for n in nodes], dtype=torch.float).unsqueeze(1)
-    dist_feats   = _compute_distance_features(nodes, edges)  # (N, 3)
-    danger_flags = _dangerous_api_flags(codes)               # (N, 1)
+    type_oh      = torch.tensor([_node_type_onehot(n) for n in nodes], dtype=torch.float)  # (N, 22)
+    dist_feats   = _compute_distance_features(nodes, edges)                                 # (N, 3)
+    danger_flags = _dangerous_api_flags(nodes, codes)                                       # (N, 1)
+    extra_feats  = _extra_node_features(nodes)                                              # (N, 27)
 
-    x = torch.cat([type_idxs, cls_feats, dist_feats, danger_flags], dim=1)  # (N, 773)
+    x = torch.cat([type_oh, cls_feats, dist_feats, danger_flags, extra_feats], dim=1)
 
     node_lines = [_node_line(n) for n in nodes]
     node_line  = torch.tensor(node_lines, dtype=torch.long)
     flaw_set   = set(flaw_lines) if flaw_lines else set()
+
+    # flaw_line_mask: covers full node span [lineNumber, lineNumberEnd]
+    def _node_end_line(nd: dict) -> int:
+        try:
+            v = nd.get("lineNumberEnd", nd.get("LINE_NUMBER_END", None))
+            return int(v) if v is not None else -1
+        except (ValueError, TypeError):
+            return -1
+
     flaw_line_mask = torch.tensor(
-        [1 if ln >= 0 and ln in flaw_set else 0 for ln in node_lines],
+        [1 if (ln >= 0 and any(ln <= fl <= max(ln, _node_end_line(n)) for fl in flaw_set))
+         else 0
+         for ln, n in zip(node_lines, nodes)],
         dtype=torch.long,
     )
 
@@ -334,7 +495,7 @@ def build_from_parsed(
 def build_lm_graph_from_json(
     path: str | Path,
     label: int,
-    embedder: CodeBERTNodeEmbedder,
+    embedder: LMNodeEmbedder,
     max_nodes: int = 500,
     embed_batch_size: int = 256,
     flaw_lines: list[int] | None = None,

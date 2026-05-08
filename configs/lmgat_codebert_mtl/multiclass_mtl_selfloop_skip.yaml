@@ -21,7 +21,7 @@ model:
   num_layers: 4
   dropout: 0.3
   heads: 4
-  edge_dim: 7
+  edge_dim: 18
   num_classes: 11
   num_groups: 16
   mil_weight: 0.3

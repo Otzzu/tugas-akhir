@@ -128,7 +128,7 @@ model:
   # Edge feature dimension injected into GATv2 attention computation.
   # Default 7 = one-hot CPG edge types (AST/CFG/CDG/DDG/PDG/CALL/REACHING_DEF).
   # Support: all lmgat* architectures
-  edge_dim: 7
+  edge_dim: 18
 
   # Number of output classes. 2 = binary (benign/vuln). 11 = 10 CWE + benign.
   # Must match the dataset class count (top_cwe + 1, or cwe_list length + 1).

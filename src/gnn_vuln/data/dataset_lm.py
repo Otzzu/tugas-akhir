@@ -59,7 +59,7 @@ from tqdm import tqdm
 
 from gnn_vuln.data.graph_builder_lm import build_from_parsed, build_func_text, parse_cpg
 from gnn_vuln.data.cwe_taxonomy import CWE_GROUP_MAP, GROUP_VOCAB, _GROUP_TO_CWES, _expand_cwe_filter
-from gnn_vuln.data.node_embedder import CodeBERTNodeEmbedder
+from gnn_vuln.data.node_embedder import LMNodeEmbedder
 
 def _fix_special_tokens_map(v):
     """Recursively convert dict-valued special tokens to their string content.
@@ -744,7 +744,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
         embedder = None
         if pending_keys:
             logger.info(f"Initialising node embedder ({self._pretrained_lm})…")
-            embedder = CodeBERTNodeEmbedder(
+            embedder = LMNodeEmbedder(
                 model_name=self._pretrained_lm,
                 device=self._embedder_device,
             )
