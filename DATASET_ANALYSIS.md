@@ -18,6 +18,24 @@ Generated from raw parquet files. Group mapping via `CWE_GROUP_MAP` in `dataset_
 | Merged (BigVul+MegaVul) | 176,674 | 154,205 | 22,469 | Yes | Yes (diff) | Combined |
 | TitanVul | 77,096 | 38,548 | 38,548 | Yes | Yes (diff) | Balanced 1:1, Unfiltered |
 | BenchVul | 2,100 | 1,050 | 1,050 | Yes | Yes (diff) | **Benchmark for Top 25 Most Dangerous CWEs** |
+| ReposVul | 6,897 CVEs → ~115,670 funcs | ~113,952 | ~1,718 | Yes (236 CWEs) | Yes (patch diff) | Multi-granularity, untangled patches |
+
+---
+
+## Language Distribution (sampled from raw_func / func_before)
+
+
+---
+
+| Dataset | c | cpp | cs | go | java | js | lua | objective-c | php | py | rb | rust | scala | swift | typescript | unknown |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| BigVul | 99% | 1% | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| MegaVul | 99% | 0% | — | — | — | 0% | — | — | — | — | — | — | — | — | — | — |
+| TitanVul | 37% | 7% | 1% | 0% | 22% | 5% | 0% | 0% | 2% | 5% | 1% | 0% | 0% | 0% | 0% | 20% |
+| BigVul (raw CPGs) | 90% | 9% | — | — | — | 1% | — | — | — | — | — | — | — | — | — | — |
+
+> Detected via `joern_runner.detect_language()` on sampled `raw_func` / `func_before` fields.
+> Go/PHP fall back to C extension (Joern native frontends produce sparser CPGs).
 
 ---
 

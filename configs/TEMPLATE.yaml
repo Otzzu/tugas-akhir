@@ -16,7 +16,8 @@
 #   lmgat_dualflow     — Arch10: Stage1 loc GNN → s_i → Stage2 cls GNN, dual pooling + live LM
 #   lmgat_codebert_mtl — Arch11: Arch3 + group/binary MTL heads + edge embeddings
 #   lmgat_hcdfgat      — Arch12: HC-DFGAT dual-flow + group/binary MTL heads
-#   lmrgcn             — Arch13: Relational GCN + live LM (one weight matrix per edge type)
+#   lmrgcn             — Arch14: Relational GCN + frozen embeddings only (no live LM, like lmgat)
+#   lmrgcn_codebert    — Arch13: Relational GCN + live LM (one weight matrix per edge type)
 
 # ---------------------------------------------------------------------------
 # DATA

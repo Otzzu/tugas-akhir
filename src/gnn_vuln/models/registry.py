@@ -17,6 +17,7 @@ from gnn_vuln.models.lmgat_waves_seq import LMGATWavesSeqVulnDetector
 from gnn_vuln.models.lmgat_dualflow import LMGATDualFlowVulnDetector
 from gnn_vuln.models.lmgat_hcdfgat import LMGATHCDFGATVulnDetector
 from gnn_vuln.models.lmrgcn import LMRGCNVulnDetector
+from gnn_vuln.models.lmrgcn_codebert import LMRGCNCodeBERTVulnDetector
 
 # ── MTL head validation ────────────────────────────────────────────────────────
 
@@ -69,6 +70,7 @@ MODEL_REGISTRY: dict[str, type[VulnDetectorBase]] = {
     "lmgat_dualflow":     LMGATDualFlowVulnDetector,
     "lmgat_hcdfgat":      LMGATHCDFGATVulnDetector,
     "lmrgcn":             LMRGCNVulnDetector,
+    "lmrgcn_codebert":    LMRGCNCodeBERTVulnDetector,
 }
 
 

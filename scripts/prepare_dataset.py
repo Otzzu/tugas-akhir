@@ -326,6 +326,23 @@ def load_csv(path: Path, code_col: str, label_col: str) -> pd.DataFrame:
 # Parallel worker
 # ---------------------------------------------------------------------------
 
+_EXT_TO_LANG = {
+    # C family
+    "c": "C", "h": "C",
+    "cpp": "C++", "cc": "C++", "cxx": "C++", "hpp": "C++",
+    # JVM
+    "java": "Java", "kt": "Kotlin", "scala": "Scala",
+    # Scripting
+    "js": "JavaScript", "jsx": "JavaScript", "ts": "TypeScript",
+    "py": "Python", "rb": "Ruby", "php": "PHP",
+    "lua": "Lua", "m": "Objective-C",
+    # Systems
+    "go": "Go", "rs": "Rust", "swift": "Swift",
+    # .NET
+    "cs": "C#",
+}
+
+
 def _run_one(
     idx: int,
     code: str,
@@ -339,6 +356,7 @@ def _run_one(
     cwe: str = "",
     is_multi_class: bool = False,
     row_id: int = -1,
+    language: str = "",    # ground-truth language name (e.g. "C", "Java"); empty = auto-detect
 ) -> tuple[int, Path | None, str | None]:
     """
     Parse one function with Joern, save CPG JSON, and optionally write a
@@ -354,9 +372,14 @@ def _run_one(
 
     raw_func = code  # capture original before any normalization
 
-    # Auto-detect language for correct Joern frontend selection
+    # Resolve language: ground-truth from caller → detect_language() fallback → never null
     from gnn_vuln.data.joern_runner import detect_language as _detect_lang
-    detected_lang = _detect_lang(code)
+    detected_lang = _detect_lang(code)  # always returns non-empty (min: "c")
+    lang_name = (
+        language                                        # parquet ground truth
+        or _EXT_TO_LANG.get(detected_lang, detected_lang.upper())  # heuristic
+        or "C"                                          # absolute fallback
+    )
 
     if normalize:
         # Normalization only meaningful for C/C++ — skip for other languages
@@ -376,7 +399,7 @@ def _run_one(
             return idx, None, "process_function returned None (Joern may have failed silently)"
 
         # Build sidecar metadata dict
-        meta: dict = {"id": row_id, "raw_func": raw_func}
+        meta: dict = {"id": row_id, "raw_func": raw_func, "language": lang_name}
         if is_multi_class and class_id is not None:
             meta["class_id"] = class_id
         if cwe:
@@ -543,14 +566,21 @@ def main() -> None:
     # -----------------------------------------------------------------------
     # Build work list
     # -----------------------------------------------------------------------
-    work: list[tuple[int, str, Path, int, list[int], str, int]] = []
+    # Normalise lang/extension column to consistent language name
+    _LANG_COL = next((c for c in df.columns if c in ("lang", "language", "extension")), None)
+    _EXT_NORM = {"C": "C", "CPP": "C++", "C++": "C++"}  # BigVul lang values
+
+    work: list[tuple[int, str, Path, int, list[int], str, int, str]] = []
     for local_idx, row in enumerate(df.itertuples(index=False)):
         class_id = int(row.label)
         phys_dir = benign_dir if class_id == 0 else vuln_dir
         flaw_lines = list(row.flaw_lines) if hasattr(row, "flaw_lines") else []
         cwe = str(row.cwe) if hasattr(row, "cwe") else ""
         row_id = int(row.id) if hasattr(row, "id") else -1
-        work.append((local_idx + args.idx_offset, str(row.code), phys_dir, class_id, flaw_lines, cwe, row_id))
+        # Ground-truth language from parquet column (normalized to full name)
+        lang_raw = str(getattr(row, _LANG_COL, "") or "") if _LANG_COL else ""
+        lang_gt  = _EXT_NORM.get(lang_raw.upper(), lang_raw) if lang_raw else ""
+        work.append((local_idx + args.idx_offset, str(row.code), phys_dir, class_id, flaw_lines, cwe, row_id, lang_gt))
 
     logger.info(f"Workers: {args.workers}  |  resume: {args.resume}  |  jobs: {len(work)}")
     if args.workers > 1:
@@ -567,7 +597,8 @@ def main() -> None:
     skipped = 0
     start = time.monotonic()
 
-    def submit(idx: int, code: str, phys_dir: Path, class_id: int, flaw_lines: list[int], cwe: str, row_id: int = -1):
+    def submit(idx: int, code: str, phys_dir: Path, class_id: int, flaw_lines: list[int],
+               cwe: str, row_id: int = -1, language: str = ""):
         return _run_one(
             idx=idx,
             code=code,
@@ -581,6 +612,7 @@ def main() -> None:
             cwe=cwe,
             is_multi_class=is_multi_class,
             row_id=row_id,
+            language=language,
         )
 
     if args.workers <= 1:

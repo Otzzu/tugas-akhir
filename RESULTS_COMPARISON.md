@@ -1,6 +1,6 @@
 # Results Comparison — All Experiments
 
-Generated: 2026-04-29 (updated 2026-05-07)
+Generated: 2026-04-29 (updated 2026-05-08)
 
 Metric direction: F1↑ AUC-ROC↑ IFA↓ Top-1↑ Effort@20%↓ Recall@20%loc↑
 
@@ -40,11 +40,14 @@ Three distinct datasets used across experiments. Results across datasets are **N
 
 ## Multiclass Classification (11 CWE classes) — Primary Goal
 
-### Arch1 — LM-GCN (frozen CodeBERT, GCNConv)
+### Arch1 — LM-GCN (GCNConv)
 
-| Folder                           | Description                        | F1↑   | AUC-ROC↑ | IFA↓ | Top-1↑ | Effort@20%↓ | Recall@20%loc↑ |
-| -------------------------------- | ---------------------------------- | ----- | -------- | ---- | ------ | ----------- | -------------- |
-| 20260426_002451_lmgcn_multiclass | LM-GCN multiclass, CodeBERT frozen | 0.209 | 0.742    | 8.65 | 0.272  | 0.162       | 0.232          |
+| Folder                               | Description                                          | Dataset   | F1↑        | AUC-ROC↑   | IFA↓      | Top-1↑     | Effort@20%↓ | Recall@20%loc↑ |
+| ------------------------------------ | ---------------------------------------------------- | --------- | ---------- | ---------- | --------- | ---------- | ----------- | -------------- |
+| 20260426_002451_lmgcn_multiclass     | LM-GCN v1, CodeBERT frozen                          | BigVul-v1 | 0.209      | 0.742      | 8.65      | 0.272      | 0.162       | 0.232          |
+| **20260507_141939_lmgcn_multiclass** | **LM-GCN v2, UniXcoder frozen + LIVABLE + F1-stop** | BigVul-v2 | **0.6276** | **0.8982** | **5.296** | **0.5143** | **0.0456**  | **0.467**      |
+
+> **UniXcoder frozen + LIVABLE + F1-stop (v2) transforms Arch1:** F1 0.209→0.6276 (dataset change v1→v2 also contributes). IFA=5.296 competitive with live-LM models. Simple GCNConv (no attention, no edge features) with strong frozen embeddings + LIVABLE+F1-stop reaches rank 16 on BigVul-v2 — training recipe closes most gap vs live-LM architectures without fine-tuning or attention.
 
 ---
 
@@ -165,13 +168,14 @@ Three distinct datasets used across experiments. Results across datasets are **N
 
 | Folder                                        | Description                                                                                         | Dataset | F1↑        | AUC-ROC↑   | IFA↓     | Top-1↑    | Effort@20%↓ | Recall@20%loc↑ |
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------- | ---------- | ---------- | -------- | --------- | ----------- | -------------- |
-| **20260501_205917_lmgat_hcdfgat_multiclass**  | **Arch12 v1, UniXcoder live, LIVABLE+F1-stop, supcon alpha-only (no distance matrix)**             | BigVul-v2 | **0.6952** | **0.9032** | **4.86** | **0.530** | **0.0386**  | **0.518**      |
-| 20260502_185139_lmgat_hcdfgat_multiclass      | Arch12 v2, same as v1 + supcon_use_distance_matrix=true (linear weight_fn, CWE tree distances)     | BigVul-v2 | 0.6776     | 0.8943     | 6.00     | 0.405     | 0.0661      | 0.433          |
+| **20260501_205917_lmgat_hcdfgat_multiclass**  | **Arch12 v1, UniXcoder live, LIVABLE+F1-stop, supcon alpha-only (no distance matrix)**                                         | BigVul-v2 | **0.6952** | **0.9032** | **4.86**  | **0.530** | **0.0386** | **0.518**  |
+| 20260502_185139_lmgat_hcdfgat_multiclass      | Arch12 v2, same as v1 + supcon_use_distance_matrix=true (linear weight_fn, CWE tree distances)                                 | BigVul-v2 | 0.6776     | 0.8943     | 6.00      | 0.405     | 0.0661     | 0.433      |
+| 20260507_181937_lmgat_hcdfgat_multiclass      | Arch12 v3, same as v1 + supcon_use_distance_matrix=true + **intragroup_only=true** + **weight_fn=exp** (cross-group bug fixed) | BigVul-v2 | 0.6687     | 0.8936     | 6.397     | 0.4649    | 0.0432     | 0.5086     |
 
 > **v1 (alpha-only) dominates v2 (distance matrix) on every metric.** F1: 0.6952→0.6776 (−0.018), IFA: 4.86→6.00 (worse), Top-1: 0.530→0.405 (−0.125), Effort@20%: 0.0386→0.0661 (worse), Recall@20%loc: 0.518→0.433 (worse). Distance matrix hurts rather than helps.
 > **Root cause (confirmed):** CWE group categories are NOT anchored at the same depth in the CWE tree — some groups (e.g. Memory Safety CWE-119) are abstract top-level nodes while others are deeper subtrees. Tree distances between CWEs in different groups are therefore non-comparable: a CWE near the root of its group will appear "close" to CWEs in adjacent groups even though they belong to different vulnerability families. The linear weight `w = 1 − norm_dist` assigned non-zero weights to these cross-group pairs, corrupting the contrastive signal with noisy pseudo-positives from semantically unrelated groups. Alpha-only correctly treats all cross-group pairs as pure negatives.
 > **Fix applied:** `HierarchicalSupConLoss` now has `intragroup_only=True` (new default). When enabled, matrix-derived weights are zeroed for all cross-group pairs even if both CWEs are in the matrix. Matrix distances are now only used to refine within-group positive pair weighting (different CWE, same group). Config key: `supcon_intragroup_only: false` to revert to legacy behavior.
-> **Next:** Retrain Arch12 v3 with `supcon_use_distance_matrix=true` + `intragroup_only=True` (default) + `weight_fn=exp` to see if within-group distance refinement recovers or improves over alpha-only.
+> **v3 (intragroup_only + exp weight_fn) partially recovers but cannot beat alpha-only:** vs v1: F1 0.6952→0.6687 (−0.027), IFA 4.86→6.397 (worse), Top-1 0.530→0.465 (−0.065). vs v2 (linear, no fix): Effort 0.0661→0.0432 (better), Recall 0.433→0.509 (better), but F1 0.6776→0.6687 (−0.009), IFA 6.00→6.397 (worse). Conclusion: intragroup_only fix recovers ranking coverage (Effort+Recall vs v2), but within-group distance refinement does not improve classification or IFA. **Alpha-only supcon confirmed as best strategy for this task.**
 > **HC-DFGAT v1 vs Arch3 v6 trade-off (unchanged):** HC-DFGAT v1 leads on F1 (0.6952 vs 0.6797) and IFA (4.86 vs 5.40). Arch3 v6 leads on AUC (0.9067 vs 0.9032), Effort@20% (0.0350 vs 0.0386), Recall@20%loc (0.565 vs 0.518). Top-1 tied (0.530). Both Pareto-optimal.
 
 ---
@@ -200,35 +204,48 @@ Three distinct datasets used across experiments. Results across datasets are **N
 
 ---
 
+### Arch13 — LM-RGCN (RGCNConv — edge-type-specific weight matrices, live UniXcoder)
+
+| Folder                                | Description                                                              | Dataset   | F1↑        | AUC-ROC↑   | IFA↓      | Top-1↑     | Effort@20%↓ | Recall@20%loc↑ |
+| ------------------------------------- | ------------------------------------------------------------------------ | --------- | ---------- | ---------- | --------- | ---------- | ----------- | -------------- |
+| **20260507_180147_lmrgcn_codebert_multiclass** | **Arch13 v1, UniXcoder live, RGCN 7 relations, LIVABLE + F1-stop** | BigVul-v2 | **0.6624** | **0.9126** | **4.894** | **0.6078** | **0.0275**  | **0.5429**     |
+
+> **LM-RGCN sets new records: Top-1=0.6078 (new #1) and Effort@20%=0.0275 (new #1).** Replacing GATv2 soft attention with RGCNConv edge-type-specific weight matrices (7 CPG edge types: AST/CFG/CDG/DDG/PDG/CALL/REACHING_DEF) yields the best single-line localization and ranking efficiency across all models. Top-1=0.6078 (+0.042 vs prev best Arch11 v5 0.566). Effort@20%=0.0275 (−0.0006 vs Arch11 v5 0.0281). AUC=0.9126 (rank 2 behind Arch11 v8 0.9381). IFA=4.894 near Arch12 v1 (4.86). F1=0.6624 (rank 14 — lower than top GATv2 variants). Trade-off: RGCN type-partitioned aggregation (each edge type learns independent message-passing weights) provides sharper per-node localization signal — the model learns to weight structural (AST), control-flow (CFG/CDG), and data-flow (DDG/PDG) evidence independently, explaining superior Top-1 + Effort. Classification F1 is −0.033 below best (Arch12 v1) — soft attention still better for CWE class discrimination. Recall@20%loc=0.5429 competitive but below Arch11 v4 (0.595). **RGCN is Pareto-optimal for precision-critical deployment** (finding the exact vulnerable line), while GATv2-based models remain better for classification F1.
+
+---
+
 ## Full Comparison — BigVul-v2 (11-class, all.parquet, ~1363 test, sorted by F1)
 
-> All rows use UniXcoder node embeddings on BigVul-v2. Arch11 v8 test size 1278 — same source, different processed batch.
+> All rows BigVul-v2. Test size 1278 (Arch11 v8, Arch1 v2, Arch13, Arch12 v3) or ~1363 (others — same source, different processed batch). Records: F1/AUC → Arch11 v8; IFA → Arch11 v3 (4.60); Top-1/Effort@20% → **Arch13 LM-RGCN** (0.6078 / 0.0275); Recall@20%loc → Arch11 v4 (0.595).
 
-| Rank | Model                                                                              | Folder                             | F1↑        | AUC-ROC↑   | IFA↓     | Top-1↑    | Effort@20%↓ | Recall@20%loc↑ |
-| ---- | ---------------------------------------------------------------------------------- | ---------------------------------- | ---------- | ---------- | -------- | --------- | ----------- | -------------- |
-| 1    | **Arch11 v8** MTL + CodeT5p-110m-embedding func_lm                                | 20260507_043309_lmgat_codebert_mtl | **0.7484** | **0.9381** | 5.769    | 0.4935    | 0.0523      | 0.4908         |
-| 2    | **Arch12 v1** HC-DFGAT + LIVABLE + F1-stop (alpha-only supcon)                    | 20260501_205917_lmgat_hcdfgat      | **0.6952** | 0.9032     | **4.86** | 0.530     | 0.0386      | 0.518          |
-| 3    | **Arch7 v1 best** Seq GATv2 + LIVABLE + F1-stop                                   | 20260501_150638_lmgat_seq          | **0.6897** | 0.9041     | 6.88     | 0.340     | 0.0567      | 0.445          |
-| 4    | **Arch4 v3 best** MCS + LIVABLE + F1-stop                                         | 20260501_120840_lmgat_mcs          | **0.6851** | 0.9036     | 10.51    | 0.281     | 0.0862      | 0.374          |
-| 5    | **Arch11 v3** MTL + group_cond + LIVABLE + F1-stop                                | 20260502_193921_lmgat_codebert_mtl | **0.6819** | 0.9017     | **4.60** | **0.558** | **0.0338**  | **0.573**      |
-| 6    | **Arch3 v6** UniXcoder live + LIVABLE + F1-stop                                   | 20260502_010952_lmgat_codebert     | **0.6797** | **0.9067** | 5.40     | 0.530     | 0.0350      | 0.565          |
-| 7    | Arch12 v2 HC-DFGAT + dist matrix linear (broken — cross-group depth issue)        | 20260502_185139_lmgat_hcdfgat      | 0.6776     | 0.8943     | 6.00     | 0.405     | 0.0661      | 0.433          |
-| 8    | **Arch11 v7** MTL + group_cond + edge_emb only + LIVABLE + F1-stop                | 20260505_141404_lmgat_codebert_mtl | 0.6764     | **0.9084** | 4.62     | 0.543     | 0.0410      | 0.527          |
-| 9    | **Arch3 v5** UniXcoder live + F1-stop (no LIVABLE)                                | 20260501_085445_lmgat_codebert     | 0.6744     | 0.8999     | 5.84     | 0.478     | 0.0556      | 0.483          |
-| 10   | **Arch11 v4** MTL + group_cond + self_loops + skip + LIVABLE + F1-stop            | 20260504_023610_lmgat_codebert_mtl | 0.6679     | 0.9003     | 4.89     | 0.553     | 0.0295      | **0.595**      |
-| 11   | **Arch11 v5** MTL + group_cond + self_loops + skip + edge_emb + LIVABLE + F1-stop | 20260504_074735_lmgat_codebert_mtl | 0.6660     | 0.9029     | 4.85     | 0.566     | **0.0281**  | 0.571          |
-| 12   | **Arch11 v6** MTL + group_cond + SupCon alpha-only + LIVABLE + F1-stop            | 20260504_125221_lmgat_codebert_mtl | 0.6647     | 0.8957     | 5.42     | 0.543     | 0.0382      | 0.543          |
-| 13   | **Arch2 v4** LM-GAT frozen UniXcoder + LIVABLE + F1-stop                          | 20260504_120447_lmgat              | 0.6401     | 0.9040     | 5.22     | 0.514     | 0.0527      | 0.485          |
-| 14   | **Arch4 v3** MCS UniXcoder live                                                   | 20260429_095918_lmgat_mcs          | 0.5791     | 0.8977     | 12.74    | 0.221     | 0.110       | 0.308          |
-| 15   | **Arch11 v2** MTL + LIVABLE (no group_cond)                                       | 20260501_072750_lmgat_codebert_mtl | 0.5084     | 0.8917     | 12.16    | 0.226     | 0.0741      | 0.368          |
-| 16   | **Arch7 v1** Seq GATv2 UniXcoder live (original)                                  | 20260429_121124_lmgat_seq          | 0.4554     | 0.8610     | 7.34     | 0.356     | 0.0855      | 0.387          |
-| 17   | **Arch10** DualFlow UniXcoder live                                                 | 20260501_035449_lmgat_dualflow     | 0.4461     | 0.8671     | 8.05     | 0.340     | 0.0786      | 0.405          |
-| 18   | **Arch11 v1** MTL binary+CWE (no group_cond)                                      | 20260501_050001_lmgat_codebert_mtl | 0.4308     | 0.8724     | 10.69    | 0.169     | 0.1035      | 0.313          |
-| 19   | **Arch8 v1** WAVES-Seq Transformer loc UniXcoder live                             | 20260429_125637_lmgat_waves_seq    | 0.4305     | 0.8357     | 13.72    | 0.096     | 0.1394      | 0.245          |
-| 20   | **Arch3 v4** UniXcoder live                                                        | 20260429_091918_lmgat_codebert     | 0.4115     | 0.8562     | 7.72     | 0.366     | 0.103       | 0.340          |
-| 21   | **Arch9** LM-GGNN corrected UniXcoder live                                         | 20260430_004221_lmggnn             | 0.4080     | 0.8073     | 8.29     | 0.244     | 0.1378      | 0.292          |
-| 22   | **Arch7 v2** Seq GATv2 UniXcoder live (tuned, regressed)                           | 20260429_135046_lmgat_seq          | 0.3857     | 0.8018     | 12.13    | 0.182     | 0.1177      | 0.294          |
-| 23   | **Arch9** LM-GGNN old impl (no stmt_head)                                          | 20260429_203915_lmggnn             | 0.3519     | 0.8053     | N/A      | N/A       | N/A         | N/A            |
+| Rank | Model                                                                              | Folder                             | F1↑        | AUC-ROC↑   | IFA↓      | Top-1↑     | Effort@20%↓ | Recall@20%loc↑ |
+| ---- | ---------------------------------------------------------------------------------- | ---------------------------------- | ---------- | ---------- | --------- | ---------- | ----------- | -------------- |
+| 1    | **Arch11 v8** MTL + CodeT5p-110m-embedding func_lm                                | 20260507_043309_lmgat_codebert_mtl | **0.7484** | **0.9381** | 5.769     | 0.4935     | 0.0523      | 0.4908         |
+| 2    | **Arch12 v1** HC-DFGAT + LIVABLE + F1-stop (alpha-only supcon)                    | 20260501_205917_lmgat_hcdfgat      | **0.6952** | 0.9032     | **4.86**  | 0.530      | 0.0386      | 0.518          |
+| 3    | **Arch7 v1 best** Seq GATv2 + LIVABLE + F1-stop                                   | 20260501_150638_lmgat_seq          | **0.6897** | 0.9041     | 6.88      | 0.340      | 0.0567      | 0.445          |
+| 4    | **Arch4 v3 best** MCS + LIVABLE + F1-stop                                         | 20260501_120840_lmgat_mcs          | **0.6851** | 0.9036     | 10.51     | 0.281      | 0.0862      | 0.374          |
+| 5    | **Arch11 v3** MTL + group_cond + LIVABLE + F1-stop                                | 20260502_193921_lmgat_codebert_mtl | **0.6819** | 0.9017     | **4.60**  | **0.558**  | **0.0338**  | **0.573**      |
+| 6    | **Arch3 v6** UniXcoder live + LIVABLE + F1-stop                                   | 20260502_010952_lmgat_codebert     | **0.6797** | **0.9067** | 5.40      | 0.530      | 0.0350      | 0.565          |
+| 7    | Arch12 v2 HC-DFGAT + dist matrix linear (cross-group depth bug)                   | 20260502_185139_lmgat_hcdfgat      | 0.6776     | 0.8943     | 6.00      | 0.405      | 0.0661      | 0.433          |
+| 8    | **Arch11 v7** MTL + group_cond + edge_emb only + LIVABLE + F1-stop                | 20260505_141404_lmgat_codebert_mtl | 0.6764     | **0.9084** | 4.62      | 0.543      | 0.0410      | 0.527          |
+| 9    | **Arch3 v5** UniXcoder live + F1-stop (no LIVABLE)                                | 20260501_085445_lmgat_codebert     | 0.6744     | 0.8999     | 5.84      | 0.478      | 0.0556      | 0.483          |
+| 10   | Arch12 v3 HC-DFGAT + dist matrix exp (intragroup_only fix)                        | 20260507_181937_lmgat_hcdfgat      | 0.6687     | 0.8936     | 6.397     | 0.4649     | 0.0432      | 0.5086         |
+| 11   | **Arch11 v4** MTL + group_cond + self_loops + skip + LIVABLE + F1-stop            | 20260504_023610_lmgat_codebert_mtl | 0.6679     | 0.9003     | 4.89      | 0.553      | 0.0295      | **0.595**      |
+| 12   | **Arch11 v5** MTL + group_cond + self_loops + skip + edge_emb + LIVABLE + F1-stop | 20260504_074735_lmgat_codebert_mtl | 0.6660     | 0.9029     | 4.85      | 0.566      | 0.0281      | 0.571          |
+| 13   | **Arch11 v6** MTL + group_cond + SupCon alpha-only + LIVABLE + F1-stop            | 20260504_125221_lmgat_codebert_mtl | 0.6647     | 0.8957     | 5.42      | 0.543      | 0.0382      | 0.543          |
+| 14   | **Arch13 v1** LM-RGCN live UniXcoder + LIVABLE + F1-stop                          | 20260507_180147_lmrgcn_codebert             | 0.6624     | **0.9126** | 4.894     | **0.6078** | **0.0275**  | 0.5429         |
+| 15   | **Arch2 v4** LM-GAT frozen UniXcoder + LIVABLE + F1-stop                          | 20260504_120447_lmgat              | 0.6401     | 0.9040     | 5.22      | 0.514      | 0.0527      | 0.485          |
+| 16   | **Arch1 v2** LM-GCN frozen UniXcoder + LIVABLE + F1-stop                          | 20260507_141939_lmgcn              | 0.6276     | 0.8982     | 5.296     | 0.5143     | 0.0456      | 0.467          |
+| 17   | **Arch4 v3** MCS UniXcoder live                                                   | 20260429_095918_lmgat_mcs          | 0.5791     | 0.8977     | 12.74     | 0.221      | 0.110       | 0.308          |
+| 18   | **Arch11 v2** MTL + LIVABLE (no group_cond)                                       | 20260501_072750_lmgat_codebert_mtl | 0.5084     | 0.8917     | 12.16     | 0.226      | 0.0741      | 0.368          |
+| 19   | **Arch7 v1** Seq GATv2 UniXcoder live (original)                                  | 20260429_121124_lmgat_seq          | 0.4554     | 0.8610     | 7.34      | 0.356      | 0.0855      | 0.387          |
+| 20   | **Arch10** DualFlow UniXcoder live                                                 | 20260501_035449_lmgat_dualflow     | 0.4461     | 0.8671     | 8.05      | 0.340      | 0.0786      | 0.405          |
+| 21   | **Arch11 v1** MTL binary+CWE (no group_cond)                                      | 20260501_050001_lmgat_codebert_mtl | 0.4308     | 0.8724     | 10.69     | 0.169      | 0.1035      | 0.313          |
+| 22   | **Arch8 v1** WAVES-Seq Transformer loc UniXcoder live                             | 20260429_125637_lmgat_waves_seq    | 0.4305     | 0.8357     | 13.72     | 0.096      | 0.1394      | 0.245          |
+| 23   | **Arch3 v4** UniXcoder live                                                        | 20260429_091918_lmgat_codebert     | 0.4115     | 0.8562     | 7.72      | 0.366      | 0.103       | 0.340          |
+| 24   | **Arch9** LM-GGNN corrected UniXcoder live                                         | 20260430_004221_lmggnn             | 0.4080     | 0.8073     | 8.29      | 0.244      | 0.1378      | 0.292          |
+| 25   | **Arch7 v2** Seq GATv2 UniXcoder live (tuned, regressed)                           | 20260429_135046_lmgat_seq          | 0.3857     | 0.8018     | 12.13     | 0.182      | 0.1177      | 0.294          |
+| 26   | **Arch9** LM-GGNN old impl (no stmt_head)                                          | 20260429_203915_lmggnn             | 0.3519     | 0.8053     | N/A       | N/A        | N/A         | N/A            |
 
 ---
 
@@ -341,7 +358,15 @@ Three distinct datasets used across experiments. Results across datasets are **N
 
 36. **TitanVul OWASP 90-class task established** — F1=0.4340 on 90-class CWE classification (89 distinct CWEs under OWASP top10 + benign). AUC=null (evaluate.py OvR fails at 90 classes). IFA=13.625 (poor — large functions max_nodes=3400). Not comparable to BigVul 11-class. Identifies two issues: (1) evaluate.py needs fix for >11 class AUC, (2) localization harder on TitanVul's larger functions.
 
-31. **CWE tree distance matrix hurts supcon (v2 < v1 on all metrics) — root cause: depth-asymmetric group anchors** — Linear `w = 1 − norm_dist` continuous weighting degrades every metric vs alpha-only: F1 0.6952→0.6776 (−0.018), IFA 4.86→6.00 (worse), Top-1 0.530→0.405 (−0.125), Effort@20% 0.0386→0.0661, Recall@20%loc 0.518→0.433. Confirmed root cause: CWE group root nodes sit at different depths in the CWE tree, making cross-group tree distances non-comparable. The matrix assigned non-zero weights to cross-group pairs that should be pure negatives, corrupting the contrastive gradient with noisy pseudo-positives. Fix: `intragroup_only=True` (new default in `HierarchicalSupConLoss`) zeros all cross-group matrix weights; distance refinement now applies only to within-group pairs. Arch12 v3 with fix needs to be run.
+31. **CWE tree distance matrix hurts supcon (v2 < v1 on all metrics) — root cause: depth-asymmetric group anchors** — Linear `w = 1 − norm_dist` continuous weighting degrades every metric vs alpha-only: F1 0.6952→0.6776 (−0.018), IFA 4.86→6.00 (worse), Top-1 0.530→0.405 (−0.125), Effort@20% 0.0386→0.0661, Recall@20%loc 0.518→0.433. Confirmed root cause: CWE group root nodes sit at different depths in the CWE tree, making cross-group tree distances non-comparable. The matrix assigned non-zero weights to cross-group pairs that should be pure negatives, corrupting the contrastive gradient with noisy pseudo-positives. Fix: `intragroup_only=True` (new default in `HierarchicalSupConLoss`) zeros all cross-group matrix weights; distance refinement now applies only to within-group pairs.
+
+### Arch13 LM-RGCN + Arch12 v3 Findings (BigVul-v2, 2026-05-07)
+
+37. **Arch13 LM-RGCN new records: Top-1=0.6078 (new #1) and Effort@20%=0.0275 (new #1)** — Edge-type-partitioned aggregation (7 CPG edge types → 7 independent weight matrices) identifies the single most suspicious line more accurately than soft attention (GATv2). RGCN learns to weight structural (AST), control-flow (CFG/CDG), and data-flow (DDG/PDG) evidence independently, explaining superior Top-1 (+0.042 vs prev best Arch11 v5 0.566) and Effort@20% (−0.0006 vs Arch11 v5 0.0281). AUC=0.9126 (rank 2 behind Arch11 v8 0.9381). IFA=4.894 near Arch12 v1 (4.86). F1=0.6624 (rank 14) — soft attention still better for CWE class discrimination. Recall@20%loc=0.5429 (competitive, below Arch11 v4 0.595). RGCN is Pareto-optimal for precision-critical deployment; GATv2-based models preferred for F1/Recall.
+
+38. **Arch1 v2 (LM-GCN + frozen UniXcoder + LIVABLE + F1-stop) reaches F1=0.6276 on BigVul-v2** — Simple GCNConv (no attention, no edge features) with strong frozen embeddings + LIVABLE+F1-stop reaches rank 16 out of 26 models. IFA=5.296, Top-1=0.5143, Effort@20%=0.0456 — competitive with live-LM frozen models (Arch2 v4 at rank 15). Confirms training recipe (LIVABLE+F1-stop) dominates architecture sophistication for moderate datasets.
+
+39. **Arch12 v3 (intragroup_only + exp weight_fn) partially recovers vs v2 but cannot beat alpha-only (v1)** — vs v1: F1 0.6952→0.6687 (−0.027), IFA 4.86→6.397 (worse), Top-1 0.530→0.465 (−0.065). vs v2: Effort 0.0661→0.0432 (better), Recall 0.433→0.509 (better), but F1 0.6776→0.6687 (−0.009), IFA 6.00→6.397 (worse). intragroup_only fix recovers ranking coverage (Effort/Recall) by eliminating noisy cross-group pseudo-positives, but exp within-group weighting does not improve CWE classification or IFA. **Alpha-only supcon confirmed as definitively best strategy:** all three distance matrix variants (linear/exp with or without fix) underperform alpha-only on F1 and IFA.
 
 ---
 
@@ -362,7 +387,9 @@ Three distinct datasets used across experiments. Results across datasets are **N
 - ~~Arch11 v8 CodeT5p-110m-embedding func_lm~~ — Done: F1=0.7484 (new #1), AUC=0.9381 (new #1), IFA=5.769, Effort=0.0523 (folder 20260507_043309) — best classification, worse localization vs UniXcoder v3
 - ~~HC-DFGAT TitanVul OWASP 90-class~~ — Done: F1=0.4340, IFA=13.625, AUC=0.8929 (folder 20260506_203551)
 - ~~HC-DFGAT TitanVul Top25 26-class~~ — Done: F1=0.5231, IFA=16.637, AUC=0.8681 (folder 20260507_071026)
-- Arch12 v3 HC-DFGAT + distance matrix (intragroup_only=True, exp weight_fn) — root cause of v2 failure confirmed (cross-group depth asymmetry); fix applied, need to retrain to verify within-group refinement helps vs alpha-only
+- ~~Arch12 v3 HC-DFGAT + distance matrix (intragroup_only=True, exp weight_fn)~~ — Done: F1=0.6687, IFA=6.397, Effort=0.0432, Recall=0.5086 (folder 20260507_181937) — intragroup_only partially recovers Effort/Recall vs v2 but F1 and IFA still below alpha-only v1; alpha-only definitively confirmed as best supcon strategy
+- ~~LM-GCN v2 frozen UniXcoder + LIVABLE + F1-stop~~ — Done: F1=0.6276, AUC=0.8982, IFA=5.296, Top-1=0.5143, Effort=0.0456 (folder 20260507_141939) — frozen GCN + strong recipe reaches rank 16 on BigVul-v2
+- ~~Arch13 LM-RGCN live UniXcoder + LIVABLE + F1-stop~~ — Done: F1=0.6624, AUC=0.9126, IFA=4.894, Top-1=0.6078 (new #1), Effort=0.0275 (new #1) (folder 20260507_180147) — new records Top-1 + Effort@20%; RGCN edge-type partitioning beats GATv2 for localization precision
 - Arch11 v8 CodeT5p + localization fix — investigate: does CodeT5p localization weakness come from 256D dim (try matryoshka_dim=768 on a 768D model) or from the embedding model's optimization target (similarity vs token-level)?
 - evaluate.py fix for AUC with >11 classes — OvR computation fails silently (returns null); needs `labels` param or per-class exclusion of missing classes
 - Arch10/Arch11 retrain with early_stop_metric=f1 — F1-stop proved universally beneficial; not yet retrained

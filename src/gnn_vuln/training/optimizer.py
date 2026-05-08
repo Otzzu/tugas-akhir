@@ -13,7 +13,7 @@ from gnn_vuln.models.base import VulnDetectorBase
 _FT_ARCHS = frozenset({
     "lmgat_codebert", "lmgat_mcs", "lmgat_seq", "lmgat_waves_seq",
     "lmggnn", "lmgat_codebert_mtl", "lmgat_dualflow", "lmgat_hcdfgat",
-    "lmrgcn",
+    "lmrgcn_codebert",
 })
 
 

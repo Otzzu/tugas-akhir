@@ -84,57 +84,58 @@ def download_megavul() -> None:
     dest.mkdir(parents=True, exist_ok=True)
     out_file = dest / "train.parquet"
 
+    raw_file = dest / "raw.parquet"
+
     print(f"\n{'='*60}")
     print("  Downloading: megavul  (hitoshura25/megavul)")
-    print("  Streaming 672K rows — filtering C rows with function code…")
+    print("  Streaming 672K rows — saving raw + C-filtered train parquets…")
     print(f"{'='*60}")
 
     ds = load_dataset("hitoshura25/megavul", split="train", streaming=True)
 
-    rows: list[dict] = []
+    raw_rows: list[dict] = []   # all languages, all original columns
+    train_rows: list[dict] = [] # C-only, renamed for pipeline
     total_seen = 0
-    for raw in tqdm(ds, desc="  streaming", unit="row"):
+
+    for row in tqdm(ds, desc="  streaming", unit="row"):
         total_seen += 1
-        if raw.get("language") != "C":
-            continue
-        vuln_code = raw.get("vulnerable_code")
-        fixed_code = raw.get("fixed_code")
+        vuln_code = row.get("vulnerable_code")
         if not vuln_code:
             continue
 
-        cwe = raw.get("cwe_id") or ""
-        cve_id = raw.get("cve_id") or ""
+        # raw.parquet — all columns, all languages
+        raw_rows.append(dict(row))
 
-        # Vulnerable sample
-        rows.append({
-            "func_before": vuln_code,
-            "func_after": fixed_code or None,
-            "vul": 1,
-            "CWE ID": cwe,
-            "CVE ID": cve_id,
-        })
+        # train.parquet — C-only, BigVul-compatible layout
+        if row.get("language") != "C":
+            continue
 
-        # Benign sample from fixed code (patched = not vulnerable)
+        fixed_code = row.get("fixed_code")
+        cwe    = row.get("cwe_id")  or ""
+        cve_id = row.get("cve_id")  or ""
+        lang   = row.get("language") or "C"
+
+        train_rows.append({"func_before": vuln_code, "func_after": fixed_code or None,
+                           "vul": 1, "CWE ID": cwe, "CVE ID": cve_id, "language": lang})
         if fixed_code and fixed_code != vuln_code:
-            rows.append({
-                "func_before": fixed_code,
-                "func_after": None,
-                "vul": 0,
-                "CWE ID": "",
-                "CVE ID": cve_id,
-            })
+            train_rows.append({"func_before": fixed_code, "func_after": None,
+                                "vul": 0, "CWE ID": "", "CVE ID": cve_id, "language": lang})
 
-    df = pd.DataFrame(rows)
+    # Save raw
+    pd.DataFrame(raw_rows).to_parquet(str(raw_file), index=False)
+    print(f"\n  raw.parquet: {len(raw_rows):,} rows (all languages) -> {raw_file.relative_to(PROJECT_ROOT)}")
+
+    # Save train
+    df = pd.DataFrame(train_rows)
     df.to_parquet(str(out_file), index=False)
 
-    vuln_n = (df["vul"] == 1).sum()
+    vuln_n  = (df["vul"] == 1).sum()
     benign_n = (df["vul"] == 0).sum()
-    print(f"\n  Streamed {total_seen:,} rows total")
-    print(f"  Saved {len(df):,} rows  (vulnerable={vuln_n:,}  benign={benign_n:,})")
+    print(f"  Streamed {total_seen:,} rows total")
+    print(f"  train.parquet: {len(df):,} rows (C-only, vulnerable={vuln_n:,} benign={benign_n:,})")
     print(f"  -> {out_file.relative_to(PROJECT_ROOT)}")
     print("\n  CWE distribution (top 15):")
-    cwe_counts = df[df["vul"] == 1]["CWE ID"].value_counts().head(15)
-    for cwe, cnt in cwe_counts.items():
+    for cwe, cnt in df[df["vul"] == 1]["CWE ID"].value_counts().head(15).items():
         print(f"    {cwe}: {cnt}")
     print(f"\n  Use with prepare_dataset.py --format bigvul --input {out_file.relative_to(PROJECT_ROOT)}")
 
@@ -160,59 +161,71 @@ def download_titanvul() -> None:
 
     dest = OUT_DIR / "titanvul"
     dest.mkdir(parents=True, exist_ok=True)
-    out_file = dest / "train.parquet"
+    out_file  = dest / "train.parquet"
+    raw_file  = dest / "raw.parquet"
 
     print(f"\n{'='*60}")
     print("  Downloading: titanvul  (yikun-li/TitanVul)")
-    print("  38,548 vuln-fix pairs — expanding to vuln + benign rows…")
+    print("  38,548 vuln-fix pairs — saving raw + expanded train parquets…")
     print(f"{'='*60}")
 
     ds = load_dataset("yikun-li/TitanVul", split="train")
 
-    rows: list[dict] = []
-    skipped_lang = 0
-    skipped_no_code = 0
-    for raw in tqdm(ds, desc="  processing", unit="row"):
+    # raw.parquet — all original columns, no transformation
+    pd.DataFrame(list(ds)).to_parquet(str(raw_file), index=False)
+    print(f"  raw.parquet: {len(ds):,} rows (all columns) -> {raw_file.relative_to(PROJECT_ROOT)}")
 
-        vuln_code = raw.get("func_before")
-        fixed_code = raw.get("func_after")
+    # train.parquet — expanded vuln+benign pairs, pipeline-compatible
+    _EXT_TO_LANG = {
+        # C family
+        "c": "C", "h": "C",
+        "cpp": "C++", "cc": "C++", "cxx": "C++", "hpp": "C++",
+        # JVM
+        "java": "Java", "kt": "Kotlin", "scala": "Scala",
+        # Scripting
+        "js": "JavaScript", "jsx": "JavaScript", "ts": "TypeScript",
+        "py": "Python", "rb": "Ruby", "php": "PHP",
+        "lua": "Lua", "m": "Objective-C",
+        # Systems
+        "go": "Go", "rs": "Rust", "swift": "Swift",
+        # .NET
+        "cs": "C#",
+    }
+    rows: list[dict] = []
+    skipped_no_code = 0
+    for row in tqdm(ds, desc="  processing", unit="row"):
+        vuln_code  = row.get("func_before")
+        fixed_code = row.get("func_after")
         if not vuln_code:
             skipped_no_code += 1
             continue
 
-        cwe = (raw.get("cwe_id") or "").strip()
-        cve_id = (raw.get("cve_id") or "").strip()
+        cwe    = (row.get("cwe_id")    or "").strip()
+        cve_id = (row.get("cve_id")    or "").strip()
+        ext    = (row.get("extension") or "").strip().lstrip(".")
+        lang   = _EXT_TO_LANG.get(ext.lower(), ext or "unknown")
 
-        # Vulnerable sample
-        rows.append({
-            "func_before": vuln_code,
-            "func_after": fixed_code or None,
-            "vul": 1,
-            "CWE ID": cwe,
-            "CVE ID": cve_id,
-        })
-
-        # Benign sample from the fixed version (patched = not vulnerable)
+        rows.append({"func_before": vuln_code, "func_after": fixed_code or None,
+                     "vul": 1, "CWE ID": cwe, "CVE ID": cve_id,
+                     "extension": ext, "language": lang})
         if fixed_code and fixed_code.strip() != vuln_code.strip():
-            rows.append({
-                "func_before": fixed_code,
-                "func_after": None,
-                "vul": 0,
-                "CWE ID": "",
-                "CVE ID": cve_id,
-            })
+            rows.append({"func_before": fixed_code, "func_after": None,
+                         "vul": 0, "CWE ID": "", "CVE ID": cve_id,
+                         "extension": ext, "language": lang})
 
     df = pd.DataFrame(rows)
     df.to_parquet(str(out_file), index=False)
 
-    vuln_n = (df["vul"] == 1).sum()
+    vuln_n   = (df["vul"] == 1).sum()
     benign_n = (df["vul"] == 0).sum()
-    print(f"\n  Skipped {skipped_no_code:,} rows with missing code")
-    print(f"  Saved {len(df):,} rows  (vulnerable={vuln_n:,}  benign={benign_n:,})")
+    print(f"  Skipped {skipped_no_code:,} rows with missing code")
+    print(f"  train.parquet: {len(df):,} rows (vuln={vuln_n:,} benign={benign_n:,})")
     print(f"  -> {out_file.relative_to(PROJECT_ROOT)}")
+    print("\n  Language distribution:")
+    for lang, cnt in df[df["vul"]==1]["language"].value_counts().head(10).items():
+        print(f"    {lang}: {cnt:,}")
     print("\n  CWE distribution (top 15):")
-    cwe_counts = df[df["vul"] == 1]["CWE ID"].value_counts().head(15)
-    for cwe, cnt in cwe_counts.items():
+    for cwe, cnt in df[df["vul"] == 1]["CWE ID"].value_counts().head(15).items():
         print(f"    {cwe}: {cnt}")
     print(f"\n  Use with prepare_dataset.py --format bigvul --input {out_file.relative_to(PROJECT_ROOT)}")
 
@@ -223,7 +236,7 @@ def download_benchvul() -> None:
     Top 25 Most Dangerous CWEs.  50 vulnerable + 50 fixed samples per CWE.
 
     Column schema: cwe_id, cve_id, func_before, func_after, programming_language, ...
-    Same expansion logic as TitanVul: each row → vuln sample + benign sample.
+    Same expansion logic as TitanVul: each row -> vuln sample + benign sample.
     Output is BigVul-compatible (func_before / func_after / vul / CWE ID).
 
     Note: filter to C/C++ via the 'programming_language' field.
@@ -292,13 +305,94 @@ def download_benchvul() -> None:
     print("  Tip: BenchVul is small (1,050 rows) — best used as a test/eval set, not for training.")
 
 
+def download_bigvul() -> None:
+    """
+    Download BigVul from bstee615/bigvul (train / val / test splits).
+
+    Saves 8 files per dataset:
+      raw_train.parquet  — all original HuggingFace columns, train split
+      raw_val.parquet    — all original HuggingFace columns, val split
+      raw_test.parquet   — all original HuggingFace columns, test split
+      raw_all.parquet    — concat of all 3 raw splits
+      train.parquet      — pipeline-compatible (+ normalized language column)
+      val.parquet        — pipeline-compatible
+      test.parquet       — pipeline-compatible
+      all.parquet        — concat of all 3 pipeline splits
+    """
+    import pandas as pd
+    from datasets import load_dataset
+
+    _LANG_NORM = {"C": "C", "CPP": "C++", "C++": "C++"}
+
+    dest = OUT_DIR / "bigvul"
+    dest.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n{'='*60}")
+    print("  Downloading: bigvul  (bstee615/bigvul)")
+    print("  3 splits: train / val / test")
+    print(f"{'='*60}")
+
+    ds = load_dataset("bstee615/bigvul")
+
+    raw_dfs: list[pd.DataFrame] = []
+    pipe_dfs: list[pd.DataFrame] = []
+
+    for split in ["train", "validation", "test"]:
+        if split not in ds:
+            print(f"  [{split}] not found — skipping")
+            continue
+
+        split_ds = ds[split]
+        raw_df = pd.DataFrame(split_ds)
+
+        # raw_{split}.parquet — exact HuggingFace download
+        raw_path = dest / f"raw_{split}.parquet"
+        raw_df.to_parquet(str(raw_path), index=False)
+        print(f"  [{split}] raw: {len(raw_df):,} rows | cols: {list(raw_df.columns)}")
+        print(f"    -> {raw_path.relative_to(PROJECT_ROOT)}")
+        raw_dfs.append(raw_df)
+
+        # {split}.parquet — add normalized language column, keep all columns
+        pipe_df = raw_df.copy()
+        if "lang" in pipe_df.columns:
+            pipe_df["language"] = pipe_df["lang"].apply(
+                lambda v: _LANG_NORM.get(str(v).strip().upper(), str(v)) if pd.notna(v) else ""
+            )
+        pipe_path = dest / f"{split}.parquet"
+        pipe_df.to_parquet(str(pipe_path), index=False)
+        n_vuln = int((pipe_df["vul"] == 1).sum()) if "vul" in pipe_df.columns else "?"
+        print(f"  [{split}] pipeline: {len(pipe_df):,} rows (vuln={n_vuln})")
+        print(f"    -> {pipe_path.relative_to(PROJECT_ROOT)}")
+        pipe_dfs.append(pipe_df)
+
+    # raw_all.parquet + all.parquet
+    if raw_dfs:
+        raw_all = pd.concat(raw_dfs, ignore_index=True)
+        raw_all.to_parquet(str(dest / "raw_all.parquet"), index=False)
+        print(f"\n  raw_all.parquet: {len(raw_all):,} rows -> {(dest/'raw_all.parquet').relative_to(PROJECT_ROOT)}")
+
+    if pipe_dfs:
+        all_df = pd.concat(pipe_dfs, ignore_index=True)
+        all_df.to_parquet(str(dest / "all.parquet"), index=False)
+        print(f"  all.parquet:     {len(all_df):,} rows -> {(dest/'all.parquet').relative_to(PROJECT_ROOT)}")
+        if "lang" in all_df.columns:
+            print("\n  Language distribution:")
+            for lang, cnt in all_df["lang"].value_counts().items():
+                print(f"    {lang}: {cnt:,}")
+        print(f"\n  Use: prepare_dataset.py --format bigvul --input {(dest/'train.parquet').relative_to(PROJECT_ROOT)}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download vulnerability datasets from HuggingFace.")
     parser.add_argument(
-        "--only", choices=[*DATASETS.keys(), "megavul", "titanvul", "benchvul"],
+        "--only", choices=[*DATASETS.keys(), "megavul", "titanvul", "benchvul", "bigvul"],
         help="Download only this dataset (default: all standard datasets)",
     )
     args = parser.parse_args()
+
+    if args.only == "bigvul":
+        download_bigvul()
+        return
 
     if args.only == "megavul":
         download_megavul()

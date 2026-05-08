@@ -12,6 +12,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
+import random
 import re
 import sys
 from collections import Counter, defaultdict
@@ -235,6 +237,67 @@ def analyze_df(df: pd.DataFrame, cwe_col: str, label_col: str | None = None,
     return dict(group_counts), cwe_rows, n_benign, n_vuln
 
 
+def language_dist_from_parquet(
+    df: pd.DataFrame,
+    func_col: str = "func_before",
+    lang_col: str | None = None,
+    n_sample: int = 500,
+) -> Counter:
+    """Detect language distribution from a parquet DataFrame."""
+    from gnn_vuln.data.joern_runner import detect_language
+    # Normalize lang values to detect_language extension format (lowercase, cpp not C++)
+    _LANG_NORM = {"C": "c", "CPP": "cpp", "C++": "cpp", "JAVA": "java",
+                  "JAVASCRIPT": "js", "JS": "js", "PYTHON": "py", "GO": "go",
+                  "RUBY": "rb", "PHP": "php", "KOTLIN": "kt", "CSHARP": "cs", "C#": "cs"}
+    counts: Counter = Counter()
+    if lang_col and lang_col in df.columns:
+        for v in df[lang_col].dropna():
+            key = str(v).strip().upper()
+            counts[_LANG_NORM.get(key, key.lower())] += 1
+        return counts
+    sample = df[func_col].dropna().sample(min(n_sample, len(df)), random_state=42)
+    for code in sample:
+        counts[detect_language(str(code))] += 1
+    return counts
+
+
+def language_dist_from_raw(raw_dir: Path, n_sample: int = 500) -> Counter:
+    """Detect language distribution from raw meta.json raw_func fields."""
+    from gnn_vuln.data.joern_runner import detect_language
+    meta_files = list(raw_dir.rglob("*.meta.json"))
+    if not meta_files:
+        return Counter()
+    sample = random.sample(meta_files, min(n_sample, len(meta_files)))
+    counts: Counter = Counter()
+    for f in sample:
+        try:
+            meta = json.loads(f.read_text(encoding="utf-8", errors="ignore"))
+            code = meta.get("raw_func", "")
+            if code:
+                counts[detect_language(code)] += 1
+        except Exception:
+            pass
+    return counts
+
+
+def language_table(dists: dict[str, Counter]) -> str:
+    """Format language distributions as a markdown table."""
+    all_langs = sorted({lang for c in dists.values() for lang in c})
+    header = "| Dataset | " + " | ".join(all_langs) + " |"
+    sep    = "|---|" + "|".join(["---"] * len(all_langs)) + "|"
+    lines  = [header, sep]
+    for ds, counts in dists.items():
+        total = sum(counts.values())
+        cells = []
+        for lang in all_langs:
+            n = counts.get(lang, 0)
+            cells.append(f"{n/total*100:.0f}%" if total and n else "—")
+        lines.append(f"| {ds} | " + " | ".join(cells) + " |")
+    lines.append("\n> Detected via `joern_runner.detect_language()` on sampled `raw_func` / `func_before` fields.")
+    lines.append("> Go/PHP fall back to C extension (Joern native frontends produce sparser CPGs).")
+    return "\n".join(lines)
+
+
 def cpg_coverage_table(raw_dir: Path, group_counts: dict) -> str:
     """Build CPG coverage table comparing data/raw/<source>/ files vs parquet."""
     vuln_dir = raw_dir / "vulnerable"
@@ -337,7 +400,48 @@ Generated from raw parquet files. Group mapping via `CWE_GROUP_MAP` in `dataset_
 | Merged (BigVul+MegaVul) | 176,674 | 154,205 | 22,469 | Yes | Yes (diff) | Combined |
 | TitanVul | 77,096 | 38,548 | 38,548 | Yes | Yes (diff) | Balanced 1:1, Unfiltered |
 | BenchVul | 2,100 | 1,050 | 1,050 | Yes | Yes (diff) | **Benchmark for Top 25 Most Dangerous CWEs** |
+| ReposVul | 6,897 CVEs → ~115,670 funcs | ~113,952 | ~1,718 | Yes (236 CWEs) | Yes (patch diff) | Multi-granularity, untangled patches |
+
+---
+
+## Language Distribution (sampled from raw_func / func_before)
+
 """)
+
+    # ── Language distribution ─────────────────────────────────────────────────
+    print("Detecting language distributions...")
+    lang_dists: dict[str, Counter] = {}
+
+    bv_lang_path = DATA / "bigvul" / "all.parquet"
+    if bv_lang_path.exists():
+        lang_dists["BigVul"] = language_dist_from_parquet(
+            pd.read_parquet(bv_lang_path), func_col="func_before", lang_col="lang"
+        )
+
+    mv_lang_path = DATA / "megavul" / "train.parquet"
+    if mv_lang_path.exists():
+        lang_dists["MegaVul"] = language_dist_from_parquet(
+            pd.read_parquet(mv_lang_path), func_col="func_before"
+        )
+
+    tv_lang_path = DATA / "titanvul" / "train.parquet"
+    if tv_lang_path.exists():
+        tv_df = pd.read_parquet(tv_lang_path)
+        lang_col = "language" if "language" in tv_df.columns else None
+        ext_col  = "extension" if "extension" in tv_df.columns and not lang_col else None
+        lang_dists["TitanVul"] = language_dist_from_parquet(
+            tv_df, func_col="func_before",
+            lang_col=lang_col or ext_col,
+        )
+
+    bv_raw = RAW / "bigvul"
+    if bv_raw.exists():
+        lang_dists["BigVul (raw CPGs)"] = language_dist_from_raw(bv_raw)
+
+    if lang_dists:
+        sections.append(language_table(lang_dists) + "\n")
+    else:
+        sections.append("*Language distribution not computed — raw data not found.*\n\n---\n")
 
     # ── BigVul ───────────────────────────────────────────────────────────────
     print("Analyzing BigVul...")
