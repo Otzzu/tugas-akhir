@@ -99,6 +99,11 @@ for CONFIG in "$@"; do
     echo ""
     echo "=== [$config_idx/$#] Processing: $CONFIG ==="
 
+    # Extract dataset source from config for upload subdirectory
+    dataset_src=$(grep "^  source:" "$CONFIG" 2>/dev/null | awk '{print $2}' | head -1)
+    remote_dest="$REMOTE_PT/${dataset_src:-misc}"
+    echo "Upload destination: $remote_dest"
+
     before=$(ls "$PT_DIR"/*.pt 2>/dev/null | sort || true)
 
     PYTHONPATH=src python scripts/process_dataset.py --config "$CONFIG" --device cuda $REBUILD_FLAG
@@ -116,8 +121,8 @@ for CONFIG in "$@"; do
             tar -cf - -C "$PT_DIR" "$(basename "$pt_file")" \
                 | pv -s "$(du -sb "$pt_file" | awk '{print $1}')" \
                 | gzip > "$archive"
-            echo "Uploading $archive → $REMOTE_PT ..."
-            rclone copy "$archive" "$REMOTE_PT" --progress
+            echo "Uploading $archive → $remote_dest ..."
+            rclone copy "$archive" "$remote_dest" --progress
             rm -f "$archive"
             if [[ "$DELETE_PT" == "true" ]]; then
                 rm -f "$pt_file"
