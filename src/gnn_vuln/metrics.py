@@ -180,35 +180,95 @@ def recall_at_k_loc_curve(
 
 
 # ---------------------------------------------------------------------------
-# Aggregate
+# Aggregate (function + class)
 # ---------------------------------------------------------------------------
 
 def compute_all_localization_metrics(func_results: list[dict]) -> dict:
-    """
-    Compute all localization metrics from a list of per-function result dicts.
+    """Compute all localization metrics. Backward-compat wrapper for LocalizationMetrics."""
+    return LocalizationMetrics(func_results).to_dict()
 
-    Returns a dict of scalar metrics plus curve arrays for plotting.
-    NaN is returned for any metric when no functions have flaw GT.
-    """
-    mean_ifa, ifa_list = ifa_metric(func_results)
-    k_vals, recall_curve = recall_at_k_loc_curve(func_results)
-    num_gt = sum(1 for r in func_results if r["num_flaw_lines"] > 0)
 
-    return {
-        # Comparable to LineVul Table 5 / WAVES Table 3
-        "top_1_accuracy": top_k_accuracy(func_results, k=1),
-        "top_3_accuracy": top_k_accuracy(func_results, k=3),
-        "top_5_accuracy": top_k_accuracy(func_results, k=5),
-        "top_10_accuracy": top_10_accuracy(func_results),
-        "ifa_mean": mean_ifa,
-        "effort_at_20pct_recall": effort_at_k_recall(func_results, k=0.20),
-        "recall_at_1pct_loc": recall_at_k_loc(func_results, k=0.01),
-        "recall_at_5pct_loc": recall_at_k_loc(func_results, k=0.05),
-        "recall_at_20pct_loc": recall_at_k_loc(func_results, k=0.20),
-        # Curve for plot
-        "recall_at_loc_curve_k": k_vals,
-        "recall_at_loc_curve_v": recall_curve,
-        # For IFA distribution plot / diagnostics
-        "ifa_per_func": ifa_list,
-        "num_funcs_with_flaw_gt": num_gt,
-    }
+class LocalizationMetrics:
+    """
+    Computes and stores all localization metrics from per-function result dicts.
+
+    Only functions with flaw-line ground truth (num_flaw_lines > 0) are scored.
+    """
+
+    def __init__(self, func_results: list[dict]) -> None:
+        self.func_results = func_results
+        self.gt_results = [r for r in func_results if r.get("num_flaw_lines", 0) > 0]
+        self._ifa_mean, self._ifa_per_func = ifa_metric(self.gt_results)
+        self._k_vals, self._recall_curve = recall_at_k_loc_curve(self.gt_results)
+
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
+    @property
+    def num_funcs_with_flaw_gt(self) -> int:
+        return len(self.gt_results)
+
+    @property
+    def top_1_accuracy(self) -> float:
+        return top_k_accuracy(self.gt_results, k=1)
+
+    @property
+    def top_3_accuracy(self) -> float:
+        return top_k_accuracy(self.gt_results, k=3)
+
+    @property
+    def top_5_accuracy(self) -> float:
+        return top_k_accuracy(self.gt_results, k=5)
+
+    @property
+    def top_10_accuracy(self) -> float:
+        return top_10_accuracy(self.gt_results)
+
+    @property
+    def ifa_mean(self) -> float:
+        return self._ifa_mean
+
+    @property
+    def ifa_per_func(self) -> list[float]:
+        return self._ifa_per_func
+
+    @property
+    def effort_at_20pct_recall(self) -> float:
+        return effort_at_k_recall(self.gt_results, k=0.20)
+
+    @property
+    def recall_at_1pct_loc(self) -> float:
+        return recall_at_k_loc(self.gt_results, k=0.01)
+
+    @property
+    def recall_at_5pct_loc(self) -> float:
+        return recall_at_k_loc(self.gt_results, k=0.05)
+
+    @property
+    def recall_at_20pct_loc(self) -> float:
+        return recall_at_k_loc(self.gt_results, k=0.20)
+
+    @property
+    def recall_at_loc_curve(self) -> tuple[list[float], list[float]]:
+        return self._k_vals, self._recall_curve
+
+    # ------------------------------------------------------------------
+    # Serialisation
+    # ------------------------------------------------------------------
+    def to_dict(self) -> dict:
+        k_vals, recall_curve = self.recall_at_loc_curve
+        return {
+            "top_1_accuracy":        self.top_1_accuracy,
+            "top_3_accuracy":        self.top_3_accuracy,
+            "top_5_accuracy":        self.top_5_accuracy,
+            "top_10_accuracy":       self.top_10_accuracy,
+            "ifa_mean":              self.ifa_mean,
+            "effort_at_20pct_recall":self.effort_at_20pct_recall,
+            "recall_at_1pct_loc":    self.recall_at_1pct_loc,
+            "recall_at_5pct_loc":    self.recall_at_5pct_loc,
+            "recall_at_20pct_loc":   self.recall_at_20pct_loc,
+            "recall_at_loc_curve_k": k_vals,
+            "recall_at_loc_curve_v": recall_curve,
+            "ifa_per_func":          self.ifa_per_func,
+            "num_funcs_with_flaw_gt":self.num_funcs_with_flaw_gt,
+        }

@@ -62,82 +62,161 @@ def download_one(name: str, cfg: dict) -> None:
     print(f"  Done — {len(saved)} file(s) written.")
 
 
+def _extract_flaw_lines(func_before: str, diff_func: str | None, diff_line_info: dict | None) -> list[int]:
+    """
+    Extract 1-indexed flaw line numbers from MegaVul diff info.
+    Tries unified diff first (more accurate), falls back to content matching.
+    """
+    if diff_func:
+        # Parse unified diff: lines starting with '-' (not '---') are removed (vulnerable)
+        import re as _re
+        flaw: list[int] = []
+        cur_line = 0
+        for line in diff_func.splitlines():
+            m = _re.match(r'^@@ -(\d+)', line)
+            if m:
+                cur_line = int(m.group(1))
+                continue
+            if line.startswith("---") or line.startswith("+++"):
+                continue
+            if line.startswith("-"):
+                flaw.append(cur_line)
+                cur_line += 1
+            elif not line.startswith("+"):
+                cur_line += 1
+        return sorted(set(flaw))
+
+    if diff_line_info and func_before:
+        deleted = diff_line_info.get("deleted_lines", [])
+        if not deleted:
+            return []
+        src_lines = func_before.splitlines()
+        deleted_stripped = {d.strip() for d in deleted if d.strip()}
+        return sorted({i + 1 for i, l in enumerate(src_lines) if l.strip() in deleted_stripped})
+
+    return []
+
+
 def download_megavul() -> None:
     """
-    Stream MegaVul (672K rows), keep all languages with extracted function code,
-    and save in BigVul-compatible column layout so prepare_dataset.py can consume
-    it with --format bigvul.
+    Convert local MegaVul JSON to pipeline-compatible parquet.
 
-    Output columns (same as BigVul):
-        func_before  — vulnerable function body       (vul=1 rows)
-                       fixed function body             (vul=0 rows)
-        func_after   — fixed function body             (vul=1 rows, used for flaw-line diff)
-                       None                            (vul=0 rows)
-        vul          — 1 = vulnerable, 0 = benign
-        CWE ID       — CWE string (e.g. "CWE-416"), empty for benign rows
-        language     — full language name ("C", "C++") for correct Joern frontend
+    Reads from:
+        data/datasets/megavul/c_cpp/megavul.json   (2.5 GB, download from OneDrive)
+        data/datasets/megavul/java/megavul.json     (optional)
+
+    Creates train.parquet with columns:
+        func_before, func_after, vul, CWE ID, CVE ID,
+        language, flaw_lines, func_graph_path_before, func_graph_path
+
+    func_graph_path_before / func_graph_path: absolute path to pre-built Joern graph.
+    Used by prepare_dataset.py --format megavul to copy graphs without re-running Joern.
     """
     import pandas as pd
-    from datasets import load_dataset
-    from tqdm import tqdm
+    import ijson
+    from decimal import Decimal
 
     dest = OUT_DIR / "megavul"
     dest.mkdir(parents=True, exist_ok=True)
     out_file = dest / "train.parquet"
 
-    raw_file = dest / "raw.parquet"
+    # Locate source JSON files (c_cpp required, java optional)
+    json_files: list[Path] = []
+    for sub in ["c_cpp", "java"]:
+        jf = dest / sub / "megavul.json"
+        if jf.exists():
+            json_files.append(jf)
+    if not json_files:
+        print("  ERROR: No megavul.json found.")
+        print("  Download from: https://1drv.ms/f/s!AtzrzuojQf5sgeISZ9zN_4owVnUn9g")
+        print("  Place at: data/datasets/megavul/c_cpp/megavul.json")
+        return
+
+    _EXT_TO_LANG = {
+        "c": "C", "h": "C", "cpp": "C++", "cc": "C++", "cxx": "C++", "hpp": "C++",
+        "java": "Java", "kt": "Kotlin", "js": "JavaScript", "ts": "TypeScript",
+        "py": "Python", "rb": "Ruby", "php": "PHP", "go": "Go",
+        "cs": "C#", "swift": "Swift", "rs": "Rust",
+    }
 
     print(f"\n{'='*60}")
-    print("  Downloading: megavul  (hitoshura25/megavul)")
-    print("  Streaming 672K rows — saving raw + all-language train parquets…")
+    print("  Processing: MegaVul (local megavul.json)")
     print(f"{'='*60}")
 
-    ds = load_dataset("hitoshura25/megavul", split="train", streaming=True)
+    rows: list[dict] = []
 
-    raw_rows: list[dict] = []   # all languages, all original columns
-    train_rows: list[dict] = [] # all languages with code, renamed for pipeline
-    total_seen = 0
+    for jf in json_files:
+        graph_dir = jf.parent / "megavul_graph"
+        print(f"  Reading {jf} ...")
+        with open(jf, "rb") as f:
+            for rec in ijson.items(f, "item"):
+                # Normalise Decimal (ijson returns Decimal for floats)
+                is_vul = bool(rec.get("is_vul", False))
+                cwe_ids: list = rec.get("cwe_ids") or []
+                cwe = cwe_ids[0] if cwe_ids else ""
+                cve_id = str(rec.get("cve_id") or "")
+                file_path = str(rec.get("file_path") or "")
+                ext = file_path.rsplit(".", 1)[-1].lower() if "." in file_path else ""
+                lang = _EXT_TO_LANG.get(ext, ext.capitalize() or "C")
 
-    for row in tqdm(ds, desc="  streaming", unit="row"):
-        total_seen += 1
-        vuln_code = row.get("vulnerable_code")
-        if not vuln_code:
-            continue
+                func_before = rec.get("func_before") or ""
+                func_patched = rec.get("func") or ""
+                diff_func = rec.get("diff_func") or None
+                diff_line_info = rec.get("diff_line_info") or None
+                graph_before = str(rec.get("func_graph_path_before") or "")
+                graph_after  = str(rec.get("func_graph_path") or "")
 
-        # raw.parquet — all columns, all languages
-        raw_rows.append(dict(row))
+                # Absolute graph paths (empty string if graph missing)
+                abs_before = str(graph_dir / graph_before) if graph_before and (graph_dir / graph_before).exists() else ""
+                abs_after  = str(graph_dir / graph_after)  if graph_after  and (graph_dir / graph_after).exists()  else ""
 
-        fixed_code = row.get("fixed_code")
-        cwe    = row.get("cwe_id")  or ""
-        cve_id = row.get("cve_id")  or ""
-        lang   = row.get("language") or ""
+                if is_vul:
+                    if not func_before:
+                        continue
+                    flaw_lines = _extract_flaw_lines(func_before, diff_func, diff_line_info)
+                    rows.append({
+                        "func_before": func_before,
+                        "func_after": func_patched or None,
+                        "vul": 1,
+                        "CWE ID": cwe,
+                        "CVE ID": cve_id,
+                        "language": lang,
+                        "flaw_lines": flaw_lines,
+                        "func_graph_path": abs_before,  # graph for vulnerable version
+                    })
+                else:
+                    # Non-vulnerable: func (benign code), no flaw lines
+                    if not func_patched:
+                        continue
+                    rows.append({
+                        "func_before": func_patched,
+                        "func_after": None,
+                        "vul": 0,
+                        "CWE ID": "",
+                        "CVE ID": cve_id,
+                        "language": lang,
+                        "flaw_lines": [],
+                        "func_graph_path": abs_after,
+                    })
 
-        train_rows.append({"func_before": vuln_code, "func_after": fixed_code or None,
-                           "vul": 1, "CWE ID": cwe, "CVE ID": cve_id, "language": lang})
-        if fixed_code and fixed_code != vuln_code:
-            train_rows.append({"func_before": fixed_code, "func_after": None,
-                                "vul": 0, "CWE ID": "", "CVE ID": cve_id, "language": lang})
-
-    # Save raw
-    pd.DataFrame(raw_rows).to_parquet(str(raw_file), index=False)
-    print(f"\n  raw.parquet: {len(raw_rows):,} rows (all languages) -> {raw_file.relative_to(PROJECT_ROOT)}")
-
-    # Save train
-    df = pd.DataFrame(train_rows)
+    df = pd.DataFrame(rows)
     df.to_parquet(str(out_file), index=False)
 
-    vuln_n  = (df["vul"] == 1).sum()
+    vuln_n   = (df["vul"] == 1).sum()
     benign_n = (df["vul"] == 0).sum()
-    print(f"  Streamed {total_seen:,} rows total")
-    print(f"  train.parquet: {len(df):,} rows (vulnerable={vuln_n:,} benign={benign_n:,})")
+    has_graph = (df["func_graph_path"] != "").sum()
+    has_flaw  = df[df["vul"] == 1]["flaw_lines"].apply(len).gt(0).sum()
+    print(f"  train.parquet: {len(df):,} rows (vuln={vuln_n:,} benign={benign_n:,})")
+    print(f"  Pre-built graphs available: {has_graph:,}/{len(df):,}")
+    print(f"  Vuln rows with flaw lines:  {has_flaw:,}/{vuln_n:,}")
     print(f"  -> {out_file.relative_to(PROJECT_ROOT)}")
-    print("\n  Language distribution:")
-    for lang, cnt in df[df["vul"] == 1]["language"].value_counts().items():
+    print("\n  Language distribution (vuln):")
+    for lang, cnt in df[df["vul"] == 1]["language"].value_counts().head(10).items():
         print(f"    {lang}: {cnt:,}")
     print("\n  CWE distribution (top 15):")
     for cwe, cnt in df[df["vul"] == 1]["CWE ID"].value_counts().head(15).items():
         print(f"    {cwe}: {cnt}")
-    print(f"\n  Use with prepare_dataset.py --format megavul --input {out_file.relative_to(PROJECT_ROOT)}")
+    print(f"\n  Use: prepare_dataset.py --format megavul --input {out_file.relative_to(PROJECT_ROOT)}")
 
 
 def download_titanvul() -> None:

@@ -326,3 +326,72 @@ def predict_from_file(
                               func_input_ids, func_attention_mask)
 
     return predict(model, data, class_names, device=device, top_k_lines=top_k_lines)
+
+
+# ---------------------------------------------------------------------------
+# OOP wrapper
+# ---------------------------------------------------------------------------
+
+class VulnPredictor:
+    """
+    High-level inference object. Wraps a trained model + class names.
+
+    Usage
+    -----
+        predictor = VulnPredictor.from_checkpoint(
+            checkpoint="checkpoints/run/best.pt",
+            config="configs/lmgat_codebert_mtl/multiclass_mtl_livable_f1stop.yaml",
+        )
+        result = predictor.predict(data)
+        result = predictor.predict_from_file("path/to/cpg.json")
+    """
+
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        class_names: list[str] | None,
+        device: torch.device,
+        pretrained_lm: str = "microsoft/codebert-base",
+    ) -> None:
+        self.model = model
+        self.class_names = class_names
+        self.device = device
+        self.pretrained_lm = pretrained_lm
+
+    @classmethod
+    def from_checkpoint(
+        cls,
+        checkpoint: str | Path,
+        config: str | Path,
+        device: str = "cpu",
+    ) -> "VulnPredictor":
+        """Load from checkpoint + config. Returns a ready-to-use VulnPredictor."""
+        model, class_names = load_model(checkpoint, config, device)
+        cfg = Config.from_yaml(config) if Path(config).exists() else load_default_config()
+        pretrained_lm = getattr(cfg.model, "pretrained_lm", "microsoft/codebert-base")
+        return cls(model, class_names, get_device(device), pretrained_lm)
+
+    def predict(self, data, top_k_lines: int | None = None) -> dict:
+        """Run inference on a single PyG Data object."""
+        return predict(self.model, data, self.class_names,
+                       device=self.device, top_k_lines=top_k_lines)
+
+    def predict_from_file(
+        self,
+        cpg_path: str | Path,
+        label: int = 0,
+        flaw_lines: list[int] | None = None,
+        max_nodes: int = 1000,
+        top_k_lines: int | None = None,
+    ) -> Optional[dict]:
+        """Parse + embed + predict from a CPG file."""
+        return predict_from_file(
+            self.model, cpg_path,
+            class_names=self.class_names,
+            pretrained_lm=self.pretrained_lm,
+            label=label,
+            flaw_lines=flaw_lines,
+            max_nodes=max_nodes,
+            device=self.device,
+            top_k_lines=top_k_lines,
+        )

@@ -443,6 +443,63 @@ def _run_one(
 
 
 # ---------------------------------------------------------------------------
+# MegaVul hybrid worker: copy pre-built graph OR run Joern fallback
+# ---------------------------------------------------------------------------
+
+def _run_megavul_one(
+    idx: int,
+    code: str,
+    out_dir: Path,
+    joern_cli_dir: Path | None,
+    java_home: str | None,
+    normalize: bool,
+    resume: bool,
+    flaw_lines: list[int] | None = None,
+    class_id: int | None = None,
+    cwe: str = "",
+    is_multi_class: bool = False,
+    row_id: int = -1,
+    language: str = "",
+    graph_path: str = "",     # pre-built graph path from MegaVul (may be empty)
+) -> tuple[int, Path | None, str | None]:
+    """
+    MegaVul hybrid: if graph_path exists, copy it; otherwise fall back to Joern.
+    Pre-built graphs are MegaVul's JSON format — handled by _parse_megavul_json().
+    """
+    import shutil as _shutil
+
+    if resume:
+        existing = [f for f in out_dir.glob(f"func_{idx}.*") if ".meta." not in f.name]
+        if existing:
+            return idx, existing[0], None
+
+    # Try pre-built graph first
+    if graph_path and Path(graph_path).exists():
+        out_dir.mkdir(parents=True, exist_ok=True)
+        dest = out_dir / f"func_{idx}.json"
+        _shutil.copy2(graph_path, dest)
+        raw_func = code
+        lang_name = language or "C"
+        meta: dict = {"id": row_id, "raw_func": raw_func, "language": lang_name}
+        if is_multi_class and class_id is not None:
+            meta["class_id"] = class_id
+        if cwe:
+            meta["cwe"] = cwe
+        if flaw_lines:
+            meta["flaw_lines"] = flaw_lines
+        (out_dir / f"func_{idx}.meta.json").write_text(json.dumps(meta))
+        return idx, dest, None
+
+    # No pre-built graph — fall back to Joern
+    return _run_one(
+        idx=idx, code=code, out_dir=out_dir, joern_cli_dir=joern_cli_dir,
+        java_home=java_home, normalize=normalize, resume=resume,
+        flaw_lines=flaw_lines, class_id=class_id, cwe=cwe,
+        is_multi_class=is_multi_class, row_id=row_id, language=language,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -538,8 +595,9 @@ def main() -> None:
         df = load_diversevul(args.input)
         is_multi_class = False
 
-    elif args.format in ("megavul", "merged", "titanvul"):
-        # megavul / merged: same schema as BigVul (func_before, func_after, vul, CWE ID)
+    elif args.format == "megavul":
+        # MegaVul: has pre-built graphs in func_graph_path column
+        # Uses load_bigvul for CWE vocab + label assignment, then joins graph paths
         is_multi_class = not args.binary
         vocab_path = args.cwe_vocab or (args.out_dir / "cwe_vocab.json")
         existing_vocab = None
@@ -548,10 +606,30 @@ def main() -> None:
                 existing_vocab = json.load(f)
             logger.info(f"Loaded existing CWE vocab ({len(existing_vocab)} classes) from {vocab_path}")
         df, cwe_vocab = load_bigvul(
-            args.input,
-            top_k_cwe=args.top_cwe,
-            binary=args.binary,
-            cwe_vocab=existing_vocab,
+            args.input, top_k_cwe=args.top_cwe, binary=args.binary, cwe_vocab=existing_vocab,
+        )
+        out_vocab = args.out_dir / "cwe_vocab.json"
+        if is_multi_class and cwe_vocab and not out_vocab.exists():
+            args.out_dir.mkdir(parents=True, exist_ok=True)
+            with open(out_vocab, "w") as f:
+                json.dump(cwe_vocab, f, indent=2)
+            logger.info(f"CWE vocabulary ({len(cwe_vocab)} classes) saved → {out_vocab}")
+        # Join pre-built graph paths from original parquet by original row id
+        raw_df = pd.read_parquet(args.input, columns=["func_graph_path"])
+        df["func_graph_path"] = df["id"].map(lambda i: raw_df["func_graph_path"].iloc[i] if 0 <= i < len(raw_df) else "")
+        df["func_graph_path"] = df["func_graph_path"].fillna("")
+
+    elif args.format in ("merged", "titanvul"):
+        # merged/titanvul: same schema as BigVul (func_before, func_after, vul, CWE ID)
+        is_multi_class = not args.binary
+        vocab_path = args.cwe_vocab or (args.out_dir / "cwe_vocab.json")
+        existing_vocab = None
+        if vocab_path.exists():
+            with open(vocab_path) as f:
+                existing_vocab = json.load(f)
+            logger.info(f"Loaded existing CWE vocab ({len(existing_vocab)} classes) from {vocab_path}")
+        df, cwe_vocab = load_bigvul(
+            args.input, top_k_cwe=args.top_cwe, binary=args.binary, cwe_vocab=existing_vocab,
         )
         out_vocab = args.out_dir / "cwe_vocab.json"
         if is_multi_class and cwe_vocab and not out_vocab.exists():
@@ -599,17 +677,20 @@ def main() -> None:
     _LANG_COL = next((c for c in ("lang", "language", "extension") if c in df.columns), None)
     _EXT_NORM = {"C": "C", "CPP": "C++", "C++": "C++"}  # BigVul lang column values
 
-    work: list[tuple[int, str, Path, int, list[int], str, int, str]] = []
+    is_megavul = args.format == "megavul"
+    work: list[tuple] = []
     for local_idx, row in enumerate(df.itertuples(index=False)):
         class_id = int(row.label)
         phys_dir = benign_dir if class_id == 0 else vuln_dir
         flaw_lines = list(row.flaw_lines) if hasattr(row, "flaw_lines") else []
         cwe = str(row.cwe) if hasattr(row, "cwe") else ""
         row_id = int(row.id) if hasattr(row, "id") else -1
-        # Ground-truth language from parquet column (normalized to full name)
         lang_raw = str(getattr(row, _LANG_COL, "") or "") if _LANG_COL else ""
         lang_gt  = _EXT_NORM.get(lang_raw.upper(), lang_raw) if lang_raw else ""
-        work.append((local_idx + args.idx_offset, str(row.code), phys_dir, class_id, flaw_lines, cwe, row_id, lang_gt))
+        # For megavul: include pre-built graph path (empty = must run Joern)
+        graph_path = str(getattr(row, "func_graph_path", "") or "") if is_megavul else ""
+        work.append((local_idx + args.idx_offset, str(row.code), phys_dir, class_id,
+                     flaw_lines, cwe, row_id, lang_gt, graph_path))
 
     logger.info(f"Workers: {args.workers}  |  resume: {args.resume}  |  jobs: {len(work)}")
     if args.workers > 1:
@@ -627,21 +708,22 @@ def main() -> None:
     start = time.monotonic()
 
     def submit(idx: int, code: str, phys_dir: Path, class_id: int, flaw_lines: list[int],
-               cwe: str, row_id: int = -1, language: str = ""):
+               cwe: str, row_id: int = -1, language: str = "", graph_path: str = ""):
+        if is_megavul:
+            return _run_megavul_one(
+                idx=idx, code=code, out_dir=phys_dir,
+                joern_cli_dir=args.joern_cli, java_home=args.java_home,
+                normalize=args.normalize, resume=args.resume,
+                flaw_lines=flaw_lines, class_id=class_id, cwe=cwe,
+                is_multi_class=is_multi_class, row_id=row_id,
+                language=language, graph_path=graph_path,
+            )
         return _run_one(
-            idx=idx,
-            code=code,
-            out_dir=phys_dir,
-            joern_cli_dir=args.joern_cli,
-            java_home=args.java_home,
-            normalize=args.normalize,
-            resume=args.resume,
-            flaw_lines=flaw_lines,
-            class_id=class_id,
-            cwe=cwe,
-            is_multi_class=is_multi_class,
-            row_id=row_id,
-            language=language,
+            idx=idx, code=code, out_dir=phys_dir,
+            joern_cli_dir=args.joern_cli, java_home=args.java_home,
+            normalize=args.normalize, resume=args.resume,
+            flaw_lines=flaw_lines, class_id=class_id, cwe=cwe,
+            is_multi_class=is_multi_class, row_id=row_id, language=language,
         )
 
     if args.workers <= 1:

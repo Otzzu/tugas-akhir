@@ -135,6 +135,55 @@ def load_resume_checkpoint(
 
 
 # ---------------------------------------------------------------------------
+# Checkpoint manager (OOP wrapper)
+# ---------------------------------------------------------------------------
+
+
+class CheckpointManager:
+    """
+    Manages best + resume checkpoints for a single training run.
+
+    Usage
+    -----
+        cm = CheckpointManager(run_dir, arch="lmgat_codebert")
+        cm.save_best(model, epoch=10, val_f1=0.72)
+        cm.save_last(model, optimizer, scheduler, epoch=10, ...)
+        meta = cm.load_resume(model, optimizer, scheduler, device="cuda")
+    """
+
+    def __init__(self, run_dir: str | Path, arch: str) -> None:
+        self.run_dir = Path(run_dir)
+        self.arch    = arch
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def best_path(self) -> Path:
+        return self.run_dir / f"best_{self.arch}.pt"
+
+    @property
+    def last_path(self) -> Path:
+        return self.run_dir / f"last_{self.arch}.pt"
+
+    def save_best(self, model: torch.nn.Module, **meta) -> None:
+        save_checkpoint(model, self.best_path, **meta)
+
+    def save_last(self, model, optimizer, scheduler, epoch: int,
+                  best_val_loss: float, patience_counter: int, **extra) -> None:
+        save_resume_checkpoint(self.last_path, model, optimizer, scheduler,
+                               epoch=epoch, best_val_loss=best_val_loss,
+                               patience_counter=patience_counter, **extra)
+
+    def load_model(self, model: torch.nn.Module, device: str = "cpu") -> dict:
+        return load_checkpoint(model, self.best_path, device)
+
+    def load_resume(self, model, optimizer, scheduler, device: str = "cpu") -> dict:
+        return load_resume_checkpoint(self.last_path, model, optimizer, scheduler, device)
+
+    def has_resume(self) -> bool:
+        return self.last_path.exists()
+
+
+# ---------------------------------------------------------------------------
 # Device helper
 # ---------------------------------------------------------------------------
 
