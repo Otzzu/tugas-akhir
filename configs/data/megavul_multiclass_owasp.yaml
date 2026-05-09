@@ -6,8 +6,8 @@ data:
   top_cwe: 0       
   max_per_class: 2100   
   resample_seed: 42
-  filter_owasp_top10: true
-  filter_top25: false
+  filter_owasp: true
+  filter_top25_dangerous: false
 
 
 model:

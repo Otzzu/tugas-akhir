@@ -13,23 +13,36 @@ _unknown_enum_seen: set[str] = set()
 # Edge types
 # ---------------------------------------------------------------------------
 EDGE_TYPES = [
-    "ARGUMENT",       # call → arguments
-    "AST",            # abstract syntax tree
-    "BINDS",          # type binding
-    "CALL",           # function calls
-    "CDG",            # control dependence
-    "CFG",            # control flow
-    "CONDITION",      # control structure → condition expr
-    "CONTAINS",       # containment
-    "DOMINATE",       # dominance
-    "EVAL_TYPE",      # type evaluation
-    "IMPORTS",        # import/include (Java/Python)
-    "PARAMETER_LINK", # call arg → formal param
-    "POST_DOMINATE",  # post-dominance
-    "REACHING_DEF",   # data dependence (DDG)
-    "RECEIVER",       # method call receiver
-    "REF",            # identifier → declaration
-    "SOURCE_FILE",    # source file link
+    "ALIAS_OF",        # type alias
+    "ARGUMENT",        # call → arguments
+    "AST",             # abstract syntax tree
+    "BINDS",           # type binding
+    "CALL",            # function calls
+    "CAPTURE",         # closure capture
+    "CATCH_BODY",      # try → catch body
+    "CDG",             # control dependence
+    "CFG",             # control flow
+    "CONDITION",       # control structure → condition expr
+    "CONTAINS",        # containment
+    "DOMINATE",        # dominance
+    "EVAL_TYPE",       # type evaluation
+    "FALSE_BODY",      # if → false branch
+    "FINALLY_BODY",    # try → finally body
+    "FOR_BODY",        # for → body
+    "FOR_INIT",        # for → init
+    "FOR_UPDATE",      # for → update
+    "IMPORTS",         # import/include (Java/Python)
+    "INHERITS_FROM",   # class inheritance
+    "IS_CALL_FOR_IMPORT", # import call
+    "PARAMETER_LINK",  # call arg → formal param
+    "POST_DOMINATE",   # post-dominance
+    "REACHING_DEF",    # data dependence (DDG)
+    "RECEIVER",        # method call receiver
+    "REF",             # identifier → declaration
+    "SOURCE_FILE",     # source file link
+    "TAGGED_BY",       # tag annotation
+    "TRUE_BODY",       # if → true branch
+    "TRY_BODY",        # try → body
 ]
 EDGE_TYPE_TO_IDX = {et: i for i, et in enumerate(EDGE_TYPES)}
 
@@ -60,9 +73,10 @@ _CST_TO_IDX = {
     "IF": 1, "ELSE": 2, "WHILE": 3, "FOR": 4,
     "SWITCH": 5, "BREAK": 6, "CONTINUE": 7, "GOTO": 8,
     "TRY": 9, "CATCH": 10, "FINALLY": 11,
+    "DO": 12, "THROW": 13,  # Java/JS
 }
 _EVAL_TO_IDX  = {"BY_VALUE": 1, "BY_REFERENCE": 2, "BY_SHARING": 3}
-_DISPATCH_IDX = {"STATIC_DISPATCH": 1, "DYNAMIC_DISPATCH": 2}
+_DISPATCH_IDX = {"STATIC_DISPATCH": 1, "DYNAMIC_DISPATCH": 2, "INLINED": 3}
 _DISPATCH_VALS = set(_DISPATCH_IDX)
 
 _INTEGER_TYPES = frozenset({

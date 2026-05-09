@@ -530,8 +530,8 @@ def main() -> None:
     parser.add_argument("--resume", action="store_true")
     # Multi-class options
     parser.add_argument(
-        "--top-cwe", type=int, default=10,
-        help="BigVul: number of top CWE categories to use as classes (default 10).",
+        "--top-cwe", type=int, default=0,
+        help="Number of top CWE categories to use as classes (0 = all CWEs, default 0).",
     )
     parser.add_argument(
         "--binary", action="store_true",

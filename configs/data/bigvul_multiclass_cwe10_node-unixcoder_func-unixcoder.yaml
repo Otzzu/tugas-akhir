@@ -2,18 +2,18 @@ data:
   source: bigvul
   mode: multiclass
   max_nodes: 3600
-  top_cwe: 0
-  max_per_class: 1200
+  top_cwe: 10
+  max_per_class: 2200
   resample_seed: 42
-  filter_top25: true
-  filter_owasp_top10: false
+  filter_top25_dangerous: false
+  filter_owasp: false
 
 model:
   architecture: lmgat_hcdfgat
   pretrained_lm: microsoft/unixcoder-base
   func_lm: microsoft/unixcoder-base
   add_func_tokens: true
-  num_classes: 85   # len(data/raw/bigvul/cwe_vocab.json)
+  num_classes: 11
   num_groups: 16
   active_heads: [binary, group, cwe]
 

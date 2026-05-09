@@ -62,11 +62,11 @@ data:
 
   # Keep only CWEs that appear in OWASP Top 10 (2025). Unioned with cwe_list/cwe_groups.
   # Support: multiclass mode only
-  filter_owasp_top10: false
+  filter_owasp: false
 
   # Keep only CWEs that appear in MITRE Top 25. Unioned with cwe_list/cwe_groups.
   # Support: multiclass mode only
-  filter_top25: false
+  filter_top25_dangerous: false
 
   # Cap graphs per class/CWE bucket during .pt build (0 = no cap).
   # Use to balance heavily skewed class distributions.
@@ -128,7 +128,7 @@ model:
   # Edge feature dimension injected into GATv2 attention computation.
   # Default 7 = one-hot CPG edge types (AST/CFG/CDG/DDG/PDG/CALL/REACHING_DEF).
   # Support: all lmgat* architectures
-  edge_dim: 18
+  edge_dim: 31
 
   # Number of output classes. 2 = binary (benign/vuln). 11 = 10 CWE + benign.
   # Must match the dataset class count (top_cwe + 1, or cwe_list length + 1).
@@ -344,6 +344,17 @@ train:
   # Use false for large decoder-only LMs (Jina) prone to OOM or bfloat16 instability.
   # Note: T5/codet5p encoder forward is always float32 regardless of this flag.
   use_amp: true
+
+  # Async DataLoader workers — overlap data loading with GPU compute.
+  # 0 = single-process (debug). 4 = recommended for SSD + GPU training.
+  num_workers: 4
+
+  # Samples pre-fetched per worker. Higher = more RAM, faster GPU utilisation.
+  prefetch_factor: 2
+
+  # torch.compile — fuse kernels for ~20-50% speedup (PyTorch 2.0+, CUDA only).
+  # Adds ~1 min compile overhead on first batch. Disable for debugging.
+  compile_model: false
 
 # ---------------------------------------------------------------------------
 # EWC-DR — Continual Learning (optional, omit entire section to disable)

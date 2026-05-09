@@ -1,7 +1,7 @@
 # configs/lmgat_hcdfgat/multiclass_titanvul_owasp.yaml — HC-DFGAT (Arch12) on TitanVul OWASP
 #
 # Dataset: lm_dataset_titanvul_multiclass_unixcoder-base_ft_f01075040_s1500r42_*.pt
-#   source=titanvul, filter_owasp_top10=true, max_per_class=1500, resample_seed=42
+#   source=titanvul, filter_owasp=true, max_per_class=1500, resample_seed=42
 #   max_nodes=3400 (TitanVul has larger functions than BigVul)
 #
 # Model: HC-DFGAT v1 best recipe applied to the new dataset
@@ -25,8 +25,8 @@ data:
   mode: multiclass
   max_nodes: 3400
   top_cwe: 0
-  filter_owasp_top10: true
-  filter_top25: false
+  filter_owasp: true
+  filter_top25_dangerous: false
   max_per_class: 1500
   resample_seed: 42
 
@@ -39,7 +39,7 @@ model:
   num_layers: 4
   dropout: 0.3
   heads: 4
-  edge_dim: 18
+  edge_dim: 31
   num_classes: 90        # titanvul OWASP filter: 89 CWE labels + benign
   num_groups: 16
   use_group_cond: true

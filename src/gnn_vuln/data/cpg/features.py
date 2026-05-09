@@ -175,7 +175,7 @@ def _extra_node_features(nodes: list[dict]) -> torch.Tensor:
         cst = str(n.get("controlStructureType", n.get("CONTROL_STRUCTURE_TYPE", ""))).upper()
         if cst:
             _check_enum("controlStructureType", cst, _CST_TO_IDX)
-        cst_vec = [0.0] * 12
+        cst_vec = [0.0] * 14  # 0=none, 1-13 for CST types
         cst_vec[_CST_TO_IDX.get(cst, 0)] = 1.0
 
         tfn = str(n.get("typeFullName", n.get("TYPE_FULL_NAME", ""))).strip()
@@ -204,7 +204,7 @@ def _extra_node_features(nodes: list[dict]) -> torch.Tensor:
         dt = str(n.get("dispatchType", n.get("DISPATCH_TYPE", ""))).upper()
         if dt:
             _check_enum("dispatchType", dt, _DISPATCH_VALS)
-        dt_vec = [0.0] * 3
+        dt_vec = [0.0] * 4  # 0=missing, 1=STATIC, 2=DYNAMIC, 3=INLINED
         dt_vec[_DISPATCH_IDX.get(dt, 0)] = 1.0
 
         is_var = 1.0 if str(n.get("isVariadic", n.get("IS_VARIADIC", "false"))).lower() == "true" else 0.0

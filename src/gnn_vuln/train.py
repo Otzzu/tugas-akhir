@@ -108,6 +108,14 @@ class TrainingSession:
         model = build_model(cfg, in_channels, self._active_heads).to(device)
         ewc   = self._setup_ewc(model, train_loader, in_channels)
 
+        # torch.compile — fuses kernels, ~20-50% speedup (PyTorch 2.0+, CUDA only)
+        if getattr(cfg.train, "compile_model", False) and device.type == "cuda":
+            try:
+                model = torch.compile(model, mode="reduce-overhead")
+                logger.info("torch.compile enabled (mode=reduce-overhead)")
+            except Exception as e:
+                logger.warning(f"torch.compile failed, skipping: {e}")
+
         use_amp, amp_dtype, scaler = self._setup_amp()
         total_steps = len(train_loader) * cfg.train.epochs
         optimizer, scheduler, step_per_batch = build_optimizer_and_scheduler(model, cfg, total_steps)
@@ -198,28 +206,38 @@ class TrainingSession:
             top_cwe=getattr(cfg.data, "top_cwe", 0),
             cwe_list=getattr(cfg.data, "cwe_list", None),
             cwe_groups=getattr(cfg.data, "cwe_groups", None),
-            filter_owasp_top10=getattr(cfg.data, "filter_owasp_top10", False),
-            filter_top25=getattr(cfg.data, "filter_top25", False),
+            filter_owasp=getattr(cfg.data, "filter_owasp", False),
+            filter_top25_dangerous=getattr(cfg.data, "filter_top25_dangerous", False),
             max_per_class=getattr(cfg.data, "max_per_class", 0),
             resample_seed=getattr(cfg.data, "resample_seed", 42),
         )
-        bs = cfg.train.batch_size
+        bs          = cfg.train.batch_size
+        num_workers = getattr(cfg.train, "num_workers",    4)
+        prefetch    = getattr(cfg.train, "prefetch_factor", 2)
+        pin_mem     = self.device.type == "cuda"
+        dl_kw = dict(
+            num_workers=num_workers,
+            pin_memory=pin_mem,
+            persistent_workers=num_workers > 0,
+            prefetch_factor=prefetch if num_workers > 0 else None,
+        )
+
         dataset = CodeBERTGraphDataset(source=getattr(cfg.data, "source", "bigvul"), **kwargs)
         if use_official:
             val_ds  = CodeBERTGraphDataset(source=source_val,  **kwargs)
             test_ds = CodeBERTGraphDataset(source=source_test, **kwargs)
             train_idx = list(range(len(dataset)))
             loaders = (
-                DataLoader(dataset, batch_size=bs, shuffle=True),
-                DataLoader(val_ds,  batch_size=bs),
-                DataLoader(test_ds, batch_size=bs),
+                DataLoader(dataset, batch_size=bs, shuffle=True, **dl_kw),
+                DataLoader(val_ds,  batch_size=bs, **dl_kw),
+                DataLoader(test_ds, batch_size=bs, **dl_kw),
             )
         else:
             train_idx, val_idx, test_idx = dataset.get_splits(seed=cfg.train.seed)
             loaders = (
-                DataLoader(dataset[train_idx], batch_size=bs, shuffle=True),
-                DataLoader(dataset[val_idx],   batch_size=bs),
-                DataLoader(dataset[test_idx],  batch_size=bs),
+                DataLoader(dataset[train_idx], batch_size=bs, shuffle=True, **dl_kw),
+                DataLoader(dataset[val_idx],   batch_size=bs, **dl_kw),
+                DataLoader(dataset[test_idx],  batch_size=bs, **dl_kw),
             )
         return dataset, loaders, train_idx
 

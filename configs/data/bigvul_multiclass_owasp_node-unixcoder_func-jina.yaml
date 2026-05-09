@@ -5,15 +5,15 @@ data:
   top_cwe: 0
   max_per_class: 1200
   resample_seed: 42
-  filter_top25: false
-  filter_owasp_top10: true
+  filter_top25_dangerous: false
+  filter_owasp: true
 
 model:
   architecture: lmgat_hcdfgat
   pretrained_lm: microsoft/unixcoder-base
   func_lm: jinaai/jina-code-embeddings-0.5b
   add_func_tokens: true
-  num_classes: 85   # len(data/raw/bigvul/cwe_vocab.json)
+  num_classes: 47  # OWASP-filtered BigVul CWEs + benign
   num_groups: 16
   active_heads: [binary, group, cwe]
   matryoshka_dim: 512

@@ -6,8 +6,8 @@ data:
   top_cwe: 0        # 0 = no CWE filtering; all CWEs in CWE_GROUP_MAP are included
   max_per_class: 2600   # cap 3000 per GROUP bucket (not per CWE)
   resample_seed: 42
-  filter_owasp_top10: true
-  filter_top25: false
+  filter_owasp: true
+  filter_top25_dangerous: false
 
 
 model:

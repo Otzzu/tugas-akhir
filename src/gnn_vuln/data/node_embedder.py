@@ -5,17 +5,22 @@ from transformers import AutoModel, AutoTokenizer
 
 # CPG node type vocabulary — all Joern/MegaVul node labels + UNKNOWN fallback
 NODE_TYPES = [
+    "ANNOTATION",
     "BINDING",
     "BLOCK",
     "CALL",
+    "CLOSURE_BINDING",
     "COMMENT",
     "CONTROL_STRUCTURE",
+    "DEPENDENCY",
     "FIELD_IDENTIFIER",
     "FILE",
     "IDENTIFIER",
+    "IMPORT",
     "JUMP_TARGET",
     "LITERAL",
     "LOCAL",
+    "MEMBER",
     "META_DATA",
     "METHOD",
     "METHOD_PARAMETER_IN",
@@ -26,8 +31,10 @@ NODE_TYPES = [
     "NAMESPACE",
     "NAMESPACE_BLOCK",
     "RETURN",
+    "TAG",
     "TYPE",
     "TYPE_DECL",
+    "TYPE_REF",
     "UNKNOWN",  # fallback for unseen labels
 ]
 NODE_TYPE_TO_IDX = {t: i for i, t in enumerate(NODE_TYPES)}
@@ -37,13 +44,13 @@ NODE_TYPE_TO_IDX = {t: i for i, t in enumerate(NODE_TYPES)}
 #   + is_external(1) + ctrl_struct_type(12 one-hot) + has_type(1) + type_feats(3)
 #   + eval_strategy(4 one-hot) + arg_idx(1) + dispatch_type(3 one-hot)
 #   + is_variadic(1) + span_normalized(1)
-NON_LM_FEAT_DIM = 24 + 3 + 1 + 1 + 12 + 1 + 3 + 4 + 1 + 3 + 1 + 1  # = 55
+NON_LM_FEAT_DIM = 31 + 3 + 1 + 1 + 14 + 1 + 3 + 4 + 1 + 4 + 1 + 1  # = 65
 
 # Default LM embedding dim (CodeBERT / UniXcoder / GraphCodeBERT)
 CODEBERT_DIM = 768
 
 # Default total node feature dim (CodeBERT). Changes with different LMs.
-NODE_FEAT_DIM = NON_LM_FEAT_DIM + CODEBERT_DIM  # = 823
+NODE_FEAT_DIM = NON_LM_FEAT_DIM + CODEBERT_DIM  # = 833
 
 
 def compute_node_feat_dim(lm_dim: int) -> int:
@@ -71,14 +78,35 @@ class LMNodeEmbedder:
         device: str = "cpu",
         max_length: int = 128,
         matryoshka_dim: int | None = None,
+        use_flash_attention: bool = False,
     ):
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-        self.model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
+
+        # Flash Attention 2 — requires flash-attn package + Ampere+ GPU + half precision
+        attn_impl = None
+        if use_flash_attention and device != "cpu":
+            try:
+                import flash_attn  # noqa: F401
+                attn_impl = "flash_attention_2"
+            except ImportError:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "use_flash_attention=True but flash-attn not installed. "
+                    "Falling back to standard attention. Install with: pip install flash-attn"
+                )
+
+        load_kwargs: dict = {"trust_remote_code": True}
+        if attn_impl:
+            load_kwargs["attn_implementation"] = attn_impl
+            load_kwargs["torch_dtype"] = torch.bfloat16
+
+        self.model = AutoModel.from_pretrained(model_name, **load_kwargs)
         self.model.eval()
         self.device = torch.device(device)
         self.model.to(self.device)
         self.max_length = max_length
         self._use_amp = self.device.type == "cuda"
+        self._flash = attn_impl == "flash_attention_2"
         self.matryoshka_dim = matryoshka_dim
 
         # Resolve actual LM output dimension
@@ -102,7 +130,9 @@ class LMNodeEmbedder:
             padding=True,
         )
         inputs = {k: v.to(self.device, non_blocking=True) for k, v in inputs.items()}
-        with torch.amp.autocast("cuda", enabled=self._use_amp):
+        # Flash Attention runs in bfloat16 natively — no separate AMP needed
+        amp_enabled = self._use_amp and not self._flash
+        with torch.amp.autocast("cuda", enabled=amp_enabled):
             out = self.model(**inputs)
         cls = out.last_hidden_state[:, 0, :].float().cpu()  # (N, full_dim)
         if self.matryoshka_dim and self.matryoshka_dim < cls.shape[1]:

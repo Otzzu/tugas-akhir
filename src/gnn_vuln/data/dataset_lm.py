@@ -58,7 +58,10 @@ from torch_geometric.data import Data, InMemoryDataset
 from tqdm import tqdm
 
 from gnn_vuln.data.graph_builder_lm import build_from_parsed, build_func_text, parse_cpg
-from gnn_vuln.data.cwe_taxonomy import CWE_GROUP_MAP, GROUP_VOCAB, _GROUP_TO_CWES, _expand_cwe_filter
+from gnn_vuln.data.cwe_taxonomy import (
+    CWE_GROUP_MAP, GROUP_VOCAB, _GROUP_TO_CWES, _expand_cwe_filter,
+    OWASP_GROUP_MAP, OWASP_VOCAB, OWASP_LABELS, _OWASP_TO_CWES,
+)
 from gnn_vuln.data.node_embedder import LMNodeEmbedder
 
 def _fix_special_tokens_map(v):
@@ -141,11 +144,11 @@ def _get_cwe_set_from_xml(filepath: Path) -> set[str]:
         logger.warning(f"Failed to parse {filepath}: {e}")
         return set()
 
-def _filter_suffix(cwe_list: list[str] | None, cwe_groups: list[str] | None, filter_owasp_top10: bool = False, filter_top25: bool = False) -> str:
-    if not cwe_list and not cwe_groups and not filter_owasp_top10 and not filter_top25:
+def _filter_suffix(cwe_list: list[str] | None, cwe_groups: list[str] | None, filter_owasp: bool = False, filter_top25_dangerous: bool = False) -> str:
+    if not cwe_list and not cwe_groups and not filter_owasp and not filter_top25_dangerous:
         return ""
     key = json.dumps(
-        {"l": sorted(cwe_list or []), "g": sorted(cwe_groups or []), "owasp": filter_owasp_top10, "top25": filter_top25},
+        {"l": sorted(cwe_list or []), "g": sorted(cwe_groups or []), "owasp": filter_owasp, "top25": filter_top25_dangerous},
         sort_keys=True,
     )
     return "_f" + hashlib.md5(key.encode()).hexdigest()[:8]
@@ -335,6 +338,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
         root: str | Path = "data",
         max_nodes: int = 500,
         embedder_device: str = "cpu",
+        use_flash_attention: bool = False,
         mode: str = "binary",
         source: str = "bigvul",
         pretrained_lm: str = "microsoft/codebert-base",
@@ -344,8 +348,8 @@ class CodeBERTGraphDataset(InMemoryDataset):
         top_cwe: int = 0,
         cwe_list: list[str] | None = None,
         cwe_groups: list[str] | None = None,
-        filter_owasp_top10: bool = False,
-        filter_top25: bool = False,
+        filter_owasp: bool = False,
+        filter_top25_dangerous: bool = False,
         max_per_class: int = 0,
         resample_seed: int = 42,
         func_max_length: int = 512,
@@ -357,6 +361,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
         self._func_max_length = func_max_length
         self.max_nodes = max_nodes
         self._embedder_device = embedder_device
+        self._use_flash_attention = use_flash_attention
         self._pretrained_lm = pretrained_lm
         self._add_func_tokens = add_func_tokens
         self._func_lm_source = func_lm_source
@@ -364,28 +369,30 @@ class CodeBERTGraphDataset(InMemoryDataset):
         self._top_cwe = top_cwe
         self._cwe_list = list(cwe_list) if cwe_list else []
         self._cwe_groups = cwe_groups
-        self._filter_owasp_top10 = filter_owasp_top10
-        self._filter_top25 = filter_top25
+        self._filter_owasp = filter_owasp
+        self._filter_top25_dangerous = filter_top25_dangerous
         self._max_per_class = max_per_class
         self._resample_seed = resample_seed
         self._lm_short = pretrained_lm.split("/")[-1]
         self._func_lm = func_lm if func_lm else pretrained_lm
         self._func_short = self._func_lm.split("/")[-1]
 
-        # Load dynamic XML filters
+        # Load dynamic XML filters — union (no duplicates)
         cwe_dir = Path(root).parent / "data" / "cwe"
-        if filter_owasp_top10:
-            self._cwe_list.extend(_get_cwe_set_from_xml(cwe_dir / "owasptop10.xml"))
-        if filter_top25:
-            self._cwe_list.extend(_get_cwe_set_from_xml(cwe_dir / "top25.xml"))
+        cwe_set = set(self._cwe_list)
+        if filter_owasp:
+            cwe_set |= _get_cwe_set_from_xml(cwe_dir / "owasptop10.xml")
+        if filter_top25_dangerous:
+            cwe_set |= _get_cwe_set_from_xml(cwe_dir / "top25.xml")
+        self._cwe_list = sorted(cwe_set)  # deterministic order
 
         # Compute effective CWE filter set (None = no filter)
         self._effective_cwes = _expand_cwe_filter(self._cwe_list if self._cwe_list else None, cwe_groups)
-        self._fsuffix = _filter_suffix(self._cwe_list if self._cwe_list else None, cwe_groups, filter_owasp_top10, filter_top25)
+        self._fsuffix = _filter_suffix(self._cwe_list if self._cwe_list else None, cwe_groups, filter_owasp, filter_top25_dangerous)
 
         source_dir = Path(root) / "raw" / source
         has_vocab = (source_dir / "cwe_vocab.json").exists()
-        if mode in ("multiclass", "group") and not has_vocab:
+        if mode in ("multiclass", "group", "owasp") and not has_vocab:
             raise RuntimeError(
                 f"mode='{mode}' but cwe_vocab.json not found under {source_dir}. "
                 "Run prepare_dataset.py --top-cwe N to generate it."
@@ -528,21 +535,25 @@ class CodeBERTGraphDataset(InMemoryDataset):
         # ------------------------------------------------------------------
         # Load vocabulary
         # ------------------------------------------------------------------
-        is_multi = self._mode in ("multiclass", "group")
+        is_multi = self._mode in ("multiclass", "group", "owasp")
         if is_multi:
             with open(vocab_path, encoding="utf-8") as f:
                 cwe_vocab: dict[str, int] = json.load(f)
+
+            # Step 1: filter_owasp / filter_top25_dangerous first (XML-based semantic filter)
+            # This narrows to only OWASP or MITRE Top25 CWEs before any count-based trimming
+            if self._effective_cwes is not None:
+                cwe_vocab = {
+                    k: v for k, v in cwe_vocab.items()
+                    if k == "benign" or k in self._effective_cwes
+                }
+
+            # Step 2: top_cwe — take top N by frequency rank WITHIN the filtered set
+            # vocab indices are frequency-ranked (lower = more frequent), so v <= top_cwe
             if self._top_cwe > 0:
-                cwe_vocab = {k: v for k, v in cwe_vocab.items() if v <= self._top_cwe}
+                cwe_vocab = {k: v for k, v in cwe_vocab.items() if k == "benign" or v <= self._top_cwe}
         else:
             cwe_vocab = {}
-
-        # Apply cwe_list/cwe_groups filter to vocab (for multiclass/group)
-        if is_multi and self._effective_cwes is not None:
-            cwe_vocab = {
-                k: v for k, v in cwe_vocab.items()
-                if k == "benign" or k in self._effective_cwes
-            }
 
         # Reindex to contiguous 0..N-1 — preserves sort order by original index
         # (benign stays 0; ordering of CWE classes unchanged; safe even when already contiguous)
@@ -638,8 +649,10 @@ class CodeBERTGraphDataset(InMemoryDataset):
                     logger.info(f"    {cwe_name}: {len(grp_entries)} files → {cache_key}.pt")
 
             else:
-                # group mode: group by vulnerability group name → one cache file per group
-                logger.info(f"  [{cls_name}] grouping {len(cpg_files)} files by group…")
+                # group / owasp mode: group by category → one cache file per category
+                group_map = OWASP_GROUP_MAP if self._mode == "owasp" else CWE_GROUP_MAP
+                mode_label = "OWASP category" if self._mode == "owasp" else "vulnerability group"
+                logger.info(f"  [{cls_name}] grouping {len(cpg_files)} files by {mode_label}…")
                 grp_buckets: dict[str, list[tuple[Path, int, list[int], str, str]]] = {}
                 for gf in cpg_files:
                     meta_path = gf.parent / f"{gf.stem}.meta.json"
@@ -648,9 +661,9 @@ class CodeBERTGraphDataset(InMemoryDataset):
                     with open(meta_path) as mf:
                         meta = json.load(mf)
                     cwe_str = _parse_cwe_string(meta.get("cwe", ""))
-                    group_name = CWE_GROUP_MAP.get(cwe_str, "")
+                    group_name = group_map.get(cwe_str, "")
                     if not group_name:
-                        continue  # skip CWEs not in our group map
+                        continue
                     if self._effective_cwes is not None and cwe_str not in self._effective_cwes:
                         continue
                     if is_multi and cwe_str not in cwe_vocab:
@@ -659,7 +672,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
                     raw_func = meta.get("raw_func", "")
                     row_id = meta.get("id", -1)
                     grp_buckets.setdefault(group_name, []).append(
-                        (gf, -1, flaw_lines, cwe_str, raw_func, row_id)  # label assigned later
+                        (gf, -1, flaw_lines, cwe_str, raw_func, row_id)
                     )
 
                 for group_name, grp_entries in sorted(grp_buckets.items()):
@@ -672,17 +685,24 @@ class CodeBERTGraphDataset(InMemoryDataset):
         # ------------------------------------------------------------------
         group_remap: dict[str, int] | None = None
         group_class_names: list[str] | None = None
-        if self._mode == "group":
-            # Collect groups present in work_units
+        if self._mode in ("group", "owasp"):
             present_groups = sorted(
                 {k.replace("vuln_", "") for k, _ in work_units if k.startswith("vuln_")}
             )
-            # Contiguous: 0=benign, 1..N = groups sorted alphabetically
-            group_remap = {"benign": 0}
-            for i, g in enumerate(present_groups, start=1):
-                group_remap[g] = i
-            group_class_names = ["benign"] + present_groups
-            logger.info(f"Group mode: {len(group_class_names)} classes: {group_class_names}")
+            if self._mode == "owasp":
+                # Use fixed OWASP_VOCAB indices (A01-A10) instead of alphabetical
+                group_remap = {"benign": 0}
+                for g in present_groups:
+                    group_remap[g] = OWASP_VOCAB.get(g, len(group_remap))
+                group_class_names = ["benign"] + present_groups
+                logger.info(f"OWASP mode: {len(group_class_names)} categories: {group_class_names}")
+            else:
+                # Contiguous: 0=benign, 1..N = groups sorted alphabetically
+                group_remap = {"benign": 0}
+                for i, g in enumerate(present_groups, start=1):
+                    group_remap[g] = i
+                group_class_names = ["benign"] + present_groups
+                logger.info(f"Group mode: {len(group_class_names)} classes: {group_class_names}")
 
         # ------------------------------------------------------------------
         # Derive class_names for multiclass mode
@@ -747,6 +767,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
             embedder = LMNodeEmbedder(
                 model_name=self._pretrained_lm,
                 device=self._embedder_device,
+                use_flash_attention=self._use_flash_attention,
             )
 
         tokenizer = None

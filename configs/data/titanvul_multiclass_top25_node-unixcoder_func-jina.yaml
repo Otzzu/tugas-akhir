@@ -5,8 +5,8 @@ data:
   top_cwe: 0
   max_per_class: 1500
   resample_seed: 42
-  filter_top25: true
-  filter_owasp_top10: false
+  filter_top25_dangerous: true
+  filter_owasp: false
 
 model:
   architecture: lmgat_hcdfgat

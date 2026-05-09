@@ -7,16 +7,20 @@
 # Flags:
 #   --delete-pt        Delete .pt after upload (default: keep).
 #   --force-rebuild    Rebuild .pt from scratch.
-#   --clear-after N    After processing the Nth config, delete ALL local .pt files
-#                      before continuing. Useful when configs share a node LM:
-#                      process group-1 (same node LM) → upload → clear → process group-2.
+#   --clear-after N    Clear ALL local .pt after the Nth config.
+#   --clear-every N    Clear ALL local .pt after every Nth config (repeating).
+#                      Use to free space between node-LM groups.
 #
-# Example — 4 configs, 2 per node LM, clear between groups:
-#   bash scripts/cloud_process_datasets.sh --clear-after 2 \
-#     configs/data/titanvul_top25.yaml \
-#     configs/data/titanvul_top25_codet5p.yaml \
-#     configs/data/titanvul_top25_codet5p_node.yaml \
-#     configs/data/titanvul_top25_codet5p_full.yaml
+# Example — 8 configs, 2 per node-LM per filter, clear every 2:
+#   bash scripts/cloud_process_datasets.sh --clear-every 2 \
+#     configs/data/bigvul_multiclass_top25_node-unixcoder_func-unixcoder.yaml \
+#     configs/data/bigvul_multiclass_top25_node-unixcoder_func-codet5p.yaml \
+#     configs/data/bigvul_multiclass_top25_node-codet5p_func-unixcoder.yaml \
+#     configs/data/bigvul_multiclass_top25_node-codet5p_func-codet5p.yaml \
+#     configs/data/bigvul_multiclass_top10_node-unixcoder_func-unixcoder.yaml \
+#     configs/data/bigvul_multiclass_top10_node-unixcoder_func-codet5p.yaml \
+#     configs/data/bigvul_multiclass_top10_node-codet5p_func-unixcoder.yaml \
+#     configs/data/bigvul_multiclass_top10_node-codet5p_func-codet5p.yaml
 
 set -euo pipefail
 
@@ -27,7 +31,8 @@ PT_DIR="data/processed"
 TS=$(date +"%Y%m%d_%H%M%S")
 DELETE_PT=false
 FORCE_REBUILD=false
-CLEAR_AFTER=0   # 0 = disabled
+CLEAR_AFTER=0   # clear once at index N (0 = disabled)
+CLEAR_EVERY=0   # clear every N configs (0 = disabled)
 
 # ── Parse flags ────────────────────────────────────────────────────────────────
 CONFIGS=()
@@ -39,6 +44,7 @@ for i in "${!args[@]}"; do
         --delete-pt)     DELETE_PT=true ;;
         --force-rebuild) FORCE_REBUILD=true ;;
         --clear-after)   CLEAR_AFTER="${args[$((i+1))]}"; skip_next=true ;;
+        --clear-every)   CLEAR_EVERY="${args[$((i+1))]}"; skip_next=true ;;
         *)               CONFIGS+=("${args[$i]}") ;;
     esac
 done
@@ -118,9 +124,13 @@ for CONFIG in "$@"; do
             stem=$(basename "$pt_file" .pt)
             archive="${stem}_${TS}.tar.gz"
             echo "Compressing $pt_file → $archive ..."
-            tar -cf - -C "$PT_DIR" "$(basename "$pt_file")" \
-                | pv -s "$(du -sb "$pt_file" | awk '{print $1}')" \
-                | gzip > "$archive"
+            if command -v pv &>/dev/null; then
+                tar -cf - -C "$PT_DIR" "$(basename "$pt_file")" \
+                    | pv -s "$(du -sb "$pt_file" | awk '{print $1}')" \
+                    | gzip > "$archive"
+            else
+                tar -czf "$archive" -C "$PT_DIR" "$(basename "$pt_file")"
+            fi
             echo "Uploading $archive → $remote_dest ..."
             rclone copy "$archive" "$remote_dest" --progress
             rm -f "$archive"
@@ -131,14 +141,18 @@ for CONFIG in "$@"; do
         done
     fi
 
-    # --clear-after N: delete ALL local .pt after the Nth config to free disk space
-    if [[ "$CLEAR_AFTER" -gt 0 && "$config_idx" -eq "$CLEAR_AFTER" ]]; then
+    # Clear .pt files: --clear-after N (once) or --clear-every N (repeating)
+    should_clear=false
+    [[ "$CLEAR_AFTER" -gt 0 && "$config_idx" -eq "$CLEAR_AFTER" ]] && should_clear=true
+    [[ "$CLEAR_EVERY" -gt 0 && $(( config_idx % CLEAR_EVERY )) -eq 0 ]] && should_clear=true
+
+    if $should_clear; then
         echo ""
-        echo "=== --clear-after $CLEAR_AFTER reached — deleting all local .pt files ==="
+        echo "=== Clearing local .pt files after config $config_idx ==="
         local_pts=$(ls "$PT_DIR"/*.pt 2>/dev/null || true)
         if [[ -n "$local_pts" ]]; then
             echo "$local_pts" | xargs rm -f
-            echo "Cleared: $local_pts"
+            echo "Cleared $(echo "$local_pts" | wc -l) .pt file(s)"
         else
             echo "(no .pt files to clear)"
         fi

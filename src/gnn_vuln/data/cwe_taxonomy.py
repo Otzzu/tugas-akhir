@@ -216,6 +216,69 @@ for _cwe, _grp in CWE_GROUP_MAP.items():
     _GROUP_TO_CWES.setdefault(_grp, []).append(_cwe)
 
 
+# ---------------------------------------------------------------------------
+# OWASP Top 10 (2025) group mapping
+# CWE → OWASP category short name (A01-A10)
+# ---------------------------------------------------------------------------
+OWASP_GROUP_MAP: dict[str, str] = {
+    # A01 — Broken Access Control
+    "CWE-200": "A01", "CWE-22":  "A01", "CWE-284": "A01", "CWE-352": "A01",
+    "CWE-601": "A01", "CWE-639": "A01", "CWE-732": "A01", "CWE-863": "A01",
+    "CWE-862": "A01", "CWE-918": "A01", "CWE-269": "A01", "CWE-59":  "A01",
+    "CWE-275": "A01", "CWE-377": "A01", "CWE-378": "A01", "CWE-214": "A01",
+    "CWE-425": "A01", "CWE-538": "A01", "CWE-359": "A01", "CWE-21":  "A01",
+    # A02 — Cryptographic Failures
+    "CWE-327": "A02", "CWE-347": "A02", "CWE-916": "A02", "CWE-312": "A02",
+    "CWE-335": "A02", "CWE-922": "A02", "CWE-321": "A02", "CWE-526": "A02",
+    # A03 — Injection
+    "CWE-79":  "A03", "CWE-89":  "A03", "CWE-78":  "A03", "CWE-77":  "A03",
+    "CWE-74":  "A03", "CWE-94":  "A03", "CWE-434": "A03", "CWE-80":  "A03",
+    "CWE-150": "A03", "CWE-829": "A03", "CWE-917": "A03", "CWE-1236":"A03",
+    # A04 — Insecure Design
+    "CWE-362": "A04", "CWE-269": "A04",
+    # A05 — Security Misconfiguration
+    "CWE-20":  "A05", "CWE-1321":"A05", "CWE-915": "A05", "CWE-178": "A05",
+    "CWE-470": "A05",
+    # A06 — Vulnerable and Outdated Components
+    "CWE-1103":"A06",
+    # A07 — Authentication Failures
+    "CWE-287": "A07", "CWE-295": "A07", "CWE-613": "A07", "CWE-384": "A07",
+    "CWE-306": "A07", "CWE-640": "A07", "CWE-521": "A07",
+    # A08 — Software and Data Integrity Failures
+    "CWE-502": "A08",
+    # A09 — Security Logging and Monitoring Failures
+    # (rare in code-level CWE datasets — no common mappings)
+    # A10 — Mishandling of Exceptional Conditions
+    "CWE-703": "A10", "CWE-369": "A10", "CWE-476": "A10", "CWE-392": "A10",
+}
+
+# OWASP category labels (for display)
+OWASP_LABELS: dict[str, str] = {
+    "A01": "Broken Access Control",
+    "A02": "Cryptographic Failures",
+    "A03": "Injection",
+    "A04": "Insecure Design",
+    "A05": "Security Misconfiguration",
+    "A06": "Vulnerable and Outdated Components",
+    "A07": "Authentication Failures",
+    "A08": "Software and Data Integrity Failures",
+    "A09": "Security Logging and Monitoring Failures",
+    "A10": "Mishandling of Exceptional Conditions",
+}
+
+# Fixed OWASP vocab (0 = benign, A01-A10 = 1-10)
+OWASP_VOCAB: dict[str, int] = {
+    "benign": 0,
+    "A01": 1, "A02": 2, "A03": 3, "A04": 4, "A05": 5,
+    "A06": 6, "A07": 7, "A08": 8, "A09": 9, "A10": 10,
+}
+
+# Reverse: OWASP category → CWEs
+_OWASP_TO_CWES: dict[str, list[str]] = {}
+for _cwe, _owasp in OWASP_GROUP_MAP.items():
+    _OWASP_TO_CWES.setdefault(_owasp, []).append(_cwe)
+
+
 def _expand_cwe_filter(
     cwe_list: list[str] | None,
     cwe_groups: list[str] | None,

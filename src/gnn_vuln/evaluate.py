@@ -291,8 +291,8 @@ def main() -> None:
         top_cwe=getattr(cfg.data, "top_cwe", 0),
         cwe_list=getattr(cfg.data, "cwe_list", None),
         cwe_groups=getattr(cfg.data, "cwe_groups", None),
-        filter_owasp_top10=getattr(cfg.data, "filter_owasp_top10", False),
-        filter_top25=getattr(cfg.data, "filter_top25", False),
+        filter_owasp=getattr(cfg.data, "filter_owasp", False),
+        filter_top25_dangerous=getattr(cfg.data, "filter_top25_dangerous", False),
         max_per_class=getattr(cfg.data, "max_per_class", 0),
         resample_seed=getattr(cfg.data, "resample_seed", 42),
     )

@@ -1,22 +1,21 @@
 data:
-  source: megavul
+  source: bigvul
   mode: multiclass
-  max_nodes: 2700
+  max_nodes: 3600
   top_cwe: 0
-  max_per_class: 2300
+  max_per_class: 1200
   resample_seed: 42
-  filter_top25_dangerous: true
-  filter_owasp: false
+  filter_top25_dangerous: false
+  filter_owasp: true
 
 model:
   architecture: lmgat_hcdfgat
   pretrained_lm: microsoft/unixcoder-base
-  func_lm: jinaai/jina-code-embeddings-0.5b
+  func_lm: microsoft/unixcoder-base
   add_func_tokens: true
-  num_classes: 155
+  num_classes: 47  # OWASP-filtered BigVul CWEs + benign
   num_groups: 16
   active_heads: [binary, group, cwe]
-  matryoshka_dim: 512
 
 train:
   device: cuda
