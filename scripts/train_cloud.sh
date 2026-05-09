@@ -207,22 +207,27 @@ download_dataset() {
         return 0
     fi
 
-    # Try 2: .tar.gz in data/processed/ — match by prefix (handles timestamp suffix)
+    # Try 2: .tar.gz in data/processed/<source>/ subdir (uploaded by cloud_process_datasets.sh)
+    # Dataset names follow lm_dataset_<source>_... so extract source for subdir lookup.
     local remote_proc="${GDRIVE_REMOTE}/data/processed"
-    local remote_tar
-    remote_tar=$(rclone lsf "$remote_proc" 2>/dev/null | grep "^${dataset}.*\.tar\.gz$" | sort | tail -1)
-    if [[ -n "$remote_tar" ]]; then
-        local local_tar="${PROCESSED_DIR}/${remote_tar}"
-        info "Found: ${remote_proc}/${remote_tar}"
-        rclone copy "${remote_proc}/${remote_tar}" "$PROCESSED_DIR" --progress
-        tar -xzf "$local_tar" -C "$PROCESSED_DIR"
-        rm -f "$local_tar"
-        success "Dataset ready: $dataset"
-        DOWNLOADED_DATASETS+=("$dataset")
-        return 0
-    fi
+    local source
+    source=$(echo "$dataset" | sed 's/lm_dataset_\([^_]*\)_.*/\1/')
+    local remote_tar remote_subdir
+    for remote_subdir in "${remote_proc}/${source}" "${remote_proc}"; do
+        remote_tar=$(rclone lsf "$remote_subdir" 2>/dev/null | grep "^${dataset}.*\.tar\.gz$" | sort | tail -1 || true)
+        if [[ -n "$remote_tar" ]]; then
+            local local_tar="${PROCESSED_DIR}/${remote_tar}"
+            info "Found: ${remote_subdir}/${remote_tar}"
+            rclone copy "${remote_subdir}/${remote_tar}" "$PROCESSED_DIR" --progress
+            tar -xzf "$local_tar" -C "$PROCESSED_DIR"
+            rm -f "$local_tar"
+            success "Dataset ready: $dataset"
+            DOWNLOADED_DATASETS+=("$dataset")
+            return 0
+        fi
+    done
 
-    error "Dataset not found on gdrive: $dataset (tried zip at root and tar.gz in data/processed/)"
+    error "Dataset not found on gdrive: $dataset (tried zip at root, tar.gz in ${remote_proc}/${source}/ and ${remote_proc}/)"
     exit 1
 }
 

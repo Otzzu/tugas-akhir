@@ -1,0 +1,50 @@
+data:
+  source: bigvul
+  mode: multiclass
+  max_nodes: 3600
+  top_cwe: 10
+  max_per_class: 2200
+  resample_seed: 42
+
+model:
+  architecture: lmgat_codebert_mtl
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 11
+  num_groups: 16
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  use_group_cond: true
+  group_loss_weight: 0.3
+  binary_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: false
+  use_edge_emb: false
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 12
+  lr: 0.001
+  lm_lr: 0.00001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.0001
+  patience: 25
+  early_stop_metric: f1
+  save_last_every: 10
+  use_class_weights: true
+  focal_loss_gamma: 2.0
+  livable_loss: true
+  device: cuda
+  use_amp: true
+  use_flash_attention: true
+  num_workers: 4
+  prefetch_factor: 2
