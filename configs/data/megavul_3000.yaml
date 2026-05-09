@@ -15,3 +15,7 @@ model:
   num_classes: 155
   num_groups: 16
   active_heads: [binary, group, cwe]
+
+train:
+  use_flash_attention: true
+  compile_model: true

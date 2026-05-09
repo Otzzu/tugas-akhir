@@ -101,6 +101,7 @@ def main() -> None:
         resample_seed=resample_seed,
         func_max_length=args.max_length,
         force_rebuild=args.force_rebuild,
+        use_flash_attention=getattr(cfg.train, "use_flash_attention", False),
     )
 
     print(f"\nDone: {len(dataset)} graphs cached.")

@@ -88,6 +88,9 @@ $UVP \
 echo "=== [6/6] Installing project package ==="
 $UVP -e .
 
+echo "=== [+] Installing flash-attn (optional, CUDA-only — skips on failure) ==="
+$UVP flash-attn --no-build-isolation || echo "    flash-attn install failed — skipping (training will use standard attention)"
+
 echo ""
 echo "=== Verification ==="
 $PYBIN -c "

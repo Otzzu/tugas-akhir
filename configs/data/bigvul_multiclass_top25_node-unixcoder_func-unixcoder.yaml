@@ -19,3 +19,7 @@ model:
 
 train:
   device: cuda
+
+train:
+  use_flash_attention: true
+  compile_model: true
