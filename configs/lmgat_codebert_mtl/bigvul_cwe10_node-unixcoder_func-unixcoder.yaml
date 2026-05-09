@@ -32,6 +32,7 @@ train:
   seed: 42
   epochs: 100
   batch_size: 12
+  grad_accum_steps: 4
   lr: 0.001
   lm_lr: 0.00001
   warmup_ratio: 0.1

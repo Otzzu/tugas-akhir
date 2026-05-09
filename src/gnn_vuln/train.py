@@ -120,6 +120,7 @@ class TrainingSession:
         total_steps = len(train_loader) * cfg.train.epochs
         optimizer, scheduler, step_per_batch = build_optimizer_and_scheduler(model, cfg, total_steps)
 
+        grad_accum_steps = getattr(cfg.train, "grad_accum_steps", 1)
         trainer = Trainer(
             model=model, optimizer=optimizer, scheduler=scheduler,
             step_per_batch=step_per_batch, device=device,
@@ -128,6 +129,7 @@ class TrainingSession:
             group_loss_weight=self._group_loss_weight, binary_loss_weight=self._binary_loss_weight,
             supcon_fn=supcon_fn, supcon_weight=self._supcon_weight,
             use_amp=use_amp, amp_dtype=amp_dtype, scaler=scaler, ewc=ewc,
+            grad_accum_steps=grad_accum_steps,
         )
         trainer.set_grad_clip(self._grad_clip)
 

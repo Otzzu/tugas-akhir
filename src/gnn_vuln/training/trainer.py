@@ -63,6 +63,7 @@ class Trainer:
         amp_dtype: torch.dtype = torch.float16,
         scaler: GradScaler | None = None,
         ewc=None,   # EWCDR | None
+        grad_accum_steps: int = 1,
     ):
         self.model              = model
         self.optimizer          = optimizer
@@ -81,6 +82,7 @@ class Trainer:
         self.amp_dtype          = amp_dtype
         self.scaler             = scaler
         self.ewc                = ewc
+        self.grad_accum_steps   = max(1, grad_accum_steps)
 
     # ── Forward ──────────────────────────────────────────────────────────────
 
@@ -190,33 +192,44 @@ class Trainer:
     ) -> float:
         self.model.train()
         total_loss = 0.0
+        accum = self.grad_accum_steps
+        self.optimizer.zero_grad()
+
         pbar = tqdm(loader, desc=f"  Train {epoch:03d}/{total_epochs}", unit="batch", leave=False)
 
-        for batch in pbar:
+        for step, batch in enumerate(pbar):
             batch = batch.to(self.device)
-            self.optimizer.zero_grad()
+            is_last = (step == len(loader) - 1)
+            should_step = ((step + 1) % accum == 0) or is_last
 
             with autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.use_amp):
                 _, loss = self._forward(batch, class_weight)
 
+            # Scale loss so gradient magnitude is independent of accum_steps
+            loss = loss / accum
+
             if self.use_amp and self.scaler is not None:
                 self.scaler.scale(loss).backward()
-                if hasattr(self, "_grad_clip") and self._grad_clip > 0.0:
-                    self.scaler.unscale_(self.optimizer)
-                    nn.utils.clip_grad_norm_(self.model.parameters(), self._grad_clip)
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
+                if should_step:
+                    if hasattr(self, "_grad_clip") and self._grad_clip > 0.0:
+                        self.scaler.unscale_(self.optimizer)
+                        nn.utils.clip_grad_norm_(self.model.parameters(), self._grad_clip)
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                    self.optimizer.zero_grad()
             else:
                 loss.backward()
-                if hasattr(self, "_grad_clip") and self._grad_clip > 0.0:
-                    nn.utils.clip_grad_norm_(self.model.parameters(), self._grad_clip)
-                self.optimizer.step()
+                if should_step:
+                    if hasattr(self, "_grad_clip") and self._grad_clip > 0.0:
+                        nn.utils.clip_grad_norm_(self.model.parameters(), self._grad_clip)
+                    self.optimizer.step()
+                    self.optimizer.zero_grad()
 
-            if self.step_per_batch:
+            if self.step_per_batch and should_step:
                 self.scheduler.step()
 
-            total_loss += loss.item() * batch.num_graphs
-            pbar.set_postfix(loss=f"{loss.item():.4f}")
+            total_loss += loss.item() * accum * batch.num_graphs
+            pbar.set_postfix(loss=f"{loss.item() * accum:.4f}")
 
         return total_loss / len(loader.dataset)
 
