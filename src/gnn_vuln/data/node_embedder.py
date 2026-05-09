@@ -107,7 +107,21 @@ class LMNodeEmbedder:
             _cfg.is_decoder = False
         load_kwargs["config"] = _cfg
 
-        self.model = AutoModel.from_pretrained(model_name, **load_kwargs)
+        try:
+            self.model = AutoModel.from_pretrained(model_name, **load_kwargs)
+        except (ValueError, NotImplementedError) as e:
+            if attn_impl and ("Flash Attention" in str(e) or "does not support" in str(e)):
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"{model_name} does not support Flash Attention 2 — falling back to standard attention. ({e})"
+                )
+                load_kwargs.pop("attn_implementation", None)
+                load_kwargs.pop("torch_dtype", None)
+                attn_impl = None
+                self._flash = False
+                self.model = AutoModel.from_pretrained(model_name, **load_kwargs)
+            else:
+                raise
         self.model.eval()
         self.device = torch.device(device)
         self.model.to(self.device)
