@@ -6,6 +6,10 @@ from transformers import AutoModel, AutoTokenizer
 # CPG node type vocabulary — all Joern/MegaVul node labels + UNKNOWN fallback
 NODE_TYPES = [
     "ANNOTATION",
+    "ANNOTATION_LITERAL",
+    "ANNOTATION_PARAMETER",
+    "ANNOTATION_PARAMETER_ASSIGN",
+    "ARRAY_INITIALIZER",
     "BINDING",
     "BLOCK",
     "CALL",
@@ -17,7 +21,9 @@ NODE_TYPES = [
     "FILE",
     "IDENTIFIER",
     "IMPORT",
+    "JUMP_LABEL",
     "JUMP_TARGET",
+    "KEY_VALUE_PAIR",
     "LITERAL",
     "LOCAL",
     "MEMBER",
@@ -32,25 +38,29 @@ NODE_TYPES = [
     "NAMESPACE_BLOCK",
     "RETURN",
     "TAG",
+    "TAG_NODE_PAIR",
+    "TEMPLATE_DOM",
     "TYPE",
+    "TYPE_ARGUMENT",
     "TYPE_DECL",
+    "TYPE_PARAMETER",
     "TYPE_REF",
     "UNKNOWN",  # fallback for unseen labels
 ]
 NODE_TYPE_TO_IDX = {t: i for i, t in enumerate(NODE_TYPES)}
 
 # Non-LM feature dimensions (fixed regardless of which LM is used):
-#   node_type(22 one-hot) + dist(3) + dangerous_api(1)
+#   node_type(41 one-hot) + dist(3) + dangerous_api(1)
 #   + is_external(1) + ctrl_struct_type(12 one-hot) + has_type(1) + type_feats(3)
 #   + eval_strategy(4 one-hot) + arg_idx(1) + dispatch_type(3 one-hot)
 #   + is_variadic(1) + span_normalized(1)
-NON_LM_FEAT_DIM = 31 + 3 + 1 + 1 + 14 + 1 + 3 + 4 + 1 + 4 + 1 + 1  # = 65
+NON_LM_FEAT_DIM = 41 + 3 + 1 + 1 + 14 + 1 + 3 + 4 + 1 + 4 + 1 + 1  # = 75
 
 # Default LM embedding dim (CodeBERT / UniXcoder / GraphCodeBERT)
 CODEBERT_DIM = 768
 
 # Default total node feature dim (CodeBERT). Changes with different LMs.
-NODE_FEAT_DIM = NON_LM_FEAT_DIM + CODEBERT_DIM  # = 833
+NODE_FEAT_DIM = NON_LM_FEAT_DIM + CODEBERT_DIM  # = 843
 
 
 def compute_node_feat_dim(lm_dim: int) -> int:
