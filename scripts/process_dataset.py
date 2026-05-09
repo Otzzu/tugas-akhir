@@ -127,6 +127,11 @@ def main() -> None:
         print(f"class_names   : {class_names}")
     print(f"File          : {pt_file}")
 
+    # Skip Python GC/finalizers entirely — .pt already saved, nothing left to do.
+    # Prevents OOM during interpreter shutdown when GPU tensors are freed by GC.
+    import os as _os
+    _os._exit(0)
+
 
 if __name__ == "__main__":
     main()
