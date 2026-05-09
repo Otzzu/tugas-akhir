@@ -59,7 +59,7 @@ download_if_missing() {
     fi
     # Find latest matching tar on remote (sorted chronologically by name)
     local tar
-    tar=$(rclone ls "$REMOTE_RAW" 2>/dev/null | grep "${name}_" | grep "\.tar\.gz" | awk '{print $2}' | sort | tail -1)
+    tar=$(rclone ls "$REMOTE_RAW" 2>/dev/null | grep "${name}_" | grep "\.tar\.gz" | awk '{print $2}' | sort | tail -1 || true)
     if [[ -z "$tar" ]]; then
         echo "[error] No tar found for '$name' in $REMOTE_RAW" >&2
         return 1
