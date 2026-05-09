@@ -100,6 +100,13 @@ class LMNodeEmbedder:
             load_kwargs["attn_implementation"] = attn_impl
             load_kwargs["torch_dtype"] = torch.bfloat16
 
+        # Pre-load config and patch missing is_decoder (CodeT5p-embedding quirk)
+        from transformers import AutoConfig
+        _cfg = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
+        if not hasattr(_cfg, "is_decoder"):
+            _cfg.is_decoder = False
+        load_kwargs["config"] = _cfg
+
         self.model = AutoModel.from_pretrained(model_name, **load_kwargs)
         self.model.eval()
         self.device = torch.device(device)
