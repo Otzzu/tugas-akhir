@@ -43,6 +43,7 @@ CONFIG_LIST=()
 DATASET_LIST=()
 FLAG_INIT=false   # --init: force run setup_cloud.sh + rclone setup regardless of state
 FLAG_SKIP=false   # --skip: skip setup_cloud.sh + rclone setup entirely
+FLAG_CLEAN=false  # --clean-pt: delete .pt dataset file after each job to free disk space
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -50,6 +51,7 @@ while [[ $# -gt 0 ]]; do
         --dataset)  DATASET_LIST+=("$2"); shift 2 ;;
         --init)     FLAG_INIT=true;       shift ;;
         --skip)     FLAG_SKIP=true;       shift ;;
+        --clean-pt) FLAG_CLEAN=true;      shift ;;
         -h|--help)
             sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
@@ -324,6 +326,18 @@ for i in "${!CONFIG_LIST[@]}"; do
 
     run_evaluate "$MODEL_DIR" "$MODEL_ID"
     upload_run "$MODEL_ID"
+
+    if $FLAG_CLEAN; then
+        info "Cleaning .pt files for dataset: $DATASET"
+        local_name=$(echo "$DATASET" | sed 's/_[0-9]\{8\}_[0-9]\{6\}$//')
+        pts=$(compgen -G "${PROCESSED_DIR}/${local_name}*.pt" 2>/dev/null || true)
+        if [[ -n "$pts" ]]; then
+            echo "$pts" | xargs rm -f
+            info "Deleted: $pts"
+        else
+            warn "No .pt files found to clean for $local_name"
+        fi
+    fi
 
     echo -e "${GREEN}  DONE $N/$TOTAL: $MODEL_ID${NC}"
 done
