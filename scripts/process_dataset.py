@@ -102,6 +102,7 @@ def main() -> None:
         func_max_length=args.max_length,
         force_rebuild=args.force_rebuild,
         use_flash_attention=getattr(cfg.train, "use_flash_attention", False),
+        embedder_use_amp=getattr(cfg.train, "use_amp", True),
     )
 
     print(f"\nDone: {len(dataset)} graphs cached.")

@@ -339,6 +339,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
         max_nodes: int = 500,
         embedder_device: str = "cpu",
         use_flash_attention: bool = False,
+        embedder_use_amp: bool = True,
         mode: str = "binary",
         source: str = "bigvul",
         pretrained_lm: str = "microsoft/codebert-base",
@@ -362,6 +363,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
         self.max_nodes = max_nodes
         self._embedder_device = embedder_device
         self._use_flash_attention = use_flash_attention
+        self._embedder_use_amp = embedder_use_amp
         self._pretrained_lm = pretrained_lm
         self._add_func_tokens = add_func_tokens
         self._func_lm_source = func_lm_source
@@ -768,6 +770,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
                 model_name=self._pretrained_lm,
                 device=self._embedder_device,
                 use_flash_attention=self._use_flash_attention,
+                use_amp=self._embedder_use_amp,
             )
 
         tokenizer = None

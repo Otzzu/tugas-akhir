@@ -22,4 +22,5 @@ train:
 
 train:
   use_flash_attention: true
+  use_amp: false
   compile_model: true

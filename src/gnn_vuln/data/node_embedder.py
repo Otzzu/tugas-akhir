@@ -79,6 +79,7 @@ class LMNodeEmbedder:
         max_length: int = 128,
         matryoshka_dim: int | None = None,
         use_flash_attention: bool = False,
+        use_amp: bool = True,
     ):
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
 
@@ -126,7 +127,7 @@ class LMNodeEmbedder:
         self.device = torch.device(device)
         self.model.to(self.device)
         self.max_length = max_length
-        self._use_amp = self.device.type == "cuda"
+        self._use_amp = self.device.type == "cuda" and use_amp
         self._flash = attn_impl == "flash_attention_2"
         self.matryoshka_dim = matryoshka_dim
 
@@ -153,9 +154,20 @@ class LMNodeEmbedder:
         inputs = {k: v.to(self.device, non_blocking=True) for k, v in inputs.items()}
         # Flash Attention runs in bfloat16 natively — no separate AMP needed
         amp_enabled = self._use_amp and not self._flash
-        with torch.amp.autocast("cuda", enabled=amp_enabled):
-            out = self.model(**inputs)
-        cls = out.last_hidden_state[:, 0, :].float().cpu()  # (N, full_dim)
+        # CodeT5p-embedding: returns raw tensor + NaN under AMP → force float32
+        try:
+            from gnn_vuln.models._lm_utils import _is_codet5p_embedding
+            _codet5p = _is_codet5p_embedding(self.model)
+        except Exception:
+            _codet5p = False
+
+        if _codet5p:
+            with torch.amp.autocast("cuda", enabled=False):
+                cls = self.model(**inputs).float().cpu()
+        else:
+            with torch.amp.autocast("cuda", enabled=amp_enabled):
+                out = self.model(**inputs)
+            cls = out.last_hidden_state[:, 0, :].float().cpu()  # (N, full_dim)
         if self.matryoshka_dim and self.matryoshka_dim < cls.shape[1]:
             cls = cls[:, :self.matryoshka_dim]
         return cls  # (N, lm_dim)
