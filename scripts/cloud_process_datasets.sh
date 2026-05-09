@@ -124,12 +124,13 @@ for CONFIG in "$@"; do
             stem=$(basename "$pt_file" .pt)
             archive="${stem}_${TS}.tar.gz"
             echo "Compressing $pt_file → $archive ..."
+            GZIP_BIN=$(command -v pigz || echo "gzip")
             if command -v pv &>/dev/null; then
                 tar -cf - -C "$PT_DIR" "$(basename "$pt_file")" \
                     | pv -s "$(du -sb "$pt_file" | awk '{print $1}')" \
-                    | gzip > "$archive"
+                    | $GZIP_BIN > "$archive"
             else
-                tar -czf "$archive" -C "$PT_DIR" "$(basename "$pt_file")"
+                tar -cf - -C "$PT_DIR" "$(basename "$pt_file")" | $GZIP_BIN > "$archive"
             fi
             echo "Uploading $archive → $remote_dest ..."
             rclone copy "$archive" "$remote_dest" --progress

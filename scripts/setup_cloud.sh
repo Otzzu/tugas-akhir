@@ -6,8 +6,8 @@
 set -e
 
 echo "=== [0/6] Installing system tools (zip, unzip, gdrive, rclone) ==="
-if ! command -v zip &>/dev/null || ! command -v unzip &>/dev/null || ! command -v wget &>/dev/null || ! command -v curl &>/dev/null; then
-    apt-get update -y && apt-get install -y zip unzip wget curl
+if ! command -v zip &>/dev/null || ! command -v unzip &>/dev/null || ! command -v wget &>/dev/null || ! command -v curl &>/dev/null || ! command -v pigz &>/dev/null; then
+    apt-get update -y && apt-get install -y zip unzip wget curl pigz
 else
     echo "    System tools already installed, skipping apt-get"
 fi
