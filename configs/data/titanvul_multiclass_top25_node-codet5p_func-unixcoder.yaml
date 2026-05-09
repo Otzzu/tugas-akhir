@@ -13,14 +13,12 @@ model:
   pretrained_lm: Salesforce/codet5p-110m-embedding
   func_lm: microsoft/unixcoder-base
   add_func_tokens: true
-  num_classes: 775
+  num_classes: 26
   num_groups: 16
   active_heads: [binary, group, cwe]
 
 train:
   device: cuda
-
-train:
-  use_flash_attention: true
+  use_flash_attention: false
   use_amp: false
   compile_model: true

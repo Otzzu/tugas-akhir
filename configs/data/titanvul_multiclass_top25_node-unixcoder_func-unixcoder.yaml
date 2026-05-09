@@ -13,13 +13,11 @@ model:
   pretrained_lm: microsoft/unixcoder-base
   func_lm: microsoft/unixcoder-base
   add_func_tokens: true
-  num_classes: 775
+  num_classes: 26
   num_groups: 16
   active_heads: [binary, group, cwe]
 
 train:
   device: cuda
-
-train:
   use_flash_attention: true
   compile_model: true

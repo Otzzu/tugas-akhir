@@ -2,23 +2,22 @@ data:
   source: titanvul
   mode: multiclass
   max_nodes: 3400
-  top_cwe: 0
+  top_cwe: 10
   max_per_class: 1500
   resample_seed: 42
-  filter_top25_dangerous: true
+  filter_top25_dangerous: false
   filter_owasp: false
 
 model:
   architecture: lmgat_hcdfgat
-  pretrained_lm: Salesforce/codet5p-110m-embedding
+  pretrained_lm: microsoft/unixcoder-base
   func_lm: Salesforce/codet5p-110m-embedding
   add_func_tokens: true
-  num_classes: 26
+  num_classes: 11
   num_groups: 16
   active_heads: [binary, group, cwe]
 
 train:
   device: cuda
-  use_flash_attention: false
-  use_amp: false
+  use_flash_attention: true
   compile_model: true
