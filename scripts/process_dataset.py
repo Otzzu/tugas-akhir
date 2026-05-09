@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import gc
 from pathlib import Path
 
 from gnn_vuln.config import Config, load_default_config
@@ -105,11 +106,26 @@ def main() -> None:
         embedder_use_amp=getattr(cfg.train, "use_amp", True),
     )
 
-    print(f"\nDone: {len(dataset)} graphs cached.")
-    print(f"num_classes   : {dataset.num_classes}")
-    if dataset.class_names:
-        print(f"class_names   : {dataset.class_names}")
-    print(f"File          : {dataset.processed_paths[0]}")
+    n_graphs    = len(dataset)
+    num_classes = dataset.num_classes
+    class_names = dataset.class_names
+    pt_file     = dataset.processed_paths[0]
+
+    # Explicit cleanup before interpreter shutdown to avoid OOM during GC
+    del dataset
+    gc.collect()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+
+    print(f"\nDone: {n_graphs} graphs cached.")
+    print(f"num_classes   : {num_classes}")
+    if class_names:
+        print(f"class_names   : {class_names}")
+    print(f"File          : {pt_file}")
 
 
 if __name__ == "__main__":
