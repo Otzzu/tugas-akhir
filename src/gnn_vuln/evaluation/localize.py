@@ -61,7 +61,7 @@ class LocalizationExtractor:
                 for b in range(B):
                     loc_results.append(
                         self._extract_func(
-                            stmt_scores_list[b], batch.batch, node_line, flaw_mask, b
+                            stmt_scores_list, batch.batch, node_line, flaw_mask, b
                         )
                     )
             else:
@@ -104,16 +104,18 @@ class LocalizationExtractor:
     @staticmethod
     def _extract_func(scores_b, batch_idx, node_line, flaw_mask, b) -> dict:
         """Extract per-function localization data for graph b."""
-        if len(scores_b) == 0:
+        graph_mask  = (batch_idx == b).cpu()
+        scores_b_graph = scores_b[graph_mask.to(scores_b.device)]
+
+        if len(scores_b_graph) == 0:
             return LocalizationMetrics.make_result([], [], [])
 
-        if scores_b.dim() == 2:
-            probs = torch.softmax(scores_b, dim=-1)
+        if scores_b_graph.dim() == 2:
+            probs = torch.softmax(scores_b_graph, dim=-1)
             scores_scalar = (1.0 - probs[:, 0]).cpu()
         else:
-            scores_scalar = torch.sigmoid(scores_b).cpu()
+            scores_scalar = torch.sigmoid(scores_b_graph).cpu()
 
-        graph_mask  = (batch_idx == b).cpu()
         node_line_b = node_line.cpu()[graph_mask]
         flaw_b = (
             flaw_mask.cpu()[graph_mask] if flaw_mask is not None
