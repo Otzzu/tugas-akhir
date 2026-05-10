@@ -113,10 +113,10 @@ class LocalizationExtractor:
         else:
             scores_scalar = torch.sigmoid(scores_b).cpu()
 
-        graph_mask  = batch_idx == b
-        node_line_b = node_line[graph_mask]
+        graph_mask  = (batch_idx == b).cpu()
+        node_line_b = node_line.cpu()[graph_mask]
         flaw_b = (
-            flaw_mask[graph_mask] if flaw_mask is not None
+            flaw_mask.cpu()[graph_mask] if flaw_mask is not None
             else torch.zeros_like(node_line_b)
         )
 
