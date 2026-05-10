@@ -61,7 +61,7 @@ class LocalizationExtractor:
                 for b in range(B):
                     loc_results.append(
                         self._extract_func(
-                            stmt_scores_list, batch.batch, node_line, flaw_mask, b
+                            stmt_scores_list[b], batch.batch, node_line, flaw_mask, b
                         )
                     )
             else:
@@ -104,18 +104,21 @@ class LocalizationExtractor:
     @staticmethod
     def _extract_func(scores_b, batch_idx, node_line, flaw_mask, b) -> dict:
         """Extract per-function localization data for graph b."""
-        graph_mask  = (batch_idx == b).cpu()
-        scores_b_graph = scores_b[graph_mask.to(scores_b.device)]
-
-        if len(scores_b_graph) == 0:
+        # scores_b: per-unique-line tensor for graph b (from StmtHead.score()[b])
+        # batch_idx/node_line/flaw_mask: per-node tensors for the full batch
+        if scores_b is None or len(scores_b) == 0:
             return LocalizationMetrics.make_result([], [], [])
 
-        if scores_b_graph.dim() == 2:
-            probs = torch.softmax(scores_b_graph, dim=-1)
-            scores_scalar = (1.0 - probs[:, 0]).cpu()
+        # scores_b is 1D (binary stmt) or 2D (multiclass stmt) — convert to scalar
+        scores_b_cpu = scores_b.detach().cpu()
+        if scores_b_cpu.dim() == 2:
+            probs = torch.softmax(scores_b_cpu, dim=-1)
+            scores_scalar = (1.0 - probs[:, 0])   # shape [n_unique_lines]
         else:
-            scores_scalar = torch.sigmoid(scores_b_graph).cpu()
+            scores_scalar = torch.sigmoid(scores_b_cpu)  # shape [n_unique_lines]
 
+        # Slice per-node tensors to this graph using batch_idx
+        graph_mask  = (batch_idx == b).cpu()
         node_line_b = node_line.cpu()[graph_mask]
         flaw_b = (
             flaw_mask.cpu()[graph_mask] if flaw_mask is not None
@@ -128,14 +131,22 @@ class LocalizationExtractor:
 
         lines_b = node_line_b[valid]
         flaw_b  = flaw_b[valid]
+        # StmtHead.score() iterates lines_b.unique(sorted=True) in the same order
         unique_lines = lines_b.unique(sorted=True)
+
+        if len(unique_lines) != len(scores_scalar):
+            # Fallback: truncate to shorter (safety guard against edge cases)
+            n = min(len(unique_lines), len(scores_scalar))
+            unique_lines  = unique_lines[:n]
+            scores_scalar = scores_scalar[:n]
 
         line_scores: list[float] = []
         line_labels: list[int]  = []
-        for line in unique_lines:
-            mask = lines_b == line
-            line_scores.append(scores_scalar[mask].max().item())
-            line_labels.append(int(flaw_b[mask].any().item()))
+        for i, line in enumerate(unique_lines):
+            # Index by position i — scores_scalar[i] matches unique_lines[i]
+            line_scores.append(scores_scalar[i].item())
+            node_mask = lines_b == line
+            line_labels.append(int(flaw_b[node_mask].any().item()))
 
         return LocalizationMetrics.make_result(
             unique_lines.cpu().tolist(),
