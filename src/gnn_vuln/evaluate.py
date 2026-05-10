@@ -57,6 +57,7 @@ class Evaluator:
         self.device = device
         self.results_dir = Path(results_dir)
         self.batch_size = batch_size
+        self.checkpoint_path: str = ""
 
         self.class_names: list[str] | None = getattr(dataset, "class_names", None)
         self.raw_funcs = getattr(dataset, "raw_funcs", None)
@@ -250,6 +251,15 @@ class Evaluator:
             plotter.plot_recall_at_loc_curve(k_vals, recall_vals)
             plotter.plot_ifa_distribution(d["ifa_per_func"])
 
+        # Copy config + training files from checkpoint dir to results dir
+        ckpt_dir = Path(self.checkpoint_path).parent
+        for fname in ("config.yaml", "training_log.csv", "training_summary.json", "training_curves.png"):
+            src = ckpt_dir / fname
+            if src.exists():
+                import shutil as _shutil
+                _shutil.copy2(src, rd / fname)
+                logger.info(f"Copied {fname} → {rd/fname}")
+
         logger.info(f"All results saved to {rd}/")
         return summary
 
@@ -314,6 +324,7 @@ def main() -> None:
         results_dir=results_dir,
         batch_size=cfg.train.batch_size,
     )
+    evaluator.checkpoint_path = args.checkpoint
     evaluator.run()
 
 

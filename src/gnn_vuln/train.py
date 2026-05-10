@@ -315,6 +315,7 @@ class TrainingSession:
         cfg = self.cfg
         save_last_every = getattr(cfg.train, "save_last_every", 1)
         train_start = time.time()
+        epoch_log: list[dict] = []
 
         for epoch in range(start_epoch, cfg.train.epochs + 1):
             if self._use_livable and train_counts is not None:
@@ -329,15 +330,23 @@ class TrainingSession:
             if not step_per_batch:
                 scheduler.step(val_loss)
 
+            epoch_time = time.time() - t0
             improved = (val_f1 > best_val_f1) if stop_on_f1 else (val_loss < best_val_loss)
+            lr_now = optimizer.param_groups[-1]['lr']
             logger.info(
                 f"Epoch {epoch:03d}/{cfg.train.epochs} | "
                 f"train={train_loss:.4f} | val={val_loss:.4f} | "
                 f"acc={val_acc:.4f} | f1={val_f1:.4f} | f1w={val_f1w:.4f} | "
-                f"lr={optimizer.param_groups[-1]['lr']:.2e} | "
+                f"lr={lr_now:.2e} | "
                 f"patience={patience_counter}/{cfg.train.patience} | "
-                f"{time.time()-t0:.0f}s" + (" *" if improved else "")
+                f"{epoch_time:.0f}s" + (" *" if improved else "")
             )
+            epoch_log.append({
+                "epoch": epoch, "train_loss": round(train_loss, 6),
+                "val_loss": round(val_loss, 6), "val_acc": round(val_acc, 6),
+                "val_f1": round(val_f1, 6), "val_f1w": round(val_f1w, 6),
+                "lr": lr_now, "epoch_time_s": round(epoch_time, 1), "best": improved,
+            })
             if improved:
                 best_val_f1 = val_f1; best_val_loss = val_loss; patience_counter = 0
                 cm.save_best(trainer.model, epoch=epoch, val_loss=val_loss,
@@ -359,11 +368,75 @@ class TrainingSession:
             test_loader, self._is_binary, class_weight
         )
         logger.info(f"Test  acc={test_acc:.4f} | f1={test_f1:.4f} | f1w={test_f1w:.4f} | conf={test_conf:.4f}")
-        h, rem = divmod(int(time.time() - train_start), 3600)
+        total_time = int(time.time() - train_start)
+        h, rem = divmod(total_time, 3600)
         m, s = divmod(rem, 60)
         logger.info(f"Total time: {h:02d}h {m:02d}m {s:02d}s")
         logger.info(f"Best checkpoint → {cm.best_path}")
         logger.info(f"To evaluate: uv run evaluate --checkpoint {cm.best_path}")
+
+        # Save training log + summary + curves to checkpoint dir
+        import csv as _csv, json as _json
+        run_dir = cm.best_path.parent
+        if epoch_log:
+            log_path = run_dir / "training_log.csv"
+            with open(log_path, "w", newline="") as f:
+                writer = _csv.DictWriter(f, fieldnames=epoch_log[0].keys())
+                writer.writeheader(); writer.writerows(epoch_log)
+            logger.info(f"training_log.csv → {log_path}")
+
+        epoch_times = [r["epoch_time_s"] for r in epoch_log]
+        summary_path = run_dir / "training_summary.json"
+        with open(summary_path, "w") as f:
+            _json.dump({
+                "epochs_trained":    len(epoch_log),
+                "best_val_f1":       round(best_val_f1, 6),
+                "best_val_loss":     round(best_val_loss, 6),
+                "test_acc":          round(test_acc, 6),
+                "test_f1":           round(test_f1, 6),
+                "test_f1w":          round(test_f1w, 6),
+                "test_conf":         round(test_conf, 6),
+                "total_time_s":      total_time,
+                "avg_epoch_time_s":  round(sum(epoch_times) / len(epoch_times), 1) if epoch_times else 0,
+                "min_epoch_time_s":  round(min(epoch_times), 1) if epoch_times else 0,
+                "max_epoch_time_s":  round(max(epoch_times), 1) if epoch_times else 0,
+            }, f, indent=2)
+        logger.info(f"training_summary.json → {summary_path}")
+
+        # Training curves plot
+        if epoch_log:
+            try:
+                import matplotlib
+                matplotlib.use("Agg")
+                import matplotlib.pyplot as plt
+                epochs    = [r["epoch"]      for r in epoch_log]
+                tr_loss   = [r["train_loss"] for r in epoch_log]
+                val_loss_ = [r["val_loss"]   for r in epoch_log]
+                val_f1_   = [r["val_f1"]     for r in epoch_log]
+                val_f1w_  = [r["val_f1w"]    for r in epoch_log]
+                best_ep   = next((r["epoch"] for r in epoch_log if r["best"]), None)
+
+                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+                ax1.plot(epochs, tr_loss,   label="train loss",  color="steelblue")
+                ax1.plot(epochs, val_loss_, label="val loss",    color="tomato")
+                if best_ep:
+                    ax1.axvline(best_ep, color="gray", linestyle="--", alpha=0.6, label=f"best (ep {best_ep})")
+                ax1.set_ylabel("Loss"); ax1.legend(); ax1.grid(True, alpha=0.3)
+                ax1.set_title("Training Curves")
+
+                ax2.plot(epochs, val_f1_,  label="val F1 macro",    color="seagreen")
+                ax2.plot(epochs, val_f1w_, label="val F1 weighted",  color="darkorange", linestyle="--")
+                if best_ep:
+                    ax2.axvline(best_ep, color="gray", linestyle="--", alpha=0.6)
+                ax2.set_ylabel("F1"); ax2.set_xlabel("Epoch"); ax2.legend(); ax2.grid(True, alpha=0.3)
+
+                plt.tight_layout()
+                curves_path = run_dir / "training_curves.png"
+                fig.savefig(curves_path, dpi=150)
+                plt.close(fig)
+                logger.info(f"training_curves.png → {curves_path}")
+            except Exception as e:
+                logger.warning(f"Could not save training_curves.png: {e}")
 
 
 # ---------------------------------------------------------------------------
