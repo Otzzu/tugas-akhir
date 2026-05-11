@@ -124,11 +124,13 @@ def _worker(args: tuple) -> Optional[tuple]:
             pass
 
     try:
-        cpg = parse_cpg(gf, max_nodes=max_nodes)
+        cpg = parse_cpg(gf, max_nodes=999_999_999)  # parse without limit first
     except Exception as exc:
         return None, str(exc)  # corrupted/malformed — signal error
-    if cpg is None:
-        return None, None
+    if cpg is None or not cpg.get("nodes"):
+        return None, "empty"
+    if len(cpg["nodes"]) > max_nodes:
+        return None, "too_large"
 
     encoded = _encode_graph(cpg)
     attrs = {
@@ -172,7 +174,7 @@ def convert(dataset: str, max_nodes: int, out_path: Path, workers: int) -> None:
         raise SystemExit(f"Raw dir not found: {raw_dir}")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    total = skipped = errors = 0
+    total = skipped_empty = skipped_large = errors = 0
 
     with h5py.File(out_path, "w") as hf:
         vocab_path = raw_dir / "cwe_vocab.json"
@@ -195,20 +197,24 @@ def convert(dataset: str, max_nodes: int, out_path: Path, workers: int) -> None:
             work = [(gf, max_nodes) for gf in graph_files]
 
             def _handle(result, i):
-                nonlocal total, skipped, errors
+                nonlocal total, skipped_empty, skipped_large, errors
                 key = result[0]
                 if key is None:
-                    # (None, None) = too large/empty; (None, str) = parse error
-                    if result[1] is not None:
+                    reason = result[1]
+                    if reason == "empty":
+                        skipped_empty += 1
+                    elif reason == "too_large":
+                        skipped_large += 1
+                    elif reason is not None:
                         errors += 1
                     else:
-                        skipped += 1
+                        skipped_empty += 1
                 else:
                     _, encoded, attrs = result
                     _write_group(grp.create_group(key), encoded, attrs)
                     total += 1
                 if (i + 1) % 1000 == 0:
-                    print(f"  {i+1}/{len(work)}  written={total} skipped={skipped} errors={errors}", flush=True)
+                    print(f"  {i+1}/{len(work)}  written={total} empty={skipped_empty} too_large={skipped_large} errors={errors}", flush=True)
 
             if workers > 1:
                 ctx = mp.get_context("spawn")
@@ -220,7 +226,7 @@ def convert(dataset: str, max_nodes: int, out_path: Path, workers: int) -> None:
                     _handle(_worker(args), i)
 
     size_mb = out_path.stat().st_size / 1024 / 1024
-    print(f"\nDone: {total} written, {skipped} skipped (>{max_nodes} nodes), {errors} parse errors")
+    print(f"\nDone: {total} written, {skipped_empty} skipped (empty), {skipped_large} skipped (>{max_nodes} nodes), {errors} parse errors")
     print(f"Output: {out_path}  ({size_mb:.1f} MB)")
 
 

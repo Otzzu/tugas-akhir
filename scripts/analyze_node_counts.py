@@ -28,8 +28,17 @@ import numpy as np
 
 def _count_nodes(path: str) -> int:
     try:
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            return f.read().count("<node ")
+        p = Path(path)
+        with open(p, "r", encoding="utf-8", errors="ignore") as f:
+            text = f.read()
+        if p.suffix == ".json":
+            import json as _json
+            obj = _json.loads(text)
+            # MegaVul JSON: {"nodes": [...], "edges": [...]}
+            if isinstance(obj, dict) and "nodes" in obj:
+                return len(obj["nodes"])
+            return -1
+        return text.count("<node ")
     except Exception:
         return -1
 
@@ -284,17 +293,19 @@ def build_markdown(
 # ---------------------------------------------------------------------------
 
 def discover_datasets(raw_dir: Path) -> list[str]:
-    """Return subdirs of raw_dir that contain benign/ or vulnerable/ with XML files."""
+    """Return subdirs of raw_dir that contain benign/ or vulnerable/ with XML or JSON CPG files."""
     found = []
     for d in sorted(raw_dir.iterdir()):
         if not d.is_dir():
             continue
-        has_xml = any(
-            list((d / sp).glob("*.xml"))
+        has_files = any(
+            list((d / sp).glob("*.xml")) or [
+                f for f in (d / sp).glob("*.json") if ".meta." not in f.name
+            ]
             for sp in ("benign", "vulnerable")
             if (d / sp).exists()
         )
-        if has_xml:
+        if has_files:
             found.append(d.name)
     return found
 
@@ -310,7 +321,9 @@ def collect_files(raw_dir: Path, dataset: str, split: str) -> list[str]:
     d = raw_dir / dataset / split
     if not d.exists():
         return []
-    return [str(p) for p in d.glob("*.xml")]
+    files = list(d.glob("*.xml"))
+    files += [p for p in d.glob("*.json") if ".meta." not in p.name]
+    return [str(p) for p in files]
 
 
 def count_nodes_from_hdf5(hdf5_path: Path) -> dict[tuple[str, str], list[int]]:
@@ -353,11 +366,10 @@ def count_nodes_from_hdf5(hdf5_path: Path) -> dict[tuple[str, str], list[int]]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--raw-dir", default="data/raw", type=Path)
-    parser.add_argument("--hdf5-dir", default="data/graphs", type=Path)
     parser.add_argument("--workers", type=int, default=max(1, os.cpu_count() - 1))
     parser.add_argument(
         "--datasets", nargs="+", default=None,
-        help="Datasets to analyze (default: auto-discover all in --raw-dir and --hdf5-dir)"
+        help="Datasets to analyze (default: auto-discover all in --raw-dir)"
     )
     parser.add_argument(
         "--out", default=None, type=Path,
@@ -366,55 +378,39 @@ def main() -> None:
     args = parser.parse_args()
 
     raw_dir: Path = args.raw_dir
-    hdf5_dir: Path = args.hdf5_dir
     splits = ["benign", "vulnerable"]
     HIST_BINS = [0, 50, 100, 200, 500, 1000, 2000, 5000]
 
     counts: dict[tuple[str, str], list[int]] = {}
     datasets: list[str] = []
 
-    # --- XML path ---
-    xml_datasets = args.datasets or discover_datasets(raw_dir)
-    if xml_datasets:
-        print(f"XML datasets: {xml_datasets}")
-        all_files: dict[tuple[str, str], list[str]] = {}
-        for ds in xml_datasets:
-            for sp in splits:
-                files = collect_files(raw_dir, ds, sp)
-                all_files[(ds, sp)] = files
-                print(f"  Found {len(files):>6} XML files — {ds}/{sp}")
-
-        flat_files = [f for files in all_files.values() for f in files]
-        print(f"\nTotal XML files: {len(flat_files):,} | Workers: {args.workers}")
-        print("Counting nodes (fast string scan)…")
-
-        with Pool(args.workers) as pool:
-            flat_counts = pool.map(_count_nodes, flat_files)
-
-        idx = 0
-        for key, files in all_files.items():
-            n = len(files)
-            raw = flat_counts[idx : idx + n]
-            counts[key] = [c for c in raw if c >= 0]
-            idx += n
-
-        datasets.extend(xml_datasets)
-
-    # --- HDF5 path ---
-    hdf5_names = [d for d in (args.datasets or discover_hdf5_datasets(hdf5_dir))
-                  if (hdf5_dir / f"{d}.hdf5").exists()]
-    # skip any already covered by XML
-    hdf5_names = [d for d in hdf5_names if d not in xml_datasets]
-    if hdf5_names:
-        print(f"\nHDF5 datasets: {hdf5_names}")
-        for ds in hdf5_names:
-            hdf5_result = count_nodes_from_hdf5(hdf5_dir / f"{ds}.hdf5")
-            counts.update(hdf5_result)
-        datasets.extend(hdf5_names)
-
+    # --- Raw path (XML + JSON) ---
+    datasets = args.datasets or discover_datasets(raw_dir)
     if not datasets:
-        print(f"No datasets found in {raw_dir} (XML) or {hdf5_dir} (HDF5)")
+        print(f"No datasets found in {raw_dir}")
         return
+
+    print(f"Datasets: {datasets}")
+    all_files: dict[tuple[str, str], list[str]] = {}
+    for ds in datasets:
+        for sp in splits:
+            files = collect_files(raw_dir, ds, sp)
+            all_files[(ds, sp)] = files
+            print(f"  Found {len(files):>6} files — {ds}/{sp}")
+
+    flat_files = [f for files in all_files.values() for f in files]
+    print(f"\nTotal files: {len(flat_files):,} | Workers: {args.workers}")
+    print("Counting nodes…")
+
+    with Pool(args.workers) as pool:
+        flat_counts = pool.map(_count_nodes, flat_files)
+
+    idx = 0
+    for key, files in all_files.items():
+        n = len(files)
+        raw = flat_counts[idx : idx + n]
+        counts[key] = [c for c in raw if c >= 0]
+        idx += n
 
     # Console output
     for ds in datasets:

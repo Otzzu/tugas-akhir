@@ -1,7 +1,7 @@
 data:
   source: bigvul
   mode: multiclass
-  max_nodes: 3600
+  max_nodes: 3700
   top_cwe: 10
   max_per_class: 2200
   resample_seed: 42
@@ -20,7 +20,5 @@ model:
 
 train:
   device: cuda
-
-train:
   use_flash_attention: true
   compile_model: true
