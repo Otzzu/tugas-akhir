@@ -14,9 +14,9 @@ class LMGATInterpVulnDetector(VulnDetectorBase):
                  in_channels=NODE_FEAT_DIM, hidden_dim=256, num_layers=4,
                  dropout=0.3, num_classes=11, num_heads=4, edge_dim=7,
                  init_lambda=0.5, add_self_loops=False, use_skip=False,
-                 matryoshka_dim=None):
+                 matryoshka_dim=None, func_chunk_size=0, func_chunk_stride=0):
         super().__init__()
-        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim)
+        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride)
         self.encoder  = GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout, edge_dim, add_self_loops, use_skip)
         self.gnn_head = SmallFuncHead(hidden_dim, hidden_dim, num_classes, dropout)
         self.lm_head  = nn.Sequential(
@@ -67,4 +67,6 @@ class LMGATInterpVulnDetector(VulnDetectorBase):
             add_self_loops=getattr(cfg.model, "add_self_loops", False),
             use_skip=getattr(cfg.model, "use_skip", False),
             matryoshka_dim=getattr(cfg.model, "matryoshka_dim", None),
+            func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
+            func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),
         )

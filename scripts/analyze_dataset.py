@@ -304,9 +304,10 @@ def cpg_coverage_table(raw_dir: Path, group_counts: dict) -> str:
     lines = ["| Group ID | Group | CPG Files | all.parquet | Coverage |", "|---|---|---|---|---|"]
 
     benign_dir = raw_dir / "benign"
-    n_benign_cpg = len(list(benign_dir.glob("*.xml"))) if benign_dir.exists() else "N/A"
+    n_benign_cpg = len(list(benign_dir.glob("*.xml"))) if benign_dir.exists() else 0
+    n_benign_cpg_s = f"{n_benign_cpg:,}" if n_benign_cpg else "N/A"
     n_benign_pq = group_counts.get((0, "benign"), 0)
-    lines.append(f"| 0 | benign | {n_benign_cpg:,} | {n_benign_pq:,} | subsampled |")
+    lines.append(f"| 0 | benign | {n_benign_cpg_s} | {n_benign_pq:,} | subsampled |")
 
     if vuln_dir.exists():
         # Count .xml files per group by reading meta.json
@@ -534,8 +535,6 @@ Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
         sections.append(f"""## 3. MegaVul (`data/datasets/megavul/train.parquet`)
 
 Total: **{nb+nv:,}** | Benign: **{nb:,}** | Vulnerable: **{nv:,}**
-
-> Perfectly balanced (1:1 ratio). Has `func_before` + `func_after` for diff-based flaw lines.
 
 ### Group Distribution
 

@@ -82,6 +82,18 @@ class ModelConfig:
     mil_weight: float = 0.5     # λ: weight of stmt MIL loss vs function loss
     mil_k: int = 3              # top-k statements used for pseudo-label assignment
     rank_loss_weight: float = 0.0  # pairwise ranking loss weight (0 = disabled)
+    # Sliding-window encoding for long functions (live LM branch only).
+    # func_chunk_size: tokens per window; should match the model's trained max length
+    #   (512 for UniXcoder/CodeBERT, 512 for codet5p-110m-embedding, 1024 for codet5p-220m).
+    # func_chunk_stride: step between windows (< chunk_size → overlapping windows).
+    #   0 = disabled (single forward pass, truncates at func_max_length as before).
+    #   Recommended: chunk_size // 2 for 50% overlap, chunk_size for non-overlapping.
+    func_chunk_size: int = 0    # 0 = disabled
+    func_chunk_stride: int = 0  # 0 = defaults to chunk_size // 2 when chunking is enabled
+    # Max token length stored per function in the .pt cache.
+    # When func_chunk_size > 0, set this to func_chunk_size * N_chunks you want to cover.
+    # E.g. func_chunk_size=512, func_max_length=2048 → up to 4 windows per function.
+    func_max_length: int = 512  # default matches model trained length
 
 
 @dataclass

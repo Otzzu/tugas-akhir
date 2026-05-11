@@ -1,12 +1,12 @@
 data:
-  source: titanvul
+  source: megavul
   mode: multiclass
-  max_nodes: 3400
-  top_cwe: 0
-  max_per_class: 1500
+  max_nodes: 2700
+  top_cwe: 10
+  max_per_class: 1700
   resample_seed: 42
   filter_top25_dangerous: false
-  filter_owasp: true
+  filter_owasp: false
 
 model:
   architecture: lmgat_hcdfgat
@@ -14,7 +14,7 @@ model:
   func_lm: microsoft/unixcoder-base
   add_func_tokens: true
   func_max_length: 1024
-  num_classes: 103
+  num_classes: 11
   num_groups: 16
   active_heads: [binary, group, cwe]
 

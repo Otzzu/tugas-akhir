@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import torch
+from loguru import logger
 
 
 def _is_codet5p_embedding(model) -> bool:
@@ -104,3 +105,87 @@ def lm_pool(
     if matryoshka_dim is not None:
         emb = emb[:, :matryoshka_dim]
     return emb
+
+
+def lm_pool_windowed(
+    model,
+    is_enc_dec: bool,
+    input_ids: torch.Tensor,
+    attention_mask: torch.Tensor | None,
+    chunk_size: int = 512,
+    stride: int = 256,
+    matryoshka_dim: int | None = None,
+) -> torch.Tensor:
+    """
+    Sliding-window LM encoding for sequences longer than chunk_size.
+
+    The sequence is split into overlapping windows of `chunk_size` tokens,
+    stepping by `stride` tokens each time (overlap = chunk_size - stride).
+    Each window is encoded independently with lm_pool(), then all window
+    embeddings are mean-pooled into a single [B, hidden] vector.
+
+    Falls back to a single lm_pool() call when the sequence fits in one window,
+    so there is no overhead for short functions.
+
+    Parameters
+    ----------
+    chunk_size : int
+        Tokens per window. Must be ≤ model's trained max length (e.g. 512).
+    stride : int
+        Step between window starts. stride < chunk_size → overlapping windows.
+        stride == chunk_size → non-overlapping (faster, less context sharing).
+        Recommended: stride = chunk_size // 2 for 50% overlap.
+    """
+    B, L = input_ids.shape
+
+    # Fast path — sequence fits in a single window
+    if L <= chunk_size:
+        return lm_pool(model, is_enc_dec, input_ids, attention_mask, matryoshka_dim)
+
+    # Clamp stride to [1, chunk_size] to avoid infinite loops or no-ops
+    stride = max(1, min(stride, chunk_size))
+
+    chunk_embs: list[torch.Tensor] = []   # [B, hidden] per window
+    valid_counts: list[torch.Tensor] = [] # [B] float — 1.0 if sample has real tokens in window
+
+    start = 0
+    while start < L:
+        end = min(start + chunk_size, L)
+        ids_chunk  = input_ids[:, start:end]
+        mask_chunk = attention_mask[:, start:end] if attention_mask is not None else None
+
+        # Per-sample: which samples have at least one real token in this window?
+        if mask_chunk is not None:
+            per_sample_valid = (mask_chunk.sum(dim=1) > 0).float()  # [B]
+        else:
+            per_sample_valid = torch.ones(B, device=input_ids.device)
+
+        # Skip window entirely only when NO sample has real tokens
+        if per_sample_valid.sum() == 0:
+            if end == L:
+                break
+            start += stride
+            continue
+
+        emb = lm_pool(model, is_enc_dec, ids_chunk, mask_chunk, matryoshka_dim)  # [B, hidden]
+        # Zero out embedding for samples that have no real tokens in this window
+        emb = emb * per_sample_valid.unsqueeze(-1)
+        chunk_embs.append(emb)
+        valid_counts.append(per_sample_valid)
+
+        if end == L:
+            break
+        start += stride
+
+    # Fall back to first-window single pass if every window was all-padding (degenerate)
+    if not chunk_embs:
+        ids_fb = input_ids[:, :chunk_size]
+        mask_fb = attention_mask[:, :chunk_size] if attention_mask is not None else None
+        return lm_pool(model, is_enc_dec, ids_fb, mask_fb, matryoshka_dim)
+
+    # Per-sample weighted mean: divide by number of valid windows per sample
+    embs  = torch.stack(chunk_embs, dim=1)        # [B, n_windows, hidden]
+    counts = torch.stack(valid_counts, dim=1)      # [B, n_windows]
+    sum_embs = embs.sum(dim=1)                     # [B, hidden]
+    count    = counts.sum(dim=1, keepdim=True).clamp(min=1)  # [B, 1]
+    return sum_embs / count

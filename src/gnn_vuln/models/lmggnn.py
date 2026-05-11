@@ -13,9 +13,9 @@ class LMGNNVulnDetector(VulnDetectorBase):
     def __init__(self, pretrained_lm="microsoft/unixcoder-base", func_lm="",
                  in_channels=NODE_FEAT_DIM, hidden_dim=256, num_layers=6,
                  dropout=0.3, num_classes=11, use_skip=False,
-                 matryoshka_dim=None, **kwargs):
+                 matryoshka_dim=None, func_chunk_size=0, func_chunk_stride=0, **kwargs):
         super().__init__()
-        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim)
+        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride)
         self.encoder   = GGNNEncoder(in_channels, hidden_dim, num_layers, dropout, use_skip)
         self.func_head = FuncHead(hidden_dim + self._lm_dim, hidden_dim, num_classes, dropout)
         self.stmt_head = StmtHead(hidden_dim)
@@ -42,5 +42,7 @@ class LMGNNVulnDetector(VulnDetectorBase):
             num_classes=cfg.model.num_classes,
             use_skip=getattr(cfg.model, "use_skip", False),
             matryoshka_dim=getattr(cfg.model, "matryoshka_dim", None),
+            func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
+            func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),
             alpha=getattr(cfg.model, "alpha", 0.1),
         )

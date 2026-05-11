@@ -13,6 +13,7 @@ model:
   pretrained_lm: microsoft/unixcoder-base
   func_lm: microsoft/unixcoder-base
   add_func_tokens: true
+  func_max_length: 1024
   num_classes: 47  # OWASP-filtered BigVul CWEs + benign
   num_groups: 16
   active_heads: [binary, group, cwe]

@@ -45,10 +45,10 @@ joern_workspace/
 !/data/raw/*/cwe_vocab.json
 /data/datasets/
 /data/processed/
+/data/graphs/
 /checkpoints/
 /results/
 /paper/
-diagram.md
 src/LineVul/
 src/VulChecker/
 src/vul-LMGNN/
@@ -62,3 +62,5 @@ rclone.zip
 rclone*/
 secret.txt
 *.secret
+
+.kiro/

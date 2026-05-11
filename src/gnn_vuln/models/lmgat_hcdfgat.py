@@ -30,9 +30,11 @@ class LMGATHCDFGATVulnDetector(VulnDetectorBase):
         add_self_loops=False,
         use_skip=False,
         matryoshka_dim=None,
+        func_chunk_size=0,
+        func_chunk_stride=0,
     ):
         super().__init__()
-        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim)
+        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride)
 
         # Stage 1: localization
         self.loc_encoder   = GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout, edge_dim, add_self_loops, use_skip)
@@ -96,4 +98,6 @@ class LMGATHCDFGATVulnDetector(VulnDetectorBase):
             add_self_loops=getattr(cfg.model, "add_self_loops", False),
             use_skip=getattr(cfg.model, "use_skip", False),
             matryoshka_dim=getattr(cfg.model, "matryoshka_dim", None),
+            func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
+            func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),
         )

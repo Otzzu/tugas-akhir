@@ -35,6 +35,8 @@ class LMGATCodeBERTMTLVulnDetector(VulnDetectorBase):
         edge_emb_dim=32,
         edge_coarse_dim=16,
         matryoshka_dim=None,
+        func_chunk_size=0,
+        func_chunk_stride=0,
     ):
         super().__init__()
         self.dropout = dropout
@@ -42,7 +44,8 @@ class LMGATCodeBERTMTLVulnDetector(VulnDetectorBase):
         self.use_edge_emb = use_edge_emb
 
         # Live LM
-        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim)
+        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim,
+                               func_chunk_size, func_chunk_stride)
 
         # Edge embeddings
         if use_edge_emb:
@@ -122,4 +125,6 @@ class LMGATCodeBERTMTLVulnDetector(VulnDetectorBase):
             edge_emb_dim=getattr(cfg.model, "edge_emb_dim", 32),
             edge_coarse_dim=getattr(cfg.model, "edge_coarse_dim", 16),
             matryoshka_dim=getattr(cfg.model, "matryoshka_dim", None),
+            func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
+            func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),
         )

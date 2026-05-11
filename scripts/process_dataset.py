@@ -31,8 +31,8 @@ def main() -> None:
         help="Which source split to build (default: train)",
     )
     parser.add_argument(
-        "--max-length", type=int, default=512,
-        help="Tokenizer max sequence length for func tokens (default: 512).",
+        "--max-length", type=int, default=None,
+        help="Tokenizer max sequence length for func tokens. Defaults to config func_max_length (512 if unset).",
     )
     parser.add_argument(
         "--force-rebuild",
@@ -43,10 +43,12 @@ def main() -> None:
 
     cfg = Config.from_yaml(args.config) if Path(args.config).exists() else load_default_config()
 
-    pretrained_lm  = getattr(cfg.model, "pretrained_lm", "microsoft/unixcoder-base")
-    func_lm        = getattr(cfg.model, "func_lm", "microsoft/unixcoder-base")
+    pretrained_lm   = getattr(cfg.model, "pretrained_lm", "microsoft/unixcoder-base")
+    func_lm         = getattr(cfg.model, "func_lm", "microsoft/unixcoder-base")
     add_func_tokens = getattr(cfg.model, "add_func_tokens", False)
-    device         = args.device or str(cfg.train.device)
+    func_lm_source  = getattr(cfg.model, "func_lm_source", "raw")
+    func_max_length = args.max_length if args.max_length is not None else getattr(cfg.model, "func_max_length", 512)
+    device          = args.device or str(cfg.train.device)
     top_cwe        = getattr(cfg.data, "top_cwe", 0)
     cwe_list       = getattr(cfg.data, "cwe_list", None)
     cwe_groups     = getattr(cfg.data, "cwe_groups", None)
@@ -54,6 +56,7 @@ def main() -> None:
     filter_top25_dangerous   = getattr(cfg.data, "filter_top25_dangerous", False)
     max_per_class  = getattr(cfg.data, "max_per_class", 0)
     resample_seed  = getattr(cfg.data, "resample_seed", 42)
+    storage        = getattr(cfg.data, "storage", "inmemory")
 
     source_map = {
         "train": getattr(cfg.data, "source",      "bigvul"),
@@ -70,10 +73,12 @@ def main() -> None:
     print(f"Mode          : {cfg.data.mode}")
     print(f"Pretrained LM : {pretrained_lm}")
     print(f"Function LM   : {func_lm}")
-    print(f"LM            : {pretrained_lm}")
     print(f"func_tokens   : {add_func_tokens}")
+    if add_func_tokens:
+        print(f"func_max_len  : {func_max_length}")
     print(f"Device        : {device}")
     print(f"Max nodes     : {cfg.data.max_nodes}")
+    print(f"Storage       : {storage}")
     print(f"top_cwe       : {top_cwe if top_cwe > 0 else 'all'}")
     print(f"cwe_list      : {cwe_list}")
     print(f"cwe_groups    : {cwe_groups}")
@@ -100,8 +105,10 @@ def main() -> None:
         filter_top25_dangerous=filter_top25_dangerous,
         max_per_class=max_per_class,
         resample_seed=resample_seed,
-        func_max_length=args.max_length,
+        func_lm_source=func_lm_source,
+        func_max_length=func_max_length,
         force_rebuild=args.force_rebuild,
+        storage=storage,
         use_flash_attention=getattr(cfg.train, "use_flash_attention", False),
         embedder_use_amp=getattr(cfg.train, "use_amp", True),
     )

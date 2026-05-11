@@ -109,6 +109,7 @@ class Evaluator:
         return {
             "accuracy": float((y_true == y_pred).mean()),
             "f1_macro": f1_score(y_true, y_pred, average="macro", zero_division=0),
+            "f1_weighted": f1_score(y_true, y_pred, average="weighted", zero_division=0),
             "auc_roc_macro_ovr": auc_roc,
             "confidence_mean":    float(confidence.mean()),
             "confidence_correct": float(confidence[correct_mask].mean()) if correct_mask.any() else None,
@@ -132,6 +133,7 @@ class Evaluator:
                                     target_names=target_names, zero_division=0))
         print(f"AUC-ROC (macro OvR) : {func_metrics['auc_roc_macro_ovr']:.4f}")
         print(f"F1 Score (macro)    : {func_metrics['f1_macro']:.4f}")
+        print(f"F1 Score (weighted) : {func_metrics['f1_weighted']:.4f}")
         print(f"Accuracy            : {func_metrics['accuracy']:.4f}")
         print("=" * 65)
 
@@ -305,6 +307,7 @@ def main() -> None:
         filter_top25_dangerous=getattr(cfg.data, "filter_top25_dangerous", False),
         max_per_class=getattr(cfg.data, "max_per_class", 0),
         resample_seed=getattr(cfg.data, "resample_seed", 42),
+        func_max_length=getattr(cfg.model, "func_max_length", 512),
     )
     _, _, test_idx = dataset.get_splits(seed=cfg.train.seed)
 

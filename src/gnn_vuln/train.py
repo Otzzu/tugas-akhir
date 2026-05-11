@@ -212,6 +212,8 @@ class TrainingSession:
             filter_top25_dangerous=getattr(cfg.data, "filter_top25_dangerous", False),
             max_per_class=getattr(cfg.data, "max_per_class", 0),
             resample_seed=getattr(cfg.data, "resample_seed", 42),
+            func_max_length=getattr(cfg.model, "func_max_length", 512),
+            storage=getattr(cfg.data, "storage", "inmemory"),
         )
         bs          = cfg.train.batch_size
         num_workers = getattr(cfg.train, "num_workers",    4)
@@ -225,6 +227,7 @@ class TrainingSession:
         )
 
         dataset = CodeBERTGraphDataset(source=getattr(cfg.data, "source", "bigvul"), **kwargs)
+        _dataset_pt = Path(dataset.processed_paths[0]).name
         if use_official:
             val_ds  = CodeBERTGraphDataset(source=source_val,  **kwargs)
             test_ds = CodeBERTGraphDataset(source=source_test, **kwargs)
@@ -389,6 +392,7 @@ class TrainingSession:
         summary_path = run_dir / "training_summary.json"
         with open(summary_path, "w") as f:
             _json.dump({
+                "dataset_pt":        _dataset_pt,
                 "epochs_trained":    len(epoch_log),
                 "best_val_f1":       round(best_val_f1, 6),
                 "best_val_loss":     round(best_val_loss, 6),

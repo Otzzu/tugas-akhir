@@ -54,10 +54,11 @@ from pathlib import Path
 
 import torch
 from loguru import logger
-from torch_geometric.data import Data, InMemoryDataset
+from torch_geometric.data import Data, Dataset
 from tqdm import tqdm
 
 from gnn_vuln.data.graph_builder_lm import build_from_parsed, build_func_text, parse_cpg
+from gnn_vuln.data.cpg.parser import parse_cpg_hdf5_group
 from gnn_vuln.data.cwe_taxonomy import (
     CWE_GROUP_MAP, GROUP_VOCAB, _GROUP_TO_CWES, _expand_cwe_filter,
     OWASP_GROUP_MAP, OWASP_VOCAB, OWASP_LABELS, _OWASP_TO_CWES,
@@ -299,7 +300,7 @@ def _streaming_collate_cache_files(
     return n_graphs
 
 
-class CodeBERTGraphDataset(InMemoryDataset):
+class CodeBERTGraphDataset(Dataset):
     """
     Dataset of CPG graphs with CodeBERT node embeddings (773D per node, 7D edge features).
 
@@ -355,10 +356,12 @@ class CodeBERTGraphDataset(InMemoryDataset):
         resample_seed: int = 42,
         func_max_length: int = 512,
         force_rebuild: bool = False,
+        storage: str = "inmemory",  # "inmemory" | "lazy"
         transform=None,
         pre_transform=None,
     ):
         self._force_rebuild = force_rebuild
+        self._storage = storage  # "inmemory" | "lazy"
         self._func_max_length = func_max_length
         self.max_nodes = max_nodes
         self._embedder_device = embedder_device
@@ -393,7 +396,8 @@ class CodeBERTGraphDataset(InMemoryDataset):
         self._fsuffix = _filter_suffix(self._cwe_list if self._cwe_list else None, cwe_groups, filter_owasp, filter_top25_dangerous)
 
         source_dir = Path(root) / "raw" / source
-        has_vocab = (source_dir / "cwe_vocab.json").exists()
+        hdf5_check = Path(root) / "graphs" / f"{source}.hdf5"
+        has_vocab = (source_dir / "cwe_vocab.json").exists() or hdf5_check.exists()
         if mode in ("multiclass", "group", "owasp") and not has_vocab:
             raise RuntimeError(
                 f"mode='{mode}' but cwe_vocab.json not found under {source_dir}. "
@@ -403,20 +407,34 @@ class CodeBERTGraphDataset(InMemoryDataset):
 
         super().__init__(str(root), transform, pre_transform)
 
-        result = torch.load(self.processed_paths[0], weights_only=False)
-        if len(result) == 4:
-            self.data, self.slices, self.class_names, self.raw_funcs = result
-        elif len(result) == 3:
-            self.data, self.slices, self.class_names = result
-            self.raw_funcs = None
-        else:
-            self.data, self.slices = result
-            self.class_names = None
-            self.raw_funcs = None
+        _loaded = torch.load(self.processed_paths[0], weights_only=False)
+        self._n_graphs = _loaded["n_graphs"]
+        self.class_names = _loaded.get("class_names")
+        self._graphs: list | None = _loaded.get("graphs") if self._storage == "inmemory" else None
+        self.raw_funcs = None  # access per-sample via dataset[i].raw_func
 
     # ------------------------------------------------------------------
     # PyG hooks
     # ------------------------------------------------------------------
+
+    @property
+    def _ds_name(self) -> str:
+        ft_suffix = "_ft" if self._add_func_tokens else ""
+        ml_suffix = f"_ml{self._func_max_length}" if self._add_func_tokens and self._func_max_length != 512 else ""
+        top_suffix = f"_top{self._top_cwe}" if self._top_cwe > 0 else ""
+        samp_suffix = (
+            f"_s{self._max_per_class}r{self._resample_seed}"
+            if self._max_per_class > 0 else ""
+        )
+        live_suffix = f"_live_{self._func_short}" if self._func_short != self._lm_short else ""
+        return (
+            f"lm_dataset_{self._source}_{self._mode}_{self._lm_short}{live_suffix}"
+            f"{ft_suffix}{ml_suffix}{top_suffix}{self._fsuffix}{samp_suffix}"
+        )
+
+    @property
+    def _graphs_dir(self) -> Path:
+        return Path(self.processed_dir) / f"{self._ds_name}_graphs"
 
     @property
     def raw_file_names(self) -> list[str]:
@@ -424,17 +442,9 @@ class CodeBERTGraphDataset(InMemoryDataset):
 
     @property
     def processed_file_names(self) -> list[str]:
-        ft_suffix = "_ft" if self._add_func_tokens else ""
-        top_suffix = f"_top{self._top_cwe}" if self._top_cwe > 0 else ""
-        samp_suffix = (
-            f"_s{self._max_per_class}r{self._resample_seed}"
-            if self._max_per_class > 0 else ""
-        )
-        live_suffix = f"_live_{self._func_short}" if self._func_short != self._lm_short else ""
-        return [
-            f"lm_dataset_{self._source}_{self._mode}_{self._lm_short}{live_suffix}"
-            f"{ft_suffix}{top_suffix}{self._fsuffix}{samp_suffix}.pt"
-        ]
+        if self._storage == "inmemory":
+            return [f"{self._ds_name}.pt"]
+        return [f"{self._ds_name}_meta.pt"]
 
     def download(self) -> None:
         pass
@@ -445,11 +455,14 @@ class CodeBERTGraphDataset(InMemoryDataset):
 
     def _try_patch_from_existing(self, out_path: Path) -> bool:
         """
-        Find a compatible processed .pt (same config, different func_lm) that
-        contains raw_funcs, re-tokenize with the new func_lm, and save as
-        out_path. Skips the expensive CodeBERT node-embedding step entirely.
+        Find a compatible dataset (same node-LM + data params, any func_lm or func_max_length),
+        re-tokenize func tokens with new func_lm/func_max_length. Skips node embedding entirely.
 
-        Returns True if patched successfully, False if no compatible base found.
+        Supports both storage formats as source and target:
+          inmemory  — single .pt with {"n_graphs", "class_names", "graphs"}
+          lazy      — _meta.pt + _graphs/{i}.pt directory
+
+        Returns True if patched, False if no usable base found.
         """
         if not self._add_func_tokens or self._force_rebuild:
             return False
@@ -460,87 +473,449 @@ class CodeBERTGraphDataset(InMemoryDataset):
             f"_s{self._max_per_class}r{self._resample_seed}"
             if self._max_per_class > 0 else ""
         )
+        # end_tail: suffix after any ml_suffix — same filter hash + sample params
+        # top_suffix matched as substring to handle ml_suffix between ft and top
+        end_tail = f"{self._fsuffix}{samp_suffix}"
         prefix = f"lm_dataset_{self._source}_{self._mode}_{self._lm_short}"
-        suffix = f"{ft_suffix}{top_suffix}{self._fsuffix}{samp_suffix}.pt"
+        processed_dir = out_path.parent
 
-        candidates = [
-            p for p in out_path.parent.glob(f"{prefix}*.pt")
-            if p != out_path and p.name.endswith(suffix)
-        ]
-        if not candidates:
-            return False
-
-        base_pt = candidates[0]
-        logger.info(f"Patch fast-path: compatible base found → {base_pt.name}")
-
-        result = torch.load(base_pt, weights_only=False)
-        if len(result) < 4 or not result[3]:
-            logger.warning("Base .pt has no raw_funcs — falling back to full build")
-            return False
-
-        data, slices, class_names, raw_funcs = result
-        n = len(raw_funcs)
-        logger.info(f"  Re-tokenizing {n} functions with {self._func_lm} …")
-
-        tokenizer = _load_tokenizer(self._func_lm)
-
-        ids_list, mask_list = [], []
-        batch_sz = 64
-        for i in tqdm(range(0, n, batch_sz), desc="  patch tokenize", unit="batch"):
-            enc = tokenizer(
-                raw_funcs[i : i + batch_sz],
-                max_length=self._func_max_length, truncation=True,
-                padding="max_length", return_tensors="pt",
+        def _is_compat(p: Path, meta_ext: str) -> bool:
+            stem = p.stem if not meta_ext else p.name[:-len(meta_ext)]
+            return (
+                p != out_path
+                and p.name.endswith(f"{end_tail}{meta_ext}")
+                and ft_suffix in stem
+                and top_suffix in stem
             )
-            ids_list.append(enc["input_ids"])
-            mask_list.append(enc["attention_mask"])
 
-        data.func_input_ids = torch.cat(ids_list, dim=0)
-        data.func_attention_mask = torch.cat(mask_list, dim=0)
-        # slices unchanged — same tensor shape [n, func_max_length]
+        logger.info(f"Patch scan: prefix={prefix!r} end_tail={end_tail!r}")
 
-        logger.info(f"  Saving patched .pt → {out_path}")
-        torch.save((data, slices, class_names, raw_funcs), out_path)
+        # Lazy candidates: *_meta.pt with matching tail
+        lazy_candidates = [
+            p for p in processed_dir.glob(f"{prefix}*_meta.pt")
+            if _is_compat(p, "_meta.pt")
+        ]
+        # Inmemory candidates: *.pt (not _meta.pt) with matching tail
+        inmem_candidates = [
+            p for p in processed_dir.glob(f"{prefix}*.pt")
+            if not p.name.endswith("_meta.pt") and _is_compat(p, ".pt")
+        ]
+        logger.info(f"  Lazy candidates: {[p.name for p in lazy_candidates]}")
+        logger.info(f"  Inmem candidates: {[p.name for p in inmem_candidates]}")
+
+        if not lazy_candidates and not inmem_candidates:
+            logger.info("  No compatible base — full rebuild")
+            return False
+
+        # Locate usable base
+        base_graphs_dir: Path | None = None   # set if lazy source
+        base_graphs_list: list | None = None  # set if inmem source
+        n = 0
+        class_names = None
+
+        for cand in lazy_candidates:
+            cand_name = cand.stem[:-5]  # strip "_meta"
+            cand_graphs_dir = processed_dir / f"{cand_name}_graphs"
+            logger.info(f"  Lazy: {cand.name}  graphs_dir_exists={cand_graphs_dir.exists()}")
+            if cand_graphs_dir.exists():
+                base_meta = torch.load(cand, weights_only=False)
+                n = base_meta.get("n_graphs", 0)
+                class_names = base_meta.get("class_names")
+                if n > 0:
+                    base_graphs_dir = cand_graphs_dir
+                    break
+
+        if n == 0:
+            for cand in inmem_candidates:
+                logger.info(f"  Inmem: {cand.name}")
+                try:
+                    cand_data = torch.load(cand, weights_only=False)
+                except Exception as e:
+                    logger.warning(f"  Failed to load {cand.name}: {e}")
+                    continue
+                if not isinstance(cand_data, dict) or "graphs" not in cand_data:
+                    logger.info(f"  Not new inmem format (no 'graphs' key) — skip")
+                    continue
+                n = cand_data.get("n_graphs", 0)
+                class_names = cand_data.get("class_names")
+                if n > 0:
+                    base_graphs_list = cand_data["graphs"]
+                    break
+
+        if n == 0:
+            # Fallback: old InMemoryDataset tuple (data, slices, class_names, raw_funcs)
+            # Include .pt files with same compat tail — inmem check already rejected non-dict ones
+            old_candidates = [
+                p for p in processed_dir.glob(f"{prefix}*.pt")
+                if not p.name.endswith("_meta.pt") and _is_compat(p, ".pt")
+            ]
+            logger.info(f"  Old-format candidates: {[p.name for p in old_candidates]}")
+            for cand in old_candidates:
+                try:
+                    cand_data = torch.load(cand, weights_only=False)
+                except Exception as e:
+                    logger.warning(f"  Failed to load {cand.name}: {e}")
+                    continue
+                if not isinstance(cand_data, tuple) or len(cand_data) < 4:
+                    continue
+                _data, _slices, _class_names, _raw_funcs = cand_data
+                if not isinstance(_slices, dict) or "y" not in _slices:
+                    continue
+                _n = len(_slices["y"]) - 1
+                if _n == 0:
+                    continue
+                logger.info(f"  Old InMemory format: {cand.name} ({_n} graphs) — extracting")
+                # Extract individual graphs via PyG slicing
+                extracted: list = []
+                for i in range(_n):
+                    g = Data()
+                    for key in _data.keys():
+                        val = _data[key]
+                        if not isinstance(val, torch.Tensor):
+                            continue
+                        cat_dim = _data.__cat_dim__(key, val)
+                        sl = _slices[key]
+                        slc: list = [slice(None)] * val.dim()
+                        slc[cat_dim] = slice(int(sl[i]), int(sl[i + 1]))
+                        g[key] = val[tuple(slc)]
+                    g.raw_func = _raw_funcs[i] if i < len(_raw_funcs) else ""
+                    extracted.append(g)
+                n = _n
+                class_names = _class_names
+                base_graphs_list = extracted
+                break
+
+        if n == 0:
+            logger.warning("No usable base (n_graphs=0 or missing graphs) — full rebuild")
+            return False
+
+        source = "lazy" if base_graphs_dir is not None else "inmem"
+        logger.info(f"Patch fast-path: {source} base → {n} graphs, re-tokenizing at max_length={self._func_max_length}")
+        tokenizer = _load_tokenizer(self._func_lm)
+        batch_sz = 64
+
+        if self._storage == "inmemory":
+            all_patched: list = []
+            for batch_start in tqdm(range(0, n, batch_sz), desc="  patch tokenize", unit="batch"):
+                batch_end = min(batch_start + batch_sz, n)
+                if base_graphs_dir is not None:
+                    graphs = [torch.load(base_graphs_dir / f"{i}.pt", weights_only=False)
+                              for i in range(batch_start, batch_end)]
+                else:
+                    graphs = base_graphs_list[batch_start:batch_end]
+                batch_funcs = [getattr(g, "raw_func", "") or "" for g in graphs]
+                enc = tokenizer(
+                    batch_funcs, max_length=self._func_max_length, truncation=True,
+                    padding="max_length", return_tensors="pt",
+                )
+                for j, g in enumerate(graphs):
+                    g.func_input_ids = enc["input_ids"][j].unsqueeze(0)
+                    g.func_attention_mask = enc["attention_mask"][j].unsqueeze(0)
+                    all_patched.append(g)
+            torch.save({"n_graphs": n, "class_names": class_names, "graphs": all_patched}, out_path)
+
+        else:  # lazy
+            self._graphs_dir.mkdir(parents=True, exist_ok=True)
+            for batch_start in tqdm(range(0, n, batch_sz), desc="  patch tokenize", unit="batch"):
+                batch_end = min(batch_start + batch_sz, n)
+                if base_graphs_dir is not None:
+                    graphs = [torch.load(base_graphs_dir / f"{i}.pt", weights_only=False)
+                              for i in range(batch_start, batch_end)]
+                else:
+                    graphs = base_graphs_list[batch_start:batch_end]
+                batch_funcs = [getattr(g, "raw_func", "") or "" for g in graphs]
+                enc = tokenizer(
+                    batch_funcs, max_length=self._func_max_length, truncation=True,
+                    padding="max_length", return_tensors="pt",
+                )
+                for j, g in enumerate(graphs):
+                    g.func_input_ids = enc["input_ids"][j].unsqueeze(0)
+                    g.func_attention_mask = enc["attention_mask"][j].unsqueeze(0)
+                    torch.save(g, self._graphs_dir / f"{batch_start + j}.pt")
+            torch.save({"n_graphs": n, "class_names": class_names}, out_path)
+
         logger.info("  Patch complete.")
         return True
+
+    # ------------------------------------------------------------------
+    # Node-embedding cache fast-path: reuse embeddings via parquet_id
+    # ------------------------------------------------------------------
+
+    def _build_parquet_id_lookup(self, out_path: Path) -> "dict[int, Data]":
+        """
+        Load an existing processed .pt with the same source + node LM and
+        return a {parquet_id: Data} lookup so embeddings can be reused when
+        only the filter / label scheme changes.
+
+        Only inmemory-format files are supported as source.
+        Returns {} if no compatible candidate is found.
+        """
+        if self._force_rebuild:
+            return {}
+
+        processed_dir = out_path.parent
+        source = self._source
+        lm_short = self._lm_short
+
+        candidates: list[Path] = []
+        for p in processed_dir.glob(f"lm_dataset_{source}_*.pt"):
+            if p.name.endswith("_meta.pt") or p == out_path:
+                continue
+            stem = p.stem
+            prefix = f"lm_dataset_{source}_"
+            if not stem.startswith(prefix):
+                continue
+            # Format: lm_dataset_{source}_{mode}_{lm_short}[_live_...]...
+            rest = stem[len(prefix):]          # "{mode}_{lm_short}..."
+            underscore = rest.find("_")
+            if underscore < 0:
+                continue
+            after_mode = rest[underscore + 1:]  # "{lm_short}..."
+            if not after_mode.startswith(lm_short):
+                continue
+            candidates.append(p)
+
+        if not candidates:
+            logger.info("Node cache fast-path: no compatible .pt found — will embed from scratch.")
+            return {}
+
+        # Prefer largest file (most graphs = richest superset)
+        candidates.sort(key=lambda p: p.stat().st_size, reverse=True)
+
+        for cand in candidates:
+            logger.info(f"Node cache fast-path: loading parquet_id lookup from {cand.name}…")
+            try:
+                cand_data = torch.load(cand, weights_only=False)
+            except Exception as e:
+                logger.warning(f"  Failed to load {cand.name}: {e}")
+                continue
+
+            lookup: dict[int, Data] = {}
+
+            if isinstance(cand_data, dict) and "graphs" in cand_data:
+                for g in cand_data["graphs"]:
+                    pid = getattr(g, "parquet_id", None)
+                    if pid is not None:
+                        pid_val = int(pid.item()) if isinstance(pid, torch.Tensor) else int(pid)
+                        if pid_val >= 0:
+                            lookup[pid_val] = g
+
+            elif isinstance(cand_data, tuple) and len(cand_data) >= 4:
+                _data, _slices, _class_names, _raw_funcs = cand_data
+                if isinstance(_slices, dict) and "y" in _slices:
+                    n = len(_slices["y"]) - 1
+                    for i in range(n):
+                        g = Data()
+                        for key in _data.keys():
+                            val = _data[key]
+                            if not isinstance(val, torch.Tensor):
+                                continue
+                            cat_dim = _data.__cat_dim__(key, val)
+                            sl = _slices[key]
+                            slc: list = [slice(None)] * val.dim()
+                            slc[cat_dim] = slice(int(sl[i]), int(sl[i + 1]))
+                            g[key] = val[tuple(slc)]
+                        g.raw_func = _raw_funcs[i] if i < len(_raw_funcs) else ""
+                        pid = getattr(g, "parquet_id", None)
+                        if pid is not None:
+                            pid_val = int(pid.item()) if isinstance(pid, torch.Tensor) else int(pid)
+                            if pid_val >= 0:
+                                lookup[pid_val] = g
+
+            if lookup:
+                logger.info(f"  {len(lookup)} graphs in parquet_id lookup.")
+                return lookup
+            logger.info(f"  No parquet_ids found in {cand.name} — skip.")
+
+        return {}
+
+    # ------------------------------------------------------------------
+    # HDF5 source support
+    # ------------------------------------------------------------------
+
+    def _build_hdf5_work_units(
+        self,
+        hdf5_path: Path,
+        cwe_vocab: dict,
+        is_multi: bool,
+        _orig_cwe_vocab: dict,
+        id_to_cwe: dict,
+    ) -> list[tuple[str, list]]:
+        """
+        Build work_units from an HDF5 file produced by convert_raw_to_hdf5.py.
+        Each entry is (cpg_dict, label, flaw_lines, cwe_str, raw_func, row_id).
+        Applies the same CWE filtering as the file-based path.
+        """
+        import h5py
+
+        group_map = OWASP_GROUP_MAP if self._mode == "owasp" else CWE_GROUP_MAP
+        work_units: list[tuple[str, list]] = []
+
+        with h5py.File(hdf5_path, "r") as hf:
+            for split in ("benign", "vulnerable"):
+                if split not in hf:
+                    continue
+                grp = hf[split]
+                is_benign = (split == "benign")
+
+                if is_benign:
+                    entries: list = []
+                    for key in sorted(grp.keys()):
+                        fg = grp[key]
+                        attrs = dict(fg.attrs)
+                        flaw_lines = json.loads(attrs.get("flaw_lines", "[]"))
+                        raw_func = str(attrs.get("raw_func", ""))
+                        row_id = int(attrs.get("row_id", -1))
+                        cpg = parse_cpg_hdf5_group(fg, self.max_nodes)
+                        if cpg is None:
+                            continue
+                        entries.append((cpg, 0, flaw_lines, "", raw_func, row_id))
+                    work_units.append(("benign", entries))
+                    logger.info(f"  [HDF5/{split}]: {len(entries)} graphs loaded")
+
+                elif not is_multi:
+                    entries = []
+                    for key in sorted(grp.keys()):
+                        fg = grp[key]
+                        attrs = dict(fg.attrs)
+                        cwe_str = _parse_cwe_string(str(attrs.get("cwe", "")))
+                        if self._effective_cwes is not None and cwe_str not in self._effective_cwes:
+                            continue
+                        flaw_lines = json.loads(attrs.get("flaw_lines", "[]"))
+                        raw_func = str(attrs.get("raw_func", ""))
+                        row_id = int(attrs.get("row_id", -1))
+                        cpg = parse_cpg_hdf5_group(fg, self.max_nodes)
+                        if cpg is None:
+                            continue
+                        entries.append((cpg, 1, flaw_lines, cwe_str, raw_func, row_id))
+                    work_units.append(("vulnerable", entries))
+                    logger.info(f"  [HDF5/{split}]: {len(entries)} graphs loaded")
+
+                elif self._mode == "multiclass":
+                    cwe_class_groups: dict[int, list] = {}
+                    for key in sorted(grp.keys()):
+                        fg = grp[key]
+                        attrs = dict(fg.attrs)
+                        cwe_str = _parse_cwe_string(str(attrs.get("cwe", "")))
+                        if cwe_str and cwe_str in cwe_vocab:
+                            class_id = cwe_vocab[cwe_str]
+                        elif self._top_cwe > 0 or self._effective_cwes is not None:
+                            class_id = -1
+                        else:
+                            class_id = int(attrs.get("label", -1))
+                        if class_id < 0:
+                            continue
+                        if self._effective_cwes is not None and cwe_str not in self._effective_cwes:
+                            continue
+                        flaw_lines = json.loads(attrs.get("flaw_lines", "[]"))
+                        raw_func = str(attrs.get("raw_func", ""))
+                        row_id = int(attrs.get("row_id", -1))
+                        cpg = parse_cpg_hdf5_group(fg, self.max_nodes)
+                        if cpg is None:
+                            continue
+                        cwe_class_groups.setdefault(class_id, []).append(
+                            (cpg, class_id, flaw_lines, cwe_str, raw_func, row_id)
+                        )
+                    for class_id, grp_entries in sorted(cwe_class_groups.items()):
+                        cwe_name = id_to_cwe.get(class_id, f"class_{class_id}")
+                        cache_key = f"vuln_{cwe_name.replace('-', '_')}"
+                        work_units.append((cache_key, grp_entries))
+                        logger.info(f"    [HDF5] {cwe_name}: {len(grp_entries)} graphs")
+
+                else:
+                    # group / owasp mode
+                    grp_buckets: dict[str, list] = {}
+                    for key in sorted(grp.keys()):
+                        fg = grp[key]
+                        attrs = dict(fg.attrs)
+                        cwe_str = _parse_cwe_string(str(attrs.get("cwe", "")))
+                        group_name = group_map.get(cwe_str, "")
+                        if not group_name:
+                            continue
+                        if self._effective_cwes is not None and cwe_str not in self._effective_cwes:
+                            continue
+                        if is_multi and cwe_str not in cwe_vocab:
+                            continue
+                        flaw_lines = json.loads(attrs.get("flaw_lines", "[]"))
+                        raw_func = str(attrs.get("raw_func", ""))
+                        row_id = int(attrs.get("row_id", -1))
+                        cpg = parse_cpg_hdf5_group(fg, self.max_nodes)
+                        if cpg is None:
+                            continue
+                        grp_buckets.setdefault(group_name, []).append(
+                            (cpg, -1, flaw_lines, cwe_str, raw_func, row_id)
+                        )
+                    for group_name, grp_entries in sorted(grp_buckets.items()):
+                        cache_key = f"vuln_{group_name}"
+                        work_units.append((cache_key, grp_entries))
+                        logger.info(f"    [HDF5] {group_name}: {len(grp_entries)} graphs")
+
+        return work_units
 
     def process(self) -> None:
         if self._try_patch_from_existing(Path(self.processed_paths[0])):
             return
 
+        # HDF5 source takes priority over raw file tree
+        hdf5_path = Path(self.root) / "graphs" / f"{self._source}.hdf5"
+        use_hdf5 = hdf5_path.exists()
+
         source_dir = Path(self.raw_dir) / self._source
-        if not source_dir.is_dir():
+        if not use_hdf5 and not source_dir.is_dir():
             raise RuntimeError(
                 f"Source directory not found: {source_dir}. "
                 f"Run prepare_dataset.py --out-dir data/raw --format {self._source} first."
+                f"\nAlternatively, convert to HDF5: "
+                f"uv run python scripts/convert_raw_to_hdf5.py --dataset {self._source}"
             )
 
-        vocab_path = source_dir / "cwe_vocab.json"
+        if use_hdf5:
+            logger.info(f"HDF5 source detected: {hdf5_path} (skipping raw file tree)")
+        else:
+            vocab_path = source_dir / "cwe_vocab.json"
+
         class_sources: list[tuple[str, bool, list[Path]]] = []
-        for cls_name in ("benign", "vulnerable"):
-            cls_dir = source_dir / cls_name
-            if cls_dir.is_dir():
-                files = sorted(
-                    f for f in cls_dir.iterdir()
-                    if f.suffix.lower() in (".json", ".xml", ".graphml")
-                    and ".meta." not in f.name
-                )
-                class_sources.append((cls_name, cls_name == "benign", files))
-                logger.info(f"Source [{self._source}/{cls_name}]: {len(files)} CPG files")
+        if not use_hdf5:
+            for cls_name in ("benign", "vulnerable"):
+                cls_dir = source_dir / cls_name
+                if cls_dir.is_dir():
+                    files = sorted(
+                        f for f in cls_dir.iterdir()
+                        if f.suffix.lower() in (".json", ".xml", ".graphml")
+                        and ".meta." not in f.name
+                    )
+                    class_sources.append((cls_name, cls_name == "benign", files))
+                    logger.info(f"Source [{self._source}/{cls_name}]: {len(files)} CPG files")
 
-        if not class_sources:
-            raise RuntimeError(
-                f"No CPG files found under {source_dir}. "
-                "Expected benign/ and/or vulnerable/ subdirectories."
-            )
+            if not class_sources:
+                raise RuntimeError(
+                    f"No CPG files found under {source_dir}. "
+                    "Expected benign/ and/or vulnerable/ subdirectories."
+                )
 
         # ------------------------------------------------------------------
         # Load vocabulary
         # ------------------------------------------------------------------
         is_multi = self._mode in ("multiclass", "group", "owasp")
         if is_multi:
-            with open(vocab_path, encoding="utf-8") as f:
-                cwe_vocab: dict[str, int] = json.load(f)
+            if use_hdf5:
+                import h5py as _h5py
+                with _h5py.File(hdf5_path, "r") as _hf:
+                    _vocab_json = _hf.attrs.get("cwe_vocab", None)
+                if _vocab_json is None:
+                    # Fall back to adjacent JSON file
+                    _adj = hdf5_path.parent / "cwe_vocab.json"
+                    if _adj.exists():
+                        _vocab_json = _adj.read_text(encoding="utf-8")
+                    else:
+                        raise RuntimeError(
+                            f"cwe_vocab.json not found in HDF5 attrs or alongside {hdf5_path}. "
+                            "Re-run convert_raw_to_hdf5.py with a dataset that has cwe_vocab.json."
+                        )
+                cwe_vocab: dict[str, int] = json.loads(_vocab_json)
+            else:
+                with open(vocab_path, encoding="utf-8") as f:
+                    cwe_vocab: dict[str, int] = json.load(f)
 
             # Step 1: filter_owasp / filter_top25_dangerous first (XML-based semantic filter)
             # This narrows to only OWASP or MITRE Top25 CWEs before any count-based trimming
@@ -569,12 +944,17 @@ class CodeBERTGraphDataset(InMemoryDataset):
 
         # ------------------------------------------------------------------
         # Build work units
-        # Entry format: (path, label, flaw_lines, cwe_str, raw_func, row_id)
+        # Entry format: (source, label, flaw_lines, cwe_str, raw_func, row_id)
+        #   source = Path (raw file) or dict (pre-parsed CPG from HDF5)
         # ------------------------------------------------------------------
-        # work_units: list of (cache_key, entries_list)
-        work_units: list[tuple[str, list[tuple[Path, int, list[int], str, str, int]]]] = []
+        work_units: list[tuple[str, list]] = []
 
-        for cls_name, is_benign_dir, cpg_files in class_sources:
+        if use_hdf5:
+            work_units = self._build_hdf5_work_units(
+                hdf5_path, cwe_vocab, is_multi, _orig_cwe_vocab, id_to_cwe,
+            )
+
+        for cls_name, is_benign_dir, cpg_files in ([] if use_hdf5 else class_sources):
             base_label = 0 if is_benign_dir else 1
 
             if is_benign_dir:
@@ -763,20 +1143,17 @@ class CodeBERTGraphDataset(InMemoryDataset):
             logger.info(f"Resuming — {len(done_keys)} unit(s) already cached: {done_keys}")
             logger.info(f"Remaining: {pending_keys}")
 
-        embedder = None
-        if pending_keys:
-            logger.info(f"Initialising node embedder ({self._pretrained_lm})…")
-            embedder = LMNodeEmbedder(
-                model_name=self._pretrained_lm,
-                device=self._embedder_device,
-                use_flash_attention=self._use_flash_attention,
-                use_amp=self._embedder_use_amp,
-            )
+        # Build parquet_id lookup to enable node-embedding cache fast-path.
+        # Empty dict = no compatible cache found → fall back to full embedding.
+        node_lookup: dict[int, Data] = (
+            self._build_parquet_id_lookup(Path(self.processed_paths[0]))
+            if pending_keys else {}
+        )
 
+        # Embedder and tokenizer are lazy-initialized only when a cache miss
+        # actually requires full node embedding.
+        embedder = None
         tokenizer = None
-        if self._add_func_tokens and pending_keys:
-            logger.info(f"Initialising function tokenizer ({self._func_lm})…")
-            tokenizer = _load_tokenizer(self._func_lm)
 
         # ------------------------------------------------------------------
         # Process each work unit
@@ -802,23 +1179,105 @@ class CodeBERTGraphDataset(InMemoryDataset):
                 unit_label = None
                 unit_group_name = None
 
+            # ------------------------------------------------------------------
+            # Node cache fast-path: reuse embeddings from existing .pt by parquet_id.
+            # Copies all node/edge tensors; re-derives y, cwe_id, group_id from
+            # the new config's vocab so labels are always correct.
+            # ------------------------------------------------------------------
+            hit_graphs: list[Data] = []
+            miss_entries: list = []
+
+            if node_lookup:
+                for gf, label, flaw_lines, cwe_str, raw_func, row_id in entries:
+                    if row_id >= 0 and row_id in node_lookup:
+                        cached_g = node_lookup[row_id]
+                        actual_label = unit_label if unit_label is not None else label
+                        g = Data()
+                        for key in cached_g.keys():
+                            if key not in ("y", "cwe_id", "group_id",
+                                           "func_input_ids", "func_attention_mask"):
+                                g[key] = cached_g[key]
+                        g.y = torch.tensor([actual_label], dtype=torch.long)
+                        _rcwe = _orig_cwe_vocab.get(cwe_str, -1) if cwe_str else -1
+                        g.cwe_id = torch.tensor([_rcwe], dtype=torch.long)
+                        _rgrp = CWE_GROUP_MAP.get(cwe_str, "") if cwe_str else ""
+                        _rgid = GROUP_VOCAB.get(_rgrp, -1) if _rgrp else (
+                            GROUP_VOCAB["benign"] if is_benign_unit else -1
+                        )
+                        g.group_id = torch.tensor([_rgid], dtype=torch.long)
+                        if self.pre_transform is not None:
+                            g = self.pre_transform(g)
+                        hit_graphs.append(g)
+                    else:
+                        miss_entries.append((gf, label, flaw_lines, cwe_str, raw_func, row_id))
+
+                if hit_graphs:
+                    logger.info(
+                        f"  [{cache_key}] node cache: {len(hit_graphs)} hits, "
+                        f"{len(miss_entries)} misses"
+                    )
+            else:
+                miss_entries = list(entries)
+
+            # Re-tokenize hit graphs with the current func_lm (fast; no GPU needed)
+            if hit_graphs and self._add_func_tokens:
+                if tokenizer is None:
+                    logger.info(f"Initialising function tokenizer ({self._func_lm})…")
+                    tokenizer = _load_tokenizer(self._func_lm)
+                _tok_batch = 64
+                for _bs in range(0, len(hit_graphs), _tok_batch):
+                    _batch = hit_graphs[_bs : _bs + _tok_batch]
+                    _funcs = [getattr(_g, "raw_func", "") or "" for _g in _batch]
+                    _enc = tokenizer(
+                        _funcs, max_length=self._func_max_length, truncation=True,
+                        padding="max_length", return_tensors="pt",
+                    )
+                    for _j, _g in enumerate(_batch):
+                        _g.func_input_ids = _enc["input_ids"][_j].unsqueeze(0)
+                        _g.func_attention_mask = _enc["attention_mask"][_j].unsqueeze(0)
+
+            if not miss_entries:
+                torch.save(hit_graphs, cache_file)
+                logger.info(
+                    f"  [{cache_key}] done (all from node cache) — {len(hit_graphs)} graphs"
+                )
+                continue
+
+            # ------------------------------------------------------------------
+            # Full pipeline for cache misses (or when no lookup available)
+            # ------------------------------------------------------------------
+            if embedder is None:
+                logger.info(f"Initialising node embedder ({self._pretrained_lm})…")
+                embedder = LMNodeEmbedder(
+                    model_name=self._pretrained_lm,
+                    device=self._embedder_device,
+                    use_flash_attention=self._use_flash_attention,
+                    use_amp=self._embedder_use_amp,
+                )
+            if self._add_func_tokens and tokenizer is None:
+                logger.info(f"Initialising function tokenizer ({self._func_lm})…")
+                tokenizer = _load_tokenizer(self._func_lm)
+
             # Phase 1: Parse
-            logger.info(f"  [{cache_key}] parsing {len(entries)} CPG files…")
+            logger.info(f"  [{cache_key}] parsing {len(miss_entries)} CPG files…")
             parsed_entries: list[tuple[int, list[int], dict, str, str, int]] = []
             parse_skipped = 0
 
             for gf, label, flaw_lines, cwe_str, raw_func, row_id in tqdm(
-                entries, desc=f"  {cache_key} parse", unit="graph", leave=False
+                miss_entries, desc=f"  {cache_key} parse", unit="graph", leave=False
             ):
-                cpg = parse_cpg(gf, self.max_nodes)
-                if cpg is None:
+                if isinstance(gf, dict):
+                    cpg = gf  # pre-parsed from HDF5
+                else:
+                    cpg = parse_cpg(gf, self.max_nodes)
+                if cpg is None or not cpg.get("nodes"):
                     parse_skipped += 1
                     continue
                 actual_label = unit_label if unit_label is not None else label
                 parsed_entries.append((actual_label, flaw_lines, cpg, cwe_str, raw_func, row_id))
 
             logger.info(
-                f"  [{cache_key}] parsed {len(parsed_entries)}/{len(entries)} "
+                f"  [{cache_key}] parsed {len(parsed_entries)}/{len(miss_entries)} "
                 f"({parse_skipped} skipped — empty or too large)"
             )
 
@@ -849,7 +1308,7 @@ class CodeBERTGraphDataset(InMemoryDataset):
             all_embeddings = torch.cat(cls_parts, dim=0) if cls_parts else torch.zeros((0, 768))
 
             # Phase 3: Build
-            cls_graphs = []
+            miss_graphs: list[Data] = []
             for (label, flaw_lines, cpg, cwe_str, raw_func, row_id), (start, end) in zip(parsed_entries, offsets):
                 func_input_ids = func_attention_mask = None
                 if tokenizer is not None:
@@ -883,30 +1342,72 @@ class CodeBERTGraphDataset(InMemoryDataset):
 
                 if self.pre_transform is not None:
                     graph = self.pre_transform(graph)
-                cls_graphs.append(graph)
+                miss_graphs.append(graph)
 
+            cls_graphs = hit_graphs + miss_graphs
             torch.save(cls_graphs, cache_file)
-            logger.info(f"  [{cache_key}] done — {len(cls_graphs)} graphs saved to cache")
+            logger.info(
+                f"  [{cache_key}] done — {len(cls_graphs)} graphs saved to cache"
+                + (f" ({len(hit_graphs)} from node cache, {len(miss_graphs)} embedded)"
+                   if hit_graphs else "")
+            )
 
         # ------------------------------------------------------------------
-        # Streaming merge: two-pass collate without holding all graphs in RAM
+        # Distribute per-class caches → final storage format
         # ------------------------------------------------------------------
-        ordered_cache_files = [cache_dir / f"{k}.pt" for k, _ in work_units]
-        n = _streaming_collate_cache_files(
-            ordered_cache_files, class_names, Path(self.processed_paths[0])
-        )
+        global_idx = 0
+
+        if self._storage == "lazy":
+            graphs_dir = self._graphs_dir
+            graphs_dir.mkdir(parents=True, exist_ok=True)
+
+        all_graphs_buf: list[Data] | None = [] if self._storage == "inmemory" else None
+
+        for cache_key, _ in work_units:
+            cache_file = cache_dir / f"{cache_key}.pt"
+            if not cache_file.exists():
+                logger.warning(f"  Missing cache file: {cache_file} — skipping")
+                continue
+            cls_graphs: list[Data] = torch.load(cache_file, weights_only=False)
+            for g in cls_graphs:
+                if self._storage == "lazy":
+                    torch.save(g, graphs_dir / f"{global_idx}.pt")
+                else:
+                    all_graphs_buf.append(g)
+                global_idx += 1
+            del cls_graphs
+            gc.collect()
+
+        if self._storage == "inmemory":
+            torch.save(
+                {"n_graphs": global_idx, "class_names": class_names, "graphs": all_graphs_buf},
+                self.processed_paths[0],
+            )
+        else:
+            torch.save(
+                {"n_graphs": global_idx, "class_names": class_names},
+                self.processed_paths[0],
+            )
         shutil.rmtree(cache_dir, ignore_errors=True)
-        logger.info(f"Per-class cache cleaned up. Total graphs: {n}")
+        logger.info(f"Per-class cache cleaned up. Total graphs: {global_idx}")
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
+    def len(self) -> int:
+        return self._n_graphs
+
+    def get(self, idx: int) -> Data:
+        if self._storage == "inmemory":
+            return self._graphs[idx]
+        return torch.load(self._graphs_dir / f"{idx}.pt", weights_only=False)
+
     @property
     def num_classes(self) -> int:
         if self.class_names:
             return len(self.class_names)
-        return int(self.data.y.max().item()) + 1
+        return 2
 
     def get_splits(
         self,

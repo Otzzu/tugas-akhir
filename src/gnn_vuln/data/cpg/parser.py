@@ -93,6 +93,29 @@ def _parse_megavul_json(path: str | Path) -> dict:
     return {"nodes": nodes, "edges": edges}
 
 
+def parse_cpg_hdf5_group(fg, max_nodes: int = 5000) -> Optional[dict]:
+    """
+    Read a CPG from an open h5py group (benign/func_X or vulnerable/func_X).
+    Returns same {nodes, edges, codes} dict as parse_cpg(), or None if too large.
+    Requires the group to have nodes_json + edges_json datasets (written by convert_raw_to_hdf5.py).
+    """
+    if "nodes_json" not in fg or "edges_json" not in fg:
+        return None
+
+    raw_nodes = fg["nodes_json"][()]
+    raw_edges = fg["edges_json"][()]
+    nodes_str = raw_nodes.decode() if isinstance(raw_nodes, (bytes, bytearray)) else str(raw_nodes)
+    edges_str = raw_edges.decode() if isinstance(raw_edges, (bytes, bytearray)) else str(raw_edges)
+
+    nodes = json.loads(nodes_str)
+    edges = json.loads(edges_str)
+
+    if not nodes or len(nodes) > max_nodes:
+        return None
+
+    return {"nodes": nodes, "edges": edges, "codes": [str(n.get("code", "")) for n in nodes]}
+
+
 def parse_cpg(path: str | Path, max_nodes: int = 500) -> Optional[dict]:
     """
     Parse a CPG file (.xml/.graphml = Joern GraphML, .json = MegaVul or plain JSON)

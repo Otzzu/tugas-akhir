@@ -13,6 +13,7 @@ model:
   pretrained_lm: Salesforce/codet5p-110m-embedding
   func_lm: microsoft/unixcoder-base
   add_func_tokens: true
+  func_max_length: 1024
   num_classes: 20
   num_groups: 16
   active_heads: [binary, group, cwe]

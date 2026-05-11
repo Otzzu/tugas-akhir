@@ -30,9 +30,9 @@ Generated from raw parquet files. Group mapping via `CWE_GROUP_MAP` in `dataset_
 | Dataset | c | cpp | cs | go | java | js | lua | objective-c | php | py | rb | rust | scala | swift | typescript | unknown |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | BigVul | 99% | 1% | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| MegaVul | 99% | 0% | — | — | — | 0% | — | — | — | — | — | — | — | — | — | — |
+| MegaVul | 94% | 4% | — | — | 2% | — | — | — | — | — | — | — | — | — | — | — |
 | TitanVul | 37% | 7% | 1% | 0% | 22% | 5% | 0% | 0% | 2% | 5% | 1% | 0% | 0% | 0% | 0% | 20% |
-| BigVul (raw CPGs) | 90% | 9% | — | — | — | 1% | — | — | — | — | — | — | — | — | — | — |
+| BigVul (raw CPGs) | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 
 > Detected via `joern_runner.detect_language()` on sampled `raw_func` / `func_before` fields.
 > Go/PHP fall back to C extension (Joern native frontends produce sparser CPGs).
@@ -274,8 +274,7 @@ Total: **217,007** | Benign: **206,112** | Vulnerable: **10,895**
 
 | Group ID | Group | CPG Files | all.parquet | Coverage |
 |---|---|---|---|---|
-| 0 | benign | 4,000 | 206,112 | subsampled |
-| -1 | UNKNOWN | 8,760 | 2,135 | filtered |
+| 0 | benign | N/A | 206,112 | subsampled |
 
 > All vulnerable CPG files = 100% coverage of all.parquet vulnerable.
 > Benign subsampled to ~4,000.
@@ -608,31 +607,29 @@ Total: **330,492** | Benign: **311,547** | Vulnerable: **18,945**
 
 ## 3. MegaVul (`data/datasets/megavul/train.parquet`)
 
-Total: **55,868** | Benign: **27,934** | Vulnerable: **27,934**
-
-> Perfectly balanced (1:1 ratio). Has `func_before` + `func_after` for diff-based flaw lines.
+Total: **395,822** | Benign: **375,414** | Vulnerable: **20,408**
 
 ### Group Distribution
 
 | Group ID | Group | Count | OWASP Top 10 |
 |---|---|---|---|
-| 0 | benign | 27,934 |  |
-| 1 | memory_safety | 12,214 | A10 |
-| 3 | resource_management | 2,784 | A02 |
-| 6 | broken_access_control | 2,422 | A01, A05, A06, A07 |
-| -1 | UNKNOWN | 2,137 |  |
-| 2 | numeric | 2,012 | A05, A10 |
-| 4 | input_validation | 1,943 | A05, A06 |
-| 10 | code_quality | 1,198 | A06, A08 |
-| 9 | concurrency | 1,195 | A06 |
-| 7 | authentication_failures | 468 | A07 |
-| 5 | injection | 437 | A05, A06 |
-| 8 | cryptographic_failures | 388 | A04, A06 |
-| 15 | deprecated | 258 | A06 |
-| 14 | mishandling_exceptional_conditions | 225 | A10 |
-| 11 | security_misconfiguration | 192 | A01, A02, A08 |
-| 12 | software_or_data_integrity_failures | 50 | A06, A08 |
-| 13 | logging_and_alerting_failures | 11 | A09 |
+| 0 | benign | 375,414 |  |
+| 1 | memory_safety | 7,659 | A10 |
+| 6 | broken_access_control | 2,249 | A01, A05, A06, A07 |
+| 3 | resource_management | 1,883 | A02 |
+| -1 | UNKNOWN | 1,768 | A01, A02, A06 |
+| 2 | numeric | 1,398 | A05, A10 |
+| 4 | input_validation | 1,317 | A05, A06 |
+| 5 | injection | 1,001 | A05, A06, A08 |
+| 10 | code_quality | 814 | A06, A08 |
+| 9 | concurrency | 686 | A06 |
+| 7 | authentication_failures | 401 | A07 |
+| 11 | security_misconfiguration | 361 | A01, A02, A08 |
+| 8 | cryptographic_failures | 300 | A04, A06 |
+| 15 | deprecated | 283 | A06 |
+| 14 | mishandling_exceptional_conditions | 144 | A10 |
+| 12 | software_or_data_integrity_failures | 132 | A06, A08 |
+| 13 | logging_and_alerting_failures | 12 | A09 |
 
 > **Unique Groups**: 17
 
@@ -640,306 +637,367 @@ Total: **55,868** | Benign: **27,934** | Vulnerable: **27,934**
 
 | CWE | Count | Group ID | Group | Top 25 | OWASP Top 10 |
 |---|---|---|---|---|---|
-| CWE-119 | 2,710 | 1 | memory_safety |  |  |
-| CWE-787 | 2,226 | 1 | memory_safety | ✅ |  |
-| *(empty/unknown)* | 2,125 | -1 | UNKNOWN |  |  |
-| CWE-125 | 2,072 | 1 | memory_safety | ✅ |  |
-| CWE-476 | 2,026 | 1 | memory_safety | ✅ | ✅ |
-| CWE-20 | 1,778 | 4 | input_validation | ✅ | ✅ |
-| CWE-416 | 1,663 | 1 | memory_safety | ✅ |  |
-| CWE-190 | 1,065 | 2 | numeric |  |  |
-| CWE-362 | 968 | 9 | concurrency |  | ✅ |
-| CWE-200 | 889 | 6 | broken_access_control | ✅ | ✅ |
-| CWE-120 | 737 | 1 | memory_safety | ✅ |  |
-| CWE-399 | 702 | 3 | resource_management |  |  |
-| CWE-264 | 583 | 6 | broken_access_control |  |  |
-| CWE-400 | 519 | 3 | resource_management |  |  |
-| CWE-401 | 517 | 3 | resource_management |  |  |
-| CWE-835 | 424 | 10 | code_quality |  |  |
-| CWE-189 | 399 | 2 | numeric |  |  |
-| CWE-287 | 327 | 7 | authentication_failures |  | ✅ |
-| CWE-415 | 315 | 1 | memory_safety |  |  |
-| CWE-772 | 307 | 3 | resource_management |  |  |
-| CWE-617 | 297 | 10 | code_quality |  |  |
-| CWE-122 | 207 | 1 | memory_safety | ✅ |  |
-| CWE-22 | 193 | 6 | broken_access_control | ✅ | ✅ |
-| CWE-369 | 188 | 2 | numeric |  | ✅ |
-| CWE-674 | 181 | 10 | code_quality |  |  |
-| CWE-834 | 175 | 10 | code_quality |  |  |
-| CWE-908 | 161 | 3 | resource_management |  |  |
-| CWE-269 | 151 | 6 | broken_access_control |  | ✅ |
-| CWE-59 | 148 | 6 | broken_access_control |  | ✅ |
-| CWE-310 | 141 | 8 | cryptographic_failures |  |  |
+| *(empty/unknown)* | 1,719 | -1 | UNKNOWN |  |  |
+| CWE-119 | 1,621 | 1 | memory_safety |  |  |
+| CWE-787 | 1,553 | 1 | memory_safety | ✅ |  |
+| CWE-125 | 1,330 | 1 | memory_safety | ✅ |  |
+| CWE-476 | 1,265 | 1 | memory_safety | ✅ | ✅ |
+| CWE-20 | 1,187 | 4 | input_validation | ✅ | ✅ |
+| CWE-416 | 975 | 1 | memory_safety | ✅ |  |
+| CWE-190 | 723 | 2 | numeric |  |  |
+| CWE-200 | 603 | 6 | broken_access_control | ✅ | ✅ |
+| CWE-362 | 560 | 9 | concurrency |  | ✅ |
+| CWE-264 | 544 | 6 | broken_access_control |  |  |
+| CWE-399 | 471 | 3 | resource_management |  |  |
+| CWE-120 | 424 | 1 | memory_safety | ✅ |  |
+| CWE-400 | 420 | 3 | resource_management |  |  |
+| CWE-79 | 336 | 5 | injection | ✅ | ✅ |
+| CWE-22 | 323 | 6 | broken_access_control | ✅ | ✅ |
+| CWE-401 | 288 | 3 | resource_management |  |  |
+| CWE-189 | 261 | 2 | numeric |  |  |
+| CWE-617 | 256 | 10 | code_quality |  |  |
+| CWE-835 | 247 | 10 | code_quality |  |  |
+| CWE-611 | 229 | 11 | security_misconfiguration |  | ✅ |
+| CWE-287 | 214 | 7 | authentication_failures |  | ✅ |
+| CWE-89 | 209 | 5 | injection | ✅ | ✅ |
+| CWE-415 | 195 | 1 | memory_safety |  |  |
+| CWE-772 | 178 | 3 | resource_management |  |  |
+| CWE-369 | 172 | 2 | numeric |  | ✅ |
+| CWE-254 | 142 | 15 | deprecated |  |  |
 | CWE-770 | 138 | 3 | resource_management | ✅ |  |
-| CWE-667 | 135 | 9 | concurrency |  |  |
-| CWE-404 | 119 | 3 | resource_management |  |  |
-| CWE-295 | 117 | 7 | authentication_failures |  | ✅ |
-| CWE-193 | 107 | 2 | numeric |  |  |
-| CWE-909 | 104 | 3 | resource_management |  |  |
-| CWE-78 | 102 | 5 | injection | ✅ | ✅ |
-| CWE-284 | 96 | 6 | broken_access_control | ✅ | ✅ |
-| CWE-17 | 92 | 15 | deprecated |  |  |
-| CWE-863 | 87 | 6 | broken_access_control | ✅ | ✅ |
-| CWE-732 | 84 | 11 | security_misconfiguration |  | ✅ |
-| CWE-665 | 79 | 3 | resource_management |  |  |
-| CWE-19 | 78 | 15 | deprecated |  |  |
-| CWE-74 | 78 | 5 | injection |  | ✅ |
-| CWE-252 | 77 | 14 | mishandling_exceptional_conditions |  | ✅ |
-| CWE-79 | 71 | 5 | injection | ✅ | ✅ |
-| CWE-254 | 68 | 15 | deprecated |  |  |
-| CWE-459 | 66 | 3 | resource_management |  |  |
-| CWE-89 | 65 | 5 | injection | ✅ | ✅ |
-| CWE-367 | 64 | 9 | concurrency |  |  |
-| CWE-681 | 64 | 2 | numeric |  |  |
-| CWE-330 | 63 | 8 | cryptographic_failures |  | ✅ |
-| CWE-862 | 63 | 6 | broken_access_control | ✅ | ✅ |
-| CWE-843 | 62 | 1 | memory_safety |  |  |
-| CWE-668 | 62 | 6 | broken_access_control |  | ✅ |
-| CWE-754 | 62 | 14 | mishandling_exceptional_conditions |  | ✅ |
-| CWE-354 | 60 | 4 | input_validation |  |  |
-| CWE-704 | 59 | 10 | code_quality |  |  |
-| CWE-327 | 59 | 8 | cryptographic_failures |  | ✅ |
-| CWE-755 | 56 | 14 | mishandling_exceptional_conditions |  | ✅ |
-| CWE-134 | 53 | 1 | memory_safety |  |  |
-| CWE-682 | 50 | 2 | numeric |  |  |
-| CWE-203 | 49 | 6 | broken_access_control |  |  |
-| CWE-1284 | 46 | 4 | input_validation |  |  |
-| CWE-121 | 44 | 1 | memory_safety | ✅ |  |
-| CWE-129 | 42 | 2 | numeric |  | ✅ |
-| CWE-191 | 41 | 2 | numeric |  |  |
-| CWE-77 | 41 | 5 | injection | ✅ | ✅ |
-| CWE-326 | 40 | 8 | cryptographic_failures |  | ✅ |
-| CWE-502 | 40 | 12 | software_or_data_integrity_failures | ✅ | ✅ |
-| CWE-611 | 38 | 11 | security_misconfiguration |  | ✅ |
-| CWE-776 | 36 | 3 | resource_management |  | ✅ |
-| CWE-436 | 36 | 4 | input_validation |  | ✅ |
-| CWE-763 | 35 | 1 | memory_safety |  |  |
-| CWE-345 | 32 | 11 | security_misconfiguration |  | ✅ |
-| CWE-824 | 32 | 1 | memory_safety |  |  |
-| CWE-276 | 28 | 11 | security_misconfiguration |  | ✅ |
-| CWE-662 | 28 | 9 | concurrency |  |  |
-| CWE-601 | 26 | 6 | broken_access_control |  | ✅ |
-| CWE-697 | 26 | 2 | numeric |  |  |
-| CWE-212 | 24 | 6 | broken_access_control |  |  |
-| CWE-444 | 22 | 5 | injection |  | ✅ |
-| CWE-347 | 21 | 8 | cryptographic_failures |  | ✅ |
-| CWE-131 | 20 | 2 | numeric |  |  |
-| CWE-552 | 18 | 6 | broken_access_control |  | ✅ |
-| CWE-116 | 18 | 5 | injection |  | ✅ |
-| CWE-388 | 16 | 14 | mishandling_exceptional_conditions |  |  |
-| CWE-426 | 16 | 10 | code_quality |  | ✅ |
-| CWE-440 | 16 | 10 | code_quality |  |  |
-| CWE-94 | 16 | 5 | injection | ✅ | ✅ |
-| CWE-911 | 14 | 3 | resource_management |  |  |
-| CWE-18 | 14 | 15 | deprecated |  |  |
-| CWE-319 | 13 | 8 | cryptographic_failures |  | ✅ |
-| CWE-428 | 12 | 10 | code_quality |  |  |
-| CWE-331 | 12 | 8 | cryptographic_failures |  | ✅ |
-| CWE-346 | 12 | 7 | authentication_failures |  | ✅ |
-| CWE-385 | 12 | 8 | cryptographic_failures |  |  |
-| CWE-407 | 12 | 3 | resource_management |  |  |
-| CWE-126 | 10 | 1 | memory_safety |  |  |
-| CWE-823 | 10 | 1 | memory_safety |  |  |
-| CWE-670 | 10 | 10 | code_quality |  |  |
-| CWE-337 | 10 | 8 | cryptographic_failures |  | ✅ |
-| CWE-532 | 9 | 13 | logging_and_alerting_failures |  | ✅ |
-| CWE-918 | 8 | 6 | broken_access_control | ✅ | ✅ |
-| CWE-273 | 8 | 14 | mishandling_exceptional_conditions |  |  |
-| CWE-1077 | 8 | 2 | numeric |  |  |
-| CWE-90 | 8 | 5 | injection |  | ✅ |
-| CWE-241 | 8 | 4 | input_validation |  |  |
-| CWE-1188 | 6 | 11 | security_misconfiguration |  |  |
-| CWE-494 | 6 | 12 | software_or_data_integrity_failures |  | ✅ |
-| CWE-672 | 6 | 1 | memory_safety |  |  |
-| CWE-1333 | 6 | 3 | resource_management |  |  |
-| CWE-118 | 6 | 1 | memory_safety |  |  |
-| CWE-434 | 6 | 5 | injection | ✅ | ✅ |
-| CWE-693 | 6 | 15 | deprecated |  | ✅ |
+| CWE-674 | 130 | 10 | code_quality |  |  |
+| CWE-74 | 130 | 5 | injection |  | ✅ |
+| CWE-502 | 112 | 12 | software_or_data_integrity_failures | ✅ | ✅ |
+| CWE-122 | 111 | 1 | memory_safety | ✅ |  |
+| CWE-284 | 107 | 6 | broken_access_control | ✅ | ✅ |
+| CWE-908 | 99 | 3 | resource_management |  |  |
+| CWE-863 | 98 | 6 | broken_access_control | ✅ | ✅ |
+| CWE-668 | 97 | 6 | broken_access_control |  | ✅ |
+| CWE-310 | 96 | 8 | cryptographic_failures |  |  |
+| CWE-834 | 95 | 10 | code_quality |  |  |
+| CWE-78 | 94 | 5 | injection | ✅ | ✅ |
+| CWE-269 | 84 | 6 | broken_access_control |  | ✅ |
+| CWE-295 | 83 | 7 | authentication_failures |  | ✅ |
+| CWE-59 | 79 | 6 | broken_access_control |  | ✅ |
+| CWE-862 | 77 | 6 | broken_access_control | ✅ | ✅ |
+| CWE-667 | 72 | 9 | concurrency |  |  |
+| CWE-909 | 72 | 3 | resource_management |  |  |
+| CWE-404 | 68 | 3 | resource_management |  |  |
+| CWE-17 | 67 | 15 | deprecated |  |  |
+| CWE-732 | 63 | 11 | security_misconfiguration |  | ✅ |
+| CWE-19 | 63 | 15 | deprecated |  |  |
+| CWE-459 | 59 | 3 | resource_management |  |  |
+| CWE-843 | 56 | 1 | memory_safety |  |  |
+| CWE-193 | 56 | 2 | numeric |  |  |
+| CWE-681 | 56 | 2 | numeric |  |  |
+| CWE-94 | 56 | 5 | injection | ✅ | ✅ |
+| CWE-354 | 50 | 4 | input_validation |  |  |
+| CWE-665 | 48 | 3 | resource_management |  |  |
+| CWE-918 | 47 | 6 | broken_access_control | ✅ | ✅ |
+| CWE-345 | 45 | 11 | security_misconfiguration |  | ✅ |
+| CWE-434 | 44 | 5 | injection | ✅ | ✅ |
+| CWE-352 | 44 | 6 | broken_access_control | ✅ | ✅ |
+| CWE-755 | 42 | 14 | mishandling_exceptional_conditions |  | ✅ |
+| CWE-252 | 41 | 14 | mishandling_exceptional_conditions |  | ✅ |
+| CWE-203 | 39 | 6 | broken_access_control |  |  |
+| CWE-754 | 38 | 14 | mishandling_exceptional_conditions |  | ✅ |
+| CWE-77 | 38 | 5 | injection | ✅ | ✅ |
+| CWE-704 | 37 | 10 | code_quality |  |  |
+| CWE-327 | 37 | 8 | cryptographic_failures |  | ✅ |
+| CWE-444 | 36 | 5 | injection |  | ✅ |
+| CWE-330 | 33 | 8 | cryptographic_failures |  | ✅ |
+| CWE-129 | 32 | 2 | numeric |  | ✅ |
+| CWE-367 | 32 | 9 | concurrency |  |  |
+| CWE-1284 | 31 | 4 | input_validation |  |  |
+| CWE-134 | 30 | 1 | memory_safety |  |  |
+| CWE-763 | 28 | 1 | memory_safety |  |  |
+| CWE-682 | 27 | 2 | numeric |  |  |
+| CWE-824 | 26 | 1 | memory_safety |  |  |
+| CWE-601 | 25 | 6 | broken_access_control |  | ✅ |
+| CWE-326 | 25 | 8 | cryptographic_failures |  | ✅ |
+| CWE-116 | 25 | 5 | injection |  | ✅ |
+| CWE-384 | 25 | 7 | authentication_failures |  | ✅ |
+| CWE-552 | 23 | 6 | broken_access_control |  | ✅ |
+| CWE-697 | 23 | 2 | numeric |  |  |
+| CWE-121 | 22 | 1 | memory_safety | ✅ |  |
+| CWE-191 | 22 | 2 | numeric |  |  |
+| CWE-436 | 22 | 4 | input_validation |  | ✅ |
+| CWE-131 | 21 | 2 | numeric |  |  |
+| CWE-306 | 21 | 7 | authentication_failures | ✅ | ✅ |
+| CWE-346 | 21 | 7 | authentication_failures |  | ✅ |
+| CWE-347 | 20 | 8 | cryptographic_failures |  | ✅ |
+| CWE-776 | 19 | 3 | resource_management |  | ✅ |
+| CWE-312 | 19 | 8 | cryptographic_failures |  | ✅ |
+| CWE-276 | 17 | 11 | security_misconfiguration |  | ✅ |
+| CWE-662 | 16 | 9 | concurrency |  |  |
+| CWE-290 | 15 | 7 | authentication_failures |  | ✅ |
+| CWE-212 | 13 | 6 | broken_access_control |  |  |
+| CWE-917 | 13 | 5 | injection |  | ✅ |
+| CWE-440 | 12 | 10 | code_quality |  |  |
+| CWE-522 | 12 | 8 | cryptographic_failures |  | ✅ |
+| CWE-532 | 11 | 13 | logging_and_alerting_failures |  | ✅ |
+| CWE-338 | 11 | 8 | cryptographic_failures |  | ✅ |
+| CWE-426 | 10 | 10 | code_quality |  | ✅ |
+| CWE-672 | 10 | 1 | memory_safety |  |  |
+| CWE-197 | 10 | -1 | UNKNOWN |  |  |
+| CWE-388 | 9 | 14 | mishandling_exceptional_conditions |  |  |
+| CWE-319 | 9 | 8 | cryptographic_failures |  | ✅ |
+| CWE-1021 | 9 | 12 | software_or_data_integrity_failures |  | ✅ |
+| CWE-241 | 9 | 4 | input_validation |  |  |
+| CWE-613 | 9 | 7 | authentication_failures |  | ✅ |
+| CWE-428 | 8 | 10 | code_quality |  |  |
+| CWE-670 | 8 | 10 | code_quality |  |  |
+| CWE-913 | 8 | 12 | software_or_data_integrity_failures |  |  |
+| CWE-378 | 8 | 6 | broken_access_control |  |  |
+| CWE-260 | 8 | -1 | UNKNOWN |  | ✅ |
+| CWE-911 | 7 | 3 | resource_management |  |  |
+| CWE-285 | 7 | 6 | broken_access_control |  | ✅ |
+| CWE-320 | 7 | 8 | cryptographic_failures |  |  |
+| CWE-18 | 7 | 15 | deprecated |  |  |
+| CWE-361 | 6 | 9 | concurrency |  |  |
+| CWE-331 | 6 | 8 | cryptographic_failures |  | ✅ |
 | CWE-172 | 6 | 4 | input_validation |  |  |
-| CWE-184 | 6 | 4 | input_validation |  |  |
-| CWE-229 | 6 | -1 | UNKNOWN |  |  |
-| CWE-522 | 5 | 8 | cryptographic_failures |  | ✅ |
-| CWE-113 | 4 | 5 | injection |  | ✅ |
+| CWE-385 | 6 | 8 | cryptographic_failures |  |  |
+| CWE-407 | 6 | 3 | resource_management |  |  |
+| CWE-470 | 6 | 4 | input_validation |  | ✅ |
+| CWE-281 | 6 | 6 | broken_access_control |  | ✅ |
+| CWE-126 | 5 | 1 | memory_safety |  |  |
+| CWE-823 | 5 | 1 | memory_safety |  |  |
+| CWE-248 | 5 | 14 | mishandling_exceptional_conditions |  | ✅ |
+| CWE-255 | 5 | 7 | authentication_failures |  |  |
+| CWE-337 | 5 | 8 | cryptographic_failures |  | ✅ |
+| CWE-90 | 5 | 5 | injection |  | ✅ |
+| CWE-1187 | 5 | 3 | resource_management |  |  |
+| CWE-639 | 5 | 6 | broken_access_control | ✅ | ✅ |
+| CWE-409 | 5 | -1 | UNKNOWN |  |  |
+| CWE-91 | 5 | 5 | injection |  | ✅ |
+| CWE-916 | 5 | 8 | cryptographic_failures |  | ✅ |
+| CWE-693 | 4 | 15 | deprecated |  | ✅ |
+| CWE-273 | 4 | 14 | mishandling_exceptional_conditions |  |  |
+| CWE-427 | 4 | 10 | code_quality |  | ✅ |
 | CWE-16 | 4 | 11 | security_misconfiguration |  |  |
-| CWE-255 | 4 | 7 | authentication_failures |  |  |
-| CWE-762 | 4 | -1 | UNKNOWN |  |  |
-| CWE-306 | 4 | 7 | authentication_failures | ✅ | ✅ |
-| CWE-924 | 4 | 6 | broken_access_control |  |  |
-| CWE-324 | 4 | 8 | cryptographic_failures |  | ✅ |
-| CWE-1021 | 4 | 12 | software_or_data_integrity_failures |  | ✅ |
-| CWE-285 | 4 | 6 | broken_access_control |  | ✅ |
-| CWE-358 | 4 | 10 | code_quality |  |  |
+| CWE-1077 | 4 | 2 | numeric |  |  |
+| CWE-626 | 4 | 10 | code_quality |  |  |
 | CWE-88 | 4 | 5 | injection |  | ✅ |
-| CWE-639 | 4 | 6 | broken_access_control | ✅ | ✅ |
-| CWE-320 | 3 | 8 | cryptographic_failures |  |  |
+| CWE-209 | 4 | 14 | mishandling_exceptional_conditions |  | ✅ |
+| CWE-610 | 4 | 6 | broken_access_control |  | ✅ |
+| CWE-798 | 4 | 7 | authentication_failures |  | ✅ |
+| CWE-1188 | 3 | 11 | security_misconfiguration |  |  |
+| CWE-494 | 3 | 12 | software_or_data_integrity_failures |  | ✅ |
+| CWE-1333 | 3 | 3 | resource_management |  |  |
+| CWE-118 | 3 | 1 | memory_safety |  |  |
+| CWE-184 | 3 | 4 | input_validation |  |  |
+| CWE-229 | 3 | -1 | UNKNOWN |  |  |
+| CWE-307 | 3 | 7 | authentication_failures |  | ✅ |
+| CWE-325 | 3 | 8 | cryptographic_failures |  | ✅ |
 | CWE-706 | 3 | 6 | broken_access_control |  |  |
 | CWE-707 | 3 | 4 | input_validation |  |  |
-| CWE-185 | 2 | 2 | numeric |  |  |
-| CWE-1049 | 2 | 3 | resource_management |  |  |
-| CWE-628 | 2 | 10 | code_quality |  | ✅ |
-| CWE-202 | 2 | 6 | broken_access_control |  |  |
-| CWE-248 | 2 | 14 | mishandling_exceptional_conditions |  | ✅ |
-| CWE-626 | 2 | 10 | code_quality |  |  |
-| CWE-460 | 2 | 14 | mishandling_exceptional_conditions |  | ✅ |
-| CWE-290 | 2 | 7 | authentication_failures |  | ✅ |
-| CWE-73 | 2 | 6 | broken_access_control |  | ✅ |
-| CWE-93 | 2 | 5 | injection |  | ✅ |
-| CWE-117 | 2 | 13 | logging_and_alerting_failures |  | ✅ |
-| CWE-209 | 2 | 14 | mishandling_exceptional_conditions |  | ✅ |
-| CWE-1050 | 2 | 3 | resource_management |  |  |
-| CWE-282 | 2 | 6 | broken_access_control |  | ✅ |
-| CWE-610 | 2 | 6 | broken_access_control |  | ✅ |
-| CWE-338 | 2 | 8 | cryptographic_failures |  | ✅ |
-| CWE-300 | 2 | 6 | broken_access_control |  | ✅ |
-| CWE-307 | 2 | 7 | authentication_failures |  | ✅ |
+| CWE-648 | 3 | -1 | UNKNOWN |  |  |
+| CWE-130 | 3 | -1 | UNKNOWN |  |  |
+| CWE-377 | 3 | 6 | broken_access_control |  | ✅ |
+| CWE-113 | 2 | 5 | injection |  | ✅ |
+| CWE-762 | 2 | -1 | UNKNOWN |  |  |
+| CWE-208 | 2 | -1 | UNKNOWN |  |  |
+| CWE-924 | 2 | 6 | broken_access_control |  |  |
+| CWE-324 | 2 | 8 | cryptographic_failures |  | ✅ |
+| CWE-358 | 2 | 10 | code_quality |  |  |
+| CWE-335 | 2 | 8 | cryptographic_failures |  | ✅ |
 | CWE-838 | 2 | -1 | UNKNOWN |  |  |
-| CWE-325 | 2 | 8 | cryptographic_failures |  | ✅ |
+| CWE-214 | 2 | 6 | broken_access_control |  |  |
+| CWE-749 | 2 | -1 | UNKNOWN |  | ✅ |
+| CWE-379 | 2 | -1 | UNKNOWN |  | ✅ |
+| CWE-176 | 2 | -1 | UNKNOWN |  |  |
+| CWE-829 | 2 | 5 | injection |  | ✅ |
+| CWE-185 | 1 | 2 | numeric |  |  |
+| CWE-1049 | 1 | 3 | resource_management |  |  |
+| CWE-628 | 1 | 10 | code_quality |  | ✅ |
+| CWE-202 | 1 | 6 | broken_access_control |  |  |
+| CWE-460 | 1 | 14 | mishandling_exceptional_conditions |  | ✅ |
+| CWE-73 | 1 | 6 | broken_access_control |  | ✅ |
+| CWE-93 | 1 | 5 | injection |  | ✅ |
+| CWE-117 | 1 | 13 | logging_and_alerting_failures |  | ✅ |
+| CWE-788 | 1 | -1 | UNKNOWN |  |  |
+| CWE-1050 | 1 | 3 | resource_management |  |  |
+| CWE-282 | 1 | 6 | broken_access_control |  | ✅ |
+| CWE-323 | 1 | 8 | cryptographic_failures |  | ✅ |
+| CWE-943 | 1 | 5 | injection |  |  |
+| CWE-300 | 1 | 6 | broken_access_control |  | ✅ |
+| CWE-26 | 1 | -1 | UNKNOWN |  |  |
 | CWE-349 | 1 | 8 | cryptographic_failures |  |  |
+| CWE-501 | 1 | -1 | UNKNOWN |  | ✅ |
+| CWE-612 | 1 | -1 | UNKNOWN |  |  |
+| CWE-359 | 1 | 6 | broken_access_control |  | ✅ |
+| CWE-538 | 1 | 6 | broken_access_control |  | ✅ |
+| CWE-840 | 1 | -1 | UNKNOWN |  |  |
+| CWE-521 | 1 | 7 | authentication_failures |  | ✅ |
 
-> **Unique CWEs**: 154
+> **Unique CWEs**: 192
 > **Unique Groups**: 16
 
 ### Top 25 Most Dangerous CWEs
 
 | CWE | Count | Group ID | Group |
 |---|---|---|---|
-| CWE-787 | 2,226 | 1 | memory_safety |
-| CWE-125 | 2,072 | 1 | memory_safety |
-| CWE-476 | 2,026 | 1 | memory_safety |
-| CWE-20 | 1,778 | 4 | input_validation |
-| CWE-416 | 1,663 | 1 | memory_safety |
-| CWE-200 | 889 | 6 | broken_access_control |
-| CWE-120 | 737 | 1 | memory_safety |
-| CWE-122 | 207 | 1 | memory_safety |
-| CWE-22 | 193 | 6 | broken_access_control |
+| CWE-787 | 1,553 | 1 | memory_safety |
+| CWE-125 | 1,330 | 1 | memory_safety |
+| CWE-476 | 1,265 | 1 | memory_safety |
+| CWE-20 | 1,187 | 4 | input_validation |
+| CWE-416 | 975 | 1 | memory_safety |
+| CWE-200 | 603 | 6 | broken_access_control |
+| CWE-120 | 424 | 1 | memory_safety |
+| CWE-79 | 336 | 5 | injection |
+| CWE-22 | 323 | 6 | broken_access_control |
+| CWE-89 | 209 | 5 | injection |
 | CWE-770 | 138 | 3 | resource_management |
-| CWE-78 | 102 | 5 | injection |
-| CWE-284 | 96 | 6 | broken_access_control |
-| CWE-863 | 87 | 6 | broken_access_control |
-| CWE-79 | 71 | 5 | injection |
-| CWE-89 | 65 | 5 | injection |
-| CWE-862 | 63 | 6 | broken_access_control |
-| CWE-121 | 44 | 1 | memory_safety |
-| CWE-77 | 41 | 5 | injection |
-| CWE-502 | 40 | 12 | software_or_data_integrity_failures |
-| CWE-94 | 16 | 5 | injection |
-| CWE-918 | 8 | 6 | broken_access_control |
-| CWE-434 | 6 | 5 | injection |
-| CWE-306 | 4 | 7 | authentication_failures |
-| CWE-639 | 4 | 6 | broken_access_control |
-| **Total** | **12,576** | | |
+| CWE-502 | 112 | 12 | software_or_data_integrity_failures |
+| CWE-122 | 111 | 1 | memory_safety |
+| CWE-284 | 107 | 6 | broken_access_control |
+| CWE-863 | 98 | 6 | broken_access_control |
+| CWE-78 | 94 | 5 | injection |
+| CWE-862 | 77 | 6 | broken_access_control |
+| CWE-94 | 56 | 5 | injection |
+| CWE-918 | 47 | 6 | broken_access_control |
+| CWE-434 | 44 | 5 | injection |
+| CWE-352 | 44 | 6 | broken_access_control |
+| CWE-77 | 38 | 5 | injection |
+| CWE-121 | 22 | 1 | memory_safety |
+| CWE-306 | 21 | 7 | authentication_failures |
+| CWE-639 | 5 | 6 | broken_access_control |
+| **Total** | **9,219** | | |
 
-> **Unique CWEs**: 24
+> **Unique CWEs**: 25
 > **Unique Groups**: 7
 
 #### Top 25 Group Distribution
 
 | Group ID | Group | Count |
 |---|---|---|
-| 1 | memory_safety | 8,975 |
-| 4 | input_validation | 1,778 |
-| 6 | broken_access_control | 1,340 |
-| 5 | injection | 301 |
+| 1 | memory_safety | 5,680 |
+| 6 | broken_access_control | 1,304 |
+| 4 | input_validation | 1,187 |
+| 5 | injection | 777 |
 | 3 | resource_management | 138 |
-| 12 | software_or_data_integrity_failures | 40 |
-| 7 | authentication_failures | 4 |
-| **Total** | **12,576** |
+| 12 | software_or_data_integrity_failures | 112 |
+| 7 | authentication_failures | 21 |
+| **Total** | **9,219** |
 
 ### OWASP Top 10 (2025)
 
 | CWE | Count | Group | OWASP |
 |---|---|---|---|
-| CWE-476 | 2,026 | memory_safety | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-20 | 1,778 | input_validation | A05:2025 - Injection |
-| CWE-362 | 968 | concurrency | A06:2025 - Insecure Design |
-| CWE-200 | 889 | broken_access_control | A01:2025 - Broken Access Control |
-| CWE-287 | 327 | authentication_failures | A07:2025 - Authentication Failures |
-| CWE-22 | 193 | broken_access_control | A01:2025 - Broken Access Control |
-| CWE-369 | 188 | numeric | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-269 | 151 | broken_access_control | A06:2025 - Insecure Design |
-| CWE-59 | 148 | broken_access_control | A01:2025 - Broken Access Control |
-| CWE-295 | 117 | authentication_failures | A07:2025 - Authentication Failures |
-| CWE-78 | 102 | injection | A05:2025 - Injection |
-| CWE-284 | 96 | broken_access_control | A01:2025 - Broken Access Control |
-| CWE-863 | 87 | broken_access_control | A01:2025 - Broken Access Control |
-| CWE-732 | 84 | security_misconfiguration | A01:2025 - Broken Access Control |
-| CWE-74 | 78 | injection | A05:2025 - Injection |
-| CWE-252 | 77 | mishandling_exceptional_conditions | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-79 | 71 | injection | A05:2025 - Injection |
-| CWE-89 | 65 | injection | A05:2025 - Injection |
-| CWE-330 | 63 | cryptographic_failures | A04:2025 - Cryptographic Failures |
-| CWE-862 | 63 | broken_access_control | A01:2025 - Broken Access Control |
-| CWE-668 | 62 | broken_access_control | A01:2025 - Broken Access Control |
-| CWE-754 | 62 | mishandling_exceptional_conditions | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-327 | 59 | cryptographic_failures | A04:2025 - Cryptographic Failures |
-| CWE-755 | 56 | mishandling_exceptional_conditions | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-129 | 42 | numeric | A05:2025 - Injection |
-| CWE-77 | 41 | injection | A05:2025 - Injection |
-| CWE-326 | 40 | cryptographic_failures | A04:2025 - Cryptographic Failures |
-| CWE-502 | 40 | software_or_data_integrity_failures | A08:2025 - Software or Data Integrity Failures |
-| CWE-611 | 38 | security_misconfiguration | A02:2025 - Security Misconfiguration |
-| CWE-776 | 36 | resource_management | A02:2025 - Security Misconfiguration |
-| CWE-436 | 36 | input_validation | A06:2025 - Insecure Design |
-| CWE-345 | 32 | security_misconfiguration | A08:2025 - Software or Data Integrity Failures |
-| CWE-276 | 28 | security_misconfiguration | A01:2025 - Broken Access Control |
-| CWE-601 | 26 | broken_access_control | A01:2025 - Broken Access Control |
-| CWE-444 | 22 | injection | A06:2025 - Insecure Design |
-| CWE-347 | 21 | cryptographic_failures | A04:2025 - Cryptographic Failures |
-| CWE-552 | 18 | broken_access_control | A01:2025 - Broken Access Control |
-| CWE-116 | 18 | injection | A05:2025 - Injection |
-| CWE-426 | 16 | code_quality | A08:2025 - Software or Data Integrity Failures |
-| CWE-94 | 16 | injection | A05:2025 - Injection |
-| CWE-319 | 13 | cryptographic_failures | A04:2025 - Cryptographic Failures |
-| CWE-331 | 12 | cryptographic_failures | A04:2025 - Cryptographic Failures |
-| CWE-346 | 12 | authentication_failures | A07:2025 - Authentication Failures |
-| CWE-337 | 10 | cryptographic_failures | A04:2025 - Cryptographic Failures |
-| CWE-532 | 9 | logging_and_alerting_failures | A09:2025 - Logging & Alerting Failures |
-| CWE-918 | 8 | broken_access_control | A01:2025 - Broken Access Control |
-| CWE-90 | 8 | injection | A05:2025 - Injection |
-| CWE-494 | 6 | software_or_data_integrity_failures | A08:2025 - Software or Data Integrity Failures |
-| CWE-434 | 6 | injection | A06:2025 - Insecure Design |
-| CWE-693 | 6 | deprecated | A06:2025 - Insecure Design |
-| CWE-522 | 5 | cryptographic_failures | A06:2025 - Insecure Design |
-| CWE-113 | 4 | injection | A05:2025 - Injection |
-| CWE-306 | 4 | authentication_failures | A07:2025 - Authentication Failures |
-| CWE-324 | 4 | cryptographic_failures | A04:2025 - Cryptographic Failures |
-| CWE-1021 | 4 | software_or_data_integrity_failures | A06:2025 - Insecure Design |
-| CWE-285 | 4 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-476 | 1,265 | memory_safety | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-20 | 1,187 | input_validation | A05:2025 - Injection |
+| CWE-200 | 603 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-362 | 560 | concurrency | A06:2025 - Insecure Design |
+| CWE-79 | 336 | injection | A05:2025 - Injection |
+| CWE-22 | 323 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-611 | 229 | security_misconfiguration | A02:2025 - Security Misconfiguration |
+| CWE-287 | 214 | authentication_failures | A07:2025 - Authentication Failures |
+| CWE-89 | 209 | injection | A05:2025 - Injection |
+| CWE-369 | 172 | numeric | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-74 | 130 | injection | A05:2025 - Injection |
+| CWE-502 | 112 | software_or_data_integrity_failures | A08:2025 - Software or Data Integrity Failures |
+| CWE-284 | 107 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-863 | 98 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-668 | 97 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-78 | 94 | injection | A05:2025 - Injection |
+| CWE-269 | 84 | broken_access_control | A06:2025 - Insecure Design |
+| CWE-295 | 83 | authentication_failures | A07:2025 - Authentication Failures |
+| CWE-59 | 79 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-862 | 77 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-732 | 63 | security_misconfiguration | A01:2025 - Broken Access Control |
+| CWE-94 | 56 | injection | A05:2025 - Injection |
+| CWE-918 | 47 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-345 | 45 | security_misconfiguration | A08:2025 - Software or Data Integrity Failures |
+| CWE-434 | 44 | injection | A06:2025 - Insecure Design |
+| CWE-352 | 44 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-755 | 42 | mishandling_exceptional_conditions | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-252 | 41 | mishandling_exceptional_conditions | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-754 | 38 | mishandling_exceptional_conditions | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-77 | 38 | injection | A05:2025 - Injection |
+| CWE-327 | 37 | cryptographic_failures | A04:2025 - Cryptographic Failures |
+| CWE-444 | 36 | injection | A06:2025 - Insecure Design |
+| CWE-330 | 33 | cryptographic_failures | A04:2025 - Cryptographic Failures |
+| CWE-129 | 32 | numeric | A05:2025 - Injection |
+| CWE-601 | 25 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-326 | 25 | cryptographic_failures | A04:2025 - Cryptographic Failures |
+| CWE-116 | 25 | injection | A05:2025 - Injection |
+| CWE-384 | 25 | authentication_failures | A07:2025 - Authentication Failures |
+| CWE-552 | 23 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-436 | 22 | input_validation | A06:2025 - Insecure Design |
+| CWE-306 | 21 | authentication_failures | A07:2025 - Authentication Failures |
+| CWE-346 | 21 | authentication_failures | A07:2025 - Authentication Failures |
+| CWE-347 | 20 | cryptographic_failures | A04:2025 - Cryptographic Failures |
+| CWE-776 | 19 | resource_management | A02:2025 - Security Misconfiguration |
+| CWE-312 | 19 | cryptographic_failures | A06:2025 - Insecure Design |
+| CWE-276 | 17 | security_misconfiguration | A01:2025 - Broken Access Control |
+| CWE-290 | 15 | authentication_failures | A07:2025 - Authentication Failures |
+| CWE-917 | 13 | injection | A05:2025 - Injection |
+| CWE-522 | 12 | cryptographic_failures | A06:2025 - Insecure Design |
+| CWE-532 | 11 | logging_and_alerting_failures | A09:2025 - Logging & Alerting Failures |
+| CWE-338 | 11 | cryptographic_failures | A04:2025 - Cryptographic Failures |
+| CWE-426 | 10 | code_quality | A08:2025 - Software or Data Integrity Failures |
+| CWE-319 | 9 | cryptographic_failures | A04:2025 - Cryptographic Failures |
+| CWE-1021 | 9 | software_or_data_integrity_failures | A06:2025 - Insecure Design |
+| CWE-613 | 9 | authentication_failures | A07:2025 - Authentication Failures |
+| CWE-260 | 8 | UNKNOWN | A02:2025 - Security Misconfiguration |
+| CWE-285 | 7 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-331 | 6 | cryptographic_failures | A04:2025 - Cryptographic Failures |
+| CWE-470 | 6 | input_validation | A05:2025 - Injection |
+| CWE-281 | 6 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-248 | 5 | mishandling_exceptional_conditions | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-337 | 5 | cryptographic_failures | A04:2025 - Cryptographic Failures |
+| CWE-90 | 5 | injection | A05:2025 - Injection |
+| CWE-639 | 5 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-91 | 5 | injection | A05:2025 - Injection |
+| CWE-916 | 5 | cryptographic_failures | A04:2025 - Cryptographic Failures |
+| CWE-693 | 4 | deprecated | A06:2025 - Insecure Design |
+| CWE-427 | 4 | code_quality | A08:2025 - Software or Data Integrity Failures |
 | CWE-88 | 4 | injection | A05:2025 - Injection |
-| CWE-639 | 4 | broken_access_control | A01:2025 - Broken Access Control |
-| CWE-628 | 2 | code_quality | A06:2025 - Insecure Design |
-| CWE-248 | 2 | mishandling_exceptional_conditions | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-460 | 2 | mishandling_exceptional_conditions | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-290 | 2 | authentication_failures | A07:2025 - Authentication Failures |
-| CWE-73 | 2 | broken_access_control | A06:2025 - Insecure Design |
-| CWE-93 | 2 | injection | A05:2025 - Injection |
-| CWE-117 | 2 | logging_and_alerting_failures | A09:2025 - Logging & Alerting Failures |
-| CWE-209 | 2 | mishandling_exceptional_conditions | A10:2025 - Mishandling of Exceptional Conditions |
-| CWE-282 | 2 | broken_access_control | A01:2025 - Broken Access Control |
-| CWE-610 | 2 | broken_access_control | A05:2025 - Injection |
-| CWE-338 | 2 | cryptographic_failures | A04:2025 - Cryptographic Failures |
-| CWE-300 | 2 | broken_access_control | A07:2025 - Authentication Failures |
-| CWE-307 | 2 | authentication_failures | A07:2025 - Authentication Failures |
-| CWE-325 | 2 | cryptographic_failures | A04:2025 - Cryptographic Failures |
-| **Total** | **8,431** | | |
+| CWE-209 | 4 | mishandling_exceptional_conditions | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-610 | 4 | broken_access_control | A05:2025 - Injection |
+| CWE-798 | 4 | authentication_failures | A07:2025 - Authentication Failures |
+| CWE-494 | 3 | software_or_data_integrity_failures | A08:2025 - Software or Data Integrity Failures |
+| CWE-307 | 3 | authentication_failures | A07:2025 - Authentication Failures |
+| CWE-325 | 3 | cryptographic_failures | A04:2025 - Cryptographic Failures |
+| CWE-377 | 3 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-113 | 2 | injection | A05:2025 - Injection |
+| CWE-324 | 2 | cryptographic_failures | A04:2025 - Cryptographic Failures |
+| CWE-335 | 2 | cryptographic_failures | A04:2025 - Cryptographic Failures |
+| CWE-749 | 2 | UNKNOWN | A01:2025 - Broken Access Control |
+| CWE-379 | 2 | UNKNOWN | A01:2025 - Broken Access Control |
+| CWE-829 | 2 | injection | A08:2025 - Software or Data Integrity Failures |
+| CWE-628 | 1 | code_quality | A06:2025 - Insecure Design |
+| CWE-460 | 1 | mishandling_exceptional_conditions | A10:2025 - Mishandling of Exceptional Conditions |
+| CWE-73 | 1 | broken_access_control | A06:2025 - Insecure Design |
+| CWE-93 | 1 | injection | A05:2025 - Injection |
+| CWE-117 | 1 | logging_and_alerting_failures | A09:2025 - Logging & Alerting Failures |
+| CWE-282 | 1 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-323 | 1 | cryptographic_failures | A04:2025 - Cryptographic Failures |
+| CWE-300 | 1 | broken_access_control | A07:2025 - Authentication Failures |
+| CWE-501 | 1 | UNKNOWN | A06:2025 - Insecure Design |
+| CWE-359 | 1 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-538 | 1 | broken_access_control | A01:2025 - Broken Access Control |
+| CWE-521 | 1 | authentication_failures | A07:2025 - Authentication Failures |
+| **Total** | **7,139** | | |
 
-> **Unique CWEs**: 72
+> **Unique CWEs**: 94
 > **Unique Groups**: 9
 
 #### OWASP Top 10 Group Distribution
 
 | OWASP Category | Count |
 |---|---|
-| A10:2025 - Mishandling of Exceptional Conditions | 2,415 |
-| A05:2025 - Injection | 2,231 |
-| A01:2025 - Broken Access Control | 1,712 |
-| A06:2025 - Insecure Design | 1,202 |
-| A07:2025 - Authentication Failures | 466 |
-| A04:2025 - Cryptographic Failures | 226 |
-| A08:2025 - Software or Data Integrity Failures | 94 |
-| A02:2025 - Security Misconfiguration | 74 |
-| A09:2025 - Logging & Alerting Failures | 11 |
-| **Total** | **8,431** |
+| A05:2025 - Injection | 2,147 |
+| A01:2025 - Broken Access Control | 1,631 |
+| A10:2025 - Mishandling of Exceptional Conditions | 1,568 |
+| A06:2025 - Insecure Design | 793 |
+| A07:2025 - Authentication Failures | 397 |
+| A02:2025 - Security Misconfiguration | 256 |
+| A08:2025 - Software or Data Integrity Failures | 176 |
+| A04:2025 - Cryptographic Failures | 159 |
+| A09:2025 - Logging & Alerting Failures | 12 |
+| **Total** | **7,139** |
 
 ---
 
@@ -1840,19 +1898,19 @@ Total: **176,674** | Benign: **154,205** | Vulnerable: **22,469**
 
 | Group ID | Group | BigVul | DiverseVul | MegaVul | TitanVul | BenchVul | Merged |
 |---|---|---|---|---|---|---|---|
-| 1 | memory_safety | 3618 | 7065 | 12214 | 6218 | 200 | 8962 |
-| -1 | UNKNOWN | 2135 | 2836 | 2137 | 20546 | 0 | 2759 |
-| 6 | broken_access_control | 1341 | 1816 | 2422 | 2500 | 350 | 2285 |
-| 3 | resource_management | 916 | 1383 | 2784 | 1279 | 50 | 2100 |
-| 4 | input_validation | 1152 | 1400 | 1943 | 1696 | 0 | 1778 |
-| 2 | numeric | 703 | 1187 | 2012 | 1163 | 50 | 1606 |
-| 5 | injection | 101 | 395 | 437 | 2252 | 250 | 310 |
-| 9 | concurrency | 266 | 450 | 1195 | 412 | 0 | 824 |
-| 10 | code_quality | 121 | 393 | 1198 | 445 | 0 | 703 |
-| 8 | cryptographic_failures | 130 | 547 | 388 | 543 | 0 | 313 |
-| 14 | mishandling_exceptional_conditions | 24 | 869 | 225 | 519 | 0 | 134 |
-| 7 | authentication_failures | 36 | 304 | 468 | 512 | 100 | 173 |
-| 15 | deprecated | 271 | 179 | 258 | 164 | 0 | 339 |
-| 11 | security_misconfiguration | 75 | 96 | 192 | 160 | 0 | 149 |
-| 12 | software_or_data_integrity_failures | 5 | 18 | 50 | 128 | 50 | 27 |
-| 13 | logging_and_alerting_failures | 1 | 7 | 11 | 11 | 0 | 7 |
+| 1 | memory_safety | 3618 | 7065 | 7659 | 6218 | 200 | 8962 |
+| -1 | UNKNOWN | 2135 | 2836 | 1768 | 20546 | 0 | 2759 |
+| 6 | broken_access_control | 1341 | 1816 | 2249 | 2500 | 350 | 2285 |
+| 3 | resource_management | 916 | 1383 | 1883 | 1279 | 50 | 2100 |
+| 4 | input_validation | 1152 | 1400 | 1317 | 1696 | 0 | 1778 |
+| 2 | numeric | 703 | 1187 | 1398 | 1163 | 50 | 1606 |
+| 5 | injection | 101 | 395 | 1001 | 2252 | 250 | 310 |
+| 9 | concurrency | 266 | 450 | 686 | 412 | 0 | 824 |
+| 10 | code_quality | 121 | 393 | 814 | 445 | 0 | 703 |
+| 8 | cryptographic_failures | 130 | 547 | 300 | 543 | 0 | 313 |
+| 14 | mishandling_exceptional_conditions | 24 | 869 | 144 | 519 | 0 | 134 |
+| 7 | authentication_failures | 36 | 304 | 401 | 512 | 100 | 173 |
+| 15 | deprecated | 271 | 179 | 283 | 164 | 0 | 339 |
+| 11 | security_misconfiguration | 75 | 96 | 361 | 160 | 0 | 149 |
+| 12 | software_or_data_integrity_failures | 5 | 18 | 132 | 128 | 50 | 27 |
+| 13 | logging_and_alerting_failures | 1 | 7 | 12 | 11 | 0 | 7 |
