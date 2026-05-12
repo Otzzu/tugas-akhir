@@ -113,7 +113,7 @@ class TrainingSession:
             try:
                 import torch._dynamo
                 torch._dynamo.config.capture_scalar_outputs = True
-                model = torch.compile(model, mode="reduce-overhead")
+                model = torch.compile(model, mode="default", dynamic=True)
                 logger.info("torch.compile enabled (mode=reduce-overhead)")
             except Exception as e:
                 logger.warning(f"torch.compile failed, skipping: {e}")
