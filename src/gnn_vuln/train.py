@@ -325,6 +325,8 @@ class TrainingSession:
                 class_weight = livable_weights(
                     train_counts, epoch, cfg.train.epochs, cfg.model.num_classes, self.device
                 )
+            if torch.cuda.is_available():
+                torch.cuda.reset_peak_memory_stats()
             t0 = time.time()
             train_loss = trainer.train_epoch(train_loader, epoch, cfg.train.epochs, class_weight)
             val_loss, val_acc, val_conf, val_f1, val_f1w = trainer.evaluate(
@@ -344,11 +346,15 @@ class TrainingSession:
                 f"patience={patience_counter}/{cfg.train.patience} | "
                 f"{epoch_time:.0f}s" + (" *" if improved else "")
             )
+            epoch_peak_vram = 0.0
+            if torch.cuda.is_available():
+                epoch_peak_vram = round(torch.cuda.max_memory_allocated() / 1024**3, 3)
             epoch_log.append({
                 "epoch": epoch, "train_loss": round(train_loss, 6),
                 "val_loss": round(val_loss, 6), "val_acc": round(val_acc, 6),
                 "val_f1": round(val_f1, 6), "val_f1w": round(val_f1w, 6),
-                "lr": lr_now, "epoch_time_s": round(epoch_time, 1), "best": improved,
+                "lr": lr_now, "epoch_time_s": round(epoch_time, 1),
+                "peak_vram_gb": epoch_peak_vram, "best": improved,
             })
             if improved:
                 best_val_f1 = val_f1; best_val_loss = val_loss; patience_counter = 0
@@ -378,32 +384,45 @@ class TrainingSession:
         logger.info(f"Best checkpoint → {cm.best_path}")
         logger.info(f"To evaluate: uv run evaluate --checkpoint {cm.best_path}")
 
-        # Save training log + summary + curves to checkpoint dir
+        # Save training artifacts to results_dir (separate from model weights)
         import csv as _csv, json as _json
-        run_dir = cm.best_path.parent
+        res_dir = cfg.train.results_dir / run_id
+        res_dir.mkdir(parents=True, exist_ok=True)
+
         if epoch_log:
-            log_path = run_dir / "training_log.csv"
+            log_path = res_dir / "training_log.csv"
             with open(log_path, "w", newline="") as f:
                 writer = _csv.DictWriter(f, fieldnames=epoch_log[0].keys())
                 writer.writeheader(); writer.writerows(epoch_log)
             logger.info(f"training_log.csv → {log_path}")
 
         epoch_times = [r["epoch_time_s"] for r in epoch_log]
-        summary_path = run_dir / "training_summary.json"
+        num_params = sum(p.numel() for p in trainer.model.parameters())
+        peak_vram_gb = peak_reserved_gb = 0.0
+        if torch.cuda.is_available():
+            peak_vram_gb     = round(torch.cuda.max_memory_allocated() / 1024**3, 3)
+            peak_reserved_gb = round(torch.cuda.max_memory_reserved()  / 1024**3, 3)
+        summary_path = res_dir / "training_summary.json"
         with open(summary_path, "w") as f:
             _json.dump({
-                "dataset_pt":        _dataset_pt,
-                "epochs_trained":    len(epoch_log),
-                "best_val_f1":       round(best_val_f1, 6),
-                "best_val_loss":     round(best_val_loss, 6),
-                "test_acc":          round(test_acc, 6),
-                "test_f1":           round(test_f1, 6),
-                "test_f1w":          round(test_f1w, 6),
-                "test_conf":         round(test_conf, 6),
-                "total_time_s":      total_time,
-                "avg_epoch_time_s":  round(sum(epoch_times) / len(epoch_times), 1) if epoch_times else 0,
-                "min_epoch_time_s":  round(min(epoch_times), 1) if epoch_times else 0,
-                "max_epoch_time_s":  round(max(epoch_times), 1) if epoch_times else 0,
+                "run_id":              run_id,
+                "architecture":        cfg.model.architecture,
+                "dataset_pt":          _dataset_pt,
+                "num_classes":         cfg.model.num_classes,
+                "num_params":          num_params,
+                "epochs_trained":      len(epoch_log),
+                "best_val_f1":         round(best_val_f1, 6),
+                "best_val_loss":       round(best_val_loss, 6),
+                "test_acc":            round(test_acc, 6),
+                "test_f1":             round(test_f1, 6),
+                "test_f1w":            round(test_f1w, 6),
+                "test_conf":           round(test_conf, 6),
+                "total_time_s":        total_time,
+                "avg_epoch_time_s":    round(sum(epoch_times) / len(epoch_times), 1) if epoch_times else 0,
+                "min_epoch_time_s":    round(min(epoch_times), 1) if epoch_times else 0,
+                "max_epoch_time_s":    round(max(epoch_times), 1) if epoch_times else 0,
+                "peak_vram_gb":        peak_vram_gb,
+                "peak_reserved_gb":    peak_reserved_gb,
             }, f, indent=2)
         logger.info(f"training_summary.json → {summary_path}")
 
@@ -418,9 +437,14 @@ class TrainingSession:
                 val_loss_ = [r["val_loss"]   for r in epoch_log]
                 val_f1_   = [r["val_f1"]     for r in epoch_log]
                 val_f1w_  = [r["val_f1w"]    for r in epoch_log]
+                vram_     = [r.get("peak_vram_gb", 0.0) for r in epoch_log]
                 best_ep   = next((r["epoch"] for r in epoch_log if r["best"]), None)
+                has_vram  = any(v > 0 for v in vram_)
 
-                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+                nrows = 3 if has_vram else 2
+                fig, axes = plt.subplots(nrows, 1, figsize=(10, 4 * nrows), sharex=True)
+                ax1, ax2 = axes[0], axes[1]
+
                 ax1.plot(epochs, tr_loss,   label="train loss",  color="steelblue")
                 ax1.plot(epochs, val_loss_, label="val loss",    color="tomato")
                 if best_ep:
@@ -432,10 +456,18 @@ class TrainingSession:
                 ax2.plot(epochs, val_f1w_, label="val F1 weighted",  color="darkorange", linestyle="--")
                 if best_ep:
                     ax2.axvline(best_ep, color="gray", linestyle="--", alpha=0.6)
-                ax2.set_ylabel("F1"); ax2.set_xlabel("Epoch"); ax2.legend(); ax2.grid(True, alpha=0.3)
+                ax2.set_ylabel("F1"); ax2.legend(); ax2.grid(True, alpha=0.3)
+                if not has_vram:
+                    ax2.set_xlabel("Epoch")
+
+                if has_vram:
+                    ax3 = axes[2]
+                    ax3.plot(epochs, vram_, label="peak VRAM (GB)", color="mediumpurple")
+                    ax3.set_ylabel("VRAM (GB)"); ax3.set_xlabel("Epoch")
+                    ax3.legend(); ax3.grid(True, alpha=0.3)
 
                 plt.tight_layout()
-                curves_path = run_dir / "training_curves.png"
+                curves_path = res_dir / "training_curves.png"
                 fig.savefig(curves_path, dpi=150)
                 plt.close(fig)
                 logger.info(f"training_curves.png → {curves_path}")
