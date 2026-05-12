@@ -1,27 +1,73 @@
 # Architecture Options
 
-## Status Legend
+## Dimension Legend
 
-| Symbol | Meaning |
-|--------|---------|
-| ✅ **CURRENT** | Currently implemented and in use |
-| ✔ Implemented | Previously implemented, superseded |
-| 🎯 Target | Next planned implementation |
+| Symbol | Meaning | Typical value |
+|--------|---------|---------------|
+| D_node | Frozen node embedding dim | 773 |
+| D_hidden | GNN hidden dim | 256 |
+| D_lm | Live LM embedding dim | 768 (UniXcoder/CodeBERT), 256 (CodeT5+) |
+| D_edge | Edge feature dim | 7 (one-hot CPG types) |
+| C | Number of output classes | config-dependent |
+| N | Number of nodes in graph | varies |
+| B | Batch size | config-dependent |
+
+---
+
+## Evolution Overview
+
+| # | Name | Key innovation over previous |
+|---|------|------------------------------|
+| 1 | LM-GCN (`lmgcn`) | Baseline: frozen CodeBERT node features + GCNConv + MIL stmt head |
+| 2 | LM-GAT v2 (`lmgat`) | GATv2Conv with D_edge edge features + pairwise ranking loss + class weights |
+| 3 | LM-GAT-CodeBERT (`lmgat_codebert`) | Live fine-tuned CodeBERT for full-function context; concat with GNN pool |
+| 4 | LM-GAT-MCS (`lmgat_mcs`) | Multiclass statement head; func prediction strictly derived from stmt scores (WAVES-style) |
+| 5 | LM-GIN (`lmgin`) | GINEConv (sum aggregation) for higher expressiveness per Xu et al. 2019 |
+| 6 | LM-GAT-Interp (`lmgat_interp`) | Correct VulLMGNN explicit stage: two independent heads blended via learned scalar λ |
+| 7 | LM-GAT-Seq (`lmgat_seq`) | Two-stage sequential: Stage 1 produces per-node s_i; Stage 2 GNN uses s_i + live LM |
+| 8 | LM-GAT-WAVES-Seq (`lmgat_waves_seq`) | Transformer (WAVES-style) as Stage 1 localizer; Stage 2 GATv2 + LM; detached s_i |
+| 9 | LM-GGNN (`lmggnn`) | GatedGraphConv backbone (GRU gating) instead of GATv2 |
+| 10 | LM-GAT-DualFlow (`lmgat_dualflow`) | Dual-flow pooling in Stage 2: focal (suspicion-weighted) + context (mean) streams |
+| 11 | LM-GAT-CodeBERT-MTL (`lmgat_codebert_mtl`) | Multi-task heads: binary + coarse group + fine CWE; group probs condition CWE head |
+| 12 | HC-DFGAT (`lmgat_hcdfgat`) | Combines Arch10 dual-flow + Arch11 MTL + Hierarchical Supervised Contrastive loss |
+
+---
+
+## Non-Sequential Architectures
+
+Single GNN pass (no Stage 1 → s_i → Stage 2):
+
+- **Arch1** `lmgcn` — LM-GCN
+- **Arch2** `lmgat` — LM-GAT v2 with Edge Features
+- **Arch3** `lmgat_codebert` — LM-GAT v2 + Live Fine-tuned CodeBERT
+- **Arch4** `lmgat_mcs` — LM-GAT v2 + Live CodeBERT + Multiclass Statement Head
+- **Arch5** `lmgin` — LM-GIN (Graph Isomorphism Network)
+- **Arch6** `lmgat_interp` — LM-GAT + VulLMGNN Explicit Interpolation
+- **Arch9** `lmggnn` — LM-GGNN (GatedGraphConv backbone)
+- **Arch11** `lmgat_codebert_mtl` — LM-GAT-CodeBERT-MTL (Multi-Task Learning Heads)
+
+## Sequential Architectures
+
+Stage 1 → per-node suspicion s_i → Stage 2:
+
+- **Arch7** `lmgat_seq` — LM-GAT-Seq (Sequential Localization → Classification)
+- **Arch8** `lmgat_waves_seq` — LM-GAT-WAVES-Seq (Transformer Localization → GATv2 + LM Classification)
+- **Arch10** `lmgat_dualflow` — LM-GAT-DualFlow (Context-Preserving Sequential Router)
+- **Arch12** `lmgat_hcdfgat` — HC-DFGAT (Hierarchical Contrastive Dual-Flow GAT)
 
 ---
 
 ## Architecture 1 — LM-GCN
 
-**Status:** ✔ Implemented (superseded by LM-GAT v2)
 **Config:** `configs/lmgcn/binary.yaml`, `configs/lmgcn/multiclass.yaml`
 **Model:** `src/gnn_vuln/models/lmgcn.py`
 
 ```
-CPG nodes (773D pre-computed, frozen CodeBERT per node)
+CPG nodes (D_node pre-computed, frozen CodeBERT per node)
     → GCNConv × num_layers
     → BatchNorm + ReLU + Dropout
     ↓
-    ├── global_mean_pool(h) → MLP → logit_func [B, num_classes]
+    ├── global_mean_pool(h) → MLP → logit_func [B, C]
     └── stmt_head: group nodes by line → max-pool + mean-pool per line
               → dual linear scorers → stmt_scores [n_stmts]
 
@@ -29,7 +75,7 @@ Loss = CE(logit_func, y, class_weight)
      + mil_weight * MIL(stmt_scores, y, k)
 ```
 
-**Node features (773D):** `[node_type (1)] + [CodeBERT CLS per node (768)] + [dist_features (3)] + [danger_api (1)]`
+**Node features (D_node):** `[node_type (1)] + [CodeBERT CLS per node (768)] + [dist_features (3)] + [danger_api (1)]`
 **Edge features:** computed but ignored by GCNConv
 
 **Limitations:**
@@ -41,20 +87,19 @@ Loss = CE(logit_func, y, class_weight)
 
 ## Architecture 2 — LM-GAT v2 with Edge Features
 
-**Status:** ✅ **CURRENT**
 **Config:** `configs/lmgat/binary.yaml`, `configs/lmgat/multiclass.yaml`
 **Model:** `src/gnn_vuln/models/lmgat.py`
 
 ```
-CPG nodes (773D pre-computed, frozen CodeBERT per node)
-CPG edges (7D one-hot: AST/CFG/CDG/DDG/PDG/CALL/REACHING_DEF)
+CPG nodes (D_node pre-computed, frozen CodeBERT per node)
+CPG edges (D_edge one-hot: AST/CFG/CDG/DDG/PDG/CALL/REACHING_DEF)
     → GATv2Conv × num_layers
-        heads=4, concat=False → output stays 256D
-        edge_dim=7: edge type shapes attention weights
+        heads=4, concat=False → output stays D_hidden
+        edge_dim=D_edge: edge type shapes attention weights
         add_self_loops=True
     → BatchNorm + ReLU + Dropout
     ↓
-    ├── global_mean_pool(h) [B, 256] → MLP → logit_func [B, num_classes]
+    ├── global_mean_pool(h) [B, D_hidden] → MLP → logit_func [B, C]
     └── stmt_head: group nodes by source line
               max-pool(h_line) → Linear → s_max
               mean-pool(h_line) → Linear → s_mean
@@ -67,7 +112,7 @@ Loss = CE(logit_func, y, class_weight)
 
 **Key improvements over LM-GCN:**
 - GATv2Conv: truly dynamic pair-specific attention (Brody et al., ICLR 2022)
-- edge_dim=7: AST/CFG/PDG edges produce different attention weights
+- edge_dim=D_edge: AST/CFG/PDG edges produce different attention weights
 - Pairwise ranking loss: directly optimizes IFA and Effort@20%
 - Inverse-frequency class weights: fixes CWE collapse on minority classes
 
@@ -81,20 +126,19 @@ Loss = CE(logit_func, y, class_weight)
 
 ## Architecture 3 — LM-GAT v2 + Live Fine-tuned CodeBERT
 
-**Status:** ✔ Implemented
 **Config:** `configs/lmgat_codebert/binary.yaml`, `configs/lmgat_codebert/multiclass.yaml`
 **Model:** `src/gnn_vuln/models/lmgat_codebert.py`
 
 ```
 Full function text (stored as input_ids/attention_mask in Data object)
     → CodeBERT (LIVE, FINE-TUNED, lr=2e-5)
-    → CLS token [B, 768] ────────────────────────────────────────────┐
-                                                                      ↓
-CPG nodes (773D pre-computed, frozen — practical limitation)       concat [B, 256+768]
-    → GATv2Conv × num_layers (lr=1e-3)                                ↓
-    → BatchNorm + ReLU + Dropout                              MLP → logit_func [B, num_classes]
+    → CLS token [B, D_lm] ──────────────────────────────────────────────┐
+                                                                          ↓
+CPG nodes (D_node pre-computed, frozen — practical limitation)       concat [B, D_hidden+D_lm]
+    → GATv2Conv × num_layers (lr=1e-3)                                    ↓
+    → BatchNorm + ReLU + Dropout                                  MLP → logit_func [B, C]
     ↓
-    ├── global_mean_pool(h) [B, 256] ──────────────────────────────────┘
+    ├── global_mean_pool(h) [B, D_hidden] ──────────────────────────────────┘
     └── stmt_head: group nodes by source line
               max-pool + mean-pool per line
               → dual scorers → stmt_scores [n_stmts]   (binary: suspicious or not)
@@ -105,7 +149,7 @@ Loss = CE(logit_func, y, class_weight)
 ```
 
 **Key design decisions:**
-- Binary is treated as multiclass with num_classes=2 — one architecture for both modes
+- Binary is treated as multiclass with C=2 — one architecture for both modes
 - Statement head always binary (suspicious or not); function head always multiclass
 - CodeBERT fine-tuned for full-function context only — running CodeBERT per node during training is infeasible (100 nodes/graph × batch → too slow)
 - Node features stay pre-computed (same limitation as current)
@@ -130,15 +174,15 @@ torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 - No CPG regeneration needed — only the Data object processing changes
 
 **Model changes required:**
-- `lmgat.py`: add `self.codebert`, update `func_head` input dim to `hidden_dim + 768`, update `forward` to accept and run `func_input_ids/attention_mask`
+- `lmgat.py`: add `self.codebert`, update `func_head` input dim to `D_hidden + D_lm`, update `forward` to accept and run `func_input_ids/attention_mask`
 - `train.py`: AdamW param groups, linear warmup scheduler, gradient clipping, pass func tokens through `_forward`
 - `evaluate.py`: pass `func_input_ids/mask` through evaluate loop
 
 **Batch size (VRAM):**
 | Mode | Current | With Live CodeBERT |
 |------|---------|-------------------|
-| binary (num_classes=2) | 16 | 8 |
-| multiclass (num_classes=11) | 6 | 4 |
+| binary (C=2) | 16 | 8 |
+| multiclass (C=11) | 6 | 4 |
 
 **Expected improvements:**
 | Metric | LM-GAT v2 (current) | LM-GAT + Live CodeBERT |
@@ -153,7 +197,6 @@ torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
 ## Architecture 4 — LM-GAT v2 + Live CodeBERT + Multiclass Statement Head
 
-**Status:** ✔ Implemented
 **Config:** `configs/lmgat_mcs/multiclass.yaml`
 **Model:** `src/gnn_vuln/models/lmgat_mcs.py`
 
@@ -164,24 +207,24 @@ No separate function head — function prediction is always mathematically deriv
 ```
 Full function text (input_ids/attention_mask in Data object)
     → CodeBERT (LIVE, FINE-TUNED, lr=2e-5)
-    → CLS token [B, 768] ──────────────────────────────────────────────────────────┐
-                                                                                    │
-CPG nodes (773D pre-computed, frozen — practical limitation)                        │
-    → GATv2Conv × num_layers (lr=1e-3)                                             │
-    → BatchNorm + ReLU + Dropout                                                    │
-    ↓                                                                               │
-    stmt_head (MULTICLASS):                                                         │
-        group nodes by source line                                                  │
-        max-pool(h_line)  → Linear(256, num_classes) → score_max_j                 │
-        mean-pool(h_line) → Linear(256, num_classes) → score_mean_j                │
-        stmt_score_j = 0.8 * score_max_j + 0.6 * score_mean_j                      │
-        → stmt_scores [n_stmts, num_classes]                                        │
-              ↓                                                                     │
-        max_pool(stmt_scores, dim=0) [num_classes] ─── concat ─────────────────────┘
-                                                           ↓
-                                                [num_classes + 768]
-                                                           ↓
-                                                    MLP → func_logit [B, num_classes]
+    → CLS token [B, D_lm] ──────────────────────────────────────────────────────────┐
+                                                                                      │
+CPG nodes (D_node pre-computed, frozen — practical limitation)                        │
+    → GATv2Conv × num_layers (lr=1e-3)                                               │
+    → BatchNorm + ReLU + Dropout                                                      │
+    ↓                                                                                 │
+    stmt_head (MULTICLASS):                                                           │
+        group nodes by source line                                                    │
+        max-pool(h_line)  → Linear(D_hidden, C) → score_max_j                        │
+        mean-pool(h_line) → Linear(D_hidden, C) → score_mean_j                       │
+        stmt_score_j = 0.8 * score_max_j + 0.6 * score_mean_j                        │
+        → stmt_scores [n_stmts, C]                                                    │
+              ↓                                                                       │
+        max_pool(stmt_scores, dim=0) [C] ─── concat ─────────────────────────────────┘
+                                                ↓
+                                           [C + D_lm]
+                                                ↓
+                                        MLP → func_logit [B, C]
 
 Loss = CE(func_logit, y, class_weight)
      + mil_weight * MulticlassMIL(stmt_scores, y, k)
@@ -220,28 +263,27 @@ vulnerability spans multiple lines, the GNN's message passing captures inter-lin
 | No func_head needed | No | Yes — simpler model |
 
 **Additional change vs Architecture 6:**
-- `stmt_max_head` and `stmt_mean_head`: `Linear(hidden_dim, 1)` → `Linear(hidden_dim, num_classes)`
+- `stmt_max_head` and `stmt_mean_head`: `Linear(D_hidden, 1)` → `Linear(D_hidden, C)`
 - MIL loss: binary BCE → multiclass CE
 - Class weights applied in MIL loss too, not just func CE
-- `func_head` input: `Linear(num_classes + 768, ...)` instead of `Linear(hidden_dim + 768, ...)`
+- `func_head` input: `Linear(C + D_lm, ...)` instead of `Linear(D_hidden + D_lm, ...)`
 
 ---
 
 ## Architecture 5 — LM-GIN (Graph Isomorphism Network)
 
-**Status:** ✔ Implemented
 **Config:** `configs/lmgin/multiclass.yaml`
 **Model:** `src/gnn_vuln/models/lmgin.py`
 
 ```
-CPG nodes (773D pre-computed, frozen CodeBERT per node)
-CPG edges (7D one-hot)
-    → edge_proj: Linear(7, 773) [first layer] / Linear(7, 256) [subsequent]
+CPG nodes (D_node pre-computed, frozen CodeBERT per node)
+CPG edges (D_edge one-hot)
+    → edge_proj: Linear(D_edge, D_node) [first layer] / Linear(D_edge, D_hidden) [subsequent]
     → GINEConv × num_layers
         MLP((1+ε)*h_v + Σ_{u∈N(v)} (h_u + e_uv))  ← sum aggregation + edge features
     → BatchNorm + ReLU + Dropout
     ↓
-    ├── global_mean_pool(h) → MLP → logit_func [B, num_classes]
+    ├── global_mean_pool(h) → MLP → logit_func [B, C]
     └── stmt_head: group nodes by source line
               max-pool + mean-pool per line → dual scorers → stmt_scores [n_stmts]
 
@@ -268,7 +310,6 @@ Loss = CE(logit_func, y, class_weight)
 
 ## Architecture 6 — LM-GAT + VulLMGNN Explicit Interpolation
 
-**Status:** ✔ Implemented
 **Config:** `configs/lmgat_interp/multiclass.yaml`
 **Model:** `src/gnn_vuln/models/lmgat_interp.py`
 
@@ -278,18 +319,18 @@ Two fully independent branches combined via learned interpolation weight λ.
 ```
 Full function text (input_ids/attention_mask in Data object)
     → CodeBERT (LIVE, FINE-TUNED, lr=1e-5)
-    → CLS token [B, 768]
-    → lm_head MLP → logit_lm [B, num_classes]   ─────────────────────┐
-                                                                        │ λ = sigmoid(λ_logit) learned
-CPG nodes (773D pre-computed, frozen)                                   │
-    → GATv2Conv × num_layers (lr=1e-3)                                 │
-    → BatchNorm + ReLU + Dropout                                        │
-    ↓                                                                   │
-    global_mean_pool(h) → gnn_head MLP → logit_gnn [B, num_classes] ──┤
-                                                                        ↓
-                                                    λ * logit_gnn + (1-λ) * logit_lm
-                                                         ↓
-                                                 logit_func [B, num_classes]
+    → CLS token [B, D_lm]
+    → lm_head MLP → logit_lm [B, C]   ──────────────────────────────┐
+                                                                      │ λ = sigmoid(λ_logit) learned
+CPG nodes (D_node pre-computed, frozen)                               │
+    → GATv2Conv × num_layers (lr=1e-3)                               │
+    → BatchNorm + ReLU + Dropout                                      │
+    ↓                                                                 │
+    global_mean_pool(h) → gnn_head MLP → logit_gnn [B, C] ──────────┤
+                                                                      ↓
+                                              λ * logit_gnn + (1-λ) * logit_lm
+                                                   ↓
+                                           logit_func [B, C]
 
     └── stmt_head (GNN branch only):
               group nodes by source line
@@ -319,7 +360,6 @@ Loss = CE(logit_func, y, class_weight)
 
 ## Architecture 7 — LM-GAT-Seq (Sequential Localization → Classification)
 
-**Status:** ✔ Implemented
 **Config:** `configs/lmgat_seq/multiclass.yaml`
 **Model:** `src/gnn_vuln/models/lmgat_seq.py`
 
@@ -328,27 +368,27 @@ node features before Stage 2. Stage 2 combines suspicion-weighted GNN pooling + 
 classification.
 
 ```
-CPG nodes (773D pre-computed, frozen)
-CPG edges (7D one-hot)
+CPG nodes (D_node pre-computed, frozen)
+CPG edges (D_edge one-hot)
 
 ── Stage 1: Binary Localization ─────────────────────────────────────────────
-    → GATv2Conv × num_layers (heads=4, concat=False) → h_loc [N, 256]
+    → GATv2Conv × num_layers (heads=4, concat=False) → h_loc [N, D_hidden]
     → BatchNorm + ReLU + Dropout
     → binary stmt head: sigmoid(0.8*max_head(h_loc) + 0.6*mean_head(h_loc))
     → s_i ∈ [0,1] per node                                          [N]
 
 ── Stage 2: Classification ───────────────────────────────────────────────────
-    stage2_base = h_loc (256D) if stage2_node_input="loc"
-               or x_frozen (773D) if stage2_node_input="raw"
-    x_aug = concat(stage2_base, s_i)                    [N, 257 or 774]
-    → GATv2Conv × num_layers (heads=4, concat=False) → h_cls [N, 256]
+    stage2_base = h_loc (D_hidden) if stage2_node_input="loc"
+               or x_frozen (D_node) if stage2_node_input="raw"
+    x_aug = concat(stage2_base, s_i)              [N, D_hidden+1 or D_node+1]
+    → GATv2Conv × num_layers (heads=4, concat=False) → h_cls [N, D_hidden]
     → BatchNorm + ReLU + Dropout
     → suspicion-weighted pool:
-          graph_emb = global_add_pool(h_cls * s_i) / sum(s_i)     [B, 256]
+          graph_emb = global_add_pool(h_cls * s_i) / sum(s_i)     [B, D_hidden]
 
-Full function text → live LM → CLS token                          [B, 768]
-    concat(graph_emb, lm_emb)                                      [B, 1024]
-    → MLP → logit_func                                             [B, num_classes]
+Full function text → live LM → CLS token                          [B, D_lm]
+    concat(graph_emb, lm_emb)                                      [B, D_hidden+D_lm]
+    → MLP → logit_func                                             [B, C]
 
 Loss = CE(logit_func, y, class_weight)
      + mil_weight * MIL(stmt_scores_stage1, y, k)          # binary BCE on s_i
@@ -357,8 +397,8 @@ Loss = CE(logit_func, y, class_weight)
 
 **Key design decisions:**
 - Stage 1 and Stage 2 share the same graph — Stage 1 gradient flows into `s_i` during training
-- `stage2_node_input="raw"`: Stage 2 gets full 773D features + noisy-but-informative s_i gradient
-- `stage2_node_input="loc"`: Stage 2 gets compact 256D h_loc + s_i — smoother but loses raw signal
+- `stage2_node_input="raw"`: Stage 2 gets full D_node features + noisy-but-informative s_i gradient
+- `stage2_node_input="loc"`: Stage 2 gets compact D_hidden h_loc + s_i — smoother but loses raw signal
 - Suspicion-weighted pooling: high-suspicion nodes contribute more to graph_emb than uniform mean
 - No detachment: classification loss backpropagates through Stage 2 GNN; localization loss through Stage 1
 
@@ -375,7 +415,6 @@ Loss = CE(logit_func, y, class_weight)
 
 ## Architecture 8 — LM-GAT-WAVES-Seq (Transformer Localization → GATv2 + LM Classification)
 
-**Status:** ✔ Implemented
 **Config:** `configs/lmgat_waves_seq/multiclass.yaml`
 **Model:** `src/gnn_vuln/models/lmgat_waves_seq.py`
 
@@ -384,28 +423,28 @@ per-statement suspicion scores. Stage 2 uses GATv2 + live LM (VulLMGNN-style) fo
 Stages are **decoupled** — s_i is detached before Stage 2.
 
 ```
-CPG nodes (773D pre-computed, frozen)
-CPG edges (7D one-hot)
+CPG nodes (D_node pre-computed, frozen)
+CPG edges (D_edge one-hot)
 
 ── Stage 1: WAVES-style Transformer Localization ────────────────────────────
     Group nodes by source line → mean-pool CodeBERT slice (indices 1:769)
-    per-stmt embeddings [n_stmts, 768]
-    → TransformerEncoder(d_model=768, nhead=4, layers=2, dim_ff=1536)
-    → Linear(768, 1) → sigmoid → suspicion [n_stmts]
+    per-stmt embeddings [n_stmts, D_lm]
+    → TransformerEncoder(d_model=D_lm, nhead=4, layers=2, dim_ff=2*D_lm)
+    → Linear(D_lm, 1) → sigmoid → suspicion [n_stmts]
     → broadcast to node level via node_line mapping
     s_i ∈ [0,1] per node (DETACHED — Stage 2 sees no Stage 1 gradient)     [N]
 
 ── Stage 2 GNN Branch ────────────────────────────────────────────────────────
-    x_aug = concat(x_frozen, s_i)                              [N, 774]
-    → GATv2Conv × num_layers (heads=4, concat=False) → h [N, 256]
+    x_aug = concat(x_frozen, s_i)                              [N, D_node+1]
+    → GATv2Conv × num_layers (heads=4, concat=False) → h [N, D_hidden]
     → BatchNorm + ReLU + Dropout
-    → global_mean_pool(h) → gnn_emb                           [B, 256]
+    → global_mean_pool(h) → gnn_emb                           [B, D_hidden]
 
 ── Stage 2 LM Branch ─────────────────────────────────────────────────────────
-    Full function text → live LM → CLS → lm_emb               [B, 768]
+    Full function text → live LM → CLS → lm_emb               [B, D_lm]
 
-    concat(gnn_emb, lm_emb)                                    [B, 1024]
-    → MLP → logit_func                                         [B, num_classes]
+    concat(gnn_emb, lm_emb)                                    [B, D_hidden+D_lm]
+    → MLP → logit_func                                         [B, C]
 
 Loss_Stage1 = mil_weight * MIL(stmt_logits, y, k)
             + rank_loss_weight * RankingLoss(stmt_logits, flaw_line_mask)
@@ -431,7 +470,6 @@ Loss        = Loss_Stage1 + Loss_Stage2
 
 ## Architecture 9 — LM-GGNN (LM-GAT-CodeBERT with GATv2 → GatedGraphConv)
 
-**Status:** ✔ Implemented
 **Config:** `configs/lmggnn/multiclass.yaml`
 **Model:** `src/gnn_vuln/models/lmggnn.py`
 
@@ -444,20 +482,20 @@ pooling preserves original projected features alongside GGNN-refined features.
 **No statement head** — localization capability removed entirely (GGNN returns `(logit, None)`).
 
 ```
-CPG nodes (773D pre-computed, frozen)
-    → input_proj: Linear(773, 256)                               [N, 256]
-    → GatedGraphConv(out=256, num_layers=6) → h                  [N, 256]
+CPG nodes (D_node pre-computed, frozen)
+    → input_proj: Linear(D_node, D_hidden)                         [N, D_hidden]
+    → GatedGraphConv(out=D_hidden, num_layers=6) → h               [N, D_hidden]
     → Dropout
-    → global_mean_pool(h) → h_graph                             [B, 256]
+    → global_mean_pool(h) → h_graph                               [B, D_hidden]
 
-Full function text → live LM → CLS → cls                        [B, 768]
+Full function text → live LM → CLS → cls                          [B, D_lm]
 
-    concat(h_graph, cls)                                         [B, 1024]
-    → func_head MLP(1024 → 256 → num_classes) → logit_func       [B, num_classes]
+    concat(h_graph, cls)                                           [B, D_hidden+D_lm]
+    → func_head MLP(D_hidden+D_lm → D_hidden → C) → logit_func    [B, C]
 
     └── stmt_head: group nodes by source line
-              max-pool(h_line) → Linear(256,1) → s_max
-              mean-pool(h_line) → Linear(256,1) → s_mean
+              max-pool(h_line) → Linear(D_hidden,1) → s_max
+              mean-pool(h_line) → Linear(D_hidden,1) → s_mean
               stmt_score = 0.8 * s_max + 0.6 * s_mean → stmt_scores [n_stmts]
 
 Loss = CE(logit_func, y, class_weight)
@@ -469,14 +507,14 @@ Loss = CE(logit_func, y, class_weight)
 | | Arch3 | Arch9 (LM-GGNN) |
 |--|-------|-----------------|
 | GNN backbone | GATv2Conv × 4 | GatedGraphConv × 6 |
-| Edge features | 7D one-hot, shapes attention | Not used (GGNN ignores edge_attr) |
+| Edge features | D_edge one-hot, shapes attention | Not used (GGNN ignores edge_attr) |
 | GNN + LM fusion | concat(pool, cls) → single MLP | **same** |
 | Statement head | Binary MIL | **same** |
 | BatchNorm | Yes (after each GATv2) | No (GGNN gating handles normalisation) |
-| Node projection | None (GATv2 accepts 773D) | input_proj: 773D → 256D (GGNN requires in==out) |
+| Node projection | None (GATv2 accepts D_node) | input_proj: D_node → D_hidden (GGNN requires in==out) |
 
 **Key design decisions:**
-- `input_proj` maps 773D → 256D before GGNN — GatedGraphConv requires `in_channels == out_channels`
+- `input_proj` maps D_node → D_hidden before GGNN — GatedGraphConv requires `in_channels == out_channels`
 - `**kwargs` in `__init__` absorbs deprecated `alpha` from old checkpoint configs
 - No BatchNorm after GGNN — GRU gating inside GatedGraphConv provides normalisation
 
@@ -492,7 +530,6 @@ Loss = CE(logit_func, y, class_weight)
 
 ## Architecture 10 — LM-GAT-DualFlow (Context-Preserving Sequential Router)
 
-**Status:** ✔ Implemented
 **Config:** `configs/lmgat_dualflow/multiclass.yaml`
 **Model:** `src/gnn_vuln/models/lmgat_dualflow.py`
 
@@ -502,28 +539,28 @@ CWE-discriminating structural information. DualFlow restores this by concatenati
 `global_mean_pool` embedding alongside the focal embedding before the classifier.
 
 ```
-CPG nodes (773D pre-computed, frozen)
-CPG edges (7D one-hot)
+CPG nodes (D_node pre-computed, frozen)
+CPG edges (D_edge one-hot)
 
 ── Stage 1: Binary Localization (identical to Arch7 v1) ─────────────────────
-    → GATv2Conv × num_layers (heads=4, concat=False) → h_loc [N, 256]
+    → GATv2Conv × num_layers (heads=4, concat=False) → h_loc [N, D_hidden]
     → BatchNorm + ReLU + Dropout
     → binary stmt head: sigmoid(0.8*max_head + 0.6*mean_head)
     → s_i ∈ [0,1] per node                                          [N]
 
 ── Stage 2: Dual-Flow Graph Encoding ─────────────────────────────────────────
-    x_aug = concat(x_frozen, s_i)                                   [N, 774]
-    → GATv2Conv × num_layers (heads=4, concat=False) → h_cls        [N, 256]
+    x_aug = concat(x_frozen, s_i)                                   [N, D_node+1]
+    → GATv2Conv × num_layers (heads=4, concat=False) → h_cls        [N, D_hidden]
     → BatchNorm + ReLU + Dropout
 
-    Flow A — focal_emb:   weighted_mean_pool(h_cls, s_i)            [B, 256]
-    Flow B — context_emb: global_mean_pool(h_cls)                   [B, 256]
+    Flow A — focal_emb:   weighted_mean_pool(h_cls, s_i)            [B, D_hidden]
+    Flow B — context_emb: global_mean_pool(h_cls)                   [B, D_hidden]
 
 ── Stage 3: Tri-Modal Fusion ─────────────────────────────────────────────────
-    Full function text → live UniXcoder → CLS → lm_emb              [B, 768]
+    Full function text → live UniXcoder → CLS → lm_emb              [B, D_lm]
 
-    concat(focal_emb, context_emb, lm_emb)                          [B, 1280]
-    → MLP(1280 → 512 → num_classes) → logit_func                    [B, num_classes]
+    concat(focal_emb, context_emb, lm_emb)                          [B, 2·D_hidden+D_lm]
+    → MLP(2·D_hidden+D_lm → 512 → C) → logit_func                  [B, C]
 
 Loss = CE(logit_func, y, class_weight)
      + mil_weight * MIL(stmt_scores_stage1, y, k)
@@ -536,8 +573,8 @@ Loss = CE(logit_func, y, class_weight)
 | Stage 1 | GATv2 binary localization | **identical** |
 | Stage 2 GNN | GATv2(concat[x, s_i]) | **identical** |
 | Stage 2 pooling | focal only (weighted mean) | focal + context (both) |
-| Fusion input | [256 + 768] = 1024D | [256 + 256 + 768] = **1280D** |
-| func_head | MLP(1024 → 256 → C) | MLP(1280 → 512 → C) |
+| Fusion input | [D_hidden + D_lm] | [2·D_hidden + D_lm] |
+| func_head | MLP(D_hidden+D_lm → D_hidden → C) | MLP(2·D_hidden+D_lm → 512 → C) |
 | Localization loss | Stage 1 MIL + ranking | **identical** |
 
 **Why localization should be preserved:**
@@ -556,7 +593,6 @@ flaw shape (focal), code structure (context), semantic text (LM).
 
 ## Architecture 11 — LM-GAT-CodeBERT-MTL (Multi-Task Learning Heads)
 
-**Status:** ✔ Implemented
 **Config:** `configs/lmgat_codebert/multiclass_mtl.yaml`
 **Model:** `src/gnn_vuln/models/lmgat_codebert_mtl.py`
 
@@ -565,14 +601,14 @@ The group head provides a coarse routing signal (detached) that conditions the f
 inspired by VulANalyzeR (coarse-to-fine) and MulVul (multi-task vulnerability classification).
 
 ```
-Full function text → CodeBERT (LIVE, lr=1e-5) → CLS [B, 768] ──────────────┐
-                                                                              │
-CPG nodes (773D pre-computed, frozen)                                         │
-    → GATv2Conv × num_layers (lr=1e-3)                                       │
-    → BatchNorm + ReLU + Dropout                                              │
-    → global_mean_pool → h_graph [B, 256] ──────────── concat ───────────────┘
-                                                            ↓
-                                                  fused [B, 1024]
+Full function text → CodeBERT (LIVE, lr=1e-5) → CLS [B, D_lm] ──────────────┐
+                                                                               │
+CPG nodes (D_node pre-computed, frozen)                                        │
+    → GATv2Conv × num_layers (lr=1e-3)                                        │
+    → BatchNorm + ReLU + Dropout                                               │
+    → global_mean_pool → h_graph [B, D_hidden] ──────────── concat ───────────┘
+                                                                ↓
+                                                  fused [B, D_hidden+D_lm]
                                                      │
               ┌──────────────────────────────────────┤──────────────────────────┐
               │                                      │                          │
@@ -586,7 +622,7 @@ CPG nodes (773D pre-computed, frozen)                                         �
                                           concat(fused, group_probs)             │
                                                       ↓                          │
                                                  cwe_head ←──────────────────────┘
-                                              [B, num_classes]
+                                              [B, C]
                                               (fine CWE class)
 
     └── stmt_head: group nodes by line → max + mean → stmt_scores [n_stmts]
@@ -601,7 +637,7 @@ Loss = focal_CE(cwe, class_weight)
 - `group_probs` detached before CWE head — heads remain independent; group head gets its own clean gradient
 - Binary label derived inline as `(batch.y > 0).long()` — no extra dataset column needed
 - Forward returns 4-tuple `(logit_cwe, logit_group, logit_binary, stmt_scores)` — detected by `_forward()` in train.py
-- fused_dim = 256 + 768 = 1024D; cwe_head input = 1024 + 16 = 1040D
+- fused_dim = D_hidden + D_lm; cwe_head input = D_hidden + D_lm + 16
 
 **Comparison with Arch3:**
 | | Arch3 (single head) | Arch11 (MTL) |
@@ -618,7 +654,6 @@ Loss = focal_CE(cwe, class_weight)
 
 ## Architecture 12 — HC-DFGAT (Hierarchical Contrastive Dual-Flow GAT)
 
-**Status:** 🎯 Target
 **Config:** `configs/lmgat_hcdfgat/multiclass.yaml`
 **Model:** `src/gnn_vuln/models/lmgat_hcdfgat.py`
 **Loss:** `src/gnn_vuln/losses/hierarchical_supcon.py`
@@ -629,25 +664,25 @@ The contrastive loss uses the CWE group hierarchy to weight positive pairs,
 explicitly shaping the embedding space for CWE discrimination.
 
 ```
-CPG nodes (773D pre-computed, frozen)
-CPG edges (7D one-hot)
+CPG nodes (D_node pre-computed, frozen)
+CPG edges (D_edge one-hot)
 
 ── Stage 1: Binary Localization ─────────────────────────────────────────────
-    → GATv2Conv × num_layers → h_loc [N, 256]
+    → GATv2Conv × num_layers → h_loc [N, D_hidden]
     → binary stmt head: sigmoid(0.8*max_head + 0.6*mean_head)
     → s_i ∈ [0,1] per node [N]                    ← MIL + ranking targets
 
 ── Stage 2: Dual-Flow Classification GNN ────────────────────────────────────
-    x_aug = concat(x_frozen, s_i)                  [N, 774]
-    → GATv2Conv × num_layers → h_cls               [N, 256]
+    x_aug = concat(x_frozen, s_i)                  [N, D_node+1]
+    → GATv2Conv × num_layers → h_cls               [N, D_hidden]
 
-    focal_emb   = suspicion-weighted pool(h_cls, s_i)  [B, 256]
-    context_emb = global_mean_pool(h_cls)               [B, 256]
+    focal_emb   = suspicion-weighted pool(h_cls, s_i)  [B, D_hidden]
+    context_emb = global_mean_pool(h_cls)               [B, D_hidden]
 
 ── Stage 3: Live UniXcoder ───────────────────────────────────────────────────
-    Full function text → UniXcoder CLS → lm_emb    [B, 768]
+    Full function text → UniXcoder CLS → lm_emb    [B, D_lm]
 
-Z_combined = concat(focal_emb, context_emb, lm_emb) [B, 1280]
+Z_combined = concat(focal_emb, context_emb, lm_emb) [B, 2·D_hidden+D_lm]
                               │
      ┌────────────────────────┤──────────────────────────┐
      │                        │                          │
@@ -660,7 +695,7 @@ binary_head              group_head                      │
                    concat(Z_combined, group_probs)        │
                               ↓                          │
                          cwe_head ←────────────────────── ┘
-                      [B, num_classes]
+                      [B, C]
 
     └── stmt_scores from Stage 1 (MIL / ranking)
 
@@ -694,7 +729,7 @@ detected by `_forward()` in train.py via `len(out) == 5`.
 |--|-----------------|------------|-----------------|
 | Encoder | Dual-flow GATv2 + UniXcoder | GATv2 + CodeBERT | Dual-flow GATv2 + UniXcoder |
 | Output heads | 1 (CWE) | 3 (binary+group+CWE) | 3 (binary+group+CWE) |
-| Z_combined dim | 1280D | 1024D | 1280D |
+| Z_combined dim | 2·D_hidden+D_lm | D_hidden+D_lm | 2·D_hidden+D_lm |
 | Contrastive loss | None | None | HierarchicalSupCon |
 | Return tuple | 2-tuple | 4-tuple | 5-tuple |
 | LIVABLE weights | optional | optional | enabled |

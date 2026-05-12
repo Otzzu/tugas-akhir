@@ -18,9 +18,11 @@ class LMGATDualFlowVulnDetector(VulnDetectorBase):
                  in_channels=NODE_FEAT_DIM, hidden_dim=256, num_layers=4,
                  dropout=0.3, num_classes=11, num_heads=4, edge_dim=7,
                  add_self_loops=False, use_skip=False, matryoshka_dim=None,
-                 func_chunk_size=0, func_chunk_stride=0):
+                 func_chunk_size=0, func_chunk_stride=0,
+                 localization_encoder="gnn"):
         super().__init__()
         self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride)
+        self._loc_enc = localization_encoder
         self.dropout = dropout
 
         # Stage 1: localization GNN
@@ -35,14 +37,15 @@ class LMGATDualFlowVulnDetector(VulnDetectorBase):
 
         # Fusion: focal [hidden] + context [hidden] + lm [lm_dim]
         self.func_head = FuncHead(hidden_dim * 2 + self._lm_dim, hidden_dim * 2, num_classes, dropout)
-        self.stmt_head = StmtHead(hidden_dim)  # uses loc_encoder features for MIL
+        self.stmt_head = StmtHead(hidden_dim, lm_dim=self._lm_dim if localization_encoder in ("lm", "both") else 0, localization_encoder=localization_encoder)
 
     def _node_suspicion(self, h_loc: torch.Tensor) -> torch.Tensor:
         raw = _ALPHA_MAX * self.loc_stmt_max(h_loc) + _ALPHA_MEAN * self.loc_stmt_mean(h_loc)
         return torch.sigmoid(raw).squeeze(-1)  # [N]
 
     def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
-                func_input_ids=None, func_attention_mask=None):
+                func_input_ids=None, func_attention_mask=None,
+                func_token_lines=None):
         # Stage 1
         h_loc = self.loc_encoder(x, edge_index, edge_attr)
         s_i = self._node_suspicion(h_loc)  # [N]
@@ -57,12 +60,19 @@ class LMGATDualFlowVulnDetector(VulnDetectorBase):
         context_emb = global_mean_pool(h_cls, batch)
 
         B = focal_emb.size(0)
-        lm_emb = self._lm_embed(func_input_ids, func_attention_mask, B, x.device)
+        if self._loc_enc != "gnn":
+            lm_emb, lm_hidden = self._lm_embed_full(func_input_ids, func_attention_mask, B, x.device)
+        else:
+            lm_emb = self._lm_embed(func_input_ids, func_attention_mask, B, x.device)
+            lm_hidden = None
 
         z_combined = torch.cat([focal_emb, context_emb, lm_emb], dim=-1)
         logit = self.func_head(z_combined)
 
-        stmt_scores = self.stmt_head.score(h_loc, batch, node_line) if node_line is not None else None
+        stmt_scores = (
+            self.stmt_head.score(h_loc, batch, node_line, lm_hidden, func_token_lines)
+            if node_line is not None else None
+        )
         return logit, stmt_scores, z_combined
 
     @classmethod
@@ -83,4 +93,5 @@ class LMGATDualFlowVulnDetector(VulnDetectorBase):
             matryoshka_dim=getattr(cfg.model, "matryoshka_dim", None),
             func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
             func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),
+            localization_encoder=getattr(cfg.model, "localization_encoder", "gnn"),
         )

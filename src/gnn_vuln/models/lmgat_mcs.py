@@ -23,7 +23,8 @@ class LMGATMCSVulnDetector(VulnDetectorBase):
         self.func_head = FuncHead(num_classes + self._lm_dim, hidden_dim, num_classes, dropout)
 
     def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
-                func_input_ids=None, func_attention_mask=None):
+                func_input_ids=None, func_attention_mask=None,
+                func_token_lines=None):
         h = self.encoder(x, edge_index, edge_attr)
         B = int(batch.max().item()) + 1
 

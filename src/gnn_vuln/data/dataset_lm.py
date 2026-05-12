@@ -132,6 +132,26 @@ def _load_tokenizer(model_name: str):
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def _compute_func_token_lines(func_text: str, total_len: int, tokenizer) -> torch.Tensor:
+    """Map each token position to its 1-indexed source line number.
+    Special tokens and padding → -1.
+    Uses per-line tokenization to count tokens per line.
+    """
+    lines = func_text.split('\n')
+    token_lines = [-1]  # CLS / BOS token
+    for line_idx, line in enumerate(lines):
+        try:
+            ids = tokenizer(line, add_special_tokens=False)['input_ids']
+        except Exception:
+            ids = []
+        token_lines.extend([line_idx + 1] * len(ids))  # 1-indexed to match node_line
+    token_lines.append(-1)  # SEP / EOS token
+    token_lines = token_lines[:total_len]   # truncate to max_length
+    while len(token_lines) < total_len:     # pad with -1
+        token_lines.append(-1)
+    return torch.tensor(token_lines, dtype=torch.int32)
+
+
 def _get_cwe_set_from_xml(filepath: Path) -> set[str]:
     """Parse CWE XML files and return a set of CWE string IDs."""
     if not filepath.exists():
@@ -1235,6 +1255,10 @@ class CodeBERTGraphDataset(Dataset):
                     for _j, _g in enumerate(_batch):
                         _g.func_input_ids = _enc["input_ids"][_j].unsqueeze(0)
                         _g.func_attention_mask = _enc["attention_mask"][_j].unsqueeze(0)
+                        _func_text = _funcs[_j]
+                        _g.func_token_lines = _compute_func_token_lines(
+                            _func_text, self._func_max_length, tokenizer
+                        ).unsqueeze(0)  # [1, max_length]
 
             if not miss_entries:
                 torch.save(hit_graphs, cache_file)
@@ -1310,7 +1334,7 @@ class CodeBERTGraphDataset(Dataset):
             # Phase 3: Build
             miss_graphs: list[Data] = []
             for (label, flaw_lines, cpg, cwe_str, raw_func, row_id), (start, end) in zip(parsed_entries, offsets):
-                func_input_ids = func_attention_mask = None
+                func_input_ids = func_attention_mask = func_token_lines = None
                 if tokenizer is not None:
                     if self._func_lm_source == "normalized" and raw_func:
                         from gnn_vuln.data.preprocess import preprocess
@@ -1325,9 +1349,12 @@ class CodeBERTGraphDataset(Dataset):
                     )
                     func_input_ids = enc["input_ids"]
                     func_attention_mask = enc["attention_mask"]
+                    func_token_lines = _compute_func_token_lines(
+                        func_text, self._func_max_length, tokenizer
+                    ).unsqueeze(0)  # [1, max_length]
                 graph = build_from_parsed(
                     cpg, all_embeddings[start:end], label, flaw_lines,
-                    func_input_ids, func_attention_mask,
+                    func_input_ids, func_attention_mask, func_token_lines,
                 )
                 # Attach CWE metadata — cwe_id uses original vocab index (matches cwe_vocab.json)
                 raw_cwe_id = _orig_cwe_vocab.get(cwe_str, -1) if cwe_str else -1

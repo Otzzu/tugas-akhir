@@ -17,18 +17,58 @@ class StmtHead(nn.Module):
     Per-statement binary scorer.
     Groups CPG nodes by source line, max/mean-pools per line,
     returns list of [n_stmts_i] scalar tensors (one per graph in batch).
+
+    localization_encoder controls feature source for scoring:
+      "gnn"  — GNN node features only (default, no LM needed)
+      "lm"   — LM token hidden states only (requires lm_dim > 0)
+      "both" — concat GNN + LM (requires lm_dim > 0)
     """
 
-    def __init__(self, hidden_dim: int):
+    def __init__(self, hidden_dim: int, lm_dim: int = 0,
+                 localization_encoder: str = "gnn"):
         super().__init__()
-        self.max_head  = nn.Linear(hidden_dim, 1)
-        self.mean_head = nn.Linear(hidden_dim, 1)
+        assert localization_encoder in ("gnn", "lm", "both"), \
+            f"localization_encoder must be gnn|lm|both, got {localization_encoder!r}"
+        self._mode = localization_encoder
+        if localization_encoder == "gnn":
+            in_dim = hidden_dim
+        elif localization_encoder == "lm":
+            in_dim = lm_dim
+        else:  # both
+            in_dim = hidden_dim + lm_dim
+        self.max_head  = nn.Linear(in_dim, 1)
+        self.mean_head = nn.Linear(in_dim, 1)
+
+    @staticmethod
+    def _pool_lm_per_line(
+        lm_hidden: torch.Tensor,
+        func_token_lines: torch.Tensor,
+        target_lines: torch.Tensor,
+        device,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Pool LM last_hidden_state tokens by source line.
+        lm_hidden: [L, lm_dim], func_token_lines: [L] (1-indexed, -1=special).
+        Returns (max_per_line, mean_per_line) each [n_lines, lm_dim]."""
+        max_res, mean_res = [], []
+        lm_dim = lm_hidden.size(-1)
+        for line in target_lines:
+            mask = func_token_lines == line
+            if mask.any():
+                h_l = lm_hidden[mask]
+                max_res.append(h_l.max(dim=0).values)
+                mean_res.append(h_l.mean(dim=0))
+            else:
+                max_res.append(torch.zeros(lm_dim, device=device))
+                mean_res.append(torch.zeros(lm_dim, device=device))
+        return torch.stack(max_res), torch.stack(mean_res)
 
     def score(
         self,
         h: torch.Tensor,
         batch: torch.Tensor,
         node_line: torch.Tensor,
+        lm_hidden: torch.Tensor | None = None,
+        func_token_lines: torch.Tensor | None = None,
     ) -> list[torch.Tensor]:
         device = h.device
         B = int(batch.max().item()) + 1
@@ -41,14 +81,36 @@ class StmtHead(nn.Module):
                 result.append(torch.zeros(0, device=device))
                 continue
             h_b, lines_b = h_b[valid], lines_b[valid]
+            unique_lines = lines_b.unique(sorted=True)
+
+            # Pool LM hidden states per line if needed
+            lm_max_emb = lm_mean_emb = None
+            if self._mode != "gnn" and lm_hidden is not None and func_token_lines is not None:
+                lh  = lm_hidden[b]          # [L, lm_dim]
+                ftl = func_token_lines[b]   # [L]
+                lm_max_emb, lm_mean_emb = self._pool_lm_per_line(lh, ftl, unique_lines, device)
+
             scores: list[torch.Tensor] = []
-            for line in lines_b.unique(sorted=True):
+            for i, line in enumerate(unique_lines):
                 nm = lines_b == line
                 h_l = h_b[nm]
-                s = (
-                    _ALPHA_MAX  * self.max_head(h_l.max(dim=0).values)
-                    + _ALPHA_MEAN * self.mean_head(h_l.mean(dim=0))
-                )
+
+                if self._mode == "gnn":
+                    feat_max  = h_l.max(dim=0).values
+                    feat_mean = h_l.mean(dim=0)
+                elif self._mode == "lm":
+                    feat_max  = lm_max_emb[i]  if lm_max_emb  is not None else h_l.max(dim=0).values
+                    feat_mean = lm_mean_emb[i] if lm_mean_emb is not None else h_l.mean(dim=0)
+                else:  # both
+                    gnn_max  = h_l.max(dim=0).values
+                    gnn_mean = h_l.mean(dim=0)
+                    if lm_max_emb is not None:
+                        feat_max  = torch.cat([gnn_max,  lm_max_emb[i]])
+                        feat_mean = torch.cat([gnn_mean, lm_mean_emb[i]])
+                    else:
+                        feat_max, feat_mean = gnn_max, gnn_mean
+
+                s = _ALPHA_MAX * self.max_head(feat_max) + _ALPHA_MEAN * self.mean_head(feat_mean)
                 scores.append(s.squeeze(-1))
             result.append(torch.stack(scores))
         return result

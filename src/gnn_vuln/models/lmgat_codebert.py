@@ -14,20 +14,31 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  in_channels=NODE_FEAT_DIM, hidden_dim=256, num_layers=4,
                  dropout=0.3, num_classes=11, num_heads=4, edge_dim=7,
                  add_self_loops=False, use_skip=False, matryoshka_dim=None,
-                 func_chunk_size=0, func_chunk_stride=0):
+                 func_chunk_size=0, func_chunk_stride=0,
+                 localization_encoder="gnn"):
         super().__init__()
         self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride)
+        self._loc_enc = localization_encoder
         self.encoder   = GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout, edge_dim, add_self_loops, use_skip)
         self.func_head = FuncHead(hidden_dim + self._lm_dim, hidden_dim, num_classes, dropout)
-        self.stmt_head = StmtHead(hidden_dim)
+        lm_dim = self._lm_dim if localization_encoder in ("lm", "both") else 0
+        self.stmt_head = StmtHead(hidden_dim, lm_dim=lm_dim, localization_encoder=localization_encoder)
 
     def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
-                func_input_ids=None, func_attention_mask=None):
+                func_input_ids=None, func_attention_mask=None,
+                func_token_lines=None):
         h = self.encoder(x, edge_index, edge_attr)
         h_graph = global_mean_pool(h, batch)
-        lm_emb = self._lm_embed(func_input_ids, func_attention_mask, h_graph.size(0), x.device)
+        if self._loc_enc != "gnn":
+            lm_emb, lm_hidden = self._lm_embed_full(func_input_ids, func_attention_mask, h_graph.size(0), x.device)
+        else:
+            lm_emb = self._lm_embed(func_input_ids, func_attention_mask, h_graph.size(0), x.device)
+            lm_hidden = None
         logit = self.func_head(torch.cat([h_graph, lm_emb], dim=-1))
-        stmt_scores = self.stmt_head.score(h, batch, node_line) if node_line is not None else None
+        stmt_scores = (
+            self.stmt_head.score(h, batch, node_line, lm_hidden, func_token_lines)
+            if node_line is not None else None
+        )
         return logit, stmt_scores
 
     @classmethod
@@ -48,4 +59,5 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             matryoshka_dim=getattr(cfg.model, "matryoshka_dim", None),
             func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
             func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),
+            localization_encoder=getattr(cfg.model, "localization_encoder", "gnn"),
         )

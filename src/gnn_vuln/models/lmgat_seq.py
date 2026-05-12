@@ -31,16 +31,18 @@ class LMGATSeqVulnDetector(VulnDetectorBase):
         matryoshka_dim=None,
         func_chunk_size=0,
         func_chunk_stride=0,
+        localization_encoder="gnn",
     ):
         super().__init__()
         self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride)
         self._use_loc = stage2_node_input == "loc"
+        self._loc_enc = localization_encoder
 
         # Stage 1: localization
         self.loc_encoder   = GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout, edge_dim, add_self_loops, use_skip)
         self.loc_stmt_max  = nn.Linear(hidden_dim, 1)
         self.loc_stmt_mean = nn.Linear(hidden_dim, 1)
-        self.stmt_head     = StmtHead(hidden_dim)  # reuses loc_stmt_max/mean via score()
+        self.stmt_head     = StmtHead(hidden_dim, lm_dim=self._lm_dim if localization_encoder in ("lm", "both") else 0, localization_encoder=localization_encoder)
 
         # Stage 2: classification
         stage2_in = (hidden_dim + 1) if self._use_loc else (in_channels + 1)
@@ -53,7 +55,8 @@ class LMGATSeqVulnDetector(VulnDetectorBase):
         return torch.sigmoid(raw).squeeze(-1)
 
     def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
-                func_input_ids=None, func_attention_mask=None):
+                func_input_ids=None, func_attention_mask=None,
+                func_token_lines=None):
         # Stage 1
         h_loc = self.loc_encoder(x, edge_index, edge_attr)
         s_i   = self._node_suspicion(h_loc).detach()  # detach: stage1 grad only via MIL
@@ -68,12 +71,19 @@ class LMGATSeqVulnDetector(VulnDetectorBase):
         g_emb   = global_add_pool(h_cls * s_w, batch) / global_add_pool(s_w, batch).clamp(min=1e-6)
 
         B      = g_emb.size(0)
-        lm_emb = self._lm_embed(func_input_ids, func_attention_mask, B, x.device)
+        if self._loc_enc != "gnn":
+            lm_emb, lm_hidden = self._lm_embed_full(func_input_ids, func_attention_mask, B, x.device)
+        else:
+            lm_emb = self._lm_embed(func_input_ids, func_attention_mask, B, x.device)
+            lm_hidden = None
 
         func_in = torch.cat([g_emb, lm_emb], dim=-1)
         logit   = self.func_head(func_in)
 
-        stmt_scores = self.stmt_head.score(h_loc, batch, node_line) if node_line is not None else None
+        stmt_scores = (
+            self.stmt_head.score(h_loc, batch, node_line, lm_hidden, func_token_lines)
+            if node_line is not None else None
+        )
         return logit, stmt_scores, func_in
 
     @classmethod
@@ -95,4 +105,5 @@ class LMGATSeqVulnDetector(VulnDetectorBase):
             matryoshka_dim=getattr(cfg.model, "matryoshka_dim", None),
             func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
             func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),
+            localization_encoder=getattr(cfg.model, "localization_encoder", "gnn"),
         )

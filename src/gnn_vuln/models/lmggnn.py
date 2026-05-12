@@ -21,7 +21,8 @@ class LMGNNVulnDetector(VulnDetectorBase):
         self.stmt_head = StmtHead(hidden_dim)
 
     def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
-                func_input_ids=None, func_attention_mask=None):
+                func_input_ids=None, func_attention_mask=None,
+                func_token_lines=None):
         h = self.encoder(x, edge_index, edge_attr)
         h_graph = global_mean_pool(h, batch)
         lm_emb = self._lm_embed(func_input_ids, func_attention_mask, h_graph.size(0), x.device)

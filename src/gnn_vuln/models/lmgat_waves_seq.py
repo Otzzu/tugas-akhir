@@ -81,7 +81,8 @@ class LMGATWavesSeqVulnDetector(VulnDetectorBase):
         return node_susp, stmt_scores_list
 
     def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
-                func_input_ids=None, func_attention_mask=None):
+                func_input_ids=None, func_attention_mask=None,
+                func_token_lines=None):
         node_susp, stmt_scores = self._stage1(x, batch, node_line)
 
         x_aug  = torch.cat([x, node_susp.unsqueeze(-1)], dim=-1)

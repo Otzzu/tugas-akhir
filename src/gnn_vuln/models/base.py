@@ -73,6 +73,35 @@ class VulnDetectorBase(nn.Module):
         # Default stride to chunk_size // 2 (50% overlap) when not explicitly set
         self._func_chunk_stride = func_chunk_stride if func_chunk_stride > 0 else max(1, func_chunk_size // 2)
 
+    def _lm_embed_full(
+        self,
+        func_input_ids: torch.Tensor | None,
+        func_attention_mask: torch.Tensor | None,
+        B: int,
+        device: torch.device,
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Return (cls_emb [B, lm_dim], last_hidden_state [B, L, lm_dim] or None).
+        last_hidden_state is None when chunked mode or non-BERT LM is used."""
+        if func_input_ids is None:
+            return torch.zeros(B, self._lm_dim, device=device), None
+        # Chunked mode: can't return per-token states across chunks; fall back
+        if self._func_chunk_size > 0:
+            return self._lm_embed(func_input_ids, func_attention_mask, B, device), None
+        try:
+            out = self.codebert(
+                input_ids=func_input_ids,
+                attention_mask=func_attention_mask,
+            )
+            hidden = out.last_hidden_state  # [B, L, hidden]
+            cls = hidden[:, 0]              # [B, hidden] — CLS token
+            if self._matryoshka_dim is not None:
+                cls    = cls[:, :self._matryoshka_dim]
+                hidden = hidden[:, :, :self._matryoshka_dim]
+            return cls, hidden
+        except (AttributeError, TypeError):
+            # CodeT5+ or other models that don't return last_hidden_state in standard form
+            return self._lm_embed(func_input_ids, func_attention_mask, B, device), None
+
     def _lm_embed(
         self,
         func_input_ids: torch.Tensor | None,
@@ -145,5 +174,6 @@ class VulnDetectorBase(nn.Module):
         edge_attr: torch.Tensor | None = None,
         func_input_ids: torch.Tensor | None = None,
         func_attention_mask: torch.Tensor | None = None,
+        func_token_lines: torch.Tensor | None = None,
     ):
         ...

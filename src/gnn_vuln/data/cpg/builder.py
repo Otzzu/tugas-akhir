@@ -40,6 +40,7 @@ def build_from_parsed(
     flaw_lines: list[int] | None = None,
     func_input_ids: torch.Tensor | None = None,
     func_attention_mask: torch.Tensor | None = None,
+    func_token_lines: torch.Tensor | None = None,
 ) -> Data:
     """
     Build a PyG Data object from a pre-parsed CPG + pre-computed LM node embeddings.
@@ -107,6 +108,8 @@ def build_from_parsed(
     if func_input_ids is not None:
         data.func_input_ids = func_input_ids
         data.func_attention_mask = func_attention_mask
+    if func_token_lines is not None:
+        data.func_token_lines = func_token_lines
     return data
 
 
