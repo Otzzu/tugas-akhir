@@ -17,7 +17,9 @@ data:
 model:
   architecture: lmgat
   pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
   add_func_tokens: true           # selects _ft dataset variant (same .pt as A2-A4)
+  func_max_length: 1024
   hidden_dim: 256
   num_layers: 4
   dropout: 0.3
