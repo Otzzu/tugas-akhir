@@ -199,7 +199,7 @@ class Trainer:
         pbar = tqdm(loader, desc=f"  Train {epoch:03d}/{total_epochs}", unit="batch", leave=False)
 
         for step, batch in enumerate(pbar):
-            batch = batch.to(self.device)
+            batch = batch.to(self.device, non_blocking=True)
             is_last = (step == len(loader) - 1)
             should_step = ((step + 1) % accum == 0) or is_last
 
@@ -254,7 +254,7 @@ class Trainer:
         all_labels: list[int] = []
 
         for batch in loader:
-            batch = batch.to(self.device)
+            batch = batch.to(self.device, non_blocking=True)
             logits, loss = self._forward(batch, class_weight)
             probs = F.softmax(logits, dim=-1)
             preds = logits.argmax(dim=-1)
@@ -276,7 +276,7 @@ class Trainer:
     def localise(self, data, top_k: int = 5) -> list[tuple[int, float]]:
         """Return top-k (line, score) for a single graph."""
         self.model.eval()
-        data  = data.to(self.device)
+        data  = data.to(self.device, non_blocking=True)
         batch = torch.zeros(data.num_nodes, dtype=torch.long, device=self.device)
         node_line = getattr(data, "node_line", None)
 
