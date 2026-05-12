@@ -235,10 +235,10 @@ class Trainer:
         accum = self.grad_accum_steps
         self.optimizer.zero_grad()
 
-        prefetcher = _CUDAPrefetcher(loader, self.device)
-        pbar = tqdm(prefetcher, desc=f"  Train {epoch:03d}/{total_epochs}", unit="batch", leave=False, total=len(loader))
+        pbar = tqdm(loader, desc=f"  Train {epoch:03d}/{total_epochs}", unit="batch", leave=False)
 
         for step, batch in enumerate(pbar):
+            batch = batch.to(self.device, non_blocking=True)
             is_last = (step == len(loader) - 1)
             should_step = ((step + 1) % accum == 0) or is_last
 
@@ -292,7 +292,8 @@ class Trainer:
         all_preds:  list[int] = []
         all_labels: list[int] = []
 
-        for batch in _CUDAPrefetcher(loader, self.device):
+        for batch in loader:
+            batch = batch.to(self.device, non_blocking=True)
             logits, loss = self._forward(batch, class_weight)
             probs = F.softmax(logits, dim=-1)
             preds = logits.argmax(dim=-1)
