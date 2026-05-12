@@ -53,3 +53,5 @@ train:
   grad_accum_steps: 2             # batch=32 × 2 = effective 64
   save_last_every: 10
   compile_model: true
+  num_workers: 12
+  prefetch_factor: 4
