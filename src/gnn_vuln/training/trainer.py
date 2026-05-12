@@ -231,15 +231,22 @@ class Trainer:
         class_weight: torch.Tensor | None = None,
     ) -> float:
         self.model.train()
-        total_loss = 0.0
         accum = self.grad_accum_steps
         self.optimizer.zero_grad()
+
+        # Accumulate loss on GPU — avoids per-batch .item() sync which stalls
+        # training waiting for GPU. One sync at end of epoch + throttled tqdm.
+        loss_sum = torch.zeros(1, device=self.device)
+        n_graphs = 0
+        n_steps  = len(loader)
+        # Throttle tqdm refresh: update display ~100 times/epoch regardless of size
+        refresh_every = max(1, n_steps // 100)
 
         pbar = tqdm(loader, desc=f"  Train {epoch:03d}/{total_epochs}", unit="batch", leave=False)
 
         for step, batch in enumerate(pbar):
             batch = batch.to(self.device, non_blocking=True)
-            is_last = (step == len(loader) - 1)
+            is_last = (step == n_steps - 1)
             should_step = ((step + 1) % accum == 0) or is_last
 
             with autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.use_amp):
@@ -268,10 +275,17 @@ class Trainer:
             if self.step_per_batch and should_step:
                 self.scheduler.step()
 
-            total_loss += loss.item() * accum * batch.num_graphs
-            pbar.set_postfix(loss=f"{loss.item() * accum:.4f}")
+            # Accumulate on GPU (no sync). Multiply by accum to undo the earlier
+            # loss / accum scaling so total_loss reflects un-normalized loss sum.
+            loss_sum = loss_sum + loss.detach() * (accum * batch.num_graphs)
+            n_graphs += batch.num_graphs
 
-        return total_loss / len(loader.dataset)
+            # Only sync for tqdm display every refresh_every steps
+            if (step % refresh_every == 0) or is_last:
+                pbar.set_postfix(loss=f"{(loss_sum / n_graphs).item():.4f}")
+
+        # Single sync at epoch end
+        return (loss_sum.item() / n_graphs) if n_graphs > 0 else 0.0
 
     def set_grad_clip(self, clip: float) -> None:
         self._grad_clip = clip
