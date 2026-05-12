@@ -48,5 +48,7 @@ train:
   focal_loss_gamma: 2.0
   livable_loss: true
   device: cuda
+  use_amp: true
   use_flash_attention: true
+  grad_accum_steps: 2             # batch=8 × 2 = effective 16
   save_last_every: 10

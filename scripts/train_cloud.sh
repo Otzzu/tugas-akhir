@@ -4,10 +4,14 @@
 # Flexible cloud training pipeline: setup → download datasets → train → evaluate → upload.
 # Each --config must be paired with a --dataset (same position order).
 # Datasets are downloaded once and cached; safe to repeat same dataset across configs.
+# Upload runs in background — next training starts immediately after evaluate.
 #
 # Flags:
-#   --init   Force run setup_cloud.sh + reinstall rclone.conf (fresh server)
-#   --skip   Skip setup_cloud.sh + rclone setup entirely (already configured)
+#   --init          Force run setup_cloud.sh + reinstall rclone.conf (fresh server)
+#   --skip          Skip setup_cloud.sh + rclone setup entirely (already configured)
+#   --clean-every N Delete dataset .pt cache after every Nth run (0 = never, default: 0)
+#                   Use N=total_runs to clean only after last run (safe for shared datasets).
+#                   Clean happens inside background upload after rclone finishes.
 #   (default: auto-detect — runs setup only if uv/torch missing or rclone.conf absent)
 #
 # Usage:
@@ -15,9 +19,10 @@
 #     --config configs/lmgat_codebert/multiclass_mtl_livable_f1stop.yaml \
 #     --dataset lm_dataset_bigvul_multiclass_unixcoder-base_ft_top10
 #
-#   ./scripts/train_cloud.sh --skip \          # already set up, just train
-#     --config configs/lmgat_codebert/multiclass_mtl_livable_f1stop.yaml \
-#     --dataset lm_dataset_bigvul_multiclass_unixcoder-base_ft_top10
+#   ./scripts/train_cloud.sh --skip --clean-every 4 \   # clean after every 4th run
+#     --config configs/ablation/phase1/A1_lmgat.yaml \
+#     --dataset lm_dataset_megavul_... \
+#     ...
 #
 # Dataset name = zip filename WITHOUT .zip on gdrive-mesach:tugas-akhir/
 # e.g. lm_dataset_bigvul_multiclass_unixcoder-base_ft_top10
@@ -41,17 +46,17 @@ error()   { echo -e "${RED}[ERR]${NC}  $*" >&2; }
 # ─── Argument parsing ─────────────────────────────────────────────────────────
 CONFIG_LIST=()
 DATASET_LIST=()
-FLAG_INIT=false   # --init: force run setup_cloud.sh + rclone setup regardless of state
-FLAG_SKIP=false   # --skip: skip setup_cloud.sh + rclone setup entirely
-FLAG_CLEAN=false  # --clean-pt: delete .pt dataset file after each job to free disk space
+FLAG_INIT=false    # --init: force run setup_cloud.sh + rclone setup regardless of state
+FLAG_SKIP=false    # --skip: skip setup_cloud.sh + rclone setup entirely
+CLEAN_EVERY=0      # --clean-every N: delete dataset .pt after every Nth run (0 = never)
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --config)   CONFIG_LIST+=("$2");  shift 2 ;;
-        --dataset)  DATASET_LIST+=("$2"); shift 2 ;;
-        --init)     FLAG_INIT=true;       shift ;;
-        --skip)     FLAG_SKIP=true;       shift ;;
-        --clean-pt) FLAG_CLEAN=true;      shift ;;
+        --config)        CONFIG_LIST+=("$2");  shift 2 ;;
+        --dataset)       DATASET_LIST+=("$2"); shift 2 ;;
+        --init)          FLAG_INIT=true;       shift ;;
+        --skip)          FLAG_SKIP=true;       shift ;;
+        --clean-every)   CLEAN_EVERY="$2";     shift 2 ;;
         -h|--help)
             sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
@@ -268,34 +273,84 @@ run_evaluate() {
 }
 
 # ─── 6. Zip and upload ───────────────────────────────────────────────────────
+# Takes: model_id dataset do_clean log_file
+# Runs upload then optionally cleans — called in background.
+# All output redirected to log_file by caller; errors logged with step context.
 upload_run() {
     local model_id="$1"
+    local dataset="$2"
+    local do_clean="$3"
     local ckpt_zip="${model_id}_checkpoints.zip"
     local res_zip="${model_id}_results.zip"
 
-    info "Zipping checkpoints..."
-    zip -r "$ckpt_zip" "${CHECKPOINTS_DIR}/${model_id}"
+    set -euo pipefail  # ensure errors propagate inside background subshell
 
-    info "Uploading checkpoints -> ${GDRIVE_REMOTE}/checkpoints/"
-    rclone copy "$ckpt_zip" "${GDRIVE_REMOTE}/checkpoints/" --progress
+    local upload_ok=false  # guard: local files only removed if ALL uploads succeed
+
+    info "[upload:$model_id] Zipping checkpoints..."
+    zip -r "$ckpt_zip" "${CHECKPOINTS_DIR}/${model_id}" \
+        || { error "[upload:$model_id] zip checkpoints FAILED"; exit 1; }
+
+    info "[upload:$model_id] Uploading checkpoints -> ${GDRIVE_REMOTE}/checkpoints/"
+    rclone copy "$ckpt_zip" "${GDRIVE_REMOTE}/checkpoints/" --progress \
+        || { error "[upload:$model_id] rclone checkpoints FAILED"; exit 1; }
     rm -f "$ckpt_zip"
 
     if [[ -d "${RESULTS_DIR}/${model_id}" ]]; then
-        info "Zipping results..."
-        zip -r "$res_zip" "${RESULTS_DIR}/${model_id}"
-        info "Uploading results -> ${GDRIVE_REMOTE}/results/"
-        rclone copy "$res_zip" "${GDRIVE_REMOTE}/results/" --progress
+        info "[upload:$model_id] Zipping results..."
+        zip -r "$res_zip" "${RESULTS_DIR}/${model_id}" \
+            || { error "[upload:$model_id] zip results FAILED"; exit 1; }
+        info "[upload:$model_id] Uploading results -> ${GDRIVE_REMOTE}/results/"
+        rclone copy "$res_zip" "${GDRIVE_REMOTE}/results/" --progress \
+            || { error "[upload:$model_id] rclone results FAILED"; exit 1; }
         rm -f "$res_zip"
     else
-        warn "No results dir found: ${RESULTS_DIR}/${model_id} — skipping results upload"
+        warn "[upload:$model_id] No results dir — skipping results upload"
     fi
 
-    success "Upload done: $model_id"
+    upload_ok=true
+    success "[upload:$model_id] Upload done"
+
+    # Clean local checkpoints and results ONLY after all uploads confirmed success
+    if [[ "$upload_ok" == "true" ]]; then
+        info "[upload:$model_id] Cleaning local checkpoints..."
+        rm -rf "${CHECKPOINTS_DIR:?}/${model_id}" \
+            || warn "[upload:$model_id] Failed to remove checkpoints dir"
+        if [[ -d "${RESULTS_DIR}/${model_id}" ]]; then
+            info "[upload:$model_id] Cleaning local results..."
+            rm -rf "${RESULTS_DIR:?}/${model_id}" \
+                || warn "[upload:$model_id] Failed to remove results dir"
+        fi
+    else
+        warn "[upload:$model_id] Upload failed — local checkpoints and results preserved for recovery"
+    fi
+
+    # Clean dataset .pt cache after upload completes (not before)
+    if [[ "$do_clean" == "true" ]]; then
+        local local_name
+        local_name=$(echo "$dataset" | sed 's/_[0-9]\{8\}_[0-9]\{6\}$//')
+        info "[upload:$model_id] Cleaning .pt files for: $local_name"
+        local pts
+        pts=$(compgen -G "${PROCESSED_DIR}/${local_name}*.pt" 2>/dev/null || true)
+        if [[ -n "$pts" ]]; then
+            echo "$pts" | xargs rm -f
+            info "[upload:$model_id] Deleted: $pts"
+        else
+            warn "[upload:$model_id] No .pt files found to clean for $local_name"
+        fi
+    fi
+
+    success "[upload:$model_id] All post-train cleanup done"
 }
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 check_rclone
 check_setup
+
+UPLOAD_PIDS=()
+UPLOAD_LOGS=()
+UPLOAD_IDS=()
+RUN_COUNT=0
 
 for i in "${!CONFIG_LIST[@]}"; do
     CONFIG="${CONFIG_LIST[$i]}"
@@ -325,22 +380,51 @@ for i in "${!CONFIG_LIST[@]}"; do
     success "New model: $MODEL_ID"
 
     run_evaluate "$MODEL_DIR" "$MODEL_ID"
-    upload_run "$MODEL_ID"
 
-    if $FLAG_CLEAN; then
-        info "Cleaning .pt files for dataset: $DATASET"
-        local_name=$(echo "$DATASET" | sed 's/_[0-9]\{8\}_[0-9]\{6\}$//')
-        pts=$(compgen -G "${PROCESSED_DIR}/${local_name}*.pt" 2>/dev/null || true)
-        if [[ -n "$pts" ]]; then
-            echo "$pts" | xargs rm -f
-            info "Deleted: $pts"
-        else
-            warn "No .pt files found to clean for $local_name"
-        fi
+    # Decide whether to clean .pt on this run
+    RUN_COUNT=$((RUN_COUNT + 1))
+    DO_CLEAN="false"
+    if [[ "$CLEAN_EVERY" -gt 0 && $((RUN_COUNT % CLEAN_EVERY)) -eq 0 ]]; then
+        DO_CLEAN="true"
+        info "Run $RUN_COUNT: will clean dataset .pt after upload (--clean-every $CLEAN_EVERY)"
     fi
 
-    echo -e "${GREEN}  DONE $N/$TOTAL: $MODEL_ID${NC}"
+    # Upload in background — next training starts immediately
+    UPLOAD_LOG="/tmp/upload_${MODEL_ID}.log"
+    upload_run "$MODEL_ID" "$DATASET" "$DO_CLEAN" >"$UPLOAD_LOG" 2>&1 &
+    UPLOAD_PIDS+=($!)
+    UPLOAD_LOGS+=("$UPLOAD_LOG")
+    UPLOAD_IDS+=("$MODEL_ID")
+    info "Upload started in background (PID ${UPLOAD_PIDS[-1]}, log: $UPLOAD_LOG): $MODEL_ID"
+
+    echo -e "${GREEN}  DONE $N/$TOTAL: $MODEL_ID (upload running in background)${NC}"
 done
+
+# Wait for all background uploads before exit
+if [[ ${#UPLOAD_PIDS[@]} -gt 0 ]]; then
+    echo ""
+    info "Waiting for ${#UPLOAD_PIDS[@]} background upload(s) to finish..."
+    ALL_UPLOADS_OK=true
+    for i in "${!UPLOAD_PIDS[@]}"; do
+        pid="${UPLOAD_PIDS[$i]}"
+        log="${UPLOAD_LOGS[$i]}"
+        mid="${UPLOAD_IDS[$i]}"
+        if wait "$pid"; then
+            success "Upload OK: $mid"
+            rm -f "$log"
+        else
+            error "Upload FAILED: $mid (PID $pid)"
+            error "---- upload log: $log ----"
+            cat "$log" >&2
+            error "---- end log ----"
+            ALL_UPLOADS_OK=false
+        fi
+    done
+    if ! $ALL_UPLOADS_OK; then
+        error "One or more uploads failed — check logs above"
+        exit 1
+    fi
+fi
 
 echo ""
 success "All $TOTAL run(s) complete."
