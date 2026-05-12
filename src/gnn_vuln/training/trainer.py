@@ -12,6 +12,45 @@ from sklearn.metrics import f1_score
 from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
+
+class _CUDAPrefetcher:
+    """Overlap CPU collation with GPU compute using a background CUDA stream."""
+
+    def __init__(self, loader, device: torch.device):
+        self.loader = loader
+        self.device = device
+        self._use_cuda = device.type == "cuda"
+        self.stream = torch.cuda.Stream() if self._use_cuda else None
+
+    def __len__(self):
+        return len(self.loader)
+
+    def __iter__(self):
+        self._iter = iter(self.loader)
+        self._next = None
+        self._preload()
+        return self
+
+    def _preload(self):
+        try:
+            batch = next(self._iter)
+        except StopIteration:
+            self._next = None
+            return
+        if self._use_cuda:
+            with torch.cuda.stream(self.stream):
+                batch = batch.to(self.device, non_blocking=True)
+        self._next = batch
+
+    def __next__(self):
+        if self._next is None:
+            raise StopIteration
+        if self._use_cuda:
+            torch.cuda.current_stream().wait_stream(self.stream)
+        batch = self._next
+        self._preload()
+        return batch
+
 from gnn_vuln.training.losses import (
     focal_loss,
     mil_loss,
@@ -196,10 +235,10 @@ class Trainer:
         accum = self.grad_accum_steps
         self.optimizer.zero_grad()
 
-        pbar = tqdm(loader, desc=f"  Train {epoch:03d}/{total_epochs}", unit="batch", leave=False)
+        prefetcher = _CUDAPrefetcher(loader, self.device)
+        pbar = tqdm(prefetcher, desc=f"  Train {epoch:03d}/{total_epochs}", unit="batch", leave=False, total=len(loader))
 
         for step, batch in enumerate(pbar):
-            batch = batch.to(self.device, non_blocking=True)
             is_last = (step == len(loader) - 1)
             should_step = ((step + 1) % accum == 0) or is_last
 
@@ -253,8 +292,7 @@ class Trainer:
         all_preds:  list[int] = []
         all_labels: list[int] = []
 
-        for batch in loader:
-            batch = batch.to(self.device, non_blocking=True)
+        for batch in _CUDAPrefetcher(loader, self.device):
             logits, loss = self._forward(batch, class_weight)
             probs = F.softmax(logits, dim=-1)
             preds = logits.argmax(dim=-1)
