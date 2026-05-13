@@ -221,11 +221,27 @@ class TrainingSession:
         num_workers = getattr(cfg.train, "num_workers",    4)
         prefetch    = getattr(cfg.train, "prefetch_factor", 2)
         pin_mem     = self.device.type == "cuda"
+
+        # Strip heavy func-token tensors from collation for non-LM architectures.
+        # lmgat/lmgcn don't use func_input_ids but the _ft dataset carries them,
+        # causing 64×1024 token stacks per batch for no reason.
+        _needs_func_tokens = cfg.model.architecture not in ("lmgat", "lmgcn", "lmrgcn", "lmgin", "lmggnn")
+        _FUNC_TOKEN_KEYS = ("func_input_ids", "func_attention_mask", "func_token_lines")
+        def _strip_collate_fn(batch):
+            from torch_geometric.data import Batch
+            if not _needs_func_tokens:
+                for g in batch:
+                    for k in _FUNC_TOKEN_KEYS:
+                        if hasattr(g, k):
+                            delattr(g, k)
+            return Batch.from_data_list(batch)
+
         dl_kw = dict(
             num_workers=num_workers,
             pin_memory=pin_mem,
             persistent_workers=num_workers > 0,
             prefetch_factor=prefetch if num_workers > 0 else None,
+            collate_fn=_strip_collate_fn,
         )
 
         dataset = CodeBERTGraphDataset(source=getattr(cfg.data, "source", "bigvul"), **kwargs)
