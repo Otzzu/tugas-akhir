@@ -74,6 +74,7 @@ class VulnDetectorBase(nn.Module):
                 pass  # flash-attn not installed — fall back silently
         self.codebert = AutoModel.from_pretrained(_func_lm, **load_kwargs)
         if use_grad_checkpoint and hasattr(self.codebert, "gradient_checkpointing_enable"):
+            self.codebert.config.use_cache = False
             self.codebert.gradient_checkpointing_enable()
         if compile_lm:
             try:
