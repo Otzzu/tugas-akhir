@@ -16,17 +16,65 @@ from loguru import logger
 # ---------------------------------------------------------------------------
 
 
-def set_seed(seed: int = 42) -> None:
-    """Set random seeds for full reproducibility."""
+def set_seed(seed: int = 42, deterministic: bool = False) -> None:
+    """Set random seeds for reproducibility.
+
+    Parameters
+    ----------
+    seed : int
+        Random seed applied to python `random`, numpy, torch (CPU+CUDA),
+        cuDNN, and PYTHONHASHSEED.
+    deterministic : bool
+        When True, also enable bit-exact CUDA determinism. This makes scatter
+        atomics, FlashAttention-2 backward, and non-deterministic cuBLAS
+        kernels produce identical output across runs. **Significant slowdown**
+        (typically 20-40% on live-LM training) — only enable when you need
+        bit-exact reproducibility (e.g. replication studies). For statistical
+        ablation comparisons, prefer multi-seed runs with this flag off.
+
+    Notes
+    -----
+    - `warn_only=True` on `torch.use_deterministic_algorithms` — PyG scatter
+      ops (global_mean_pool, scatter_add, etc.) have no deterministic CUDA
+      implementation; they will warn but remain non-deterministic. Use
+      multi-seed averaging for ablation reproducibility instead.
+    - `CUBLAS_WORKSPACE_CONFIG=:4096:8` is required for deterministic cuBLAS
+      matmul/GEMM operations. Set before CUDA context is initialized — we set
+      it here before any torch.cuda call.
+    - `FLASH_ATTENTION_DETERMINISTIC=1` triggers FA2 v2.4.1+ deterministic
+      backward pass in HuggingFace transformers.
+    """
+    # Set CUBLAS env var BEFORE any CUDA call that might init the CUDA context.
+    # torch.cuda.manual_seed_all() below initializes the CUDA context, so this
+    # must come first or cuBLAS determinism has no effect.
+    if deterministic:
+        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+        os.environ["FLASH_ATTENTION_DETERMINISTIC"] = "1"
+
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
     os.environ["PYTHONHASHSEED"] = str(seed)
-    logger.info(f"Random seed set to {seed}")
+
+    if deterministic:
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        # warn_only: don't crash on ops without deterministic impl (e.g. some
+        # PyG scatter ops). Just log a warning and continue.
+        torch.use_deterministic_algorithms(True, warn_only=True)
+        logger.info(
+            f"Random seed set to {seed} | deterministic=True "
+            "(CUDA atomics + FA2 + cuDNN deterministic; 20-40% slowdown)"
+        )
+    else:
+        # Previous default behavior — cudnn deterministic kept on for cuDNN
+        # conv op reproducibility (cheap), benchmark off (avoids picking
+        # different algorithms across runs).
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        logger.info(f"Random seed set to {seed} | deterministic=False (fast mode)")
 
 
 # ---------------------------------------------------------------------------

@@ -80,7 +80,7 @@ class TrainingSession:
     @classmethod
     def from_args(cls, args) -> "TrainingSession":
         cfg = Config.from_yaml(args.config) if Path(args.config).exists() else load_default_config()
-        set_seed(cfg.train.seed)
+        set_seed(cfg.train.seed, deterministic=getattr(cfg.train, "deterministic", False))
         setup_logging(cfg.train.log_dir)
         return cls(cfg, resume=getattr(args, "resume", False))
 
@@ -248,7 +248,8 @@ class TrainingSession:
         _seed = cfg.train.seed
 
         def _worker_init_fn(worker_id):
-            worker_seed = (torch.initial_seed() + worker_id) % (2 ** 32)
+            # torch already sets initial_seed() = base_seed + worker_id per worker
+            worker_seed = torch.initial_seed() % (2 ** 32)
             import random as _random
             import numpy as _np
             _random.seed(worker_seed)
