@@ -292,7 +292,7 @@ class Trainer:
 
     # ── Evaluation ────────────────────────────────────────────────────────────
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def evaluate(
         self,
         loader: DataLoader,
@@ -301,31 +301,33 @@ class Trainer:
     ) -> tuple[float, float, float, float, float]:
         """Return (loss, accuracy, mean_confidence, f1_macro, f1_weighted)."""
         self.model.eval()
-        total_loss = 0.0
-        total_conf = 0.0
-        all_preds:  list[int] = []
-        all_labels: list[int] = []
+        loss_sum  = torch.zeros(1, device=self.device)
+        conf_sum  = torch.zeros(1, device=self.device)
+        preds_buf:  list[torch.Tensor] = []
+        labels_buf: list[torch.Tensor] = []
 
         for batch in loader:
             batch = batch.to(self.device, non_blocking=True)
             logits, loss = self._forward(batch, class_weight)
             probs = F.softmax(logits, dim=-1)
-            preds = logits.argmax(dim=-1)
-            total_loss += loss.item() * batch.num_graphs
-            total_conf += probs.max(dim=-1).values.sum().item()
-            all_preds.extend(preds.cpu().tolist())
-            all_labels.extend(batch.y.cpu().tolist())
+            preds_buf.append(logits.argmax(dim=-1))
+            labels_buf.append(batch.y)
+            loss_sum = loss_sum + loss.detach() * batch.num_graphs
+            conf_sum = conf_sum + probs.max(dim=-1).values.sum()
 
-        n   = len(loader.dataset)
+        # Single CPU sync for all accumulated tensors
+        all_preds  = torch.cat(preds_buf).cpu().tolist()
+        all_labels = torch.cat(labels_buf).cpu().tolist()
+        n          = len(all_labels)
         avg = "binary" if is_binary else "macro"
         f1_macro    = f1_score(all_labels, all_preds, average=avg,       zero_division=0)
         f1_weighted = f1_score(all_labels, all_preds, average="weighted", zero_division=0)
         acc = float(np.mean(np.array(all_preds) == np.array(all_labels)))
-        return total_loss / n, acc, total_conf / n, float(f1_macro), float(f1_weighted)
+        return (loss_sum / n).item(), acc, (conf_sum / n).item(), float(f1_macro), float(f1_weighted)
 
     # ── Localisation ──────────────────────────────────────────────────────────
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def localise(self, data, top_k: int = 5) -> list[tuple[int, float]]:
         """Return top-k (line, score) for a single graph."""
         self.model.eval()

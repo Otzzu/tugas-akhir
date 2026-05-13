@@ -252,9 +252,7 @@ class TrainingSession:
         if not self._use_class_weights:
             return None, None
         cfg = self.cfg
-        train_labels = torch.tensor(
-            [int(dataset[i].y.item()) for i in train_idx], dtype=torch.long
-        )
+        train_labels = dataset._data.y[torch.tensor(train_idx, dtype=torch.long)].long()
         counts = torch.bincount(train_labels, minlength=cfg.model.num_classes).float()
         if self._use_livable:
             w = livable_weights(counts, 1, cfg.train.epochs, cfg.model.num_classes, self.device)
