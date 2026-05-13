@@ -3,7 +3,7 @@ Correctness + speed check: StmtHead._score_loop vs _score_vectorized.
 Run: uv run python scripts/test_stmthead_vectorized.py
 """
 import os
-os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"  # must be before CUDA init
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"  # must be before CUDA init
 
 import time
 import torch

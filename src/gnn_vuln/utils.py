@@ -38,9 +38,10 @@ def set_seed(seed: int = 42, deterministic: bool = False) -> None:
       RuntimeError on any non-deterministic op so issues are caught immediately.
       In PyTorch 2.x, scatter_add_ and scatter_reduce_(mean/sum/amax) are all
       deterministic; only scatter_reduce_(prod) raises.
-    - `CUBLAS_WORKSPACE_CONFIG=:4096:8` is required for deterministic cuBLAS
-      matmul/GEMM operations. Set before CUDA context is initialized — we set
-      it here before any torch.cuda call.
+    - `CUBLAS_WORKSPACE_CONFIG=:16:8` is required for deterministic cuBLAS
+      matmul/GEMM operations (16 MB workspace × 8 streams = ~128 MB total).
+      `:4096:8` also works but reserves 4096 MB × 8 streams → OOM on training GPUs.
+      Set before CUDA context is initialized — we set it here before any torch.cuda call.
     - `FLASH_ATTENTION_DETERMINISTIC=1` triggers FA2 v2.4.1+ deterministic
       backward pass in HuggingFace transformers.
     """
@@ -48,7 +49,7 @@ def set_seed(seed: int = 42, deterministic: bool = False) -> None:
     # torch.cuda.manual_seed_all() below initializes the CUDA context, so this
     # must come first or cuBLAS determinism has no effect.
     if deterministic:
-        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
         os.environ["FLASH_ATTENTION_DETERMINISTIC"] = "1"
 
     random.seed(seed)
