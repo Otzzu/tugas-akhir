@@ -33,9 +33,10 @@ class LMGATHCDFGATVulnDetector(VulnDetectorBase):
         func_chunk_size=0,
         func_chunk_stride=0,
         localization_encoder="gnn",
+        use_flash_attention=False,
     ):
         super().__init__()
-        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride)
+        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride, use_flash_attention)
         self._loc_enc = localization_encoder
 
         # Stage 1: localization
@@ -111,4 +112,5 @@ class LMGATHCDFGATVulnDetector(VulnDetectorBase):
             func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
             func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),
             localization_encoder=getattr(cfg.model, "localization_encoder", "gnn"),
+            use_flash_attention=getattr(cfg.train, "use_flash_attention", False),
         )

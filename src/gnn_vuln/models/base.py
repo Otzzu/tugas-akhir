@@ -41,6 +41,7 @@ class VulnDetectorBase(nn.Module):
         matryoshka_dim: int | None = None,
         func_chunk_size: int = 0,
         func_chunk_stride: int = 0,
+        use_flash_attention: bool = False,
     ) -> None:
         """
         Load a live LM and store as self.codebert.
@@ -54,14 +55,22 @@ class VulnDetectorBase(nn.Module):
         func_chunk_stride : int
             Step between windows. 0 = defaults to chunk_size // 2 (50% overlap).
             Only used when func_chunk_size > 0.
+        use_flash_attention : bool
+            Load the LM with flash_attention_2 if available. Requires flash-attn package.
         """
         _func_lm = func_lm if func_lm else pretrained_lm
         _cfg = AutoConfig.from_pretrained(_func_lm, trust_remote_code=True)
         if not hasattr(_cfg, "is_decoder"):
             _cfg.is_decoder = False
-        self.codebert = AutoModel.from_pretrained(
-            _func_lm, config=_cfg, trust_remote_code=True
-        )
+        load_kwargs: dict = {"config": _cfg, "trust_remote_code": True}
+        if use_flash_attention:
+            try:
+                import flash_attn  # noqa: F401
+                load_kwargs["attn_implementation"] = "flash_attention_2"
+                load_kwargs["torch_dtype"] = torch.bfloat16
+            except ImportError:
+                pass  # flash-attn not installed — fall back silently
+        self.codebert = AutoModel.from_pretrained(_func_lm, **load_kwargs)
         if hasattr(self.codebert, "gradient_checkpointing_enable"):
             self.codebert.gradient_checkpointing_enable()
         self._lm_dim = lm_hidden_dim(self.codebert, matryoshka_dim)
