@@ -43,6 +43,7 @@ class VulnDetectorBase(nn.Module):
         func_chunk_stride: int = 0,
         use_flash_attention: bool = False,
         compile_lm: bool = False,
+        use_grad_checkpoint: bool = True,
     ) -> None:
         """
         Load a live LM and store as self.codebert.
@@ -72,7 +73,7 @@ class VulnDetectorBase(nn.Module):
             except ImportError:
                 pass  # flash-attn not installed — fall back silently
         self.codebert = AutoModel.from_pretrained(_func_lm, **load_kwargs)
-        if hasattr(self.codebert, "gradient_checkpointing_enable"):
+        if use_grad_checkpoint and hasattr(self.codebert, "gradient_checkpointing_enable"):
             self.codebert.gradient_checkpointing_enable()
         if compile_lm:
             try:
