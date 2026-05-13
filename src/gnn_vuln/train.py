@@ -278,13 +278,8 @@ class TrainingSession:
         if not self._use_class_weights:
             return None, None
         cfg = self.cfg
-        if hasattr(dataset, "_graphs") and dataset._graphs is not None:
-            all_y = torch.stack([dataset._graphs[i].y for i in range(len(dataset._graphs))])
-            train_labels = all_y[torch.tensor(train_idx, dtype=torch.long)].long().squeeze(-1)
-        else:
-            train_labels = torch.tensor(
-                [int(dataset[i].y.item()) for i in train_idx], dtype=torch.long
-            )
+        all_y = dataset.get_all_labels()
+        train_labels = all_y[torch.tensor(train_idx, dtype=torch.long)]
         counts = torch.bincount(train_labels, minlength=cfg.model.num_classes).float()
         if self._use_livable:
             w = livable_weights(counts, 1, cfg.train.epochs, cfg.model.num_classes, self.device)

@@ -1430,6 +1430,21 @@ class CodeBERTGraphDataset(Dataset):
             return self._graphs[idx]
         return torch.load(self._graphs_dir / f"{idx}.pt", weights_only=False)
 
+    def get_all_labels(self) -> torch.Tensor:
+        """Return [N] long tensor of all labels. Fast path for class-weight setup."""
+        if self._storage == "inmemory" and self._graphs is not None:
+            return torch.stack([g.y for g in self._graphs]).squeeze(-1).long()
+        labels_cache = self._graphs_dir / "_labels.pt"
+        if labels_cache.exists():
+            return torch.load(labels_cache, weights_only=True).long()
+        labels = torch.tensor(
+            [torch.load(self._graphs_dir / f"{i}.pt", weights_only=False).y.item()
+             for i in range(self._n_graphs)],
+            dtype=torch.long,
+        )
+        torch.save(labels, labels_cache)
+        return labels
+
     @property
     def num_classes(self) -> int:
         if self.class_names:
