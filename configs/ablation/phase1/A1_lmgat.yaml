@@ -53,5 +53,5 @@ train:
   save_last_every: 10
   compile_model: false
   stmt_head_vectorized: true
-  num_workers: 4
+  num_workers: 8
   prefetch_factor: 2

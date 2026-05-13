@@ -4,7 +4,7 @@
 # Flexible cloud training pipeline: setup → download datasets → train → evaluate → upload.
 # Each --config must be paired with a --dataset (same position order).
 # Datasets are downloaded once and cached; safe to repeat same dataset across configs.
-# Upload runs in background — next training starts immediately after evaluate.
+# Upload runs sequentially after evaluate — ensures results are fully written before upload.
 #
 # Flags:
 #   --init          Force run setup_cloud.sh + reinstall rclone.conf (fresh server)
@@ -370,9 +370,6 @@ upload_run() {
 check_rclone
 check_setup
 
-UPLOAD_PIDS=()
-UPLOAD_LOGS=()
-UPLOAD_IDS=()
 RUN_COUNT=0
 
 for i in "${!CONFIG_LIST[@]}"; do
@@ -412,42 +409,12 @@ for i in "${!CONFIG_LIST[@]}"; do
         info "Run $RUN_COUNT: will clean dataset .pt after upload (--clean-every $CLEAN_EVERY)"
     fi
 
-    # Upload in background — next training starts immediately
-    UPLOAD_LOG="/tmp/upload_${MODEL_ID}.log"
-    upload_run "$MODEL_ID" "$DATASET" "$DO_CLEAN" >"$UPLOAD_LOG" 2>&1 &
-    UPLOAD_PIDS+=($!)
-    UPLOAD_LOGS+=("$UPLOAD_LOG")
-    UPLOAD_IDS+=("$MODEL_ID")
-    info "Upload started in background (PID ${UPLOAD_PIDS[-1]}, log: $UPLOAD_LOG): $MODEL_ID"
+    # Upload sequentially — ensures results are fully written before upload
+    info "Uploading: $MODEL_ID"
+    upload_run "$MODEL_ID" "$DATASET" "$DO_CLEAN"
 
-    echo -e "${GREEN}  DONE $N/$TOTAL: $MODEL_ID (upload running in background)${NC}"
+    echo -e "${GREEN}  DONE $N/$TOTAL: $MODEL_ID${NC}"
 done
-
-# Wait for all background uploads before exit
-if [[ ${#UPLOAD_PIDS[@]} -gt 0 ]]; then
-    echo ""
-    info "Waiting for ${#UPLOAD_PIDS[@]} background upload(s) to finish..."
-    ALL_UPLOADS_OK=true
-    for i in "${!UPLOAD_PIDS[@]}"; do
-        pid="${UPLOAD_PIDS[$i]}"
-        log="${UPLOAD_LOGS[$i]}"
-        mid="${UPLOAD_IDS[$i]}"
-        if wait "$pid"; then
-            success "Upload OK: $mid"
-            rm -f "$log"
-        else
-            error "Upload FAILED: $mid (PID $pid)"
-            error "---- upload log: $log ----"
-            cat "$log" >&2
-            error "---- end log ----"
-            ALL_UPLOADS_OK=false
-        fi
-    done
-    if ! $ALL_UPLOADS_OK; then
-        error "One or more uploads failed — check logs above"
-        exit 1
-    fi
-fi
 
 echo ""
 success "All $TOTAL run(s) complete."
