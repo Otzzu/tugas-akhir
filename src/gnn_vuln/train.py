@@ -106,6 +106,15 @@ class TrainingSession:
 
         class_weight, train_counts = self._setup_class_weights(dataset, train_idx)
         model = build_model(cfg, in_channels, self._active_heads).to(device)
+
+        # Vectorized StmtHead: scatter-based pooling, no Python inner loop
+        if getattr(cfg.train, "stmt_head_vectorized", False):
+            from gnn_vuln.models.heads import StmtHead
+            for m in model.modules():
+                if isinstance(m, StmtHead):
+                    m._vectorized = True
+            logger.info("StmtHead: vectorized scatter mode enabled")
+
         ewc   = self._setup_ewc(model, train_loader, in_channels)
 
         # torch.compile — fuses kernels, ~20-50% speedup (PyTorch 2.0+, CUDA only)

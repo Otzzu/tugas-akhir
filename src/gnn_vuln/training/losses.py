@@ -57,19 +57,17 @@ def mil_loss(
       vulnerable (label>0)  → pseudo-label 1
     """
     device = labels.device
-    total = torch.tensor(0.0, device=device)
-    count = 0
-    for scores, label in zip(stmt_scores_list, labels):
+    binary_labels = (labels > 0).float()  # compute once, no per-graph .item() sync
+    losses: list[torch.Tensor] = []
+    for scores, bl in zip(stmt_scores_list, binary_labels):
         if len(scores) == 0:
             continue
         actual_k = min(k, len(scores))
-        _, topk_idx = scores.topk(actual_k)
-        topk_scores = scores[topk_idx]
-        binary_label = float(label.item() > 0)
-        pseudo = torch.full((actual_k,), binary_label, device=device)
-        total = total + F.binary_cross_entropy_with_logits(topk_scores, pseudo)
-        count += 1
-    return total / count if count > 0 else total
+        topk_scores = scores.topk(actual_k).values
+        losses.append(F.binary_cross_entropy_with_logits(topk_scores, bl.expand(actual_k)))
+    if not losses:
+        return torch.tensor(0.0, device=device)
+    return torch.stack(losses).mean()
 
 
 def mil_loss_multiclass(
@@ -82,19 +80,18 @@ def mil_loss_multiclass(
     Per function of class c, select top-k statements by score[:, c] and apply CE.
     """
     device = labels.device
-    total = torch.tensor(0.0, device=device)
-    count = 0
+    losses: list[torch.Tensor] = []
     for scores, label in zip(stmt_scores_list, labels):
         if scores.shape[0] == 0:
             continue
-        c = int(label.item())
         actual_k = min(k, scores.shape[0])
-        _, topk_idx = scores[:, c].topk(actual_k)
+        topk_idx = scores[:, label].topk(actual_k).indices
         topk_scores = scores[topk_idx]          # [k, num_classes]
-        targets = torch.full((actual_k,), c, dtype=torch.long, device=device)
-        total = total + F.cross_entropy(topk_scores, targets)
-        count += 1
-    return total / count if count > 0 else total
+        targets = label.long().expand(actual_k)
+        losses.append(F.cross_entropy(topk_scores, targets))
+    if not losses:
+        return torch.tensor(0.0, device=device)
+    return torch.stack(losses).mean()
 
 
 # ── Ranking loss ──────────────────────────────────────────────────────────────
@@ -112,10 +109,12 @@ def ranking_loss(
     Only applies to vulnerable functions (label > 0) with binary stmt heads.
     """
     device = labels.device
-    total = torch.tensor(0.0, device=device)
-    count = 0
-    for b, (scores, label) in enumerate(zip(stmt_scores_list, labels)):
-        if label.item() == 0 or len(scores) == 0:
+    # Single sync: get all vulnerable graph indices as Python ints
+    vuln_indices: list[int] = (labels > 0).nonzero(as_tuple=False).squeeze(1).tolist()
+    losses: list[torch.Tensor] = []
+    for b in vuln_indices:
+        scores = stmt_scores_list[b]
+        if len(scores) == 0:
             continue
         mask = batch_idx == b
         lines_b = node_line[mask]
@@ -124,16 +123,19 @@ def ranking_loss(
         if not valid.any():
             continue
         lines_b = lines_b[valid]
-        flaw_b  = flaw_b[valid]
-        unique_lines = lines_b.unique(sorted=True)
-        flaw_flags = torch.stack([
-            flaw_b[lines_b == line].max() for line in unique_lines
-        ]).bool()
+        flaw_b  = flaw_b[valid].float()
+        unique_lines, inv = torch.unique(lines_b, sorted=True, return_inverse=True)
+        n_unique = unique_lines.shape[0]
+        # Vectorized: scatter amax to get per-stmt flaw flag (replaces list comprehension)
+        flaw_max = torch.zeros(n_unique, device=device)
+        flaw_max.scatter_reduce_(0, inv, flaw_b, reduce='amax', include_self=True)
+        flaw_flags = flaw_max.bool()
         if not flaw_flags.any() or flaw_flags.all():
             continue
         flaw_scores = scores[flaw_flags]
         safe_scores = scores[~flaw_flags]
         diff = flaw_scores.unsqueeze(1) - safe_scores.unsqueeze(0)
-        total = total + F.relu(margin - diff).mean()
-        count += 1
-    return total / count if count > 0 else total
+        losses.append(F.relu(margin - diff).mean())
+    if not losses:
+        return torch.tensor(0.0, device=device)
+    return torch.stack(losses).mean()

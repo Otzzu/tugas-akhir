@@ -13,6 +13,7 @@ data:
   filter_owasp: false
   max_per_class: 1600
   resample_seed: 42
+  storage: lazy
 
 model:
   architecture: lmgat_codebert

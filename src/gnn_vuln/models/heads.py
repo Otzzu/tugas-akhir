@@ -70,6 +70,18 @@ class StmtHead(nn.Module):
         lm_hidden: torch.Tensor | None = None,
         func_token_lines: torch.Tensor | None = None,
     ) -> list[torch.Tensor]:
+        if getattr(self, "_vectorized", False):
+            return self._score_vectorized(h, batch, node_line, lm_hidden, func_token_lines)
+        return self._score_loop(h, batch, node_line, lm_hidden, func_token_lines)
+
+    def _score_loop(
+        self,
+        h: torch.Tensor,
+        batch: torch.Tensor,
+        node_line: torch.Tensor,
+        lm_hidden: torch.Tensor | None = None,
+        func_token_lines: torch.Tensor | None = None,
+    ) -> list[torch.Tensor]:
         device = h.device
         B = int(batch.max().item()) + 1
         result: list[torch.Tensor] = []
@@ -83,11 +95,10 @@ class StmtHead(nn.Module):
             h_b, lines_b = h_b[valid], lines_b[valid]
             unique_lines = lines_b.unique(sorted=True)
 
-            # Pool LM hidden states per line if needed
             lm_max_emb = lm_mean_emb = None
             if self._mode != "gnn" and lm_hidden is not None and func_token_lines is not None:
-                lh  = lm_hidden[b]          # [L, lm_dim]
-                ftl = func_token_lines[b]   # [L]
+                lh  = lm_hidden[b]
+                ftl = func_token_lines[b]
                 lm_max_emb, lm_mean_emb = self._pool_lm_per_line(lh, ftl, unique_lines, device)
 
             scores: list[torch.Tensor] = []
@@ -101,7 +112,7 @@ class StmtHead(nn.Module):
                 elif self._mode == "lm":
                     feat_max  = lm_max_emb[i]  if lm_max_emb  is not None else h_l.max(dim=0).values
                     feat_mean = lm_mean_emb[i] if lm_mean_emb is not None else h_l.mean(dim=0)
-                else:  # both
+                else:
                     gnn_max  = h_l.max(dim=0).values
                     gnn_mean = h_l.mean(dim=0)
                     if lm_max_emb is not None:
@@ -114,6 +125,105 @@ class StmtHead(nn.Module):
                 scores.append(s.squeeze(-1))
             result.append(torch.stack(scores))
         return result
+
+    def _score_vectorized(
+        self,
+        h: torch.Tensor,
+        batch: torch.Tensor,
+        node_line: torch.Tensor,
+        lm_hidden: torch.Tensor | None = None,
+        func_token_lines: torch.Tensor | None = None,
+    ) -> list[torch.Tensor]:
+        """Scatter-based vectorized scorer. Same output as _score_loop, no Python inner loop."""
+        device = h.device
+        D = h.shape[1]
+        MAX_LINE = 100_000  # line numbers well below this in practice
+
+        # Filter valid nodes (line >= 0)
+        valid_node = node_line >= 0
+        B = int(batch.max().item()) + 1
+        if not valid_node.any():
+            return [torch.zeros(0, device=device) for _ in range(B)]
+
+        h_v      = h[valid_node]
+        lines_v  = node_line[valid_node]
+        batch_v  = batch[valid_node]
+
+        # Unique stmt ID per (graph, line) pair
+        sid = batch_v * MAX_LINE + lines_v           # [N']
+        unique_sid, inv = torch.unique(sid, sorted=True, return_inverse=True)
+        S = unique_sid.shape[0]
+
+        if self._mode in ("gnn", "both"):
+            # scatter max
+            gnn_max = torch.full((S, D), float('-inf'), device=device)
+            gnn_max.scatter_reduce_(0, inv.unsqueeze(1).expand(-1, D), h_v,
+                                    reduce='amax', include_self=True)
+            # scatter mean via sum+count
+            gnn_sum = torch.zeros(S, D, device=device)
+            cnt_gnn = torch.zeros(S, 1, device=device)
+            idx_exp = inv.unsqueeze(1).expand(-1, D)
+            gnn_sum.scatter_add_(0, idx_exp, h_v)
+            cnt_gnn.scatter_add_(0, inv.unsqueeze(1), torch.ones(h_v.shape[0], 1, device=device))
+            gnn_mean = gnn_sum / cnt_gnn.clamp(min=1)
+
+        if self._mode in ("lm", "both") and lm_hidden is not None and func_token_lines is not None:
+            LM_D = lm_hidden.shape[-1]
+            L    = lm_hidden.shape[1]
+            # Flatten [B, L] → [B*L]
+            g_tok  = torch.arange(B, device=device).unsqueeze(1).expand(-1, L).reshape(-1)
+            tl_tok = func_token_lines.reshape(-1)
+            lm_flat = lm_hidden.reshape(-1, LM_D)
+
+            valid_tok = tl_tok >= 0
+            if valid_tok.any():
+                g_tok   = g_tok[valid_tok]
+                tl_tok  = tl_tok[valid_tok]
+                lm_flat = lm_flat[valid_tok]
+                tsid = g_tok * MAX_LINE + tl_tok
+                unique_tsid, inv_tok = torch.unique(tsid, sorted=True, return_inverse=True)
+                ST = unique_tsid.shape[0]
+
+                lm_max_all = torch.full((ST, LM_D), float('-inf'), device=device)
+                lm_max_all.scatter_reduce_(0, inv_tok.unsqueeze(1).expand(-1, LM_D),
+                                           lm_flat, reduce='amax', include_self=True)
+                lm_sum = torch.zeros(ST, LM_D, device=device)
+                cnt_tok = torch.zeros(ST, 1, device=device)
+                lm_sum.scatter_add_(0, inv_tok.unsqueeze(1).expand(-1, LM_D), lm_flat)
+                cnt_tok.scatter_add_(0, inv_tok.unsqueeze(1),
+                                     torch.ones(lm_flat.shape[0], 1, device=device))
+                lm_mean_all = lm_sum / cnt_tok.clamp(min=1)
+
+                # Align LM stmts with GNN stmts (unique_sid)
+                pos   = torch.searchsorted(unique_tsid, unique_sid).clamp(0, ST - 1)
+                found = unique_tsid[pos] == unique_sid
+
+                lm_max  = torch.zeros(S, LM_D, device=device)
+                lm_mean = torch.zeros(S, LM_D, device=device)
+                lm_max[found]  = lm_max_all[pos[found]]
+                lm_mean[found] = lm_mean_all[pos[found]]
+            else:
+                LM_D = lm_hidden.shape[-1]
+                lm_max = lm_mean = torch.zeros(S, LM_D, device=device)
+
+        # Build feat_max / feat_mean for linear heads
+        if self._mode == "gnn":
+            feat_max, feat_mean = gnn_max, gnn_mean
+        elif self._mode == "lm":
+            feat_max, feat_mean = lm_max, lm_mean
+        else:
+            feat_max  = torch.cat([gnn_max,  lm_max],  dim=-1)
+            feat_mean = torch.cat([gnn_mean, lm_mean], dim=-1)
+
+        scores_flat = (
+            _ALPHA_MAX  * self.max_head(feat_max)
+            + _ALPHA_MEAN * self.mean_head(feat_mean)
+        ).squeeze(-1)   # [S]
+
+        # Split by graph — one sync (tolist) instead of B×n_lines syncs
+        stmt_graph = unique_sid // MAX_LINE          # [S] graph index per stmt
+        counts = torch.bincount(stmt_graph, minlength=B).tolist()
+        return list(torch.split(scores_flat, counts))
 
 
 class MulticlassStmtHead(nn.Module):

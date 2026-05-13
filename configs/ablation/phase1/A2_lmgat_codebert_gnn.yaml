@@ -13,6 +13,7 @@ data:
   filter_owasp: false
   max_per_class: 1600
   resample_seed: 42
+  storage: lazy
 
 model:
   architecture: lmgat_codebert
@@ -50,7 +51,7 @@ train:
   device: cuda
   use_amp: true
   use_flash_attention: true
-  grad_accum_steps: 2             # batch=32 × 2 = effective 64
+  grad_accum_steps: 2             # batch=16 × 2 = effective 32
   save_last_every: 10
   compile_model: false
   num_workers: 4
