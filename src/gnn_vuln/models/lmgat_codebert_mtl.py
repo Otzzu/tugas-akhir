@@ -39,6 +39,7 @@ class LMGATCodeBERTMTLVulnDetector(VulnDetectorBase):
         func_chunk_stride=0,
         localization_encoder="gnn",
         use_flash_attention=False,
+        compile_lm=False,
     ):
         super().__init__()
         self.dropout = dropout
@@ -49,7 +50,7 @@ class LMGATCodeBERTMTLVulnDetector(VulnDetectorBase):
 
         # Live LM
         self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim,
-                               func_chunk_size, func_chunk_stride, use_flash_attention)
+                               func_chunk_size, func_chunk_stride, use_flash_attention, compile_lm)
 
         # Edge embeddings
         if use_edge_emb:
@@ -141,4 +142,5 @@ class LMGATCodeBERTMTLVulnDetector(VulnDetectorBase):
             func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),
             localization_encoder=getattr(cfg.model, "localization_encoder", "gnn"),
             use_flash_attention=getattr(cfg.train, "use_flash_attention", False),
+            compile_lm=getattr(cfg.train, "compile_lm", False),
         )

@@ -13,9 +13,9 @@ class LMGNNVulnDetector(VulnDetectorBase):
     def __init__(self, pretrained_lm="microsoft/unixcoder-base", func_lm="",
                  in_channels=NODE_FEAT_DIM, hidden_dim=256, num_layers=6,
                  dropout=0.3, num_classes=11, use_skip=False,
-                 matryoshka_dim=None, func_chunk_size=0, func_chunk_stride=0, use_flash_attention=False, **kwargs):
+                 matryoshka_dim=None, func_chunk_size=0, func_chunk_stride=0, use_flash_attention=False, compile_lm=False, **kwargs):
         super().__init__()
-        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride, use_flash_attention)
+        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride, use_flash_attention, compile_lm)
         self.encoder   = GGNNEncoder(in_channels, hidden_dim, num_layers, dropout, use_skip)
         self.func_head = FuncHead(hidden_dim + self._lm_dim, hidden_dim, num_classes, dropout)
         self.stmt_head = StmtHead(hidden_dim)
@@ -46,5 +46,6 @@ class LMGNNVulnDetector(VulnDetectorBase):
             func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
             func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),
             use_flash_attention=getattr(cfg.train, "use_flash_attention", False),
+            compile_lm=getattr(cfg.train, "compile_lm", False),
             alpha=getattr(cfg.model, "alpha", 0.1),
         )

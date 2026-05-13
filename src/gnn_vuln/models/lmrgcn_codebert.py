@@ -13,9 +13,9 @@ class LMRGCNCodeBERTVulnDetector(VulnDetectorBase):
     def __init__(self, pretrained_lm="microsoft/unixcoder-base", func_lm="",
                  in_channels=NODE_FEAT_DIM, hidden_dim=256, num_layers=4,
                  dropout=0.3, num_classes=11, num_relations=7, num_bases=None,
-                 use_skip=False, matryoshka_dim=None, func_chunk_size=0, func_chunk_stride=0, use_flash_attention=False):
+                 use_skip=False, matryoshka_dim=None, func_chunk_size=0, func_chunk_stride=0, use_flash_attention=False, compile_lm=False):
         super().__init__()
-        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride, use_flash_attention)
+        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride, use_flash_attention, compile_lm)
         self.encoder   = RGCNEncoder(in_channels, hidden_dim, num_layers, dropout, num_relations, num_bases, use_skip)
         self.func_head = FuncHead(hidden_dim + self._lm_dim, hidden_dim, num_classes, dropout)
         self.stmt_head = StmtHead(hidden_dim)
@@ -48,4 +48,5 @@ class LMRGCNCodeBERTVulnDetector(VulnDetectorBase):
             func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
             func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),
             use_flash_attention=getattr(cfg.train, "use_flash_attention", False),
+            compile_lm=getattr(cfg.train, "compile_lm", False),
         )

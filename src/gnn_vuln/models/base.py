@@ -42,6 +42,7 @@ class VulnDetectorBase(nn.Module):
         func_chunk_size: int = 0,
         func_chunk_stride: int = 0,
         use_flash_attention: bool = False,
+        compile_lm: bool = False,
     ) -> None:
         """
         Load a live LM and store as self.codebert.
@@ -73,6 +74,11 @@ class VulnDetectorBase(nn.Module):
         self.codebert = AutoModel.from_pretrained(_func_lm, **load_kwargs)
         if hasattr(self.codebert, "gradient_checkpointing_enable"):
             self.codebert.gradient_checkpointing_enable()
+        if compile_lm:
+            try:
+                self.codebert = torch.compile(self.codebert, mode="reduce-overhead", dynamic=False)
+            except Exception:
+                pass  # unsupported platform or torch version — skip silently
         self._lm_dim = lm_hidden_dim(self.codebert, matryoshka_dim)
         self._is_enc_dec = getattr(
             self.codebert.config, "is_encoder_decoder", False

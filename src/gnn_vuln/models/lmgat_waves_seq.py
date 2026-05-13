@@ -32,9 +32,10 @@ class LMGATWavesSeqVulnDetector(VulnDetectorBase):
         func_chunk_size=0,
         func_chunk_stride=0,
         use_flash_attention=False,
+        compile_lm=False,
     ):
         super().__init__()
-        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride, use_flash_attention)
+        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride, use_flash_attention, compile_lm)
         self.dropout = dropout
 
         # Stage 1: transformer-based statement encoder
@@ -117,4 +118,5 @@ class LMGATWavesSeqVulnDetector(VulnDetectorBase):
             func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
             func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),
             use_flash_attention=getattr(cfg.train, "use_flash_attention", False),
+            compile_lm=getattr(cfg.train, "compile_lm", False),
         )

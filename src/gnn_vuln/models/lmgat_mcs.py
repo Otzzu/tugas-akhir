@@ -14,9 +14,9 @@ class LMGATMCSVulnDetector(VulnDetectorBase):
                  in_channels=NODE_FEAT_DIM, hidden_dim=256, num_layers=4,
                  dropout=0.3, num_classes=11, num_heads=4, edge_dim=7,
                  add_self_loops=False, use_skip=False, matryoshka_dim=None,
-                 func_chunk_size=0, func_chunk_stride=0, use_flash_attention=False):
+                 func_chunk_size=0, func_chunk_stride=0, use_flash_attention=False, compile_lm=False):
         super().__init__()
-        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride, use_flash_attention)
+        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride, use_flash_attention, compile_lm)
         self.encoder   = GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout, edge_dim, add_self_loops, use_skip)
         self.stmt_head = MulticlassStmtHead(hidden_dim, num_classes)
         # Function head: max-pooled stmt scores [num_classes] + LM [lm_dim] → logit
@@ -66,4 +66,5 @@ class LMGATMCSVulnDetector(VulnDetectorBase):
             func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
             func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),
             use_flash_attention=getattr(cfg.train, "use_flash_attention", False),
+            compile_lm=getattr(cfg.train, "compile_lm", False),
         )
