@@ -52,6 +52,11 @@ def set_seed(seed: int = 42, deterministic: bool = False) -> None:
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
         os.environ["FLASH_ATTENTION_DETERMINISTIC"] = "1"
 
+    # Expandable segments: lets the caching allocator satisfy allocations from
+    # non-contiguous blocks, eliminating OOM from fragmentation when reserved
+    # but unallocated memory is large. setdefault preserves user override.
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
