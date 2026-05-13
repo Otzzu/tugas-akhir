@@ -3,7 +3,8 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GATv2Conv, global_mean_pool
+from torch_geometric.nn import GATv2Conv
+from gnn_vuln.models._lm_utils import det_global_mean_pool as global_mean_pool
 from gnn_vuln.models.base import VulnDetectorBase
 from gnn_vuln.models.heads import StmtHead, MTLHeads
 from gnn_vuln.models._lm_utils import lm_hidden_dim, lm_pool
