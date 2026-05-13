@@ -36,7 +36,7 @@ model:
 train:
   seed: 42
   epochs: 100
-  batch_size: 32                  # no live LM — larger batch OK
+  batch_size: 8
   lr: 0.001
   warmup_ratio: 0.1
   grad_clip: 1.0
@@ -49,7 +49,7 @@ train:
   device: cuda
   use_amp: true
   use_flash_attention: false      # no LM branch
-  grad_accum_steps: 1             # batch=64, effective=64
+  grad_accum_steps: 4             # batch=8 × 4 = effective 32
   save_last_every: 10
   compile_model: false
   stmt_head_vectorized: true
