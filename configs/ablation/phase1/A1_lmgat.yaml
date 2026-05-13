@@ -51,5 +51,5 @@ train:
   grad_accum_steps: 1             # batch=64, effective=64
   save_last_every: 10
   compile_model: false
-  num_workers: 8
-  prefetch_factor: 4
+  num_workers: 4
+  prefetch_factor: 2
