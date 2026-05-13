@@ -34,10 +34,10 @@ def set_seed(seed: int = 42, deterministic: bool = False) -> None:
 
     Notes
     -----
-    - `warn_only=True` on `torch.use_deterministic_algorithms` — PyG scatter
-      ops (global_mean_pool, scatter_add, etc.) have no deterministic CUDA
-      implementation; they will warn but remain non-deterministic. Use
-      multi-seed averaging for ablation reproducibility instead.
+    - `warn_only=False` on `torch.use_deterministic_algorithms` — raises
+      RuntimeError on any non-deterministic op so issues are caught immediately.
+      In PyTorch 2.x, scatter_add_ and scatter_reduce_(mean/sum/amax) are all
+      deterministic; only scatter_reduce_(prod) raises.
     - `CUBLAS_WORKSPACE_CONFIG=:4096:8` is required for deterministic cuBLAS
       matmul/GEMM operations. Set before CUDA context is initialized — we set
       it here before any torch.cuda call.
@@ -63,7 +63,7 @@ def set_seed(seed: int = 42, deterministic: bool = False) -> None:
         torch.backends.cudnn.benchmark = False
         # warn_only: don't crash on ops without deterministic impl (e.g. some
         # PyG scatter ops). Just log a warning and continue.
-        torch.use_deterministic_algorithms(True, warn_only=True)
+        torch.use_deterministic_algorithms(True, warn_only=False)
         logger.info(
             f"Random seed set to {seed} | deterministic=True "
             "(CUDA atomics + FA2 + cuDNN deterministic; 20-40% slowdown)"

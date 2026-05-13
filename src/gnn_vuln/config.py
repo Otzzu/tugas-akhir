@@ -115,6 +115,10 @@ class TrainConfig:
     use_class_weights: bool = True  # inverse-frequency weighting for imbalanced classes
     focal_loss_gamma: float = 0.0  # focal loss gamma; 0 = standard CE, 2.0 recommended for imbalanced
     livable_loss: bool = False      # LIVABLE epoch-adaptive weights (arXiv:2306.06935); requires use_class_weights=true
+    # Bit-exact determinism across runs (CUDA atomics, FlashAttention-2 backward, cuBLAS).
+    # Enable only for replication studies — costs 20-40% training speed.
+    # For ablation statistical comparisons, prefer multi-seed runs with this flag off.
+    deterministic: bool = False
 
 
 @dataclass

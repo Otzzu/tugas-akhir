@@ -2,6 +2,9 @@
 Correctness + speed check: StmtHead._score_loop vs _score_vectorized.
 Run: uv run python scripts/test_stmthead_vectorized.py
 """
+import os
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"  # must be before CUDA init
+
 import time
 import torch
 from gnn_vuln.models.heads import StmtHead
@@ -86,3 +89,50 @@ print("  PASS (empty output)")
 results.append(True)
 
 print(f"\n{'ALL PASS' if all(results) else 'SOME FAILED'}")
+
+# ── Deterministic mode check ───────────────────────────────────────────────────
+# scatter_add_() and scatter_reduce_(amax) are both deterministic in PyTorch 2.x
+# under use_deterministic_algorithms(True). This verifies no RuntimeError is raised
+# and that repeated calls produce bit-exact output.
+print("\n[deterministic] strict mode — loop + vectorized (correctness + timing vs non-det)")
+det_results = []
+for mode, use_lm in [("gnn", False), ("gnn", True), ("lm", True), ("both", True)]:
+    B, N, D, LM_D, L = 4, 100, 256, 768, 256
+    head = StmtHead(hidden_dim=D, lm_dim=LM_D if use_lm else 0,
+                    localization_encoder=mode).to(device).eval()
+    h         = torch.randn(N, D, device=device)
+    batch     = torch.randint(0, B, (N,), device=device).sort().values
+    node_line = torch.randint(-1, 50, (N,), device=device)
+    lm_hidden = func_token_lines = None
+    if use_lm:
+        lm_hidden        = torch.randn(B, L, LM_D, device=device)
+        func_token_lines = torch.randint(-1, 50, (B, L), device=device)
+    print(f"\n  [{mode}] use_lm={use_lm}")
+    try:
+        for impl, label in [(False, "loop"), (True, "vec ")]:
+            # correctness: bit-exact repeat under deterministic
+            torch.use_deterministic_algorithms(True, warn_only=False)
+            with torch.no_grad():
+                head._vectorized = impl
+                o1 = head.score(h, batch, node_line, lm_hidden, func_token_lines)
+                o2 = head.score(h, batch, node_line, lm_hidden, func_token_lines)
+            max_err = max(
+                (a - b).abs().max().item()
+                for a, b in zip(o1, o2) if a.numel() > 0
+            ) if any(a.numel() > 0 for a in o1) else 0.0
+            ok = max_err == 0.0
+            det_results.append(ok)
+
+            # timing: det vs non-det
+            t_det  = bench(head, impl, h, batch, node_line, lm_hidden, func_token_lines)
+            torch.use_deterministic_algorithms(False)
+            t_ndet = bench(head, impl, h, batch, node_line, lm_hidden, func_token_lines)
+            overhead = (t_det / t_ndet - 1) * 100 if t_ndet > 0 else float('nan')
+            print(f"    {label}: bit-exact={'PASS' if ok else 'FAIL'}  "
+                  f"det={t_det:.3f}ms  non-det={t_ndet:.3f}ms  overhead={overhead:+.1f}%")
+    except RuntimeError as e:
+        torch.use_deterministic_algorithms(False)
+        print(f"    FAIL RuntimeError: {e}")
+        det_results.append(False)
+
+print(f"\n[deterministic] {'ALL PASS' if all(det_results) else 'SOME FAILED'}")

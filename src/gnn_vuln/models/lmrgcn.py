@@ -1,7 +1,7 @@
 """lmrgcn.py — LM-RGCN: RGCNConv + frozen node embeddings. No live LM."""
 from __future__ import annotations
 import torch
-from gnn_vuln.models._lm_utils import det_global_mean_pool as global_mean_pool
+from torch_geometric.nn import global_mean_pool
 from gnn_vuln.models.base import VulnDetectorBase
 from gnn_vuln.models.encoders import RGCNEncoder
 from gnn_vuln.models.heads import SmallFuncHead, StmtHead

@@ -3,28 +3,7 @@
 from __future__ import annotations
 
 import torch
-from torch_geometric.nn import global_mean_pool as _global_mean_pool
 from loguru import logger
-
-
-def det_global_mean_pool(x: torch.Tensor, batch: torch.Tensor) -> torch.Tensor:
-    """global_mean_pool that uses segment_csr when deterministic mode is active.
-
-    segment_csr operates on sorted CSR indices without atomic adds, so it is
-    fully deterministic on CUDA. Falls back to standard global_mean_pool when
-    deterministic algorithms are not enabled (no perf cost in normal runs).
-    """
-    if not torch.are_deterministic_algorithms_enabled():
-        return _global_mean_pool(x, batch)
-    B = int(batch.max().item()) + 1
-    # bincount + cumsum: both deterministic on CUDA
-    ptr = torch.zeros(B + 1, dtype=torch.long, device=batch.device)
-    ptr[1:] = torch.bincount(batch, minlength=B).cumsum(0)
-    try:
-        from torch_scatter import segment_csr
-        return segment_csr(x, ptr, reduce="mean")
-    except ImportError:
-        return _global_mean_pool(x, batch)
 
 
 def _is_codet5p_embedding(model) -> bool:
