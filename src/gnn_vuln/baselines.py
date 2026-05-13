@@ -17,7 +17,7 @@ Dataset notes
 -------------
 LineVul RQ1/RQ2/RQ3 use BigVul (Fan et al.) - full dataset, no class cap.
 WAVES Table 2/3 use BigVul (Fan et al.) subset.
-Our evaluation uses BigVul subsampled to 2000/class with a 70/15/15 split.
+Our evaluation uses MegaVul subsampled to 1600/class with a 80/10/10 split.
 => Function-level numbers are NOT perfectly comparable (different splits + class
    balance), but localization metrics share the same definition and can be compared.
 
