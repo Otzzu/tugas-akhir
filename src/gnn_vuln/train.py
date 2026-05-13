@@ -255,6 +255,7 @@ class TrainingSession:
 
         dataset = CodeBERTGraphDataset(source=getattr(cfg.data, "source", "bigvul"), **kwargs)
         _dataset_pt = Path(dataset.processed_paths[0]).name
+        self._dataset_pt = _dataset_pt
         if use_official:
             val_ds  = CodeBERTGraphDataset(source=source_val,  **kwargs)
             test_ds = CodeBERTGraphDataset(source=source_test, **kwargs)
@@ -417,7 +418,7 @@ class TrainingSession:
 
         # Save training artifacts to results_dir (separate from model weights)
         import csv as _csv, json as _json
-        res_dir = cfg.train.results_dir / run_id
+        res_dir = cfg.train.results_dir / cm.run_dir.name
         res_dir.mkdir(parents=True, exist_ok=True)
 
         if epoch_log:
@@ -436,9 +437,9 @@ class TrainingSession:
         summary_path = res_dir / "training_summary.json"
         with open(summary_path, "w") as f:
             _json.dump({
-                "run_id":              run_id,
+                "run_id":              cm.run_dir.name,
                 "architecture":        cfg.model.architecture,
-                "dataset_pt":          _dataset_pt,
+                "dataset_pt":          getattr(self, "_dataset_pt", ""),
                 "num_classes":         cfg.model.num_classes,
                 "num_params":          num_params,
                 "epochs_trained":      len(epoch_log),
