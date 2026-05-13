@@ -42,12 +42,17 @@ foreach ($config in $Configs) {
     Write-Host ""
     Write-Host "=== [$configIdx/$($Configs.Count)] Processing: $config ==="
 
-    # Extract dataset source from config for upload subdirectory
+    # Extract dataset source and storage mode from config
     $datasetSrc = (Select-String -Path $config -Pattern "^\s+source:\s+(\S+)" |
         Select-Object -First 1).Matches.Groups[1].Value
     if (-not $datasetSrc) { $datasetSrc = "misc" }
     $remoteDest = "$REMOTE_PT/$datasetSrc"
     Write-Host "Upload destination: $remoteDest"
+
+    $storageLine = (Select-String -Path $config -Pattern "^\s+storage:\s+(\S+)" |
+        Select-Object -First 1).Matches.Groups[1].Value
+    $storage = if ($storageLine) { $storageLine } else { "inmemory" }
+    Write-Host "Storage mode: $storage"
 
     # Snapshot .pt files before processing
     $before = @(Get-ChildItem "$PT_DIR/*.pt" -ErrorAction SilentlyContinue |
@@ -58,7 +63,7 @@ foreach ($config in $Configs) {
     if ($ForceRebuild) { $uvArgs += "--force-rebuild" }
     & uv @uvArgs
 
-    # Detect new .pt files
+    # Detect new .pt files (_meta.pt for lazy, plain .pt for inmemory)
     $after = @(Get-ChildItem "$PT_DIR/*.pt" -ErrorAction SilentlyContinue |
         Select-Object -ExpandProperty FullName | Sort-Object)
     $newPts = $after | Where-Object { $_ -notin $before }
@@ -67,15 +72,37 @@ foreach ($config in $Configs) {
         Write-Host "[warn] No new .pt file — skipping upload"
     } else {
         foreach ($ptFile in $newPts) {
-            $stem    = [System.IO.Path]::GetFileNameWithoutExtension($ptFile)
-            $archive = "${stem}_${TS}.tar.gz"
-            Write-Host "Compressing $ptFile → $archive ..."
-            tar -czf $archive -C $PT_DIR (Split-Path $ptFile -Leaf)
+            $leaf     = Split-Path $ptFile -Leaf
+            $stem     = [System.IO.Path]::GetFileNameWithoutExtension($ptFile)
+            $baseStem = $stem -replace '_meta$', ''   # strip _meta suffix for lazy format
+            $archive  = "${baseStem}_${storage}_${TS}.tar.gz"
+
+            # Build list of items to tar
+            $tarItems = @($leaf)
+            if ($storage -eq "lazy") {
+                $graphsDir = "${baseStem}_graphs"
+                $graphsDirPath = Join-Path $PT_DIR $graphsDir
+                if (Test-Path $graphsDirPath) {
+                    $tarItems += $graphsDir
+                } else {
+                    Write-Warning "lazy storage but _graphs/ dir not found: $graphsDirPath"
+                }
+            }
+
+            Write-Host "Compressing ($storage) → $archive ..."
+            tar -czf $archive -C $PT_DIR @tarItems
             Write-Host "Uploading $archive → $remoteDest ..."
             rclone copy $archive $remoteDest --progress
             Remove-Item $archive -Force
+
             if ($DeletePt) {
                 Remove-Item $ptFile -Force
+                if ($storage -eq "lazy") {
+                    $graphsDirPath = Join-Path $PT_DIR "${baseStem}_graphs"
+                    if (Test-Path $graphsDirPath) {
+                        Remove-Item $graphsDirPath -Recurse -Force
+                    }
+                }
                 Write-Host "Deleted local $ptFile"
             }
         }

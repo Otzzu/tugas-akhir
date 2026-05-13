@@ -181,11 +181,20 @@ DOWNLOADED_DATASETS=()
 
 download_dataset() {
     local dataset="$1"
+    local config="${2:-}"
     # Remote names include timestamp (_YYYYMMDD_HHMMSS); local .pt files do not.
     # Strip timestamp for local existence check.
     local local_name
     local_name=$(echo "$dataset" | sed 's/_[0-9]\{8\}_[0-9]\{6\}$//')
     local local_dir="${PROCESSED_DIR}/${local_name}"
+
+    # Detect storage mode from config (default: inmemory)
+    local storage="inmemory"
+    if [[ -n "$config" && -f "$config" ]]; then
+        local cfg_storage
+        cfg_storage=$(grep -E '^\s+storage:\s+' "$config" | awk '{print $2}' | head -1 || true)
+        [[ -n "$cfg_storage" ]] && storage="$cfg_storage"
+    fi
 
     # Already downloaded this session
     for d in "${DOWNLOADED_DATASETS[@]:-}"; do
@@ -199,7 +208,7 @@ download_dataset() {
     fi
     info "Not found locally (checked: ${local_dir}/ and ${PROCESSED_DIR}/${local_name}*.pt)"
 
-    info "Downloading dataset: $dataset"
+    info "Downloading dataset: $dataset (storage=$storage)"
     mkdir -p "$PROCESSED_DIR"
 
     # Try 1: .zip at gdrive root (legacy)
@@ -214,14 +223,22 @@ download_dataset() {
         return 0
     fi
 
-    # Try 2: .tar.gz in data/processed/<source>/ subdir (uploaded by cloud_process_datasets.sh)
-    # Dataset names follow lm_dataset_<source>_... so extract source for subdir lookup.
+    # Try 2: .tar.gz in data/processed/<source>/ subdir
+    # Prefer tar with matching storage marker (_lazy_ / _inmemory_); fall back to legacy (no marker).
     local remote_proc="${GDRIVE_REMOTE}/data/processed"
     local source
     source=$(echo "$dataset" | sed 's/lm_dataset_\([^_]*\)_.*/\1/')
     local remote_tar remote_subdir
     for remote_subdir in "${remote_proc}/${source}" "${remote_proc}"; do
-        remote_tar=$(rclone lsf "$remote_subdir" 2>/dev/null | grep "^${dataset}.*\.tar\.gz$" | sort | tail -1 || true)
+        # Preferred: tar with storage marker
+        remote_tar=$(rclone lsf "$remote_subdir" 2>/dev/null \
+            | grep "^${dataset}.*_${storage}_.*\.tar\.gz$" | sort | tail -1 || true)
+        # Fallback: any tar for this dataset (legacy, no marker)
+        if [[ -z "$remote_tar" ]]; then
+            remote_tar=$(rclone lsf "$remote_subdir" 2>/dev/null \
+                | grep "^${dataset}.*\.tar\.gz$" | sort | tail -1 || true)
+            [[ -n "$remote_tar" ]] && warn "No ${storage}-marked tar found — using legacy: $remote_tar"
+        fi
         if [[ -n "$remote_tar" ]]; then
             local local_tar="${PROCESSED_DIR}/${remote_tar}"
             info "Found: ${remote_subdir}/${remote_tar}"
@@ -329,14 +346,20 @@ upload_run() {
     if [[ "$do_clean" == "true" ]]; then
         local local_name
         local_name=$(echo "$dataset" | sed 's/_[0-9]\{8\}_[0-9]\{6\}$//')
-        info "[upload:$model_id] Cleaning .pt files for: $local_name"
+        info "[upload:$model_id] Cleaning dataset files for: $local_name"
         local pts
         pts=$(compgen -G "${PROCESSED_DIR}/${local_name}*.pt" 2>/dev/null || true)
         if [[ -n "$pts" ]]; then
             echo "$pts" | xargs rm -f
-            info "[upload:$model_id] Deleted: $pts"
+            info "[upload:$model_id] Deleted .pt files: $pts"
         else
             warn "[upload:$model_id] No .pt files found to clean for $local_name"
+        fi
+        # lazy storage: also remove _graphs/ directories
+        local graphs_dir="${PROCESSED_DIR}/${local_name}_graphs"
+        if [[ -d "$graphs_dir" ]]; then
+            rm -rf "$graphs_dir"
+            info "[upload:$model_id] Deleted graphs dir: $graphs_dir"
         fi
     fi
 
@@ -363,7 +386,7 @@ for i in "${!CONFIG_LIST[@]}"; do
     echo -e "${CYAN}  Run $N/$TOTAL: $(basename $CONFIG)${NC}"
     echo -e "${CYAN}════════════════════════════════════════${NC}"
 
-    download_dataset "$DATASET"
+    download_dataset "$DATASET" "$CONFIG"
 
     # Snapshot latest checkpoint dir before training
     BEFORE=$(ls -dt ${CHECKPOINTS_DIR}/* 2>/dev/null | head -1 || echo "")
