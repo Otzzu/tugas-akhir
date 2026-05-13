@@ -245,12 +245,25 @@ class TrainingSession:
                             delattr(g, k)
             return Batch.from_data_list(batch)
 
+        _seed = cfg.train.seed
+
+        def _worker_init_fn(worker_id):
+            worker_seed = (torch.initial_seed() + worker_id) % (2 ** 32)
+            import random as _random
+            import numpy as _np
+            _random.seed(worker_seed)
+            _np.random.seed(worker_seed)
+
+        _g = torch.Generator().manual_seed(_seed)
+
         dl_kw = dict(
             num_workers=num_workers,
             pin_memory=pin_mem,
             persistent_workers=num_workers > 0,
             prefetch_factor=prefetch if num_workers > 0 else None,
             collate_fn=_strip_collate_fn,
+            worker_init_fn=_worker_init_fn,
+            generator=_g,
         )
 
         dataset = CodeBERTGraphDataset(source=getattr(cfg.data, "source", "bigvul"), **kwargs)
