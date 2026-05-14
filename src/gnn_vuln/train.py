@@ -440,9 +440,11 @@ class TrainingSession:
         epoch_times = [r["epoch_time_s"] for r in epoch_log]
         num_params = sum(p.numel() for p in trainer.model.parameters())
         peak_vram_gb = peak_reserved_gb = 0.0
+        gpu_name = "cpu"
         if torch.cuda.is_available():
             peak_vram_gb     = round(torch.cuda.max_memory_allocated() / 1024**3, 3)
             peak_reserved_gb = round(torch.cuda.max_memory_reserved()  / 1024**3, 3)
+            gpu_name         = torch.cuda.get_device_name(0)
         summary_path = res_dir / "training_summary.json"
         with open(summary_path, "w") as f:
             _json.dump({
@@ -462,6 +464,7 @@ class TrainingSession:
                 "avg_epoch_time_s":    round(sum(epoch_times) / len(epoch_times), 1) if epoch_times else 0,
                 "min_epoch_time_s":    round(min(epoch_times), 1) if epoch_times else 0,
                 "max_epoch_time_s":    round(max(epoch_times), 1) if epoch_times else 0,
+                "gpu":                 gpu_name,
                 "peak_vram_gb":        peak_vram_gb,
                 "peak_reserved_gb":    peak_reserved_gb,
             }, f, indent=2)
