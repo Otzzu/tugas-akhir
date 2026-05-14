@@ -1425,10 +1425,33 @@ class CodeBERTGraphDataset(Dataset):
     def len(self) -> int:
         return self._n_graphs
 
+    def _patch_func_token_lines(self, g: Data, idx: int) -> Data:
+        """Compute func_token_lines on-the-fly for graphs missing the attribute.
+        Saves back to disk so each graph is only recomputed once.
+        """
+        if not hasattr(self, "_tok_cache"):
+            self._tok_cache = _load_tokenizer(self._func_lm)
+        total_len = int(g.func_input_ids.shape[-1])
+        g.func_token_lines = _compute_func_token_lines(
+            g.raw_func, total_len, self._tok_cache
+        ).unsqueeze(0)  # [1, max_length]
+        try:
+            torch.save(g, self._graphs_dir / f"{idx}.pt")
+        except Exception:
+            pass
+        return g
+
     def get(self, idx: int) -> Data:
         if self._storage == "inmemory":
             return self._graphs[idx]
-        return torch.load(self._graphs_dir / f"{idx}.pt", weights_only=False)
+        g = torch.load(self._graphs_dir / f"{idx}.pt", weights_only=False)
+        if (
+            not hasattr(g, "func_token_lines")
+            and hasattr(g, "raw_func") and g.raw_func
+            and hasattr(g, "func_input_ids") and g.func_input_ids is not None
+        ):
+            g = self._patch_func_token_lines(g, idx)
+        return g
 
     def get_all_labels(self) -> torch.Tensor:
         """Return [N] long tensor of all labels. Fast path for class-weight setup."""

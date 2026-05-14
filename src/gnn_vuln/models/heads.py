@@ -167,6 +167,8 @@ class StmtHead(nn.Module):
             cnt_gnn.scatter_add_(0, inv.unsqueeze(1), torch.ones(h_v.shape[0], 1, device=device))
             gnn_mean = gnn_sum / cnt_gnn.clamp(min=1)
 
+        lm_max = lm_mean = None  # assigned below if mode requires LM
+
         if self._mode in ("lm", "both") and lm_hidden is not None and func_token_lines is not None:
             LM_D = lm_hidden.shape[-1]
             L    = lm_hidden.shape[1]
@@ -210,8 +212,14 @@ class StmtHead(nn.Module):
         if self._mode == "gnn":
             feat_max, feat_mean = gnn_max, gnn_mean
         elif self._mode == "lm":
+            if lm_max is None:  # func_token_lines was None — fallback to zeros
+                LM_D = lm_hidden.shape[-1] if lm_hidden is not None else self.max_head.in_features
+                lm_max = lm_mean = torch.zeros(S, LM_D, device=device)
             feat_max, feat_mean = lm_max, lm_mean
-        else:
+        else:  # both
+            if lm_max is None:  # func_token_lines was None — fallback to zeros
+                LM_D = lm_hidden.shape[-1] if lm_hidden is not None else (self.max_head.in_features - D)
+                lm_max = lm_mean = torch.zeros(S, LM_D, device=device)
             feat_max  = torch.cat([gnn_max,  lm_max],  dim=-1)
             feat_mean = torch.cat([gnn_mean, lm_mean], dim=-1)
 
