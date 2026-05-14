@@ -156,15 +156,15 @@ class StmtHead(nn.Module):
 
         if self._mode in ("gnn", "both"):
             # scatter max
-            gnn_max = torch.full((S, D), float('-inf'), device=device)
+            gnn_max = torch.full((S, D), float('-inf'), device=device, dtype=h_v.dtype)
             gnn_max.scatter_reduce_(0, inv.unsqueeze(1).expand(-1, D), h_v,
                                     reduce='amax', include_self=True)
             # scatter mean via sum+count
-            gnn_sum = torch.zeros(S, D, device=device)
-            cnt_gnn = torch.zeros(S, 1, device=device)
+            gnn_sum = torch.zeros(S, D, device=device, dtype=h_v.dtype)
+            cnt_gnn = torch.zeros(S, 1, device=device, dtype=h_v.dtype)
             idx_exp = inv.unsqueeze(1).expand(-1, D)
             gnn_sum.scatter_add_(0, idx_exp, h_v)
-            cnt_gnn.scatter_add_(0, inv.unsqueeze(1), torch.ones(h_v.shape[0], 1, device=device))
+            cnt_gnn.scatter_add_(0, inv.unsqueeze(1), torch.ones(h_v.shape[0], 1, device=device, dtype=h_v.dtype))
             gnn_mean = gnn_sum / cnt_gnn.clamp(min=1)
 
         lm_max = lm_mean = None  # assigned below if mode requires LM
@@ -186,27 +186,28 @@ class StmtHead(nn.Module):
                 unique_tsid, inv_tok = torch.unique(tsid, sorted=True, return_inverse=True)
                 ST = unique_tsid.shape[0]
 
-                lm_max_all = torch.full((ST, LM_D), float('-inf'), device=device)
+                lm_dtype = lm_flat.dtype
+                lm_max_all = torch.full((ST, LM_D), float('-inf'), device=device, dtype=lm_dtype)
                 lm_max_all.scatter_reduce_(0, inv_tok.unsqueeze(1).expand(-1, LM_D),
                                            lm_flat, reduce='amax', include_self=True)
-                lm_sum = torch.zeros(ST, LM_D, device=device)
-                cnt_tok = torch.zeros(ST, 1, device=device)
+                lm_sum = torch.zeros(ST, LM_D, device=device, dtype=lm_dtype)
+                cnt_tok = torch.zeros(ST, 1, device=device, dtype=lm_dtype)
                 lm_sum.scatter_add_(0, inv_tok.unsqueeze(1).expand(-1, LM_D), lm_flat)
                 cnt_tok.scatter_add_(0, inv_tok.unsqueeze(1),
-                                     torch.ones(lm_flat.shape[0], 1, device=device))
+                                     torch.ones(lm_flat.shape[0], 1, device=device, dtype=lm_dtype))
                 lm_mean_all = lm_sum / cnt_tok.clamp(min=1)
 
                 # Align LM stmts with GNN stmts (unique_sid)
                 pos   = torch.searchsorted(unique_tsid, unique_sid).clamp(0, ST - 1)
                 found = unique_tsid[pos] == unique_sid
 
-                lm_max  = torch.zeros(S, LM_D, device=device)
-                lm_mean = torch.zeros(S, LM_D, device=device)
+                lm_max  = torch.zeros(S, LM_D, device=device, dtype=lm_dtype)
+                lm_mean = torch.zeros(S, LM_D, device=device, dtype=lm_dtype)
                 lm_max[found]  = lm_max_all[pos[found]]
                 lm_mean[found] = lm_mean_all[pos[found]]
             else:
                 LM_D = lm_hidden.shape[-1]
-                lm_max = lm_mean = torch.zeros(S, LM_D, device=device)
+                lm_max = lm_mean = torch.zeros(S, LM_D, device=device, dtype=lm_hidden.dtype)
 
         # Build feat_max / feat_mean for linear heads
         if self._mode == "gnn":
