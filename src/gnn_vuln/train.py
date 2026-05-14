@@ -370,9 +370,10 @@ class TrainingSession:
                 torch.cuda.reset_peak_memory_stats()
             t0 = time.time()
             train_loss = trainer.train_epoch(train_loader, epoch, cfg.train.epochs, class_weight)
-            val_loss, val_acc, val_conf, val_f1, val_f1w = trainer.evaluate(
-                val_loader, self._is_binary, class_weight
-            )
+            val_m = trainer.evaluate(val_loader, self._is_binary, class_weight)
+            val_loss, val_acc, val_conf = val_m["loss"], val_m["acc"], val_m["conf"]
+            val_f1, val_f1w = val_m["f1_macro"], val_m["f1_weighted"]
+            val_prec, val_rec = val_m["precision_macro"], val_m["recall_macro"]
             if not step_per_batch:
                 scheduler.step(val_loss)
 
@@ -383,6 +384,7 @@ class TrainingSession:
                 f"Epoch {epoch:03d}/{cfg.train.epochs} | "
                 f"train={train_loss:.4f} | val={val_loss:.4f} | "
                 f"acc={val_acc:.4f} | f1={val_f1:.4f} | f1w={val_f1w:.4f} | "
+                f"prec={val_prec:.4f} | rec={val_rec:.4f} | "
                 f"lr={lr_now:.2e} | "
                 f"patience={patience_counter}/{cfg.train.patience} | "
                 f"{epoch_time:.0f}s" + (" *" if improved else "")
@@ -394,6 +396,7 @@ class TrainingSession:
                 "epoch": epoch, "train_loss": round(train_loss, 6),
                 "val_loss": round(val_loss, 6), "val_acc": round(val_acc, 6),
                 "val_f1": round(val_f1, 6), "val_f1w": round(val_f1w, 6),
+                "val_prec": round(val_prec, 6), "val_rec": round(val_rec, 6),
                 "lr": lr_now, "epoch_time_s": round(epoch_time, 1),
                 "peak_vram_gb": epoch_peak_vram, "best": improved,
             })
@@ -414,10 +417,14 @@ class TrainingSession:
                 logger.info(f"Early stopping at epoch {epoch}.")
                 break
 
-        _, test_acc, test_conf, test_f1, test_f1w = trainer.evaluate(
-            test_loader, self._is_binary, class_weight
+        test_m = trainer.evaluate(test_loader, self._is_binary, class_weight)
+        test_acc, test_conf = test_m["acc"], test_m["conf"]
+        test_f1, test_f1w = test_m["f1_macro"], test_m["f1_weighted"]
+        test_prec, test_rec = test_m["precision_macro"], test_m["recall_macro"]
+        logger.info(
+            f"Test  acc={test_acc:.4f} | f1={test_f1:.4f} | f1w={test_f1w:.4f} | "
+            f"prec={test_prec:.4f} | rec={test_rec:.4f} | conf={test_conf:.4f}"
         )
-        logger.info(f"Test  acc={test_acc:.4f} | f1={test_f1:.4f} | f1w={test_f1w:.4f} | conf={test_conf:.4f}")
         total_time = int(time.time() - train_start)
         h, rem = divmod(total_time, 3600)
         m, s = divmod(rem, 60)
@@ -459,6 +466,11 @@ class TrainingSession:
                 "test_acc":            round(test_acc, 6),
                 "test_f1":             round(test_f1, 6),
                 "test_f1w":            round(test_f1w, 6),
+                "test_prec":           round(test_prec, 6),
+                "test_rec":            round(test_rec, 6),
+                "test_prec_weighted":  round(test_m["precision_weighted"], 6),
+                "test_rec_weighted":   round(test_m["recall_weighted"],    6),
+                "test_per_class":      test_m["per_class"],
                 "test_conf":           round(test_conf, 6),
                 "total_time_s":        total_time,
                 "avg_epoch_time_s":    round(sum(epoch_times) / len(epoch_times), 1) if epoch_times else 0,

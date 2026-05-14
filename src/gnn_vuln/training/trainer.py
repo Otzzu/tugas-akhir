@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.amp import autocast
 from torch.cuda.amp import GradScaler
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, precision_score, recall_score, classification_report
 from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
@@ -298,8 +298,8 @@ class Trainer:
         loader: DataLoader,
         is_binary: bool = True,
         class_weight: torch.Tensor | None = None,
-    ) -> tuple[float, float, float, float, float]:
-        """Return (loss, accuracy, mean_confidence, f1_macro, f1_weighted)."""
+    ) -> dict:
+        """Return metrics dict: loss, acc, conf, f1_macro, f1_weighted, precision_macro, recall_macro, precision_weighted, recall_weighted, per_class."""
         self.model.eval()
         loss_sum  = torch.zeros(1, device=self.device)
         conf_sum  = torch.zeros(1, device=self.device)
@@ -320,10 +320,36 @@ class Trainer:
         all_labels = torch.cat(labels_buf).cpu().tolist()
         n          = len(all_labels)
         avg = "binary" if is_binary else "macro"
-        f1_macro    = f1_score(all_labels, all_preds, average=avg,       zero_division=0)
-        f1_weighted = f1_score(all_labels, all_preds, average="weighted", zero_division=0)
+        f1_macro         = f1_score(all_labels, all_preds, average=avg,        zero_division=0)
+        f1_weighted      = f1_score(all_labels, all_preds, average="weighted",  zero_division=0)
+        precision_main   = precision_score(all_labels, all_preds, average=avg,        zero_division=0)
+        recall_main      = recall_score(all_labels, all_preds, average=avg,           zero_division=0)
+        precision_w      = precision_score(all_labels, all_preds, average="weighted", zero_division=0)
+        recall_w         = recall_score(all_labels, all_preds, average="weighted",    zero_division=0)
         acc = float(np.mean(np.array(all_preds) == np.array(all_labels)))
-        return (loss_sum / n).item(), acc, (conf_sum / n).item(), float(f1_macro), float(f1_weighted)
+        report = classification_report(all_labels, all_preds, output_dict=True, zero_division=0)
+        per_class = {
+            k: {
+                "precision": round(v["precision"], 6),
+                "recall":    round(v["recall"],    6),
+                "f1":        round(v["f1-score"],  6),
+                "support":   int(v["support"]),
+            }
+            for k, v in report.items()
+            if k not in ("macro avg", "weighted avg", "accuracy")
+        }
+        return {
+            "loss":               (loss_sum / n).item(),
+            "acc":                acc,
+            "conf":               (conf_sum / n).item(),
+            "f1_macro":           float(f1_macro),
+            "f1_weighted":        float(f1_weighted),
+            "precision_macro":    float(precision_main),
+            "recall_macro":       float(recall_main),
+            "precision_weighted": float(precision_w),
+            "recall_weighted":    float(recall_w),
+            "per_class":          per_class,
+        }
 
     # ── Localisation ──────────────────────────────────────────────────────────
 
