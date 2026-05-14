@@ -82,9 +82,10 @@ class LocalizationExtractor:
         if hasattr(self.model, "codebert"):
             func_input_ids      = getattr(batch, "func_input_ids", None)
             func_attention_mask = getattr(batch, "func_attention_mask", None)
+            func_token_lines    = getattr(batch, "func_token_lines", None)
             return self.model(
                 batch.x, batch.edge_index, batch.batch, node_line, edge_attr,
-                func_input_ids, func_attention_mask,
+                func_input_ids, func_attention_mask, func_token_lines,
             )
         return self.model(batch.x, batch.edge_index, batch.batch, node_line, edge_attr)
 
