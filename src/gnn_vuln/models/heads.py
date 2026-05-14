@@ -58,8 +58,8 @@ class StmtHead(nn.Module):
                 max_res.append(h_l.max(dim=0).values)
                 mean_res.append(h_l.mean(dim=0))
             else:
-                max_res.append(torch.zeros(lm_dim, device=device))
-                mean_res.append(torch.zeros(lm_dim, device=device))
+                max_res.append(torch.zeros(lm_dim, device=device, dtype=lm_hidden.dtype))
+                mean_res.append(torch.zeros(lm_dim, device=device, dtype=lm_hidden.dtype))
         return torch.stack(max_res), torch.stack(mean_res)
 
     def score(
@@ -268,8 +268,8 @@ class MulticlassStmtHead(nn.Module):
                 nm = lines_b == line
                 h_l = h_b[nm]
                 s = (
-                    _ALPHA_MAX  * self.max_head(h_l.max(dim=0).values)
-                    + _ALPHA_MEAN * self.mean_head(h_l.mean(dim=0))
+                    _ALPHA_MAX  * self.max_head(h_l.max(dim=0).values.float())
+                    + _ALPHA_MEAN * self.mean_head(h_l.mean(dim=0).float())
                 )
                 scores.append(s)          # [num_classes]
             result.append(torch.stack(scores))  # [n_stmts, num_classes]
@@ -291,7 +291,7 @@ class FuncHead(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
+        return self.net(x.float())
 
 
 class SmallFuncHead(nn.Module):
@@ -307,7 +307,7 @@ class SmallFuncHead(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
+        return self.net(x.float())
 
 
 # ── MTL heads ─────────────────────────────────────────────────────────────────
@@ -360,6 +360,7 @@ class MTLHeads(nn.Module):
         z: torch.Tensor,  # [B, fused_dim]
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Returns (logit_cwe [B,C], logit_group [B,G], logit_binary [B,2])."""
+        z = z.float()
         logit_binary = self.binary_head(z)
         logit_group  = self.group_head(z)
 
