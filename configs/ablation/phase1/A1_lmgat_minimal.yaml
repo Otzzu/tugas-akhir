@@ -38,7 +38,7 @@ model:
 train:
   seed: 42
   epochs: 100
-  batch_size: 16
+  batch_size: 64
   lr: 0.001
   warmup_ratio: 0.1
   grad_clip: 1.0
@@ -53,7 +53,7 @@ train:
   device: cuda
   use_amp: true
   use_flash_attention: false
-  grad_accum_steps: 2
+  grad_accum_steps: 1
   save_last_every: 10
   compile_model: false
   stmt_head_vectorized: true
