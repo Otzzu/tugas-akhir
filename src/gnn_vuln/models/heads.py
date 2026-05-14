@@ -121,7 +121,7 @@ class StmtHead(nn.Module):
                     else:
                         feat_max, feat_mean = gnn_max, gnn_mean
 
-                s = _ALPHA_MAX * self.max_head(feat_max) + _ALPHA_MEAN * self.mean_head(feat_mean)
+                s = _ALPHA_MAX * self.max_head(feat_max.float()) + _ALPHA_MEAN * self.mean_head(feat_mean.float())
                 scores.append(s.squeeze(-1))
             result.append(torch.stack(scores))
         return result
@@ -225,8 +225,8 @@ class StmtHead(nn.Module):
             feat_mean = torch.cat([gnn_mean, lm_mean], dim=-1)
 
         scores_flat = (
-            _ALPHA_MAX  * self.max_head(feat_max)
-            + _ALPHA_MEAN * self.mean_head(feat_mean)
+            _ALPHA_MAX  * self.max_head(feat_max.float())
+            + _ALPHA_MEAN * self.mean_head(feat_mean.float())
         ).squeeze(-1)   # [S]
 
         # Split by graph — one sync (tolist) instead of B×n_lines syncs
