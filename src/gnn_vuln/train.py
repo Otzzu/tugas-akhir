@@ -141,6 +141,7 @@ class TrainingSession:
             supcon_fn=supcon_fn, supcon_weight=self._supcon_weight,
             use_amp=use_amp, amp_dtype=amp_dtype, scaler=scaler, ewc=ewc,
             grad_accum_steps=grad_accum_steps,
+            label_smoothing=getattr(cfg.train, "label_smoothing", 0.0),
         )
         trainer.set_grad_clip(self._grad_clip)
 
@@ -375,7 +376,11 @@ class TrainingSession:
             val_f1, val_f1w = val_m["f1_macro"], val_m["f1_weighted"]
             val_prec, val_rec = val_m["precision_macro"], val_m["recall_macro"]
             if not step_per_batch:
-                scheduler.step(val_loss)
+                # CosineAnnealingLR takes no argument; ReduceLROnPlateau takes val_loss
+                if isinstance(scheduler, torch.optim.lr_scheduler.CosineAnnealingLR):
+                    scheduler.step()
+                else:
+                    scheduler.step(val_loss)
 
             epoch_time = time.time() - t0
             improved = (val_f1 > best_val_f1) if stop_on_f1 else (val_loss < best_val_loss)

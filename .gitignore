@@ -53,6 +53,7 @@ src/LineVul/
 src/VulChecker/
 src/vul-LMGNN/
 src/gnn_vuln/joern/
+src/SCLCVD/
 
 # Downloaded tools / secrets
 gdrive.exe

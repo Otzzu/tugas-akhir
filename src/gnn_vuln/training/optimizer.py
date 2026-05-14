@@ -31,10 +31,11 @@ def build_optimizer_and_scheduler(
 
     step_scheduler_per_batch=True  → linear warmup; call scheduler.step() after
                                      each batch inside train_epoch().
-    step_scheduler_per_batch=False → ReduceLROnPlateau; call once per epoch.
+    step_scheduler_per_batch=False → epoch-level scheduler (plateau or cosine).
     """
     arch = cfg.model.architecture.lower()
     is_ft = arch in _FT_ARCHS
+    lr_scheduler = getattr(cfg.train, "lr_scheduler", "plateau").lower()
 
     if is_ft:
         lm_lr        = getattr(cfg.train, "lm_lr", 2e-5)
@@ -55,24 +56,44 @@ def build_optimizer_and_scheduler(
             {"params": other_params, "lr": cfg.train.lr, "weight_decay": cfg.train.weight_decay},
         ])
 
-        warmup_steps = max(1, int(total_steps * warmup_ratio))
-        from transformers import get_linear_schedule_with_warmup
-        scheduler = get_linear_schedule_with_warmup(optimizer, warmup_steps, total_steps)
-        step_per_batch = True
-
-        logger.info(
-            f"AdamW: LM lr={lm_lr:.1e}  GNN lr={cfg.train.lr:.1e} | "
-            f"linear warmup {warmup_steps}/{total_steps} steps"
-        )
+        if lr_scheduler == "cosine":
+            # Cosine decay over all epochs — no warmup for cosine (simpler, EDAT-style)
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=cfg.train.epochs, eta_min=0.0
+            )
+            step_per_batch = False
+            logger.info(
+                f"AdamW: LM lr={lm_lr:.1e}  GNN lr={cfg.train.lr:.1e} | "
+                f"cosine decay over {cfg.train.epochs} epochs"
+            )
+        else:
+            # Default: linear warmup → constant (original behavior)
+            warmup_steps = max(1, int(total_steps * warmup_ratio))
+            from transformers import get_linear_schedule_with_warmup
+            scheduler = get_linear_schedule_with_warmup(optimizer, warmup_steps, total_steps)
+            step_per_batch = True
+            logger.info(
+                f"AdamW: LM lr={lm_lr:.1e}  GNN lr={cfg.train.lr:.1e} | "
+                f"linear warmup {warmup_steps}/{total_steps} steps"
+            )
     else:
         optimizer = torch.optim.Adam(
             model.parameters(),
             lr=cfg.train.lr,
             weight_decay=cfg.train.weight_decay,
         )
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, patience=5, factor=0.5
-        )
-        step_per_batch = False
+        if lr_scheduler == "cosine":
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=cfg.train.epochs, eta_min=0.0
+            )
+            step_per_batch = False
+            logger.info(
+                f"Adam: lr={cfg.train.lr:.1e} | cosine decay over {cfg.train.epochs} epochs"
+            )
+        else:
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, patience=5, factor=0.5
+            )
+            step_per_batch = False
 
     return optimizer, scheduler, step_per_batch

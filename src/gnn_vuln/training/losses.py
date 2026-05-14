@@ -13,12 +13,17 @@ def focal_loss(
     targets: torch.Tensor,
     gamma: float = 2.0,
     weight: torch.Tensor | None = None,
+    label_smoothing: float = 0.0,
 ) -> torch.Tensor:
     """
     Focal loss for multiclass classification.
     gamma=0 reduces to standard cross-entropy.
+    label_smoothing > 0 applies label smoothing before focal modulation.
     """
-    ce = F.cross_entropy(logits, targets, weight=weight, reduction="none")
+    ce = F.cross_entropy(logits, targets, weight=weight, reduction="none",
+                         label_smoothing=label_smoothing)
+    if gamma == 0.0:
+        return ce.mean()
     p_t = torch.exp(-ce)
     return ((1.0 - p_t) ** gamma * ce).mean()
 

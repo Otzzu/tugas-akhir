@@ -115,6 +115,14 @@ class TrainConfig:
     use_class_weights: bool = True  # inverse-frequency weighting for imbalanced classes
     focal_loss_gamma: float = 0.0  # focal loss gamma; 0 = standard CE, 2.0 recommended for imbalanced
     livable_loss: bool = False      # LIVABLE epoch-adaptive weights (arXiv:2306.06935); requires use_class_weights=true
+    # Label smoothing for cross-entropy loss (0.0 = disabled, 0.1 recommended).
+    # Prevents overconfidence by replacing hard one-hot targets with soft targets.
+    # Helps reduce the loss-F1 gap on imbalanced multiclass (see LOSS_F1_GAP.md §3.2).
+    label_smoothing: float = 0.0
+    # LR scheduler type: "plateau" (ReduceLROnPlateau, default) or "cosine" (CosineAnnealingLR).
+    # "cosine" smoothly decays LR to 0 over all epochs — reduces overfitting in later epochs.
+    # "plateau" reduces LR when val_loss stops improving (legacy behavior).
+    lr_scheduler: str = "plateau"
     # Bit-exact determinism across runs (CUDA atomics, FlashAttention-2 backward, cuBLAS).
     # Enable only for replication studies — costs 20-40% training speed.
     # For ablation statistical comparisons, prefer multi-seed runs with this flag off.

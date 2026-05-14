@@ -103,6 +103,7 @@ class Trainer:
         scaler: GradScaler | None = None,
         ewc=None,   # EWCDR | None
         grad_accum_steps: int = 1,
+        label_smoothing: float = 0.0,
     ):
         self.model              = model
         self.optimizer          = optimizer
@@ -122,6 +123,7 @@ class Trainer:
         self.scaler             = scaler
         self.ewc                = ewc
         self.grad_accum_steps   = max(1, grad_accum_steps)
+        self.label_smoothing    = label_smoothing
 
     # ── Forward ──────────────────────────────────────────────────────────────
 
@@ -167,9 +169,11 @@ class Trainer:
 
         # Primary loss
         if self.focal_gamma > 0.0:
-            loss = focal_loss(logit_func, batch.y, gamma=self.focal_gamma, weight=class_weight)
+            loss = focal_loss(logit_func, batch.y, gamma=self.focal_gamma,
+                              weight=class_weight, label_smoothing=self.label_smoothing)
         else:
-            loss = F.cross_entropy(logit_func, batch.y, weight=class_weight)
+            loss = F.cross_entropy(logit_func, batch.y, weight=class_weight,
+                                   label_smoothing=self.label_smoothing)
 
         # MTL auxiliary losses
         if logit_group is not None and self.group_loss_weight > 0.0:
