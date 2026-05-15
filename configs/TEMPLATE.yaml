@@ -296,14 +296,12 @@ model:
   localization_encoder: gnn
 
   # ── Bidirectional cross-task (Phase 2) ────────────────────────────────────
-  # Makes localization (stmt_head) and classification (func_head) inform each
-  # other. Cross-signals are detached — each head trains on its own loss.
+  # Makes localization (stmt_head) and classification (func_head) inform each other.
   #   none            — independent heads (Phase 1 baseline)
-  #   direct          — scalar conditioning (stmt suspicion ↔ logit / score gate)
-  #   film            — FiLM modulation (cls embedding ↔ loc proto)
   #   cross_attention — Q from one task, K/V from the other task's encoder units
   #   self_attention  — EDAT-style: self-attention over own encoder units, query
   #                     biased by the other task's signal
+  #   mmoe            — Multi-gate Mixture-of-Experts (shared expert pool + gates)
   # Support: lmgat_codebert
   cross_task_method: none
 

@@ -11,16 +11,17 @@ stmt_head scores on:
   lm   → LM token hidden states     (dim = lm_dim)
   both → GNN + LM concatenated      (dim = hidden + lm_dim)
 
-Three methods (config `cross_task_method`):
-  direct    — scalar conditioning (stmt suspicion ↔ classifier logit / score gate)
-  film      — FiLM: cls embedding modulates stmt features, loc proto modulates fused
-  attention — cross-task attention, encoder units as K/V, swapped task queries
+Methods (config `cross_task_method`):
+  cross_attention — Q from one task, K/V from the other task's encoder units
+  self_attention  — EDAT-style: self-attention over own encoder units, query
+                    biased by the other task's signal
+  mmoe            — Multi-gate Mixture-of-Experts (Ma et al. 2018): shared expert
+                    pool, per-task gates. Matches EDAT's released code.
 """
 from __future__ import annotations
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch_geometric.utils import to_dense_batch
 
 
@@ -76,42 +77,37 @@ def loc_proto_pool(
     return torch.cat(parts, dim=-1)
 
 
-class DirectCrossTask(nn.Module):
-    """B2 — scalar bidirectional conditioning.
+class MMOECrossTask(nn.Module):
+    """Multi-gate Mixture-of-Experts (Ma et al. 2018, KDD) — matches EDAT's code.
 
-    loc→cls: per-graph stmt suspicion summary → per-class logit bias.
-    cls→loc: vuln confidence (1 − P(benign)) → additive gate on stmt scores.
-    Mode-agnostic: operates on prediction outputs, not encoder features.
+    Shared expert MLP pool; one softmax gate per task. Each task projects its
+    own representation in, runs the shared experts, blends via its own gate.
+    Cross-task transfer = the shared experts are trained by both losses.
     """
 
-    def __init__(self, num_classes: int):
-        super().__init__()
-        self.stmt_to_logit = nn.Linear(1, num_classes)
-        self.alpha = nn.Parameter(torch.zeros(1))   # cls→loc strength
-        self.beta  = nn.Parameter(torch.zeros(1))   # loc→cls strength
-
-    def cls_from_loc(self, logit_base: torch.Tensor,
-                     stmt_summary: torch.Tensor) -> torch.Tensor:
-        return logit_base + self.beta * self.stmt_to_logit(stmt_summary)
-
-    def loc_from_cls(self, stmt_scores_list: list[torch.Tensor],
-                     vuln_conf: torch.Tensor) -> list[torch.Tensor]:
-        return [s + self.alpha * vuln_conf[b] for b, s in enumerate(stmt_scores_list)]
-
-
-class FiLMCrossTask(nn.Module):
-    """B3 — FiLM modulation.
-
-    cls→loc: fused embedding → additive stmt-feature conditioning [B, loc_dim].
-    loc→cls: loc proto → (γ, β) modulate fused [B, fused_dim].
-    """
-
-    def __init__(self, fused_dim: int, hidden_dim: int, lm_dim: int, mode: str):
+    def __init__(self, fused_dim: int, hidden_dim: int, lm_dim: int, mode: str,
+                 expert_num: int = 4, expert_dim: int | None = None):
         super().__init__()
         ld = loc_dim(mode, hidden_dim, lm_dim)
-        self.cls_to_loc = nn.Linear(fused_dim, ld)
-        self.loc_to_cls = nn.Linear(ld, 2 * fused_dim)
-        self._fused_dim = fused_dim
+        D = expert_dim or hidden_dim
+        self.cls_in = nn.Linear(fused_dim, D)
+        self.loc_in = nn.Linear(ld, D)
+        self.experts = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(D, D), nn.LayerNorm(D), nn.ReLU(), nn.Dropout(0.1),
+                nn.Linear(D, D), nn.LayerNorm(D), nn.ReLU(),
+            ) for _ in range(expert_num)
+        ])
+        self.gate_cls = nn.Linear(D, expert_num)
+        self.gate_loc = nn.Linear(D, expert_num)
+        self.cls_out = nn.Linear(D, fused_dim)
+        self.loc_out = nn.Linear(D, ld)
+
+    def _moe(self, x: torch.Tensor, gate: nn.Module) -> torch.Tensor:
+        """x [B,D] → gated expert mixture [B,D]."""
+        experts = torch.stack([ex(x) for ex in self.experts], dim=1)   # [B,N,D]
+        weights = torch.softmax(gate(x), dim=-1).unsqueeze(-1)         # [B,N,1]
+        return (experts * weights).sum(dim=1)                          # [B,D]
 
     def forward(self, fused: torch.Tensor,
                 loc_proto: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -119,10 +115,12 @@ class FiLMCrossTask(nn.Module):
 
         Returns (fused_mod [B, fused_dim], stmt_cond [B, loc_dim]).
         """
-        stmt_cond = self.cls_to_loc(fused.detach())
-        gb = self.loc_to_cls(loc_proto)
-        gamma, beta = gb[:, :self._fused_dim], gb[:, self._fused_dim:]
-        fused_mod = fused * (1.0 + gamma) + beta
+        x_cls = self.cls_in(fused.float())
+        x_loc = self.loc_in(loc_proto.float())
+        out_cls = self._moe(x_cls, self.gate_cls)
+        out_loc = self._moe(x_loc, self.gate_loc)
+        fused_mod = fused + self.cls_out(out_cls)
+        stmt_cond = self.loc_out(out_loc)
         return fused_mod, stmt_cond
 
 
@@ -291,15 +289,13 @@ def build_cross_task(method: str, fused_dim: int, hidden_dim: int,
     """Factory — returns the cross-task module for `method`, or None for 'none'."""
     if method == "none":
         return None
-    if method == "direct":
-        return DirectCrossTask(num_classes)
-    if method == "film":
-        return FiLMCrossTask(fused_dim, hidden_dim, lm_dim, localization_encoder)
     if method == "cross_attention":
         return CrossTaskAttn(fused_dim, hidden_dim, lm_dim, localization_encoder, num_heads)
     if method == "self_attention":
         return SelfAttnCrossTask(fused_dim, hidden_dim, lm_dim, localization_encoder, num_heads)
+    if method == "mmoe":
+        return MMOECrossTask(fused_dim, hidden_dim, lm_dim, localization_encoder)
     raise ValueError(
-        "cross_task_method must be none|direct|film|cross_attention|self_attention, "
+        "cross_task_method must be none|cross_attention|self_attention|mmoe, "
         f"got {method!r}"
     )

@@ -101,16 +101,14 @@ class ModelConfig:
     func_max_length: int = 512  # default matches model trained length
     # ── Bidirectional cross-task (Phase 2, lmgat_codebert) ────────────────────
     # Makes localization (stmt_head) and classification (func_head) inform each
-    # other. Cross-signals are detached — each head trains on its own loss.
+    # other.
     #   none            — independent heads (Phase 1 baseline)
-    #   direct          — scalar conditioning: stmt suspicion → classifier logit
-    #                     bias, vuln-confidence → stmt score gate
-    #   film            — FiLM modulation: cls embedding modulates stmt features,
-    #                     loc proto modulates classifier input
     #   cross_attention — Q from one task, K/V from the other task's encoder
     #                     units (decoder-style cross-attention)
     #   self_attention  — EDAT-style: self-attention over a task's own encoder
     #                     units, query biased by the other task's signal
+    #   mmoe            — Multi-gate Mixture-of-Experts (Ma et al. 2018): shared
+    #                     expert pool + per-task gates (EDAT's released code)
     cross_task_method: str = "none"
     # ── Statement localization "both" mode ────────────────────────────────────
     # Only used when localization_encoder="both". Controls how GNN + LM features combine.

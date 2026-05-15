@@ -69,26 +69,13 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             )
             return logit, stmt_scores
 
-        if ct == "direct":
-            logit_base = self.func_head(fused)
-            stmt_base  = self.stmt_head.score(h, batch, node_line, lm_hidden, func_token_lines)
-            # loc → cls: per-graph stmt suspicion summary biases the logit
-            stmt_summary = torch.stack([
-                s.mean() if s.numel() > 0 else fused.new_zeros(()) for s in stmt_base
-            ]).unsqueeze(1)                                              # [B, 1]
-            logit = self.cross_task.cls_from_loc(logit_base, stmt_summary.detach())
-            # cls → loc: vuln confidence gates the stmt scores
-            vuln_conf = 1.0 - F.softmax(logit_base.detach(), dim=-1)[:, 0]   # [B]
-            stmt_scores = self.cross_task.loc_from_cls(stmt_base, vuln_conf)
-            return logit, stmt_scores
-
-        # film | cross_attention | self_attention — feature-level conditioning
+        # cross_attention | self_attention | mmoe — feature-level conditioning
         loc_proto = loc_proto_pool(h, batch, node_line, lm_hidden, func_token_lines,
                                    self._loc_enc, B)
         if ct in ("cross_attention", "self_attention"):
             fused_mod, stmt_cond = self.cross_task(fused, loc_proto.detach(), h, batch, B,
                                                    lm_hidden, func_token_lines)
-        else:  # film
+        else:  # mmoe
             fused_mod, stmt_cond = self.cross_task(fused, loc_proto.detach())
         logit = self.func_head(fused_mod)
         stmt_scores = self.stmt_head.score(h, batch, node_line, lm_hidden, func_token_lines, cond=stmt_cond)
