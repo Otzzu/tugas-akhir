@@ -102,6 +102,9 @@ class MMOECrossTask(nn.Module):
         self.gate_loc = nn.Linear(D, expert_num)
         self.cls_out = nn.Linear(D, fused_dim)
         self.loc_out = nn.Linear(D, ld)
+        # Zero-init residual gates (ReZero / ControlNet style): no-op at init.
+        self.res_gate_cls = nn.Parameter(torch.zeros(1))
+        self.res_gate_loc = nn.Parameter(torch.zeros(1))
 
     def _moe(self, x: torch.Tensor, gate: nn.Module) -> torch.Tensor:
         """x [B,D] → gated expert mixture [B,D]."""
@@ -119,8 +122,8 @@ class MMOECrossTask(nn.Module):
         x_loc = self.loc_in(loc_proto.float())
         out_cls = self._moe(x_cls, self.gate_cls)
         out_loc = self._moe(x_loc, self.gate_loc)
-        fused_mod = fused + self.cls_out(out_cls)
-        stmt_cond = self.loc_out(out_loc)
+        fused_mod = fused + self.res_gate_cls * self.cls_out(out_cls)
+        stmt_cond = self.res_gate_loc * self.loc_out(out_loc)
         return fused_mod, stmt_cond
 
 
@@ -145,6 +148,10 @@ class CrossTaskAttn(nn.Module):
             self.q_cls_l = nn.Linear(fused_dim, lm_dim)
             self.attn_l  = nn.MultiheadAttention(lm_dim, num_heads, batch_first=True)
         self.to_cls = nn.Linear(ld, fused_dim)
+        # Zero-init residual gates (ReZero / ControlNet style): start at 0 so the
+        # module is a no-op at init — training begins from the proven baseline.
+        self.gate_cls = nn.Parameter(torch.zeros(1))
+        self.gate_loc = nn.Parameter(torch.zeros(1))
 
     def forward(self, fused: torch.Tensor, loc_proto: torch.Tensor,
                 h: torch.Tensor, batch: torch.Tensor, B: int,
@@ -194,7 +201,8 @@ class CrossTaskAttn(nn.Module):
 
         cls_from_loc = torch.cat(cls_parts, dim=-1)                 # [B, loc_dim]
         stmt_cond    = torch.cat(loc_parts, dim=-1)                 # [B, loc_dim]
-        fused_mod = fused + self.to_cls(cls_from_loc)
+        fused_mod = fused + self.gate_cls * self.to_cls(cls_from_loc)
+        stmt_cond = self.gate_loc * stmt_cond
         return fused_mod, stmt_cond
 
 
@@ -221,6 +229,9 @@ class SelfAttnCrossTask(nn.Module):
             self.bias_cls_l = nn.Linear(fused_dim, lm_dim)
             self.attn_l = nn.MultiheadAttention(lm_dim, num_heads, batch_first=True)
         self.to_cls = nn.Linear(ld, fused_dim)
+        # Zero-init residual gates (ReZero / ControlNet style): no-op at init.
+        self.gate_cls = nn.Parameter(torch.zeros(1))
+        self.gate_loc = nn.Parameter(torch.zeros(1))
 
     @staticmethod
     def _masked_mean(x: torch.Tensor, valid: torch.Tensor) -> torch.Tensor:
@@ -279,7 +290,8 @@ class SelfAttnCrossTask(nn.Module):
 
         cls_from_loc = torch.cat(cls_parts, dim=-1)                 # [B, loc_dim]
         stmt_cond    = torch.cat(loc_parts, dim=-1)                 # [B, loc_dim]
-        fused_mod = fused + self.to_cls(cls_from_loc)
+        fused_mod = fused + self.gate_cls * self.to_cls(cls_from_loc)
+        stmt_cond = self.gate_loc * stmt_cond
         return fused_mod, stmt_cond
 
 
