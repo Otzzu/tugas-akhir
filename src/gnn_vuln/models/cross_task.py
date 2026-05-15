@@ -154,6 +154,13 @@ class CrossTaskAttn(nn.Module):
                 func_token_lines: torch.Tensor | None
                 ) -> tuple[torch.Tensor, torch.Tensor]:
         """Returns (fused_mod [B, fused_dim], stmt_cond [B, loc_dim])."""
+        # MultiheadAttention requires q/k/v + its fp32 weights to share dtype;
+        # under AMP lm_hidden/h may be bf16 → cast all attention inputs to fp32.
+        fused = fused.float()
+        loc_proto = loc_proto.float()
+        h = h.float()
+        if lm_hidden is not None:
+            lm_hidden = lm_hidden.float()
         cls_parts: list[torch.Tensor] = []
         loc_parts: list[torch.Tensor] = []
         loc_q = loc_proto.detach()
@@ -228,6 +235,13 @@ class SelfAttnCrossTask(nn.Module):
                 func_token_lines: torch.Tensor | None
                 ) -> tuple[torch.Tensor, torch.Tensor]:
         """Returns (fused_mod [B, fused_dim], stmt_cond [B, loc_dim])."""
+        # MultiheadAttention requires q/k/v + its fp32 weights to share dtype;
+        # under AMP lm_hidden/h may be bf16 → cast all attention inputs to fp32.
+        fused = fused.float()
+        loc_proto = loc_proto.float()
+        h = h.float()
+        if lm_hidden is not None:
+            lm_hidden = lm_hidden.float()
         cls_parts: list[torch.Tensor] = []
         loc_parts: list[torch.Tensor] = []
         loc_sig = loc_proto.detach()
