@@ -1,10 +1,10 @@
-# Phase 2 — A4 both concat + cross-task self-attention (EDAT-style).
+# Phase 2 — B2: A4-best (both concat) + cross-task cross-attention.
 # Base: A4 both concat (best all-rounder), epoch_adaptive loss.
-# Varies: cross_task_method = self_attention (self-attention over a task's own
-#         encoder units, query biased by the other task's signal — EDAT-style).
+# Varies: cross_task_method = cross_attention (Q from one task, K/V from the
+#         other task's encoder units — decoder-style cross-attention).
 #
 # Run (cloud, Linux):
-#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase2/A4_both_selfattn.yaml
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase2/B2_crossattn.yaml
 
 data:
   source: megavul
@@ -26,7 +26,7 @@ model:
   localization_encoder: both
   stmt_both_mode: concat
   graph_pool: mean
-  cross_task_method: self_attention
+  cross_task_method: cross_attention
   hidden_dim: 256
   num_layers: 4
   dropout: 0.3

@@ -1,10 +1,9 @@
-# Phase 2 — A4 both concat + cross-task cross-attention.
+# A4 variation: A4-best (both concat) + global attention pool.
 # Base: A4 both concat (best all-rounder), epoch_adaptive loss.
-# Varies: cross_task_method = cross_attention (Q from one task, K/V from the
-#         other task's encoder units — decoder-style cross-attention).
+# Varies: graph_pool = attention (gated attention pool vs mean).
 #
 # Run (cloud, Linux):
-#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase2/A4_both_crossattn.yaml
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase2/A4_attnpool.yaml
 
 data:
   source: megavul
@@ -25,8 +24,8 @@ model:
   func_max_length: 1024
   localization_encoder: both
   stmt_both_mode: concat
-  graph_pool: mean
-  cross_task_method: cross_attention
+  graph_pool: attention
+  cross_task_method: none
   hidden_dim: 256
   num_layers: 4
   dropout: 0.3

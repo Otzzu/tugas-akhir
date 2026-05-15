@@ -1,9 +1,10 @@
-# Phase 2 — A4 both concat + global attention pool.
+# Phase 2 — B3: A4-best (both concat) + cross-task self-attention (EDAT-style).
 # Base: A4 both concat (best all-rounder), epoch_adaptive loss.
-# Varies: graph_pool = attention (gated attention pool vs mean).
+# Varies: cross_task_method = self_attention (self-attention over a task's own
+#         encoder units, query biased by the other task's signal — EDAT-style).
 #
 # Run (cloud, Linux):
-#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase2/A4_both_attnpool.yaml
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase2/B3_selfattn.yaml
 
 data:
   source: megavul
@@ -24,8 +25,8 @@ model:
   func_max_length: 1024
   localization_encoder: both
   stmt_both_mode: concat
-  graph_pool: attention
-  cross_task_method: none
+  graph_pool: mean
+  cross_task_method: self_attention
   hidden_dim: 256
   num_layers: 4
   dropout: 0.3
