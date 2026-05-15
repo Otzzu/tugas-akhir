@@ -40,15 +40,15 @@ model:
 
 train:
   seed: 42
-  epochs: 100
+  epochs: 75                     # T completes full cycle 1→0 in 75 epochs (~3.4 hrs)
   batch_size: 32
   lr: 0.001
   lm_lr: 0.00001
   warmup_ratio: 0.1
   grad_clip: 1.0
   weight_decay: 0.001
-  patience: 15
-  early_stop_metric: f1
+  patience: 75                   # disabled — LIVABLE needs full T cycle to work correctly
+  early_stop_metric: f1          # still saves best checkpoint by f1
   use_class_weights: false       # LIVABLE handles rebalancing — no separate class weights
   focal_loss_gamma: 2.0          # used by LIVABLE focal branch
   epoch_adaptive_weights: false  # not needed — LIVABLE replaces this
