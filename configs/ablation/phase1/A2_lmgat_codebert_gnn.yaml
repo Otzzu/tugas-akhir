@@ -47,7 +47,7 @@ train:
   early_stop_metric: f1
   use_class_weights: true
   focal_loss_gamma: 2.0
-  livable_loss: true
+  epoch_adaptive_weights: true
   device: cuda
   use_amp: true
   use_flash_attention: true

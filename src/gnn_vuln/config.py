@@ -114,7 +114,15 @@ class TrainConfig:
     device: str = "cpu"         # set to "cuda" if GPU available
     use_class_weights: bool = True  # inverse-frequency weighting for imbalanced classes
     focal_loss_gamma: float = 0.0  # focal loss gamma; 0 = standard CE, 2.0 recommended for imbalanced
-    livable_loss: bool = False      # LIVABLE epoch-adaptive weights (arXiv:2306.06935); requires use_class_weights=true
+    # Epoch-adaptive inverse-frequency class weights (NOT the real LIVABLE paper loss).
+    # Ramps class weights from uniform → inverse-frequency over training epochs.
+    # Use this as a simple baseline rebalancing strategy.
+    epoch_adaptive_weights: bool = False
+    # Real LIVABLE two-branch loss (arXiv:2306.06935, Eq. 11-12).
+    # L = T * focal + (1-T) * label_smooth_CE, T = 1 - (epoch/max_epoch)^2
+    # focal_gamma and label_smoothing are reused for the two branches.
+    # Mutually exclusive with epoch_adaptive_weights — use one or the other.
+    livable_loss: bool = False
     # Label smoothing for cross-entropy loss (0.0 = disabled, 0.1 recommended).
     # Prevents overconfidence by replacing hard one-hot targets with soft targets.
     # Helps reduce the loss-F1 gap on imbalanced multiclass (see LOSS_F1_GAP.md §3.2).

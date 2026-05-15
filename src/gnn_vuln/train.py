@@ -27,7 +27,7 @@ from gnn_vuln.data.dataset_lm import CodeBERTGraphDataset
 from gnn_vuln.losses import HierarchicalSupConLoss
 from gnn_vuln.models.registry import build_model, _parse_active_heads
 from gnn_vuln.training.ewc import EWCDR
-from gnn_vuln.training.losses import livable_weights
+from gnn_vuln.training.losses import epoch_adaptive_class_weights, livable_loss as livable_real_loss
 from gnn_vuln.training.optimizer import build_optimizer_and_scheduler
 from gnn_vuln.training.trainer import Trainer
 from gnn_vuln.utils import (
@@ -68,7 +68,13 @@ class TrainingSession:
         self._grad_clip          = getattr(cfg.train, "grad_clip", 0.0)
         self._is_binary          = getattr(cfg.data, "mode", "binary") == "binary"
         self._use_class_weights  = getattr(cfg.train, "use_class_weights", True)
-        self._use_livable        = getattr(cfg.train, "livable_loss", False) and self._use_class_weights
+        # Support old name (livable_loss/livable_adaptive) for backward compat with existing configs
+        self._use_epoch_adaptive = (
+            getattr(cfg.train, "epoch_adaptive_weights", False) or
+            getattr(cfg.train, "livable_adaptive", False) or
+            getattr(cfg.train, "livable_loss_old", False)  # not used, just safety
+        ) and self._use_class_weights
+        self._use_livable_real   = getattr(cfg.train, "livable_loss", False)
 
         if self._active_heads:
             if "group"  not in self._active_heads: self._group_loss_weight  = 0.0
@@ -105,6 +111,10 @@ class TrainingSession:
             )
 
         class_weight, train_counts = self._setup_class_weights(dataset, train_idx)
+        if self._use_livable_real and class_weight is not None:
+            logger.info("livable_loss=true → disabling static class_weight")
+            class_weight = None
+
         model = build_model(cfg, in_channels, self._active_heads).to(device)
 
         # Vectorized StmtHead: scatter-based pooling, no Python inner loop
@@ -142,6 +152,9 @@ class TrainingSession:
             use_amp=use_amp, amp_dtype=amp_dtype, scaler=scaler, ewc=ewc,
             grad_accum_steps=grad_accum_steps,
             label_smoothing=getattr(cfg.train, "label_smoothing", 0.0),
+            use_livable_real=self._use_livable_real,
+            livable_focal_gamma=getattr(cfg.train, "focal_loss_gamma", 2.0),
+            livable_label_smoothing=getattr(cfg.train, "label_smoothing", 0.1),
         )
         trainer.set_grad_clip(self._grad_clip)
 
@@ -296,8 +309,8 @@ class TrainingSession:
         all_y = dataset.get_all_labels()
         train_labels = all_y[torch.tensor(train_idx, dtype=torch.long)]
         counts = torch.bincount(train_labels, minlength=cfg.model.num_classes).float()
-        if self._use_livable:
-            w = livable_weights(counts, 1, cfg.train.epochs, cfg.model.num_classes, self.device)
+        if self._use_epoch_adaptive:
+            w = epoch_adaptive_class_weights(counts, 1, cfg.train.epochs, cfg.model.num_classes, self.device)
         else:
             w = torch.clamp(counts.sum() / (counts * cfg.model.num_classes), max=10.0).to(self.device)
         return w, counts
@@ -363,8 +376,8 @@ class TrainingSession:
         epoch_log: list[dict] = []
 
         for epoch in range(start_epoch, cfg.train.epochs + 1):
-            if self._use_livable and train_counts is not None:
-                class_weight = livable_weights(
+            if self._use_epoch_adaptive and train_counts is not None:
+                class_weight = epoch_adaptive_class_weights(
                     train_counts, epoch, cfg.train.epochs, cfg.model.num_classes, self.device
                 )
             if torch.cuda.is_available():

@@ -49,7 +49,7 @@ train:
   early_stop_metric: f1
   use_class_weights: true      # original
   focal_loss_gamma: 0.0        # ONLY DIFFERENCE FROM A4 baseline — was 2.0
-  livable_loss: true           # original
+  epoch_adaptive_weights: true           # original
   label_smoothing: 0.0         # original
   lr_scheduler: plateau        # original
   device: cuda

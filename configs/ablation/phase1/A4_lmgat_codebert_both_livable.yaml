@@ -1,10 +1,12 @@
-# Phase 1 — A4-minimal: lmgat_codebert, localization=both, minimal fix
-# focal=0.0, livable=false, cw=true, wd=0.001, label_smooth=0.1, scheduler=cosine
-# Purpose: test simplest rebalancing (class_weights only, no livable) on A4.
-# Compare with A4-fix (livable=true) to see if livable adds value on live-LM.
+# Phase 1 — A4-livable: lmgat_codebert, localization=both, real LIVABLE loss
+# Real LIVABLE two-branch loss (arXiv:2306.06935, Eq. 11-12):
+#   L = T * focal + (1-T) * label_smooth_CE
+#   T = 1 - (epoch/max_epoch)^2
+# focal_gamma=2.0 and label_smoothing=0.1 used for the two branches.
+# No epoch_adaptive_weights — LIVABLE loss handles rebalancing internally.
 #
 # Run (cloud, Linux):
-#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase1/A4_lmgat_codebert_both_minimal.yaml
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase1/A4_lmgat_codebert_both_livable.yaml
 
 data:
   source: megavul
@@ -44,14 +46,15 @@ train:
   lm_lr: 0.00001
   warmup_ratio: 0.1
   grad_clip: 1.0
-  weight_decay: 0.001          # stronger regularization
-  patience: 15                 # stop earlier
+  weight_decay: 0.001
+  patience: 15
   early_stop_metric: f1
-  use_class_weights: true      # keep — mild rebalancing
-  focal_loss_gamma: 0.0        # removed
-  epoch_adaptive_weights: false          # removed — class_weights only
-  label_smoothing: 0.1         # added
-  lr_scheduler: cosine         # smooth decay
+  use_class_weights: false       # LIVABLE handles rebalancing — no separate class weights
+  focal_loss_gamma: 2.0          # used by LIVABLE focal branch
+  epoch_adaptive_weights: false  # not needed — LIVABLE replaces this
+  livable_loss: true             # REAL LIVABLE (arXiv:2306.06935, Eq. 11-12)
+  label_smoothing: 0.1           # used by LIVABLE LSCE branch
+  lr_scheduler: cosine
   device: cuda
   use_amp: true
   use_flash_attention: true

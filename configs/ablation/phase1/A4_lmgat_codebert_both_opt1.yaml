@@ -48,7 +48,7 @@ train:
   early_stop_metric: f1
   use_class_weights: true
   focal_loss_gamma: 0.0
-  livable_loss: true
+  epoch_adaptive_weights: true
   label_smoothing: 0.05        # ONLY DIFFERENCE FROM A4-fix — was 0.1
   lr_scheduler: cosine
   device: cuda

@@ -53,6 +53,7 @@ class _CUDAPrefetcher:
 
 from gnn_vuln.training.losses import (
     focal_loss,
+    livable_loss,
     mil_loss,
     mil_loss_multiclass,
     ranking_loss,
@@ -104,6 +105,9 @@ class Trainer:
         ewc=None,   # EWCDR | None
         grad_accum_steps: int = 1,
         label_smoothing: float = 0.0,
+        use_livable_real: bool = False,
+        livable_focal_gamma: float = 2.0,
+        livable_label_smoothing: float = 0.1,
     ):
         self.model              = model
         self.optimizer          = optimizer
@@ -124,6 +128,11 @@ class Trainer:
         self.ewc                = ewc
         self.grad_accum_steps   = max(1, grad_accum_steps)
         self.label_smoothing    = label_smoothing
+        self.use_livable_real   = use_livable_real
+        self.livable_focal_gamma = livable_focal_gamma
+        self.livable_label_smoothing = livable_label_smoothing
+        self._current_epoch     = 1
+        self._total_epochs      = 100
 
     # ── Forward ──────────────────────────────────────────────────────────────
 
@@ -168,7 +177,16 @@ class Trainer:
             logit_group = logit_binary = z_combined = None
 
         # Primary loss
-        if self.focal_gamma > 0.0:
+        if self.use_livable_real:
+            loss = livable_loss(
+                logit_func, batch.y,
+                epoch=self._current_epoch,
+                total_epochs=self._total_epochs,
+                focal_gamma=self.livable_focal_gamma,
+                label_smoothing=self.livable_label_smoothing,
+                weight=class_weight,
+            )
+        elif self.focal_gamma > 0.0:
             loss = focal_loss(logit_func, batch.y, gamma=self.focal_gamma,
                               weight=class_weight, label_smoothing=self.label_smoothing)
         else:
@@ -235,6 +253,8 @@ class Trainer:
         class_weight: torch.Tensor | None = None,
     ) -> float:
         self.model.train()
+        self._current_epoch = epoch
+        self._total_epochs  = total_epochs
         accum = self.grad_accum_steps
         self.optimizer.zero_grad()
 

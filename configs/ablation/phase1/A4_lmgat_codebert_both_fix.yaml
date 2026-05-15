@@ -52,7 +52,7 @@ train:
   early_stop_metric: f1
   use_class_weights: true
   focal_loss_gamma: 0.0        # REMOVED — was causing triple-stacking
-  livable_loss: true           # keep — adaptive weights over time
+  epoch_adaptive_weights: true           # keep — adaptive weights over time
   label_smoothing: 0.1         # NEW — prevents overconfidence
   lr_scheduler: cosine         # NEW — smooth decay (EDAT-style)
   device: cuda
