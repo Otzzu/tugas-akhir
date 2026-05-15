@@ -35,6 +35,7 @@ class StmtHead(nn.Module):
         self._mode = localization_encoder
         self._both_mode = both_mode
         self._lm_alpha = lm_alpha
+        self._hidden_dim = hidden_dim   # for splitting cross-task cond in 'both' mode
         if localization_encoder == "gnn":
             in_dim = hidden_dim
             self.max_head  = nn.Linear(in_dim, 1)
@@ -75,6 +76,17 @@ class StmtHead(nn.Module):
         α = torch.sigmoid(gate(torch.cat([gnn_f, lm_f], dim=-1)))
         return (1.0 - α) * s_gnn + α * s_lm
 
+    def _cond_parts(self, cond: torch.Tensor | None):
+        """Split cross-task cond [B, loc_dim] into (gnn_part, lm_part) per mode."""
+        if cond is None:
+            return None, None
+        if self._mode == "gnn":
+            return cond, None
+        if self._mode == "lm":
+            return None, cond
+        H = self._hidden_dim                       # both → first H dims = GNN
+        return cond[:, :H], cond[:, H:]
+
     @staticmethod
     def _pool_lm_per_line(
         lm_hidden: torch.Tensor,
@@ -105,10 +117,13 @@ class StmtHead(nn.Module):
         node_line: torch.Tensor,
         lm_hidden: torch.Tensor | None = None,
         func_token_lines: torch.Tensor | None = None,
+        cond: torch.Tensor | None = None,
     ) -> list[torch.Tensor]:
+        """cond [B, hidden_dim] — optional per-graph additive conditioning on
+        GNN statement features (Phase 2 cross-task). Applied for modes gnn|both."""
         if getattr(self, "_vectorized", False):
-            return self._score_vectorized(h, batch, node_line, lm_hidden, func_token_lines)
-        return self._score_loop(h, batch, node_line, lm_hidden, func_token_lines)
+            return self._score_vectorized(h, batch, node_line, lm_hidden, func_token_lines, cond)
+        return self._score_loop(h, batch, node_line, lm_hidden, func_token_lines, cond)
 
     def _score_loop(
         self,
@@ -117,9 +132,11 @@ class StmtHead(nn.Module):
         node_line: torch.Tensor,
         lm_hidden: torch.Tensor | None = None,
         func_token_lines: torch.Tensor | None = None,
+        cond: torch.Tensor | None = None,
     ) -> list[torch.Tensor]:
         device = h.device
         B = int(batch.max().item()) + 1
+        cond_gnn, cond_lm = self._cond_parts(cond)
         result: list[torch.Tensor] = []
         for b in range(B):
             mask = batch == b
@@ -145,25 +162,39 @@ class StmtHead(nn.Module):
                 if self._mode == "gnn":
                     feat_max  = h_l.max(dim=0).values
                     feat_mean = h_l.mean(dim=0)
+                    if cond_gnn is not None:
+                        feat_max  = feat_max  + cond_gnn[b]
+                        feat_mean = feat_mean + cond_gnn[b]
                     s = _ALPHA_MAX * self.max_head(feat_max.float()) + _ALPHA_MEAN * self.mean_head(feat_mean.float())
                 elif self._mode == "lm":
                     feat_max  = lm_max_emb[i]  if lm_max_emb  is not None else h_l.max(dim=0).values
                     feat_mean = lm_mean_emb[i] if lm_mean_emb is not None else h_l.mean(dim=0)
+                    if cond_lm is not None and lm_max_emb is not None:
+                        feat_max  = feat_max  + cond_lm[b]
+                        feat_mean = feat_mean + cond_lm[b]
                     s = _ALPHA_MAX * self.max_head(feat_max.float()) + _ALPHA_MEAN * self.mean_head(feat_mean.float())
                 else:
                     gnn_max  = h_l.max(dim=0).values
                     gnn_mean = h_l.mean(dim=0)
+                    if cond_gnn is not None:
+                        gnn_max  = gnn_max  + cond_gnn[b]
+                        gnn_mean = gnn_mean + cond_gnn[b]
                     if lm_max_emb is None:
                         s = _ALPHA_MAX * self.max_head(gnn_max.float()) + _ALPHA_MEAN * self.mean_head(gnn_mean.float()) if self._both_mode == "concat" else \
                             _ALPHA_MAX * self.max_head_gnn(gnn_max.float()) + _ALPHA_MEAN * self.mean_head_gnn(gnn_mean.float())
-                    elif self._both_mode == "concat":
-                        feat_max  = torch.cat([gnn_max,  lm_max_emb[i]])
-                        feat_mean = torch.cat([gnn_mean, lm_mean_emb[i]])
-                        s = _ALPHA_MAX * self.max_head(feat_max.float()) + _ALPHA_MEAN * self.mean_head(feat_mean.float())
-                    else:  # weighted | gated → score-level
-                        s_max  = self._score_both(gnn_max.unsqueeze(0),  lm_max_emb[i].unsqueeze(0),  "max").squeeze(0)
-                        s_mean = self._score_both(gnn_mean.unsqueeze(0), lm_mean_emb[i].unsqueeze(0), "mean").squeeze(0)
-                        s = _ALPHA_MAX * s_max + _ALPHA_MEAN * s_mean
+                    else:
+                        lm_mx, lm_mn = lm_max_emb[i], lm_mean_emb[i]
+                        if cond_lm is not None:
+                            lm_mx = lm_mx + cond_lm[b]
+                            lm_mn = lm_mn + cond_lm[b]
+                        if self._both_mode == "concat":
+                            feat_max  = torch.cat([gnn_max,  lm_mx])
+                            feat_mean = torch.cat([gnn_mean, lm_mn])
+                            s = _ALPHA_MAX * self.max_head(feat_max.float()) + _ALPHA_MEAN * self.mean_head(feat_mean.float())
+                        else:  # weighted | gated → score-level
+                            s_max  = self._score_both(gnn_max.unsqueeze(0),  lm_mx.unsqueeze(0),  "max").squeeze(0)
+                            s_mean = self._score_both(gnn_mean.unsqueeze(0), lm_mn.unsqueeze(0), "mean").squeeze(0)
+                            s = _ALPHA_MAX * s_max + _ALPHA_MEAN * s_mean
                 scores.append(s.squeeze(-1))
             result.append(torch.stack(scores))
         return result
@@ -175,6 +206,7 @@ class StmtHead(nn.Module):
         node_line: torch.Tensor,
         lm_hidden: torch.Tensor | None = None,
         func_token_lines: torch.Tensor | None = None,
+        cond: torch.Tensor | None = None,
     ) -> list[torch.Tensor]:
         """Scatter-based vectorized scorer. Same output as _score_loop, no Python inner loop."""
         device = h.device
@@ -195,6 +227,8 @@ class StmtHead(nn.Module):
         sid = batch_v * MAX_LINE + lines_v           # [N']
         unique_sid, inv = torch.unique(sid, sorted=True, return_inverse=True)
         S = unique_sid.shape[0]
+        stmt_graph = unique_sid // MAX_LINE          # [S] graph index per stmt
+        cond_gnn, cond_lm = self._cond_parts(cond)
 
         if self._mode in ("gnn", "both"):
             # scatter max
@@ -208,6 +242,12 @@ class StmtHead(nn.Module):
             gnn_sum.scatter_add_(0, idx_exp, h_v)
             cnt_gnn.scatter_add_(0, inv.unsqueeze(1), torch.ones(h_v.shape[0], 1, device=device, dtype=h_v.dtype))
             gnn_mean = gnn_sum / cnt_gnn.clamp(min=1)
+
+            # Phase 2 cross-task: per-graph additive conditioning on GNN feats
+            if cond_gnn is not None:
+                g = cond_gnn[stmt_graph].to(gnn_max.dtype)   # [S, D]
+                gnn_max  = gnn_max  + g
+                gnn_mean = gnn_mean + g
 
         lm_max = lm_mean = None  # assigned below if mode requires LM
 
@@ -250,6 +290,12 @@ class StmtHead(nn.Module):
             else:
                 LM_D = lm_hidden.shape[-1]
                 lm_max = lm_mean = torch.zeros(S, LM_D, device=device, dtype=lm_hidden.dtype)
+
+        # Phase 2 cross-task: per-graph additive conditioning on LM feats
+        if cond_lm is not None and lm_max is not None:
+            l = cond_lm[stmt_graph].to(lm_max.dtype)     # [S, LM_D]
+            lm_max  = lm_max  + l
+            lm_mean = lm_mean + l
 
         # Build feat_max / feat_mean for linear heads
         if self._mode == "gnn":

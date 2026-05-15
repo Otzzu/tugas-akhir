@@ -75,6 +75,11 @@ class ModelConfig:
     hidden_dim: int = 256
     num_layers: int = 4
     dropout: float = 0.3
+    # Graph-level pooling for the function classification representation.
+    #   mean      — global mean pool over nodes (default)
+    #   attention — gated attention pool: per-node score → softmax → weighted sum
+    # Support: lmgat_codebert
+    graph_pool: str = "mean"
     heads: int = 4              # number of GAT attention heads (lmgat* only)
     edge_dim: int = 7          # edge feature dimension injected into GATv2 attention (lmgat* only)
     num_classes: int = 2        # 2 = binary; set higher for multi-class
@@ -94,6 +99,19 @@ class ModelConfig:
     # When func_chunk_size > 0, set this to func_chunk_size * N_chunks you want to cover.
     # E.g. func_chunk_size=512, func_max_length=2048 → up to 4 windows per function.
     func_max_length: int = 512  # default matches model trained length
+    # ── Bidirectional cross-task (Phase 2, lmgat_codebert) ────────────────────
+    # Makes localization (stmt_head) and classification (func_head) inform each
+    # other. Cross-signals are detached — each head trains on its own loss.
+    #   none            — independent heads (Phase 1 baseline)
+    #   direct          — scalar conditioning: stmt suspicion → classifier logit
+    #                     bias, vuln-confidence → stmt score gate
+    #   film            — FiLM modulation: cls embedding modulates stmt features,
+    #                     loc proto modulates classifier input
+    #   cross_attention — Q from one task, K/V from the other task's encoder
+    #                     units (decoder-style cross-attention)
+    #   self_attention  — EDAT-style: self-attention over a task's own encoder
+    #                     units, query biased by the other task's signal
+    cross_task_method: str = "none"
     # ── Statement localization "both" mode ────────────────────────────────────
     # Only used when localization_encoder="both". Controls how GNN + LM features combine.
     #   concat   — torch.cat([gnn, lm]) (legacy, LM dim dominates GNN by 3:1 on UniXcoder)
