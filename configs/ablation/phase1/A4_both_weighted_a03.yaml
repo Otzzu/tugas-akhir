@@ -1,10 +1,9 @@
-# Phase 1 — A4-opt2: lmgat_codebert, localization=both, drop focal only
-# Same as A4 baseline but ONLY drops focal loss.
-# Purpose: isolate whether focal alone was the problem (everything else original).
-# This tests the LIVABLE paper Table 2 hypothesis: class-balanced focal is the worst row.
+# Phase 1 — A4 ablation: weighted localization both, α=0.3 (GNN-leaning).
+# Score-level mix: score = (1-α)*head_gnn(gnn) + α*head_lm(lm)
+# α=0.3 favors GNN (best precision localization per Phase 1 A2).
 #
 # Run (cloud, Linux):
-#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase1/A4_lmgat_codebert_both_opt2.yaml
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase1/A4_both_weighted_a03.yaml
 
 data:
   source: megavul
@@ -24,6 +23,8 @@ model:
   add_func_tokens: true
   func_max_length: 1024
   localization_encoder: both
+  stmt_both_mode: weighted
+  stmt_lm_alpha: 0.3
   hidden_dim: 256
   num_layers: 4
   dropout: 0.3
@@ -44,14 +45,15 @@ train:
   lm_lr: 0.00001
   warmup_ratio: 0.1
   grad_clip: 1.0
-  weight_decay: 0.0001         # original
-  patience: 25                 # original
+  weight_decay: 0.001
+  patience: 15
   early_stop_metric: f1
-  use_class_weights: true      # original
-  focal_loss_gamma: 0.0        # ONLY DIFFERENCE FROM A4 baseline — was 2.0
-  epoch_adaptive_weights: true           # original
-  label_smoothing: 0.0         # original
-  lr_scheduler: plateau        # original
+  use_class_weights: false
+  focal_loss_gamma: 2.0
+  epoch_adaptive_weights: false
+  livable_loss: true
+  label_smoothing: 0.1
+  lr_scheduler: cosine
   device: cuda
   use_amp: true
   use_flash_attention: true

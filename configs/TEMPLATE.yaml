@@ -388,17 +388,44 @@ train:
   save_last_every: 0
 
   # Compute inverse-frequency class weights for CE / focal loss.
-  # Required for livable_loss=true. Recommended for imbalanced datasets.
+  # Auto-disabled when livable_loss=true (paper LIVABLE uses time-shift only).
+  # Recommended for imbalanced datasets when livable_loss=false.
   use_class_weights: true
 
   # Focal loss gamma (0 = standard CE, 2.0 = standard focal).
   # Downweights easy examples; helps with class imbalance.
+  # Also used as focal branch gamma when livable_loss=true.
   focal_loss_gamma: 2.0
 
-  # LIVABLE epoch-adaptive class weights (arXiv:2306.06935).
+  # Label smoothing for cross-entropy loss (0.0 = disabled, 0.1 recommended).
+  # Replaces hard one-hot targets with soft targets to prevent overconfidence.
+  # Also used as LSCE branch smoothing when livable_loss=true.
+  # Helps reduce loss-F1 gap on imbalanced multiclass (see LOSS_F1_GAP.md §3.2).
+  label_smoothing: 0.0
+
+  # Epoch-adaptive inverse-frequency class weights (simple approximation).
   # w_i(t) = (N/(K*n_i))^(t/T): starts uniform, anneals to inverse-freq over T epochs.
-  # Requires use_class_weights=true.
-  livable_loss: true
+  # NOT the real LIVABLE paper loss — just a time-shifted class weight schedule.
+  # Requires use_class_weights=true. Mutually exclusive with livable_loss=true.
+  epoch_adaptive_weights: false
+
+  # Real LIVABLE two-branch loss (arXiv:2306.06935, Eq. 11-12).
+  # L = T * focal + (1-T) * label_smooth_CE, T = 1 - (epoch/max_epoch)^2
+  # Reuses focal_loss_gamma and label_smoothing for the two branches.
+  # When true, static class_weight is auto-disabled (paper uses time-shift only).
+  # Mutually exclusive with epoch_adaptive_weights.
+  livable_loss: false
+
+  # LR scheduler type.
+  # Values: plateau (ReduceLROnPlateau, default) | cosine (CosineAnnealingLR)
+  # "cosine" smoothly decays LR to 0 over all epochs — reduces late-epoch overfitting.
+  # "plateau" reduces LR when val_loss stops improving (legacy behavior).
+  lr_scheduler: plateau
+
+  # Bit-exact determinism across runs (CUDA atomics, FlashAttention-2 backward, cuBLAS).
+  # Enable only for replication studies — costs 20-40% training speed.
+  # For ablation statistical comparisons, prefer multi-seed runs with this flag off.
+  deterministic: false
 
   # Compute device.
   # Values: cpu | cuda | cuda:0 | cuda:1 etc.

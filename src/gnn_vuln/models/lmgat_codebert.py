@@ -16,14 +16,16 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  add_self_loops=False, use_skip=False, matryoshka_dim=None,
                  func_chunk_size=0, func_chunk_stride=0,
                  localization_encoder="gnn", use_flash_attention=False, compile_lm=False,
-                 use_grad_checkpoint=True):
+                 use_grad_checkpoint=True,
+                 stmt_both_mode="concat", stmt_lm_alpha=0.5):
         super().__init__()
         self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride, use_flash_attention, compile_lm, use_grad_checkpoint)
         self._loc_enc = localization_encoder
         self.encoder   = GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout, edge_dim, add_self_loops, use_skip)
         self.func_head = FuncHead(hidden_dim + self._lm_dim, hidden_dim, num_classes, dropout)
         lm_dim = self._lm_dim if localization_encoder in ("lm", "both") else 0
-        self.stmt_head = StmtHead(hidden_dim, lm_dim=lm_dim, localization_encoder=localization_encoder)
+        self.stmt_head = StmtHead(hidden_dim, lm_dim=lm_dim, localization_encoder=localization_encoder,
+                                  both_mode=stmt_both_mode, lm_alpha=stmt_lm_alpha)
 
     def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
                 func_input_ids=None, func_attention_mask=None,
@@ -64,4 +66,6 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             use_flash_attention=getattr(cfg.train, "use_flash_attention", False),
             compile_lm=getattr(cfg.train, "compile_lm", False),
             use_grad_checkpoint=getattr(cfg.model, "use_grad_checkpoint", True),
+            stmt_both_mode=getattr(cfg.model, "stmt_both_mode", "concat"),
+            stmt_lm_alpha=getattr(cfg.model, "stmt_lm_alpha", 0.5),
         )

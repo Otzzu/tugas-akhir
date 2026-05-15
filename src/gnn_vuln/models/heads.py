@@ -25,19 +25,55 @@ class StmtHead(nn.Module):
     """
 
     def __init__(self, hidden_dim: int, lm_dim: int = 0,
-                 localization_encoder: str = "gnn"):
+                 localization_encoder: str = "gnn",
+                 both_mode: str = "concat", lm_alpha: float = 0.5):
         super().__init__()
         assert localization_encoder in ("gnn", "lm", "both"), \
             f"localization_encoder must be gnn|lm|both, got {localization_encoder!r}"
+        assert both_mode in ("concat", "weighted", "gated"), \
+            f"both_mode must be concat|weighted|gated, got {both_mode!r}"
         self._mode = localization_encoder
+        self._both_mode = both_mode
+        self._lm_alpha = lm_alpha
         if localization_encoder == "gnn":
             in_dim = hidden_dim
+            self.max_head  = nn.Linear(in_dim, 1)
+            self.mean_head = nn.Linear(in_dim, 1)
         elif localization_encoder == "lm":
             in_dim = lm_dim
+            self.max_head  = nn.Linear(in_dim, 1)
+            self.mean_head = nn.Linear(in_dim, 1)
         else:  # both
-            in_dim = hidden_dim + lm_dim
-        self.max_head  = nn.Linear(in_dim, 1)
-        self.mean_head = nn.Linear(in_dim, 1)
+            if both_mode == "concat":
+                in_dim = hidden_dim + lm_dim
+                self.max_head  = nn.Linear(in_dim, 1)
+                self.mean_head = nn.Linear(in_dim, 1)
+            else:  # weighted | gated → score-level combination, two small heads
+                self.max_head_gnn  = nn.Linear(hidden_dim, 1)
+                self.mean_head_gnn = nn.Linear(hidden_dim, 1)
+                self.max_head_lm   = nn.Linear(lm_dim, 1)
+                self.mean_head_lm  = nn.Linear(lm_dim, 1)
+                if both_mode == "gated":
+                    self.gate_max  = nn.Linear(hidden_dim + lm_dim, 1)
+                    self.gate_mean = nn.Linear(hidden_dim + lm_dim, 1)
+
+    def _score_both(self, gnn: torch.Tensor, lm: torch.Tensor, pool: str) -> torch.Tensor:
+        """Score-level combination for both mode. pool ∈ {'max','mean'}."""
+        gnn_f = gnn.float()
+        lm_f  = lm.float()
+        if pool == "max":
+            s_gnn = self.max_head_gnn(gnn_f)
+            s_lm  = self.max_head_lm(lm_f)
+            gate  = getattr(self, "gate_max", None)
+        else:
+            s_gnn = self.mean_head_gnn(gnn_f)
+            s_lm  = self.mean_head_lm(lm_f)
+            gate  = getattr(self, "gate_mean", None)
+        if self._both_mode == "weighted":
+            return (1.0 - self._lm_alpha) * s_gnn + self._lm_alpha * s_lm
+        # gated
+        α = torch.sigmoid(gate(torch.cat([gnn_f, lm_f], dim=-1)))
+        return (1.0 - α) * s_gnn + α * s_lm
 
     @staticmethod
     def _pool_lm_per_line(
@@ -109,19 +145,25 @@ class StmtHead(nn.Module):
                 if self._mode == "gnn":
                     feat_max  = h_l.max(dim=0).values
                     feat_mean = h_l.mean(dim=0)
+                    s = _ALPHA_MAX * self.max_head(feat_max.float()) + _ALPHA_MEAN * self.mean_head(feat_mean.float())
                 elif self._mode == "lm":
                     feat_max  = lm_max_emb[i]  if lm_max_emb  is not None else h_l.max(dim=0).values
                     feat_mean = lm_mean_emb[i] if lm_mean_emb is not None else h_l.mean(dim=0)
+                    s = _ALPHA_MAX * self.max_head(feat_max.float()) + _ALPHA_MEAN * self.mean_head(feat_mean.float())
                 else:
                     gnn_max  = h_l.max(dim=0).values
                     gnn_mean = h_l.mean(dim=0)
-                    if lm_max_emb is not None:
+                    if lm_max_emb is None:
+                        s = _ALPHA_MAX * self.max_head(gnn_max.float()) + _ALPHA_MEAN * self.mean_head(gnn_mean.float()) if self._both_mode == "concat" else \
+                            _ALPHA_MAX * self.max_head_gnn(gnn_max.float()) + _ALPHA_MEAN * self.mean_head_gnn(gnn_mean.float())
+                    elif self._both_mode == "concat":
                         feat_max  = torch.cat([gnn_max,  lm_max_emb[i]])
                         feat_mean = torch.cat([gnn_mean, lm_mean_emb[i]])
-                    else:
-                        feat_max, feat_mean = gnn_max, gnn_mean
-
-                s = _ALPHA_MAX * self.max_head(feat_max.float()) + _ALPHA_MEAN * self.mean_head(feat_mean.float())
+                        s = _ALPHA_MAX * self.max_head(feat_max.float()) + _ALPHA_MEAN * self.mean_head(feat_mean.float())
+                    else:  # weighted | gated → score-level
+                        s_max  = self._score_both(gnn_max.unsqueeze(0),  lm_max_emb[i].unsqueeze(0),  "max").squeeze(0)
+                        s_mean = self._score_both(gnn_mean.unsqueeze(0), lm_mean_emb[i].unsqueeze(0), "mean").squeeze(0)
+                        s = _ALPHA_MAX * s_max + _ALPHA_MEAN * s_mean
                 scores.append(s.squeeze(-1))
             result.append(torch.stack(scores))
         return result
@@ -212,22 +254,39 @@ class StmtHead(nn.Module):
         # Build feat_max / feat_mean for linear heads
         if self._mode == "gnn":
             feat_max, feat_mean = gnn_max, gnn_mean
+            scores_flat = (
+                _ALPHA_MAX  * self.max_head(feat_max.float())
+                + _ALPHA_MEAN * self.mean_head(feat_mean.float())
+            ).squeeze(-1)
         elif self._mode == "lm":
-            if lm_max is None:  # func_token_lines was None — fallback to zeros
+            if lm_max is None:
                 LM_D = lm_hidden.shape[-1] if lm_hidden is not None else self.max_head.in_features
                 lm_max = lm_mean = torch.zeros(S, LM_D, device=device)
             feat_max, feat_mean = lm_max, lm_mean
+            scores_flat = (
+                _ALPHA_MAX  * self.max_head(feat_max.float())
+                + _ALPHA_MEAN * self.mean_head(feat_mean.float())
+            ).squeeze(-1)
         else:  # both
-            if lm_max is None:  # func_token_lines was None — fallback to zeros
-                LM_D = lm_hidden.shape[-1] if lm_hidden is not None else (self.max_head.in_features - D)
+            if lm_max is None:
+                if lm_hidden is not None:
+                    LM_D = lm_hidden.shape[-1]
+                elif self._both_mode == "concat":
+                    LM_D = self.max_head.in_features - D
+                else:
+                    LM_D = self.max_head_lm.in_features
                 lm_max = lm_mean = torch.zeros(S, LM_D, device=device)
-            feat_max  = torch.cat([gnn_max,  lm_max],  dim=-1)
-            feat_mean = torch.cat([gnn_mean, lm_mean], dim=-1)
-
-        scores_flat = (
-            _ALPHA_MAX  * self.max_head(feat_max.float())
-            + _ALPHA_MEAN * self.mean_head(feat_mean.float())
-        ).squeeze(-1)   # [S]
+            if self._both_mode == "concat":
+                feat_max  = torch.cat([gnn_max,  lm_max],  dim=-1)
+                feat_mean = torch.cat([gnn_mean, lm_mean], dim=-1)
+                scores_flat = (
+                    _ALPHA_MAX  * self.max_head(feat_max.float())
+                    + _ALPHA_MEAN * self.mean_head(feat_mean.float())
+                ).squeeze(-1)
+            else:  # weighted | gated → score-level combination
+                s_max  = self._score_both(gnn_max,  lm_max,  "max")
+                s_mean = self._score_both(gnn_mean, lm_mean, "mean")
+                scores_flat = (_ALPHA_MAX * s_max + _ALPHA_MEAN * s_mean).squeeze(-1)
 
         # Split by graph — one sync (tolist) instead of B×n_lines syncs
         stmt_graph = unique_sid // MAX_LINE          # [S] graph index per stmt

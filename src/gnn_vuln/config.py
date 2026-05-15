@@ -94,6 +94,13 @@ class ModelConfig:
     # When func_chunk_size > 0, set this to func_chunk_size * N_chunks you want to cover.
     # E.g. func_chunk_size=512, func_max_length=2048 → up to 4 windows per function.
     func_max_length: int = 512  # default matches model trained length
+    # ── Statement localization "both" mode ────────────────────────────────────
+    # Only used when localization_encoder="both". Controls how GNN + LM features combine.
+    #   concat   — torch.cat([gnn, lm]) (legacy, LM dim dominates GNN by 3:1 on UniXcoder)
+    #   weighted — (1-α)*gnn + α*lm_proj, α fixed by stmt_lm_alpha
+    #   gated    — per-statement learnable gate σ(W·[gnn;lm_proj]), no manual α
+    stmt_both_mode: str = "concat"
+    stmt_lm_alpha: float = 0.5   # only for stmt_both_mode="weighted"
 
 
 @dataclass
