@@ -22,9 +22,10 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  use_grad_checkpoint=True,
                  stmt_both_mode="concat", stmt_lm_alpha=0.5,
                  cross_task_method="none", graph_pool="mean",
-                 mmoe_task_encoder=False, cross_task_residual=True):
+                 mmoe_task_encoder=False, cross_task_residual=True,
+                 mmoe_loc_transformer=False, lm_per_line=False):
         super().__init__()
-        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride, use_flash_attention, compile_lm, use_grad_checkpoint)
+        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride, use_flash_attention, compile_lm, use_grad_checkpoint, lm_per_line=lm_per_line)
         self._loc_enc = localization_encoder
         self.encoder   = GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout, edge_dim, add_self_loops, use_skip)
         # Graph-level pooling: mean | meanmax | attention
@@ -51,6 +52,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             cross_task_method, hidden_dim + self._lm_dim, hidden_dim, num_classes,
             self._lm_dim, localization_encoder, num_heads,
             mmoe_task_encoder=mmoe_task_encoder, residual=cross_task_residual,
+            mmoe_loc_transformer=mmoe_loc_transformer,
         )
 
     def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
@@ -65,7 +67,9 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             h_graph = global_mean_pool(h, batch)
         B = h_graph.size(0)
         if self._loc_enc != "gnn":
-            lm_emb, lm_hidden = self._lm_embed_full(func_input_ids, func_attention_mask, B, x.device)
+            lm_emb, lm_hidden = self._lm_embed_full(
+                func_input_ids, func_attention_mask, B, x.device, func_token_lines,
+            )
         else:
             lm_emb = self._lm_embed(func_input_ids, func_attention_mask, B, x.device)
             lm_hidden = None
@@ -122,4 +126,6 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             mmoe_task_encoder=getattr(cfg.model, "mmoe_task_encoder", False),
             cross_task_residual=getattr(cfg.model, "cross_task_residual", True),
             graph_pool=getattr(cfg.model, "graph_pool", "mean"),
+            mmoe_loc_transformer=getattr(cfg.model, "mmoe_loc_transformer", False),
+            lm_per_line=getattr(cfg.model, "lm_per_line", False),
         )

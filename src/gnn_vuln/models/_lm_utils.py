@@ -189,3 +189,179 @@ def lm_pool_windowed(
     sum_embs = embs.sum(dim=1)                     # [B, hidden]
     count    = counts.sum(dim=1, keepdim=True).clamp(min=1)  # [B, 1]
     return sum_embs / count
+
+
+def lm_full_windowed(
+    model,
+    is_enc_dec: bool,
+    input_ids: torch.Tensor,
+    attention_mask: torch.Tensor | None,
+    chunk_size: int = 512,
+    stride: int = 256,
+    matryoshka_dim: int | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Sliding-window LM forward that returns per-token hidden states aligned to
+    the original input positions. Used by `_lm_embed_full` for localization
+    (mode=lm|both) so long functions retain LM features past the model's
+    trained max length.
+
+    For input [B, L], slides chunk_size windows with stride. Each original
+    token position's hidden state = mean of all chunks that contain it.
+    Overlap regions average naturally via accumulator + count.
+
+    Returns:
+        cls    : [B, hidden] — position 0's averaged hidden (= chunk-0 [CLS])
+        hidden : [B, L, hidden] — per-original-position averaged hidden states
+
+    Fast path: if L ≤ chunk_size, returns a single forward.
+    """
+    B, L = input_ids.shape
+    device = input_ids.device
+
+    # Fast path — fits one window, no sliding needed
+    if L <= chunk_size:
+        out = model.encoder(input_ids=input_ids, attention_mask=attention_mask) \
+              if is_enc_dec else \
+              model(input_ids=input_ids, attention_mask=attention_mask)
+        hidden = out.last_hidden_state
+        if matryoshka_dim is not None:
+            hidden = hidden[:, :, :matryoshka_dim]
+        return hidden[:, 0], hidden
+
+    stride = max(1, min(stride, chunk_size))
+
+    # Accumulate in fp32 for precision; cast back to LM dtype at the end.
+    hidden_dim = model.config.hidden_size if matryoshka_dim is None else matryoshka_dim
+    hidden_acc = torch.zeros(B, L, hidden_dim, device=device, dtype=torch.float32)
+    count      = torch.zeros(B, L, 1,          device=device, dtype=torch.float32)
+    out_dtype = None
+
+    start = 0
+    while start < L:
+        end = min(start + chunk_size, L)
+        ids_chunk  = input_ids[:, start:end]
+        mask_chunk = attention_mask[:, start:end] if attention_mask is not None else None
+
+        # Skip windows where ALL samples have no real tokens
+        if mask_chunk is not None and mask_chunk.sum() == 0:
+            if end == L:
+                break
+            start += stride
+            continue
+
+        out = model.encoder(input_ids=ids_chunk, attention_mask=mask_chunk) \
+              if is_enc_dec else \
+              model(input_ids=ids_chunk, attention_mask=mask_chunk)
+        chunk_hidden = out.last_hidden_state              # [B, end-start, H]
+        if matryoshka_dim is not None:
+            chunk_hidden = chunk_hidden[:, :, :matryoshka_dim]
+        if out_dtype is None:
+            out_dtype = chunk_hidden.dtype
+
+        chunk_fp32 = chunk_hidden.float()
+        if mask_chunk is not None:
+            w = mask_chunk.unsqueeze(-1).float()          # [B, end-start, 1]
+            hidden_acc[:, start:end] += chunk_fp32 * w
+            count[:, start:end]      += w
+        else:
+            hidden_acc[:, start:end] += chunk_fp32
+            count[:, start:end]      += 1.0
+
+        if end == L:
+            break
+        start += stride
+
+    hidden = (hidden_acc / count.clamp(min=1)).to(out_dtype or input_ids.new_zeros(1).float().dtype)
+    cls = hidden[:, 0]
+    return cls, hidden
+
+
+_PERLINE_MAX_LINE = 100_000   # statement-id base — must exceed any source line number
+
+
+def lm_per_line_embed(
+    model,
+    input_ids: torch.Tensor,
+    token_lines: torch.Tensor,
+    sub_batch: int = 512,
+    max_line_len: int = 128,
+) -> torch.Tensor:
+    """Per-line LM embedding — EDAT-style line isolation, reusing func tokens.
+
+    Each source line's tokens (grouped via token_lines) are re-wrapped with
+    [CLS]/[SEP] and forwarded through the LM independently → per-line [CLS].
+    No separate per-line tokenization, no .pt rebuild — regroups the existing
+    func_input_ids by func_token_lines.
+
+    Returns a synthetic per-token hidden state [B, L, lm_dim] where every token
+    of line ℓ carries line ℓ's [CLS] vector. Downstream per-line pooling
+    (StmtHead, statement_features) then recovers the line [CLS] unchanged — so
+    no downstream code needs modification.
+
+    Fully vectorized — no per-statement Python loop. The only loop is the
+    sub-batched LM forward (necessary work, memory-bounded).
+
+    Parameters
+    ----------
+    input_ids   : [B, L] function token ids (from func_input_ids)
+    token_lines : [B, L] per-token source line (-1 = special/pad)
+    sub_batch   : per-line forward sub-batch size (memory guard)
+    max_line_len: cap tokens per line (incl. [CLS]/[SEP])
+    """
+    B, L = input_ids.shape
+    device = input_ids.device
+    cfg = model.config
+    cls_id = cfg.bos_token_id if getattr(cfg, "bos_token_id", None) is not None else 0
+    sep_id = cfg.eos_token_id if getattr(cfg, "eos_token_id", None) is not None else 2
+    pad_id = cfg.pad_token_id if getattr(cfg, "pad_token_id", None) is not None else 1
+    lm_dim = cfg.hidden_size
+
+    # ── Flatten + keep valid tokens ────────────────────────────────────────
+    tok_b   = torch.arange(B, device=device).unsqueeze(1).expand(B, L).reshape(-1)
+    tl_flat = token_lines.reshape(-1)
+    id_flat = input_ids.reshape(-1)
+    valid   = tl_flat >= 0
+    if not valid.any():
+        return torch.zeros(B, L, lm_dim, device=device)
+
+    v_b, v_tl, v_ids = tok_b[valid], tl_flat[valid], id_flat[valid]
+    sid = v_b * _PERLINE_MAX_LINE + v_tl                          # statement id per token
+    uniq_sid, inv, counts = torch.unique(
+        sid, sorted=True, return_inverse=True, return_counts=True)
+    n = uniq_sid.shape[0]
+
+    # ── Within-statement token position (vectorized) ──────────────────────
+    order      = torch.argsort(inv, stable=True)                  # group tokens by stmt
+    inv_sorted = inv[order]
+    ids_sorted = v_ids[order]
+    seg_start  = torch.zeros(n, dtype=torch.long, device=device)
+    seg_start[1:] = torch.cumsum(counts, 0)[:-1]
+    within = torch.arange(inv_sorted.shape[0], device=device) - seg_start[inv_sorted]
+
+    # ── Build padded [n, max_len] : [CLS] line_tokens [SEP] ───────────────
+    max_tok = int(counts.max().clamp(max=max_line_len - 2).item())
+    max_len = max_tok + 2
+    batch_ids = torch.full((n, max_len), pad_id, dtype=torch.long, device=device)
+    keep = within < max_tok                                       # truncate over-long lines
+    batch_ids[inv_sorted[keep], within[keep] + 1] = ids_sorted[keep]
+    batch_ids[:, 0] = cls_id
+    line_len = counts.clamp(max=max_tok)                          # tokens kept per stmt
+    batch_ids[torch.arange(n, device=device), line_len + 1] = sep_id
+    ar = torch.arange(max_len, device=device).unsqueeze(0)
+    batch_msk = (ar <= (line_len + 1).unsqueeze(1)).long()        # [n, max_len]
+
+    # ── Per-line forward, sub-batched (memory guard) ──────────────────────
+    cls_out = torch.zeros(n, lm_dim, device=device)
+    for st in range(0, n, sub_batch):
+        en = min(st + sub_batch, n)
+        out = model(input_ids=batch_ids[st:en], attention_mask=batch_msk[st:en])
+        cls_out[st:en] = out.last_hidden_state[:, 0].float()
+
+    # ── Scatter per-line [CLS] → synthetic per-token hidden (vectorized) ──
+    synth_flat   = torch.zeros(B * L, lm_dim, device=device)
+    tok_sid_full = tok_b * _PERLINE_MAX_LINE + tl_flat            # [B*L]
+    pos = torch.searchsorted(uniq_sid, tok_sid_full).clamp(0, n - 1)
+    matched = (uniq_sid[pos] == tok_sid_full) & valid
+    synth_flat[matched] = cls_out[pos[matched]]
+    return synth_flat.reshape(B, L, lm_dim)

@@ -114,23 +114,69 @@ def _pool_to_graph(feats: torch.Tensor, stmt_graph: torch.Tensor, B: int) -> tor
     return g / c.clamp(min=1)
 
 
+class _LineLevelEncoder(nn.Module):
+    """Transformer encoder over per-statement features — EDAT's
+    line_level_encoder pattern. Statements within each graph self-attend, then
+    project to D. Used as the MMOE per-task encoder for the LOCALIZATION path
+    when `mmoe_loc_transformer=true`. Cross-statement context recovered at
+    line granularity (vs the general MLP encoder which processes each
+    statement independently).
+    """
+
+    def __init__(self, in_dim: int, D: int, num_layers: int = 2,
+                 num_heads: int = 4, dropout: float = 0.1):
+        super().__init__()
+        self.proj = nn.Linear(in_dim, D)
+        layer = nn.TransformerEncoderLayer(
+            d_model=D, nhead=num_heads, dim_feedforward=D * 4,
+            dropout=dropout, batch_first=True,
+        )
+        self.encoder = nn.TransformerEncoder(layer, num_layers=num_layers)
+
+    def forward(self, x: torch.Tensor, stmt_graph: torch.Tensor, B: int) -> torch.Tensor:
+        """x [S, in_dim], stmt_graph [S], B = num graphs → [S, D]."""
+        if x.shape[0] == 0:
+            return self.proj(x)
+        x_proj = self.proj(x.float())                              # [S, D]
+        x_dense, mask = to_dense_batch(x_proj, stmt_graph, batch_size=B)   # [B, Smax, D]
+        kpad = ~mask
+        empty = ~mask.any(dim=1)
+        if empty.any():
+            kpad = kpad.clone(); kpad[empty, 0] = False
+        out = self.encoder(x_dense, src_key_padding_mask=kpad)     # [B, Smax, D]
+        return out[mask]                                           # [S, D] unpadded
+
+
 class MMOECrossTask(nn.Module):
     """Multi-gate Mixture-of-Experts (Ma et al. 2018, KDD) — matches EDAT's code.
 
     Shared expert MLP pool; one softmax gate per task. Classification runs the
     experts per-graph, localization runs them per-statement. Cross-task transfer
     = the shared experts are trained by both losses.
+
+    Task-specific encoders before the experts:
+      • cls_in (per-graph fused vector): Linear or MLP — `task_encoder` flag.
+      • loc_in (per-statement features): Linear / MLP (general) OR transformer
+        (EDAT line_level_encoder style — statements self-attend) when
+        `loc_transformer=true`. The transformer recovers cross-statement
+        context, especially useful with per-line LM embedding.
     """
 
     def __init__(self, fused_dim: int, hidden_dim: int, lm_dim: int, mode: str,
                  expert_num: int = 4, expert_dim: int | None = None,
-                 task_encoder: bool = False, residual: bool = True):
+                 task_encoder: bool = False, residual: bool = True,
+                 loc_transformer: bool = False,
+                 loc_transformer_layers: int = 2,
+                 loc_transformer_heads: int = 4):
         super().__init__()
         self._residual = residual
+        self._loc_is_transformer = loc_transformer
         ld = loc_dim(mode, hidden_dim, lm_dim)
         D = expert_dim or hidden_dim
 
-        def _proj(in_dim: int) -> nn.Module:
+        def _general(in_dim: int) -> nn.Module:
+            """General task-specific encoder — operates on a single vector per
+            unit (per-graph for cls, per-statement for loc)."""
             if task_encoder:
                 return nn.Sequential(
                     nn.Linear(in_dim, D), nn.LayerNorm(D), nn.ReLU(),
@@ -138,8 +184,19 @@ class MMOECrossTask(nn.Module):
                 )
             return nn.Linear(in_dim, D)
 
-        self.cls_in = _proj(fused_dim)
-        self.loc_in = _proj(ld)
+        # Classification: always uses the general encoder (single per-graph vector;
+        # transformer attention over a single token would degenerate to FFN).
+        self.cls_in = _general(fused_dim)
+
+        # Localization: optionally transformer over statements (line-level).
+        if loc_transformer:
+            self.loc_in = _LineLevelEncoder(
+                ld, D,
+                num_layers=loc_transformer_layers,
+                num_heads=loc_transformer_heads,
+            )
+        else:
+            self.loc_in = _general(ld)
         self.experts = nn.ModuleList([
             nn.Sequential(
                 nn.Linear(D, D), nn.LayerNorm(D), nn.ReLU(), nn.Dropout(0.1),
@@ -162,7 +219,11 @@ class MMOECrossTask(nn.Module):
     def forward(self, fused, loc_feats, stmt_graph, h, batch, B,
                 lm_hidden, func_token_lines):
         cross_c = self.cls_out(self._moe(self.cls_in(fused.float()), self.gate_cls))
-        cross_l = self.loc_out(self._moe(self.loc_in(loc_feats.float()), self.gate_loc))
+        if self._loc_is_transformer:
+            x_loc = self.loc_in(loc_feats, stmt_graph, B)
+        else:
+            x_loc = self.loc_in(loc_feats.float())
+        cross_l = self.loc_out(self._moe(x_loc, self.gate_loc))
         if self._residual:
             fused_mod = fused + self.res_gate_cls * cross_c
             stmt_cond = self.res_gate_loc * cross_l
@@ -318,7 +379,8 @@ class SelfAttnCrossTask(nn.Module):
 def build_cross_task(method: str, fused_dim: int, hidden_dim: int,
                      num_classes: int, lm_dim: int, localization_encoder: str,
                      num_heads: int = 4, mmoe_task_encoder: bool = False,
-                     residual: bool = True) -> nn.Module | None:
+                     residual: bool = True,
+                     mmoe_loc_transformer: bool = False) -> nn.Module | None:
     """Factory — returns the cross-task module for `method`, or None for 'none'."""
     if method == "none":
         return None
@@ -330,7 +392,8 @@ def build_cross_task(method: str, fused_dim: int, hidden_dim: int,
                                  num_heads, residual=residual)
     if method == "mmoe":
         return MMOECrossTask(fused_dim, hidden_dim, lm_dim, localization_encoder,
-                             task_encoder=mmoe_task_encoder, residual=residual)
+                             task_encoder=mmoe_task_encoder, residual=residual,
+                             loc_transformer=mmoe_loc_transformer)
     raise ValueError(
         "cross_task_method must be none|cross_attention|self_attention|mmoe, "
         f"got {method!r}"

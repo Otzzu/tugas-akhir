@@ -100,6 +100,14 @@ class ModelConfig:
     # When func_chunk_size > 0, set this to func_chunk_size * N_chunks you want to cover.
     # E.g. func_chunk_size=512, func_max_length=2048 → up to 4 windows per function.
     func_max_length: int = 512  # default matches model trained length
+    # Per-line LM embedding (EDAT-style line isolation). When true, function
+    # tokens are regrouped per source line — each line forwarded through the LM
+    # independently → per-line [CLS]. Localization (lm/both) then sees per-line
+    # isolated embeddings instead of function-context-pooled tokens. Reuses
+    # func_input_ids — no separate per-line tokenization, no .pt rebuild.
+    # Pair with mmoe_loc_transformer to recover cross-line context (EDAT does).
+    # Support: lmgat_codebert with localization_encoder=lm|both
+    lm_per_line: bool = False
     # ── Bidirectional cross-task (Phase 2, lmgat_codebert) ────────────────────
     # Makes localization (stmt_head) and classification (func_head) inform each
     # other.
@@ -114,7 +122,16 @@ class ModelConfig:
     # MMOE only: replace the single Linear task projections with a per-task MLP
     # encoder (Linear→LN→ReLU→Dropout→Linear) — EDAT's TaskSpecificEncoder, light
     # variant. Gives each task a private adapter before the shared experts.
+    # General encoder: cls + loc both use MLP when true; loc can be overridden
+    # by mmoe_loc_transformer (line-level transformer for localization).
     mmoe_task_encoder: bool = False
+    # MMOE only: override the localization task encoder with a transformer over
+    # per-statement features (EDAT line_level_encoder pattern). Statements
+    # within each graph self-attend → cross-statement context recovered at line
+    # granularity. Useful when per-line LM embedding is used (lines isolated by
+    # per-line CodeBERT need a downstream encoder to recover cross-line
+    # context). Cls path always uses the general encoder.
+    mmoe_loc_transformer: bool = False
     # Cross-task fusion mode (ablation):
     #   true  — gated residual side-branch: fused_mod = fused + γ·cross
     #           (γ zero-init, baseline-safe); func_head stays the fat MLP.

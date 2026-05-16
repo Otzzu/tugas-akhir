@@ -8,7 +8,9 @@ import torch
 import torch.nn as nn
 from transformers import AutoConfig, AutoModel
 
-from gnn_vuln.models._lm_utils import lm_hidden_dim, lm_pool, lm_pool_windowed
+from gnn_vuln.models._lm_utils import (
+    lm_hidden_dim, lm_pool, lm_pool_windowed, lm_full_windowed, lm_per_line_embed,
+)
 
 
 class VulnDetectorBase(nn.Module):
@@ -44,6 +46,7 @@ class VulnDetectorBase(nn.Module):
         use_flash_attention: bool = False,
         compile_lm: bool = False,
         use_grad_checkpoint: bool = True,
+        lm_per_line: bool = False,
     ) -> None:
         """
         Load a live LM and store as self.codebert.
@@ -89,6 +92,7 @@ class VulnDetectorBase(nn.Module):
         self._func_chunk_size = func_chunk_size
         # Default stride to chunk_size // 2 (50% overlap) when not explicitly set
         self._func_chunk_stride = func_chunk_stride if func_chunk_stride > 0 else max(1, func_chunk_size // 2)
+        self._lm_per_line = lm_per_line
 
     def _lm_embed_full(
         self,
@@ -96,14 +100,49 @@ class VulnDetectorBase(nn.Module):
         func_attention_mask: torch.Tensor | None,
         B: int,
         device: torch.device,
+        func_token_lines: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Return (cls_emb [B, lm_dim], last_hidden_state [B, L, lm_dim] or None).
-        last_hidden_state is None when chunked mode or non-BERT LM is used."""
+        last_hidden_state is None for non-BERT LMs that don't expose it.
+
+        When func_chunk_size > 0, uses sliding-window encoding via
+        lm_full_windowed — per-token hidden states are aligned to original
+        input positions, overlap regions averaged. Localization (mode=lm|both)
+        gets full per-line LM features for functions longer than chunk_size.
+
+        When lm_per_line is set (and func_token_lines given): function tokens
+        are regrouped per source line, each line forwarded independently → the
+        returned hidden carries each line's [CLS] at all its token positions
+        (EDAT-style line isolation). Classification cls_emb still comes from a
+        function-level forward.
+        """
         if func_input_ids is None:
             return torch.zeros(B, self._lm_dim, device=device), None
-        # Chunked mode: can't return per-token states across chunks; fall back
+        # Per-line embedding — EDAT-style line isolation (reuses func tokens)
+        if self._lm_per_line and func_token_lines is not None:
+            try:
+                cls_emb = self._lm_embed(func_input_ids, func_attention_mask, B, device)
+                synth_hidden = lm_per_line_embed(
+                    self.codebert, func_input_ids, func_token_lines,
+                )
+                if self._matryoshka_dim is not None:
+                    synth_hidden = synth_hidden[:, :, :self._matryoshka_dim]
+                return cls_emb, synth_hidden
+            except (AttributeError, TypeError):
+                return self._lm_embed(func_input_ids, func_attention_mask, B, device), None
+        # Sliding-window full forward — per-token hidden aligned to input positions
         if self._func_chunk_size > 0:
-            return self._lm_embed(func_input_ids, func_attention_mask, B, device), None
+            try:
+                return lm_full_windowed(
+                    self.codebert, self._is_enc_dec,
+                    func_input_ids, func_attention_mask,
+                    chunk_size=self._func_chunk_size,
+                    stride=self._func_chunk_stride,
+                    matryoshka_dim=self._matryoshka_dim,
+                )
+            except (AttributeError, TypeError):
+                # Non-BERT LM (e.g. CodeT5+) — fall back to pooled CLS-only
+                return self._lm_embed(func_input_ids, func_attention_mask, B, device), None
         try:
             out = self.codebert(
                 input_ids=func_input_ids,

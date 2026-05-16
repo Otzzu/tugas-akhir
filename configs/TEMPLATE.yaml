@@ -173,10 +173,15 @@ model:
   matryoshka_dim: null
 
   # ── Sliding-window function encoding ──────────────────────────────────────
-  # Chunk size (tokens) for sliding-window encoding of long functions.
+  # Chunk size (tokens) for sliding-window LM encoding of long functions.
   # 0 = disabled — single forward pass, truncating at func_max_length.
-  # When enabled, long sequences are split into overlapping windows and mean-pooled,
-  # keeping each window within the model's trained max length.
+  # When enabled, sequences longer than chunk_size are split into overlapping
+  # windows. Each window forwarded through the LM; overlap regions averaged in
+  # fp32 (precision) and cast back to LM dtype.
+  #   - Classification (`_lm_embed`): per-window pooled, mean across windows
+  #   - Localization (`_lm_embed_full`, lm/both modes): per-token hidden states
+  #     aligned to original input positions — `func_token_lines` indexes them
+  #     directly, downstream per-line pooling unchanged. Long-function support.
   # Should match the model's trained max length (512 for UniXcoder/CodeBERT,
   # 512 for codet5p-110m-embedding, 1024 for codet5p-220m).
   # Support: all architectures with func_lm (listed above)
@@ -185,6 +190,7 @@ model:
   # Step between sliding windows in tokens. 0 = defaults to chunk_size // 2 (50% overlap).
   # Only used when func_chunk_size > 0.
   # Typical: 256 (50% overlap) or 512 (non-overlapping, faster).
+  # stride < chunk_size → ensures every token is centered in ≥1 window.
   # Support: all architectures with func_lm (listed above)
   func_chunk_stride: 0
 
@@ -192,8 +198,24 @@ model:
   # When func_chunk_size > 0, set to func_chunk_size * N to cover N windows.
   # E.g. func_chunk_size=512, func_max_length=2048 → up to 4 windows per function.
   # Default 512 matches the trained max length of UniXcoder/CodeBERT.
+  # Note: changing func_max_length requires rebuilding the .pt cache (token grid shape).
   # Support: all architectures with add_func_tokens=true
   func_max_length: 512
+
+  # Example — extend coverage past UniXcoder's 1024 token limit:
+  #   func_max_length: 2048      # rebuild .pt cache with 2048-token storage
+  #   func_chunk_size: 512       # each LM forward fits CodeBERT/UniXcoder 512 cap
+  #   func_chunk_stride: 256     # 50% overlap, every token near a window center
+  # Result: 7 windows covering 2048 tokens, per-line pooling sees the full function
+
+  # Per-line LM embedding (EDAT-style line isolation). When true, function
+  # tokens are regrouped per source line — each line forwarded through the LM
+  # independently → per-line [CLS]. Localization (lm/both) sees per-line
+  # isolated embeddings instead of function-context-pooled tokens.
+  # Reuses func_input_ids — no separate per-line tokenization, no .pt rebuild.
+  # Pair with mmoe_loc_transformer to recover cross-line context.
+  # Support: lmgat_codebert, localization_encoder=lm|both
+  lm_per_line: false
 
   # ── Statement-level MIL localisation ──────────────────────────────────────
   # Weight of statement-level MIL loss relative to function-level CE loss.
@@ -291,7 +313,9 @@ model:
   #   "lm"   — LM token hidden states only (per-line max+mean from last_hidden_state)
   #   "both" — concat GNN + LM features (full information)
   # "lm" and "both" require func_lm + add_func_tokens=true + .pt cache rebuild.
-  # Only supports BERT-family LMs (UniXcoder, CodeBERT); incompatible with func_chunk_size > 0.
+  # Only supports BERT-family LMs (UniXcoder, CodeBERT).
+  # Compatible with func_chunk_size > 0 — sliding-window full forward returns
+  # per-token hidden states aligned to original input positions.
   # Support: lmgat_codebert | lmgat_interp | lmgat_seq | lmgat_dualflow |
   #          lmgat_codebert_mtl | lmgat_hcdfgat
   localization_encoder: gnn
@@ -307,9 +331,20 @@ model:
   cross_task_method: none
 
   # MMOE only — per-task MLP encoder before the shared experts (EDAT's
-  # TaskSpecificEncoder, light variant). false = single Linear projection.
+  # general TaskSpecificEncoder, light variant). false = single Linear projection.
+  # General encoder: cls + loc both use MLP when true (loc can be overridden
+  # by mmoe_loc_transformer below).
   # Support: lmgat_codebert, cross_task_method=mmoe
   mmoe_task_encoder: false
+
+  # MMOE only — override the localization task encoder with a transformer over
+  # per-statement features (EDAT line_level_encoder pattern). Statements
+  # within each graph self-attend → cross-statement context at line granularity.
+  # Useful with per-line LM embedding (per-line CodeBERT isolates lines; a
+  # downstream transformer recovers cross-line context). Cls path always uses
+  # the general encoder above.
+  # Support: lmgat_codebert, cross_task_method=mmoe
+  mmoe_loc_transformer: false
 
   # Cross-task fusion mode (ablation):
   #   true  — gated residual side-branch (fused + γ·cross), fat func_head
