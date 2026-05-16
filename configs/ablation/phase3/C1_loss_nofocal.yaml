@@ -1,9 +1,14 @@
-# A4 variation: A4-best (both concat) + meanmax graph pool.
-# Base: A4 both concat (best all-rounder), epoch_adaptive loss.
-# Varies: graph_pool = meanmax (0.8*max + 0.6*mean, parameter-free).
+# Phase 1 — A4-fix: lmgat_codebert, localization=both, fixed loss stack
+# Best phase1 config for macro-F1 (test f1_macro=0.519, AUC=0.915).
+# Changes from A4 baseline:
+#   - focal removed (was causing triple-stacking)
+#   - label_smoothing=0.1 (prevents overconfidence)
+#   - weight_decay=0.001 (stronger regularization for LM)
+#   - lr_scheduler=cosine (smooth decay)
+#   - patience=15 (stop earlier)
 #
 # Run (cloud, Linux):
-#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase3/A4_pool_meanmax.yaml
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase3/C1_loss_nofocal.yaml
 
 data:
   source: megavul
@@ -23,9 +28,6 @@ model:
   add_func_tokens: true
   func_max_length: 1024
   localization_encoder: both
-  stmt_both_mode: concat
-  graph_pool: meanmax
-  cross_task_method: none
   hidden_dim: 256
   num_layers: 4
   dropout: 0.3
@@ -52,7 +54,6 @@ train:
   use_class_weights: true
   focal_loss_gamma: 0.0
   epoch_adaptive_weights: true
-  livable_loss: false
   label_smoothing: 0.1
   lr_scheduler: cosine
   device: cuda

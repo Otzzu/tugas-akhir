@@ -4,12 +4,11 @@ Dataset: MegaVul Top-25 CWEs, max 1600 per class, 26 classes (25 CWE + benign),
 UniXcoder-base embeddings, seed=42. GPU: RTX 5070 Ti.
 
 Phase structure:
-- **Phase 1 — Encoder & Localization**: live-LM vs frozen, localization encoder, GNN+LM fusion
-- **Phase 2 — Loss Function**: focal / epoch-adaptive / LIVABLE tuning
-- **Phase 3 — Graph Pooling**: mean / attention / meanmax
-- **Phase 4 — Multi-Task / Cross-Task**: bidirectional cross-task coupling
-
-Each phase builds on the previous phase's winner.
+- **Phase 1 — Encoder & Localization**: live-LM vs frozen, localization encoder
+- **Phase 2 — GNN+LM Localization Fusion**: how GNN + LM statement features combine
+- **Phase 3 — Loss Function**: focal / epoch-adaptive / LIVABLE tuning
+- **Phase 4 — Graph Pooling**: mean / attention / meanmax
+- **Phase 5 — Multi-Task / Cross-Task**: bidirectional cross-task coupling
 
 ---
 
@@ -73,16 +72,45 @@ Val loss was weighted during training — scales differ, watch relative gap.
 | A4 | 49 | 0.149 | 2.430 | 2.769 | 1.374 | 7 |
 
 A3/A4 show ~44-epoch F1-loss divergence (val_loss min at ep 7, F1 peak at ep 49-51)
-— symptom of the stacked loss, addressed in Phase 2.
+— symptom of the stacked loss, addressed in Phase 3.
 
 **Phase 1 winner: A4 (localization=both).**
 
 ---
 
-# Phase 2 — Loss Function
+# Phase 2 — GNN+LM Localization Fusion
 
-`configs/ablation/phase2/` — fixes the stacked-loss problem from Phase 1.
-Architecture held at A4 (lmgat_codebert, localization=both, concat).
+`configs/ablation/phase2/` — base A4 (localization=both). Varies `stmt_both_mode`
+(how GNN + LM statement features combine). concat = baseline. weighted =
+score-level `(1-α)·gnn + α·lm`. gated = per-statement learned gate.
+
+| ID | Run ID | Config | stmt_both_mode |
+|---|---|---|---|
+| B0 | (= A4-L1 baseline, `20260514_174326`) | — | concat |
+| B1 | `20260515_120709_lmgat_codebert_multiclass` | `B1_both_gated.yaml` | gated |
+| B2 | `20260515_135412_lmgat_codebert_multiclass` | `B2_both_weighted_a03.yaml` | weighted (GNN-leaning) |
+| B3 | `20260515_165955_lmgat_codebert_multiclass` | `B3_both_weighted_a05.yaml` | weighted (balanced) |
+| B4 | `20260515_152942_lmgat_codebert_multiclass` | `B4_both_weighted_a07.yaml` | weighted (LM-leaning) |
+
+| ID | Variant | Test F1 | Test Acc | F1-w | IFA ↓ | Top-1 ↑ | R@20%LOC ↑ |
+|---|---|---|---|---|---|---|---|
+| B0 | concat | **0.519** | 0.518 | 0.517 | 0.789 | 0.887 | 0.403 |
+| B1 | gated | 0.483 | 0.526 | 0.525 | 1.138 | 0.851 | **0.422** |
+| B2 | weighted α=0.3 | 0.480 | 0.533 | 0.533 | **0.644** | 0.876 | 0.414 |
+| B3 | weighted α=0.5 | 0.518 | **0.539** | 0.538 | 1.007 | **0.890** | 0.400 |
+| B4 | weighted α=0.7 | 0.515 | 0.515 | 0.514 | 0.947 | 0.832 | 0.357 |
+
+No fusion beats concat on macro F1 (α=0.5 ties). weighted α=0.3 (GNN-leaning) →
+best IFA — a localization-precision knob.
+
+**Phase 2 winner: concat.**
+
+---
+
+# Phase 3 — Loss Function
+
+`configs/ablation/phase3/` — fixes the stacked-loss problem from Phase 1.
+Architecture held at A4 (localization=both, concat).
 
 | Variant | Run ID | Loss Config |
 |---|---|---|
@@ -115,8 +143,7 @@ precision + best calibration. A4-L2 (LIVABLE) → best accuracy but lower macro 
 weighting). A4-L2-fixed (full T-schedule, no early stop) recovered macro F1
 0.475→0.497 — still below A4-L1.
 
-**Phase 2 winner: A4-L1 (no focal + label smoothing). This is the baseline for
-Phases 3-4.**
+**Phase 3 winner: A4-L1 (no focal + label smoothing). Baseline for Phases 4-5.**
 
 Note: 5 exploratory loss runs (`20260514_145017/160914/191041/214622/234550`,
 focal-off + livable on/off probes on frozen + live LM) predate the clean A4-L1/L2
@@ -124,9 +151,9 @@ runs — superseded, kept for reference only.
 
 ---
 
-# Phase 3 — Graph Pooling
+# Phase 4 — Graph Pooling
 
-`configs/ablation/phase3/` — base A4-L1 (Phase 2 winner). Varies `graph_pool`
+`configs/ablation/phase4/` — base A4-L1 (Phase 3 winner). Varies `graph_pool`
 (function classification representation): mean / gated attention / meanmax
 (0.8·max + 0.6·mean).
 
@@ -148,76 +175,50 @@ and overfits tail classes. Mean and meanmax tie on macro F1 (0.519 vs 0.517) —
 Parameter-free (the max channel sharpens the peak signal without the attention
 gate's overfit).
 
-**Phase 3 winner: meanmax.**
+**Phase 4 winner: meanmax.**
 
 ---
 
-# Phase 4 — Multi-Task / Cross-Task
+# Phase 5 — Multi-Task / Cross-Task
 
-`configs/ablation/phase4/` — bidirectional cross-task between localization
+`configs/ablation/phase5/` — bidirectional cross-task between localization
 (stmt_head) and classification (func_head). Zero-init residual gates
 (ReZero/ControlNet style) — module starts as a no-op.
-**Baseline B1 = A4-L1** (Phase 2 winner, no cross-task).
+**Baseline E0 = A4-L1** (Phase 3 winner, no cross-task).
 
-| ID | Run ID | cross_task_method | Epochs |
-|---|---|---|---|
-| B1 | `20260514_174326_lmgat_codebert_multiclass` | none (= A4-L1 baseline) | 31 |
-| B2 | `20260515_211228_lmgat_codebert_multiclass` | cross_attention | 58 |
-| B3 | `20260516_055225_lmgat_codebert_multiclass` | self_attention | 63 |
-| B4 | `20260516_101335_lmgat_codebert_multiclass` | mmoe | 40 |
+| ID | Run ID | Config | cross_task_method | Epochs |
+|---|---|---|---|---|
+| E0 | `20260514_174326_lmgat_codebert_multiclass` | — | none (= A4-L1 baseline) | 31 |
+| E1 | `20260515_211228_lmgat_codebert_multiclass` | `E1_crossattn.yaml` | cross_attention | 58 |
+| E2 | `20260516_055225_lmgat_codebert_multiclass` | `E2_selfattn.yaml` | self_attention | 63 |
+| E3 | `20260516_101335_lmgat_codebert_multiclass` | `E3_mmoe.yaml` | mmoe | 40 |
+
+(`E4_mmoe_taskenc.yaml`, `E5_mmoe_taskenc_thin.yaml` — pending runs.)
 
 ## Classification
 
 | ID | Method | Val F1 | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. |
 |---|---|---|---|---|---|---|---|
-| B1 | none (A4-L1) | 0.560 | **0.519** | 0.518 | 0.517 | 0.915 | 0.630 |
-| B2 | cross_attention | 0.526 | 0.468 | 0.507 | 0.505 | 0.909 | 0.462 |
-| B3 | self_attention | 0.548 | 0.488 | **0.556** | **0.555** | **0.919** | 0.466 |
-| B4 | mmoe | 0.553 | 0.497 | 0.541 | 0.541 | 0.907 | 0.625 |
+| E0 | none (A4-L1) | 0.560 | **0.519** | 0.518 | 0.517 | 0.915 | 0.630 |
+| E1 | cross_attention | 0.526 | 0.468 | 0.507 | 0.505 | 0.909 | 0.462 |
+| E2 | self_attention | 0.548 | 0.488 | **0.556** | **0.555** | **0.919** | 0.466 |
+| E3 | mmoe | 0.553 | 0.497 | 0.541 | 0.541 | 0.907 | 0.625 |
 
 ## Localization
 
 | ID | Method | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
 |---|---|---|---|---|---|---|---|
-| B1 | none (A4-L1) | **0.789** | **0.887** | 0.965 | **0.238** | **0.403** | **0.031** |
-| B2 | cross_attention | 1.309 | 0.830 | 0.962 | 0.086 | 0.197 | 0.205 |
-| B3 | self_attention | 1.195 | 0.808 | **0.978** | 0.089 | 0.210 | 0.186 |
-| B4 | mmoe | 0.837 | 0.873 | 0.965 | 0.151 | 0.273 | 0.106 |
+| E0 | none (A4-L1) | **0.789** | **0.887** | 0.965 | **0.238** | **0.403** | **0.031** |
+| E1 | cross_attention | 1.309 | 0.830 | 0.962 | 0.086 | 0.197 | 0.205 |
+| E2 | self_attention | 1.195 | 0.808 | **0.978** | 0.089 | 0.210 | 0.186 |
+| E3 | mmoe | 0.837 | 0.873 | 0.965 | 0.151 | 0.273 | 0.106 |
 
-Cross-task **attention** methods (B2, B3) hurt — localization collapsed (R@20%LOC
-halved). MMOE (B4) is the least harmful — IFA near baseline, R@20%LOC above the
-attention methods. Still: **no cross-task method beats the B1 baseline.** Per-statement
-cross-task + line-level transformer encoder variants pending re-run.
+Cross-task **attention** methods (E1, E2) hurt — localization collapsed (R@20%LOC
+halved). MMOE (E3) is the least harmful — IFA near baseline, R@20%LOC above the
+attention methods. Still: **no cross-task method beats the E0 baseline.** Per-statement
+cross-task + line-level transformer encoder variants (E4, E5) pending re-run.
 
-**Phase 4 winner (so far): B1 baseline — cross-task not yet beneficial.**
-
----
-
-# Supplementary — GNN+LM Localization Fusion
-
-Not a numbered phase — a localization-side ablation on the A4-L1 config. Varies
-`stmt_both_mode` (how GNN + LM statement features combine when
-`localization_encoder=both`). concat = baseline. weighted = score-level
-`(1-α)·gnn + α·lm`. gated = per-statement learned gate.
-
-| Variant | Run ID | stmt_both_mode |
-|---|---|---|
-| concat | (= A4-L1, `20260514_174326`) | concat |
-| gated | `20260515_120709_lmgat_codebert_multiclass` | gated |
-| weighted α=0.3 | `20260515_135412_lmgat_codebert_multiclass` | weighted (GNN-leaning) |
-| weighted α=0.5 | `20260515_165955_lmgat_codebert_multiclass` | weighted (balanced) |
-| weighted α=0.7 | `20260515_152942_lmgat_codebert_multiclass` | weighted (LM-leaning) |
-
-| Variant | Test F1 | Test Acc | F1-w | IFA ↓ | Top-1 ↑ | R@20%LOC ↑ |
-|---|---|---|---|---|---|---|
-| concat | **0.519** | 0.518 | 0.517 | 0.789 | 0.887 | 0.403 |
-| gated | 0.483 | 0.526 | 0.525 | 1.138 | 0.851 | **0.422** |
-| weighted α=0.3 | 0.480 | 0.533 | 0.533 | **0.644** | 0.876 | 0.414 |
-| weighted α=0.5 | 0.518 | **0.539** | 0.538 | 1.007 | **0.890** | 0.400 |
-| weighted α=0.7 | 0.515 | 0.515 | 0.514 | 0.947 | 0.832 | 0.357 |
-
-No fusion beats concat on macro F1 (α=0.5 ties). weighted α=0.3 (GNN-leaning) →
-best IFA — a localization-precision knob. concat retained as the default.
+**Phase 5 winner (so far): E0 baseline — cross-task not yet beneficial.**
 
 ---
 

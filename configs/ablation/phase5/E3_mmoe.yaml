@@ -4,7 +4,7 @@
 #         expert pool + per-task gates; matches EDAT's released code).
 #
 # Run (cloud, Linux):
-#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase4/B4_mmoe.yaml
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase5/E3_mmoe.yaml
 
 data:
   source: megavul

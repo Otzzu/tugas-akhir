@@ -1,9 +1,9 @@
-# Phase 1 — A4 ablation: weighted localization both, α=0.7 (LM-leaning).
+# Phase 1 — A4 ablation: weighted localization both, α=0.5 (balanced).
 # Score-level mix: score = (1-α)*head_gnn(gnn) + α*head_lm(lm)
-# α=0.7 favors LM (≈ concat dim ratio 768/1024=0.75; best recall coverage per Phase 1 A3).
+# α=0.5 = equal weight on GNN and LM branches.
 #
 # Run (cloud, Linux):
-#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/fusion/A4_both_weighted_a07.yaml
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase2/B3_both_weighted_a05.yaml
 
 data:
   source: megavul
@@ -24,7 +24,7 @@ model:
   func_max_length: 1024
   localization_encoder: both
   stmt_both_mode: weighted
-  stmt_lm_alpha: 0.7
+  stmt_lm_alpha: 0.5
   hidden_dim: 256
   num_layers: 4
   dropout: 0.3

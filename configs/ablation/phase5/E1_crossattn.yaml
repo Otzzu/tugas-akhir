@@ -1,9 +1,10 @@
-# Phase 1 — A4 ablation: weighted localization both, α=0.5 (balanced).
-# Score-level mix: score = (1-α)*head_gnn(gnn) + α*head_lm(lm)
-# α=0.5 = equal weight on GNN and LM branches.
+# Phase 2 — B2: A4-best (both concat) + cross-task cross-attention.
+# Base: A4 both concat (best all-rounder), epoch_adaptive loss.
+# Varies: cross_task_method = cross_attention (Q from one task, K/V from the
+#         other task's encoder units — decoder-style cross-attention).
 #
 # Run (cloud, Linux):
-#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/fusion/A4_both_weighted_a05.yaml
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase5/E1_crossattn.yaml
 
 data:
   source: megavul
@@ -23,8 +24,9 @@ model:
   add_func_tokens: true
   func_max_length: 1024
   localization_encoder: both
-  stmt_both_mode: weighted
-  stmt_lm_alpha: 0.5
+  stmt_both_mode: concat
+  graph_pool: mean
+  cross_task_method: cross_attention
   hidden_dim: 256
   num_layers: 4
   dropout: 0.3

@@ -1,10 +1,9 @@
-# Phase 2 — B5: A4-best (both concat) + MMOE with per-task encoder.
-# Base: A4 both concat (best all-rounder), epoch_adaptive loss.
-# Varies: cross_task_method = mmoe + mmoe_task_encoder=true (per-task MLP adapter
-#         before the shared experts — EDAT's TaskSpecificEncoder, light variant).
+# Phase 1 — A4 ablation: weighted localization both, α=0.7 (LM-leaning).
+# Score-level mix: score = (1-α)*head_gnn(gnn) + α*head_lm(lm)
+# α=0.7 favors LM (≈ concat dim ratio 768/1024=0.75; best recall coverage per Phase 1 A3).
 #
 # Run (cloud, Linux):
-#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase4/B4_mmoe_taskenc.yaml
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase2/B4_both_weighted_a07.yaml
 
 data:
   source: megavul
@@ -24,10 +23,8 @@ model:
   add_func_tokens: true
   func_max_length: 1024
   localization_encoder: both
-  stmt_both_mode: concat
-  graph_pool: mean
-  cross_task_method: mmoe
-  mmoe_task_encoder: true
+  stmt_both_mode: weighted
+  stmt_lm_alpha: 0.7
   hidden_dim: 256
   num_layers: 4
   dropout: 0.3
