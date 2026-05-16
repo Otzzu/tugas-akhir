@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import global_mean_pool, global_max_pool
+from torch_geometric.nn import global_mean_pool, global_max_pool, global_add_pool
 from torch_geometric.nn.aggr import AttentionalAggregation
 from gnn_vuln.models.base import VulnDetectorBase
 from gnn_vuln.models.encoders import GATEncoder
@@ -28,14 +28,16 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride, use_flash_attention, compile_lm, use_grad_checkpoint, lm_per_line=lm_per_line)
         self._loc_enc = localization_encoder
         self.encoder   = GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout, edge_dim, add_self_loops, use_skip)
-        # Graph-level pooling: mean | meanmax | attention
-        assert graph_pool in ("mean", "meanmax", "attention"), \
-            f"graph_pool must be mean|meanmax|attention, got {graph_pool!r}"
+        # Graph-level pooling: mean | meanmax | attention | dualflow
+        assert graph_pool in ("mean", "meanmax", "attention", "dualflow"), \
+            f"graph_pool must be mean|meanmax|attention|dualflow, got {graph_pool!r}"
         self._graph_pool = graph_pool
         self.attn_pool = (
             AttentionalAggregation(gate_nn=nn.Linear(hidden_dim, 1))
             if graph_pool == "attention" else None
         )
+        # dualflow: per-node suspicion head → focal (suspicion-weighted) + context (mean)
+        self.node_susp = nn.Linear(hidden_dim, 1) if graph_pool == "dualflow" else None
         # Thin head only for in-path MMOE (residual off + mmoe): MMOE's
         # task encoder + shared experts do the adaptation → head can be thin.
         # Attention methods don't carry that adaptation depth → keep fat head.
@@ -63,6 +65,11 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             h_graph = self.attn_pool(h, batch)
         elif self._graph_pool == "meanmax":
             h_graph = 0.8 * global_max_pool(h, batch) + 0.6 * global_mean_pool(h, batch)
+        elif self._graph_pool == "dualflow":
+            # focal: per-node suspicion-weighted pool + context: mean pool
+            s = torch.sigmoid(self.node_susp(h))                      # [N, 1]
+            focal = global_add_pool(h * s, batch) / global_add_pool(s, batch).clamp(min=1e-6)
+            h_graph = focal + global_mean_pool(h, batch)
         else:
             h_graph = global_mean_pool(h, batch)
         B = h_graph.size(0)

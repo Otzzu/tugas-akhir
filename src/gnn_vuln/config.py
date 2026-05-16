@@ -79,6 +79,8 @@ class ModelConfig:
     #   mean      — global mean pool over nodes (default)
     #   meanmax   — 0.8*max + 0.6*mean (parameter-free, peak + context)
     #   attention — gated attention pool: per-node score → softmax → weighted sum
+    #   dualflow  — focal (per-node suspicion-weighted pool) + context (mean);
+    #               single-encoder suspicion head, no two-stage GNN
     # Support: lmgat_codebert
     graph_pool: str = "mean"
     heads: int = 4              # number of GAT attention heads (lmgat* only)
