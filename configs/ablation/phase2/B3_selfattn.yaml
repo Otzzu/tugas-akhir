@@ -42,7 +42,7 @@ model:
 train:
   seed: 42
   epochs: 100
-  batch_size: 16
+  batch_size: 8
   lr: 0.001
   lm_lr: 0.00001
   warmup_ratio: 0.1
@@ -59,7 +59,7 @@ train:
   device: cuda
   use_amp: true
   use_flash_attention: true
-  grad_accum_steps: 2             # batch=16 × 2 = effective 32 (self-attn OOM guard)
+  grad_accum_steps: 4             # batch=8 × 4 = effective 32 (self-attn OOM guard)
   save_last_every: 10
   compile_model: false
   stmt_head_vectorized: true
