@@ -7,8 +7,8 @@ from torch_geometric.nn import global_mean_pool, global_max_pool
 from torch_geometric.nn.aggr import AttentionalAggregation
 from gnn_vuln.models.base import VulnDetectorBase
 from gnn_vuln.models.encoders import GATEncoder
-from gnn_vuln.models.heads import FuncHead, StmtHead
-from gnn_vuln.models.cross_task import build_cross_task, loc_proto_pool
+from gnn_vuln.models.heads import FuncHead, ThinFuncHead, StmtHead
+from gnn_vuln.models.cross_task import build_cross_task, statement_features
 
 NODE_FEAT_DIM = 773
 
@@ -22,7 +22,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  use_grad_checkpoint=True,
                  stmt_both_mode="concat", stmt_lm_alpha=0.5,
                  cross_task_method="none", graph_pool="mean",
-                 mmoe_task_encoder=False):
+                 mmoe_task_encoder=False, cross_task_residual=True):
         super().__init__()
         self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride, use_flash_attention, compile_lm, use_grad_checkpoint)
         self._loc_enc = localization_encoder
@@ -35,7 +35,14 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             AttentionalAggregation(gate_nn=nn.Linear(hidden_dim, 1))
             if graph_pool == "attention" else None
         )
-        self.func_head = FuncHead(hidden_dim + self._lm_dim, hidden_dim, num_classes, dropout)
+        # Thin head only for in-path MMOE (residual off + mmoe): MMOE's
+        # task encoder + shared experts do the adaptation → head can be thin.
+        # Attention methods don't carry that adaptation depth → keep fat head.
+        _fused_dim = hidden_dim + self._lm_dim
+        if cross_task_method == "mmoe" and not cross_task_residual:
+            self.func_head = ThinFuncHead(_fused_dim, num_classes)
+        else:
+            self.func_head = FuncHead(_fused_dim, hidden_dim, num_classes, dropout)
         lm_dim = self._lm_dim if localization_encoder in ("lm", "both") else 0
         self.stmt_head = StmtHead(hidden_dim, lm_dim=lm_dim, localization_encoder=localization_encoder,
                                   both_mode=stmt_both_mode, lm_alpha=stmt_lm_alpha)
@@ -43,7 +50,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         self.cross_task = build_cross_task(
             cross_task_method, hidden_dim + self._lm_dim, hidden_dim, num_classes,
             self._lm_dim, localization_encoder, num_heads,
-            mmoe_task_encoder=mmoe_task_encoder,
+            mmoe_task_encoder=mmoe_task_encoder, residual=cross_task_residual,
         )
 
     def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
@@ -73,14 +80,16 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             )
             return logit, stmt_scores
 
-        # cross_attention | self_attention | mmoe — feature-level conditioning
-        loc_proto = loc_proto_pool(h, batch, node_line, lm_hidden, func_token_lines,
-                                   self._loc_enc, B)
-        if ct in ("cross_attention", "self_attention"):
-            fused_mod, stmt_cond = self.cross_task(fused, loc_proto.detach(), h, batch, B,
-                                                   lm_hidden, func_token_lines)
-        else:  # mmoe
-            fused_mod, stmt_cond = self.cross_task(fused, loc_proto.detach())
+        # cross_attention | self_attention | mmoe — per-statement loc conditioning.
+        # statement_features uses the SAME sid formula as StmtHead → cond [S,
+        # loc_dim] aligns directly with StmtHead's statements.
+        loc_feats, stmt_graph, _ = statement_features(
+            h, batch, node_line, lm_hidden, func_token_lines, self._loc_enc,
+        )
+        fused_mod, stmt_cond = self.cross_task(
+            fused, loc_feats.detach(), stmt_graph, h, batch, B,
+            lm_hidden, func_token_lines,
+        )
         logit = self.func_head(fused_mod)
         stmt_scores = self.stmt_head.score(h, batch, node_line, lm_hidden, func_token_lines, cond=stmt_cond)
         return logit, stmt_scores
@@ -111,5 +120,6 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             stmt_lm_alpha=getattr(cfg.model, "stmt_lm_alpha", 0.5),
             cross_task_method=getattr(cfg.model, "cross_task_method", "none"),
             mmoe_task_encoder=getattr(cfg.model, "mmoe_task_encoder", False),
+            cross_task_residual=getattr(cfg.model, "cross_task_residual", True),
             graph_pool=getattr(cfg.model, "graph_pool", "mean"),
         )

@@ -77,7 +77,7 @@ class StmtHead(nn.Module):
         return (1.0 - α) * s_gnn + α * s_lm
 
     def _cond_parts(self, cond: torch.Tensor | None):
-        """Split cross-task cond [B, loc_dim] into (gnn_part, lm_part) per mode."""
+        """Split cross-task cond [S, loc_dim] (per-statement) into (gnn, lm) parts."""
         if cond is None:
             return None, None
         if self._mode == "gnn":
@@ -119,8 +119,9 @@ class StmtHead(nn.Module):
         func_token_lines: torch.Tensor | None = None,
         cond: torch.Tensor | None = None,
     ) -> list[torch.Tensor]:
-        """cond [B, hidden_dim] — optional per-graph additive conditioning on
-        GNN statement features (Phase 2 cross-task). Applied for modes gnn|both."""
+        """cond [S, loc_dim] — optional per-statement additive conditioning
+        (Phase 2 cross-task). S statements ordered same as unique_sid here, so
+        cond[i] aligns directly with statement i. Mode-aware split inside."""
         if getattr(self, "_vectorized", False):
             return self._score_vectorized(h, batch, node_line, lm_hidden, func_token_lines, cond)
         return self._score_loop(h, batch, node_line, lm_hidden, func_token_lines, cond)
@@ -138,6 +139,7 @@ class StmtHead(nn.Module):
         B = int(batch.max().item()) + 1
         cond_gnn, cond_lm = self._cond_parts(cond)
         result: list[torch.Tensor] = []
+        s_idx = 0   # running global statement index (matches unique_sid order)
         for b in range(B):
             mask = batch == b
             h_b, lines_b = h[mask], node_line[mask]
@@ -158,35 +160,37 @@ class StmtHead(nn.Module):
             for i, line in enumerate(unique_lines):
                 nm = lines_b == line
                 h_l = h_b[nm]
+                cg = cond_gnn[s_idx] if cond_gnn is not None else None
+                cl = cond_lm[s_idx]  if cond_lm  is not None else None
 
                 if self._mode == "gnn":
                     feat_max  = h_l.max(dim=0).values
                     feat_mean = h_l.mean(dim=0)
-                    if cond_gnn is not None:
-                        feat_max  = feat_max  + cond_gnn[b]
-                        feat_mean = feat_mean + cond_gnn[b]
+                    if cg is not None:
+                        feat_max  = feat_max  + cg
+                        feat_mean = feat_mean + cg
                     s = _ALPHA_MAX * self.max_head(feat_max.float()) + _ALPHA_MEAN * self.mean_head(feat_mean.float())
                 elif self._mode == "lm":
                     feat_max  = lm_max_emb[i]  if lm_max_emb  is not None else h_l.max(dim=0).values
                     feat_mean = lm_mean_emb[i] if lm_mean_emb is not None else h_l.mean(dim=0)
-                    if cond_lm is not None and lm_max_emb is not None:
-                        feat_max  = feat_max  + cond_lm[b]
-                        feat_mean = feat_mean + cond_lm[b]
+                    if cl is not None and lm_max_emb is not None:
+                        feat_max  = feat_max  + cl
+                        feat_mean = feat_mean + cl
                     s = _ALPHA_MAX * self.max_head(feat_max.float()) + _ALPHA_MEAN * self.mean_head(feat_mean.float())
                 else:
                     gnn_max  = h_l.max(dim=0).values
                     gnn_mean = h_l.mean(dim=0)
-                    if cond_gnn is not None:
-                        gnn_max  = gnn_max  + cond_gnn[b]
-                        gnn_mean = gnn_mean + cond_gnn[b]
+                    if cg is not None:
+                        gnn_max  = gnn_max  + cg
+                        gnn_mean = gnn_mean + cg
                     if lm_max_emb is None:
                         s = _ALPHA_MAX * self.max_head(gnn_max.float()) + _ALPHA_MEAN * self.mean_head(gnn_mean.float()) if self._both_mode == "concat" else \
                             _ALPHA_MAX * self.max_head_gnn(gnn_max.float()) + _ALPHA_MEAN * self.mean_head_gnn(gnn_mean.float())
                     else:
                         lm_mx, lm_mn = lm_max_emb[i], lm_mean_emb[i]
-                        if cond_lm is not None:
-                            lm_mx = lm_mx + cond_lm[b]
-                            lm_mn = lm_mn + cond_lm[b]
+                        if cl is not None:
+                            lm_mx = lm_mx + cl
+                            lm_mn = lm_mn + cl
                         if self._both_mode == "concat":
                             feat_max  = torch.cat([gnn_max,  lm_mx])
                             feat_mean = torch.cat([gnn_mean, lm_mn])
@@ -196,6 +200,7 @@ class StmtHead(nn.Module):
                             s_mean = self._score_both(gnn_mean.unsqueeze(0), lm_mn.unsqueeze(0), "mean").squeeze(0)
                             s = _ALPHA_MAX * s_max + _ALPHA_MEAN * s_mean
                 scores.append(s.squeeze(-1))
+                s_idx += 1
             result.append(torch.stack(scores))
         return result
 
@@ -243,9 +248,9 @@ class StmtHead(nn.Module):
             cnt_gnn.scatter_add_(0, inv.unsqueeze(1), torch.ones(h_v.shape[0], 1, device=device, dtype=h_v.dtype))
             gnn_mean = gnn_sum / cnt_gnn.clamp(min=1)
 
-            # Phase 2 cross-task: per-graph additive conditioning on GNN feats
+            # Phase 2 cross-task: per-statement additive conditioning on GNN feats
             if cond_gnn is not None:
-                g = cond_gnn[stmt_graph].to(gnn_max.dtype)   # [S, D]
+                g = cond_gnn.to(gnn_max.dtype)               # [S, D] — already per-stmt
                 gnn_max  = gnn_max  + g
                 gnn_mean = gnn_mean + g
 
@@ -291,9 +296,9 @@ class StmtHead(nn.Module):
                 LM_D = lm_hidden.shape[-1]
                 lm_max = lm_mean = torch.zeros(S, LM_D, device=device, dtype=lm_hidden.dtype)
 
-        # Phase 2 cross-task: per-graph additive conditioning on LM feats
+        # Phase 2 cross-task: per-statement additive conditioning on LM feats
         if cond_lm is not None and lm_max is not None:
-            l = cond_lm[stmt_graph].to(lm_max.dtype)     # [S, LM_D]
+            l = cond_lm.to(lm_max.dtype)                 # [S, LM_D] — already per-stmt
             lm_max  = lm_max  + l
             lm_mean = lm_mean + l
 
@@ -409,6 +414,21 @@ class SmallFuncHead(nn.Module):
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim // 2, num_classes),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x.float())
+
+
+class ThinFuncHead(nn.Module):
+    """Thin classifier: LayerNorm→Linear (EDAT-style — used when an upstream
+    in-path cross-task module already did the task adaptation)."""
+
+    def __init__(self, in_dim: int, num_classes: int):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.LayerNorm(in_dim),
+            nn.Linear(in_dim, num_classes),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

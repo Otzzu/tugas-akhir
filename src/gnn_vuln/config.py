@@ -115,6 +115,12 @@ class ModelConfig:
     # encoder (Linear→LN→ReLU→Dropout→Linear) — EDAT's TaskSpecificEncoder, light
     # variant. Gives each task a private adapter before the shared experts.
     mmoe_task_encoder: bool = False
+    # Cross-task fusion mode (ablation):
+    #   true  — gated residual side-branch: fused_mod = fused + γ·cross
+    #           (γ zero-init, baseline-safe); func_head stays the fat MLP.
+    #   false — in-path replace: fused_mod = cross (no residual, no gate);
+    #           func_head simplified to LayerNorm+Linear (EDAT-style thin head).
+    cross_task_residual: bool = True
     # ── Statement localization "both" mode ────────────────────────────────────
     # Only used when localization_encoder="both". Controls how GNN + LM features combine.
     #   concat   — torch.cat([gnn, lm]) (legacy, LM dim dominates GNN by 3:1 on UniXcoder)

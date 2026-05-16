@@ -147,6 +147,70 @@ Baseline = A4-L1 (concat). weighted = score-level `(1-α)·gnn + α·lm`. gated 
 
 No fusion beats concat on macro F1 (α=0.5 ties). Fusion lifts accuracy (α=0.5 → 0.539). weighted α=0.3 (GNN-leaning) → best IFA 0.644 — a localization-precision knob. gated underperforms. Concat = best all-rounder for classification + localization.
 
+## Graph Pooling Ablation (A4 both, epoch_adaptive loss)
+
+`localization_encoder=both`, `stmt_both_mode=concat` — varies `graph_pool` (function
+classification representation): mean pool vs gated attention pool.
+
+| Variant | Run ID | graph_pool | Epochs |
+|---|---|---|---|
+| mean | `20260514_174326_lmgat_codebert_multiclass` | mean | 31 |
+| attention | `20260515_235912_lmgat_codebert_multiclass` | attention | 50 |
+
+| Variant | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@20%LOC ↑ |
+|---|---|---|---|---|---|---|---|---|---|
+| mean | **0.519** | 0.518 | 0.517 | **0.915** | 0.630 | **0.789** | **0.887** | 0.965 | 0.403 |
+| attention | 0.437 | 0.522 | 0.523 | 0.895 | 0.625 | 1.253 | 0.805 | 0.943 | **0.439** |
+
+Attention pool collapses macro F1 (−0.082) while weighted-F1/accuracy stay flat —
+the learnable gate over-parameterizes and overfits tail classes (few samples).
+Localization also worse (IFA 0.789→1.253). Mean pool (parameter-free) retained.
+
+## Phase 2 — Cross-Task Ablation (A4 both concat, epoch_adaptive loss)
+
+Bidirectional cross-task between localization (stmt_head) and classification
+(func_head). Zero-init residual gates (ReZero/ControlNet style) — module starts
+as a no-op, baseline-equivalent at init.
+**Baseline B1 = A4-L1** (`20260514_174326`, the best Phase 1 model: A4 both concat,
+epoch_adaptive loss, no cross-task).
+
+| ID | Run ID | cross_task_method | Epochs |
+|---|---|---|---|
+| B1 | `20260514_174326_lmgat_codebert_multiclass` | none (= A4-L1 baseline) | 31 |
+| B2 | `20260515_211228_lmgat_codebert_multiclass` | cross_attention | 58 |
+| B3 | `20260516_055225_lmgat_codebert_multiclass` | self_attention | 63 |
+| B4 | `20260516_101335_lmgat_codebert_multiclass` | mmoe | 40 |
+
+### Classification
+
+| ID | Method | Val F1 | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. |
+|---|---|---|---|---|---|---|---|
+| B1 | none (A4-L1) | 0.560 | **0.519** | 0.518 | 0.517 | 0.915 | 0.630 |
+| B2 | cross_attention | 0.526 | 0.468 | 0.507 | 0.505 | 0.909 | 0.462 |
+| B3 | self_attention | 0.548 | 0.488 | **0.556** | **0.555** | **0.919** | 0.466 |
+| B4 | mmoe | 0.553 | 0.497 | 0.541 | 0.541 | 0.907 | 0.625 |
+
+### Localization
+
+| ID | Method | IFA ↓ | Top-1 ↑ | Top-3 ↑ | Top-5 ↑ | Top-10 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+|---|---|---|---|---|---|---|---|---|---|
+| B1 | none (A4-L1) | **0.789** | **0.887** | 0.955 | 0.965 | 0.984 | **0.238** | **0.403** | **0.031** |
+| B2 | cross_attention | 1.309 | 0.830 | 0.943 | 0.962 | 0.978 | 0.086 | 0.197 | 0.205 |
+| B3 | self_attention | 1.195 | 0.808 | 0.944 | **0.978** | **0.991** | 0.089 | 0.210 | 0.186 |
+| B4 | mmoe | 0.837 | 0.873 | 0.950 | 0.965 | 0.981 | 0.151 | 0.273 | 0.106 |
+
+Both cross-task **attention** methods (B2, B3) hurt — localization collapsed
+(R@20%LOC halved, 0.403→0.20), the `stmt_cond` conditioning corrupts per-statement
+features. cross_attention worse everywhere; self_attention trades tail for head
+(acc/F1-w up, macro F1 down).
+
+**MMOE (B4) is the least harmful** — IFA 0.837 (near baseline 0.789, vs 1.2-1.3 for
+attention), R@20%LOC 0.273 (still down from 0.403 but far above the attention
+methods' 0.20). Shared-expert routing degrades localization less than feature
+conditioning. Still: macro F1 0.497 < baseline 0.519, R@20%LOC below baseline —
+**no cross-task method beats the baseline.** Zero-init gate prevented divergence
+across all three but couldn't make coupling helpful.
+
 ## Training Efficiency
 
 GPU: RTX 5070 Ti
@@ -164,3 +228,7 @@ GPU: RTX 5070 Ti
 | weighted α=0.3 | 129.6M | 162s | 1.53 | — |
 | weighted α=0.5 | 129.6M | 162s | 1.75 | — |
 | weighted α=0.7 | 129.6M | 162s | 1.44 | — |
+| attn pool | 129.6M | 162s | 2.25 | 7.4 GB |
+| B2 cross_attn | 129.6M | 169s | 2.72 | — |
+| B3 self_attn | 129.6M | 245s | 4.29 | — |
+| B4 mmoe | 129.6M | 165s | 1.83 | — |

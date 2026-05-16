@@ -1,22 +1,20 @@
 """cross_task.py — Phase 2 bidirectional cross-task modules for lmgat_codebert.
 
-Makes localization (stmt_head) and classification (func_head) inform each other.
-Cross-signals are detached: each head trains on its own loss, the cross path
-shares information forward only — no gradient loop between the two tasks.
+Localization is **per-statement** (per-line) — like EDAT's per-line MMOE. The
+cross-task conditions each statement individually; it does NOT collapse the
+localization view to a per-graph vector. Classification stays per-graph.
 
-All modules are localization-encoder aware. The localization "view" handed to
-the classifier (loc_proto, attention K/V) uses the same encoder(s) the
-stmt_head scores on:
-  gnn  → GNN node features          (dim = hidden)
-  lm   → LM token hidden states     (dim = lm_dim)
-  both → GNN + LM concatenated      (dim = hidden + lm_dim)
+Each module forward:
+    forward(fused, loc_feats, stmt_graph, h, batch, B, lm_hidden, func_token_lines)
+      fused      [B, fused_dim]  — classification representation (per-graph)
+      loc_feats  [S, loc_dim]    — per-statement localization features
+      stmt_graph [S]             — graph index of each statement
+    returns (fused_mod [B, fused_dim], stmt_cond [S, loc_dim])
 
 Methods (config `cross_task_method`):
-  cross_attention — Q from one task, K/V from the other task's encoder units
-  self_attention  — EDAT-style: self-attention over own encoder units, query
-                    biased by the other task's signal
-  mmoe            — Multi-gate Mixture-of-Experts (Ma et al. 2018): shared expert
-                    pool, per-task gates. Matches EDAT's released code.
+  cross_attention — decoder cross-attention (statement ↔ nodes, fused ↔ statements)
+  self_attention  — EDAT-style: statements self-attend, query biased by classification
+  mmoe            — Multi-gate Mixture-of-Experts (Ma et al. 2018) — EDAT's code
 """
 from __future__ import annotations
 
@@ -24,9 +22,11 @@ import torch
 import torch.nn as nn
 from torch_geometric.utils import to_dense_batch
 
+_MAX_LINE = 100_000   # must match StmtHead's statement-id formula
+
 
 def loc_dim(mode: str, hidden_dim: int, lm_dim: int) -> int:
-    """Dimension of the localization-view representation for a given mode."""
+    """Dimension of the per-statement localization representation."""
     if mode == "gnn":
         return hidden_dim
     if mode == "lm":
@@ -34,67 +34,103 @@ def loc_dim(mode: str, hidden_dim: int, lm_dim: int) -> int:
     return hidden_dim + lm_dim   # both
 
 
-def loc_proto_pool(
+def statement_features(
     h: torch.Tensor,
     batch: torch.Tensor,
     node_line: torch.Tensor,
     lm_hidden: torch.Tensor | None,
     func_token_lines: torch.Tensor | None,
     mode: str,
-    B: int,
-) -> torch.Tensor:
-    """Per-graph pooled localization-view representation → [B, loc_dim(mode)].
+) -> tuple[torch.Tensor, torch.Tensor, int]:
+    """Per-statement mean-pooled localization features.
 
-    Pools the same encoder(s) the stmt_head scores on. Independent of stmt_head
-    output, so it can feed the classifier without a circular dependency.
+    Returns (feats [S, loc_dim], stmt_graph [S], B). S statements are ordered by
+    sorted (graph, line) — identical ordering to StmtHead's vectorized scorer, so
+    a [S]-indexed cond aligns directly with StmtHead's statements.
     """
     device = h.device
+    B = int(batch.max().item()) + 1
+    valid = node_line >= 0
+    if not valid.any():
+        ld = loc_dim(mode, h.shape[1],
+                     lm_hidden.shape[-1] if lm_hidden is not None else 0)
+        return (torch.zeros(0, ld, device=device),
+                torch.zeros(0, dtype=torch.long, device=device), B)
+
+    hv, lv, bv = h[valid], node_line[valid], batch[valid]
+    sid = bv * _MAX_LINE + lv
+    unique_sid, inv = torch.unique(sid, sorted=True, return_inverse=True)
+    S = unique_sid.shape[0]
+    stmt_graph = unique_sid // _MAX_LINE
+
     parts: list[torch.Tensor] = []
 
     if mode in ("gnn", "both"):
         D = h.shape[1]
-        proto = torch.zeros(B, D, device=device, dtype=h.dtype)
-        valid = node_line >= 0
-        if valid.any():
-            hv, bv = h[valid], batch[valid]
-            cnt = torch.zeros(B, 1, device=device, dtype=h.dtype)
-            proto.scatter_add_(0, bv.unsqueeze(1).expand(-1, D), hv)
-            cnt.scatter_add_(0, bv.unsqueeze(1),
-                             torch.ones(hv.shape[0], 1, device=device, dtype=h.dtype))
-            proto = proto / cnt.clamp(min=1)
-        parts.append(proto)
+        gsum = torch.zeros(S, D, device=device, dtype=hv.dtype)
+        gcnt = torch.zeros(S, 1, device=device, dtype=hv.dtype)
+        gsum.scatter_add_(0, inv.unsqueeze(1).expand(-1, D), hv)
+        gcnt.scatter_add_(0, inv.unsqueeze(1),
+                          torch.ones(hv.shape[0], 1, device=device, dtype=hv.dtype))
+        parts.append(gsum / gcnt.clamp(min=1))
 
     if mode in ("lm", "both"):
         LM_D = lm_hidden.shape[-1]
+        lm_feat = torch.zeros(S, LM_D, device=device, dtype=lm_hidden.dtype)
         if func_token_lines is not None:
-            vmask = (func_token_lines >= 0).unsqueeze(-1).to(lm_hidden.dtype)   # [B,L,1]
-        else:
-            vmask = torch.ones(*lm_hidden.shape[:2], 1, device=device, dtype=lm_hidden.dtype)
-        cnt = vmask.sum(dim=1).clamp(min=1)                                    # [B,1]
-        proto_lm = (lm_hidden * vmask).sum(dim=1) / cnt                        # [B,LM_D]
-        parts.append(proto_lm)
+            L = lm_hidden.shape[1]
+            g_tok = torch.arange(B, device=device).unsqueeze(1).expand(-1, L).reshape(-1)
+            tl_tok = func_token_lines.reshape(-1)
+            lm_flat = lm_hidden.reshape(-1, LM_D)
+            vt = tl_tok >= 0
+            if vt.any():
+                g_tok, tl_tok, lm_flat = g_tok[vt], tl_tok[vt], lm_flat[vt]
+                tsid = g_tok * _MAX_LINE + tl_tok
+                u_tsid, inv_t = torch.unique(tsid, sorted=True, return_inverse=True)
+                ST = u_tsid.shape[0]
+                ssum = torch.zeros(ST, LM_D, device=device, dtype=lm_flat.dtype)
+                scnt = torch.zeros(ST, 1, device=device, dtype=lm_flat.dtype)
+                ssum.scatter_add_(0, inv_t.unsqueeze(1).expand(-1, LM_D), lm_flat)
+                scnt.scatter_add_(0, inv_t.unsqueeze(1),
+                                  torch.ones(lm_flat.shape[0], 1, device=device, dtype=lm_flat.dtype))
+                lm_mean = ssum / scnt.clamp(min=1)
+                pos = torch.searchsorted(u_tsid, unique_sid).clamp(0, ST - 1)
+                found = u_tsid[pos] == unique_sid
+                lm_feat[found] = lm_mean[pos[found]]
+        parts.append(lm_feat)
 
-    return torch.cat(parts, dim=-1)
+    return torch.cat(parts, dim=-1), stmt_graph, B
+
+
+def _pool_to_graph(feats: torch.Tensor, stmt_graph: torch.Tensor, B: int) -> torch.Tensor:
+    """Per-statement [S, d] → per-graph mean [B, d]."""
+    device, d = feats.device, feats.shape[1]
+    g = torch.zeros(B, d, device=device, dtype=feats.dtype)
+    c = torch.zeros(B, 1, device=device, dtype=feats.dtype)
+    if feats.shape[0] > 0:
+        g.scatter_add_(0, stmt_graph.unsqueeze(1).expand(-1, d), feats)
+        c.scatter_add_(0, stmt_graph.unsqueeze(1),
+                       torch.ones(feats.shape[0], 1, device=device, dtype=feats.dtype))
+    return g / c.clamp(min=1)
 
 
 class MMOECrossTask(nn.Module):
     """Multi-gate Mixture-of-Experts (Ma et al. 2018, KDD) — matches EDAT's code.
 
-    Shared expert MLP pool; one softmax gate per task. Each task projects its
-    own representation in, runs the shared experts, blends via its own gate.
-    Cross-task transfer = the shared experts are trained by both losses.
+    Shared expert MLP pool; one softmax gate per task. Classification runs the
+    experts per-graph, localization runs them per-statement. Cross-task transfer
+    = the shared experts are trained by both losses.
     """
 
     def __init__(self, fused_dim: int, hidden_dim: int, lm_dim: int, mode: str,
                  expert_num: int = 4, expert_dim: int | None = None,
-                 task_encoder: bool = False):
+                 task_encoder: bool = False, residual: bool = True):
         super().__init__()
+        self._residual = residual
         ld = loc_dim(mode, hidden_dim, lm_dim)
         D = expert_dim or hidden_dim
 
         def _proj(in_dim: int) -> nn.Module:
-            # task_encoder: per-task MLP adapter (EDAT TaskSpecificEncoder, light).
-            # else: single Linear projection.
             if task_encoder:
                 return nn.Sequential(
                     nn.Linear(in_dim, D), nn.LayerNorm(D), nn.ReLU(),
@@ -114,213 +150,187 @@ class MMOECrossTask(nn.Module):
         self.gate_loc = nn.Linear(D, expert_num)
         self.cls_out = nn.Linear(D, fused_dim)
         self.loc_out = nn.Linear(D, ld)
-        # Zero-init residual gates (ReZero / ControlNet style): no-op at init.
         self.res_gate_cls = nn.Parameter(torch.zeros(1))
         self.res_gate_loc = nn.Parameter(torch.zeros(1))
 
     def _moe(self, x: torch.Tensor, gate: nn.Module) -> torch.Tensor:
-        """x [B,D] → gated expert mixture [B,D]."""
-        experts = torch.stack([ex(x) for ex in self.experts], dim=1)   # [B,N,D]
-        weights = torch.softmax(gate(x), dim=-1).unsqueeze(-1)         # [B,N,1]
-        return (experts * weights).sum(dim=1)                          # [B,D]
+        """x [*, D] → gated expert mixture [*, D] (works per-graph or per-statement)."""
+        experts = torch.stack([ex(x) for ex in self.experts], dim=1)   # [*,N,D]
+        weights = torch.softmax(gate(x), dim=-1).unsqueeze(-1)         # [*,N,1]
+        return (experts * weights).sum(dim=1)
 
-    def forward(self, fused: torch.Tensor,
-                loc_proto: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """fused [B, fused_dim], loc_proto [B, loc_dim] (detached by caller).
-
-        Returns (fused_mod [B, fused_dim], stmt_cond [B, loc_dim]).
-        """
-        x_cls = self.cls_in(fused.float())
-        x_loc = self.loc_in(loc_proto.float())
-        out_cls = self._moe(x_cls, self.gate_cls)
-        out_loc = self._moe(x_loc, self.gate_loc)
-        fused_mod = fused + self.res_gate_cls * self.cls_out(out_cls)
-        stmt_cond = self.res_gate_loc * self.loc_out(out_loc)
+    def forward(self, fused, loc_feats, stmt_graph, h, batch, B,
+                lm_hidden, func_token_lines):
+        cross_c = self.cls_out(self._moe(self.cls_in(fused.float()), self.gate_cls))
+        cross_l = self.loc_out(self._moe(self.loc_in(loc_feats.float()), self.gate_loc))
+        if self._residual:
+            fused_mod = fused + self.res_gate_cls * cross_c
+            stmt_cond = self.res_gate_loc * cross_l
+        else:
+            fused_mod = cross_c
+            stmt_cond = cross_l
         return fused_mod, stmt_cond
 
 
 class CrossTaskAttn(nn.Module):
-    """B4 — cross-task attention. Encoder units = K/V, task protos = swapped queries.
+    """Decoder-style cross-attention, per-statement localization.
 
-    One attention per encoder source (GNN nodes, LM tokens) per the localization
-    mode. cls_from_loc / loc_from_cls results are concatenated to dim loc_dim.
+    loc direction: each statement queries its graph's encoder units (nodes / LM
+                   tokens) → per-statement conditioning.
+    cls direction: the fused vector queries the graph's statements → per-graph.
     """
 
     def __init__(self, fused_dim: int, hidden_dim: int, lm_dim: int,
-                 mode: str, num_heads: int = 4):
+                 mode: str, num_heads: int = 4, residual: bool = True):
         super().__init__()
         self._mode = mode
+        self._residual = residual
         ld = loc_dim(mode, hidden_dim, lm_dim)
-        if mode in ("gnn", "both"):
-            self.q_loc_g = nn.Linear(ld, hidden_dim)
-            self.q_cls_g = nn.Linear(fused_dim, hidden_dim)
-            self.attn_g  = nn.MultiheadAttention(hidden_dim, num_heads, batch_first=True)
-        if mode in ("lm", "both"):
-            self.q_loc_l = nn.Linear(ld, lm_dim)
-            self.q_cls_l = nn.Linear(fused_dim, lm_dim)
-            self.attn_l  = nn.MultiheadAttention(lm_dim, num_heads, batch_first=True)
-        self.to_cls = nn.Linear(ld, fused_dim)
-        # Zero-init residual gates (ReZero / ControlNet style): start at 0 so the
-        # module is a no-op at init — training begins from the proven baseline.
+        self._ld = ld
+        A = hidden_dim                                  # internal attention dim
+        self._A = A
+        # loc direction — statement query, encoder-unit K/V
+        self.q_stmt   = nn.Linear(ld, A)
+        self.kv_node  = nn.Linear(hidden_dim, A) if mode in ("gnn", "both") else None
+        self.kv_tok   = nn.Linear(lm_dim, A)     if mode in ("lm", "both")  else None
+        self.attn_loc = nn.MultiheadAttention(A, num_heads, batch_first=True)
+        self.loc_out  = nn.Linear(A, ld)
+        # cls direction — fused query, statement K/V
+        self.q_fused  = nn.Linear(fused_dim, A)
+        self.kv_stmt  = nn.Linear(ld, A)
+        self.attn_cls = nn.MultiheadAttention(A, num_heads, batch_first=True)
+        self.to_cls   = nn.Linear(A, fused_dim)
         self.gate_cls = nn.Parameter(torch.zeros(1))
         self.gate_loc = nn.Parameter(torch.zeros(1))
 
-    def forward(self, fused: torch.Tensor, loc_proto: torch.Tensor,
-                h: torch.Tensor, batch: torch.Tensor, B: int,
-                lm_hidden: torch.Tensor | None,
-                func_token_lines: torch.Tensor | None
-                ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Returns (fused_mod [B, fused_dim], stmt_cond [B, loc_dim])."""
-        # MultiheadAttention requires q/k/v + its fp32 weights to share dtype;
-        # under AMP lm_hidden/h may be bf16 → cast all attention inputs to fp32.
+    def forward(self, fused, loc_feats, stmt_graph, h, batch, B,
+                lm_hidden, func_token_lines):
         fused = fused.float()
-        loc_proto = loc_proto.float()
+        loc_feats = loc_feats.float()
         h = h.float()
         if lm_hidden is not None:
             lm_hidden = lm_hidden.float()
-        cls_parts: list[torch.Tensor] = []
-        loc_parts: list[torch.Tensor] = []
-        loc_q = loc_proto.detach()
-        cls_q = fused.detach()
+        S = loc_feats.shape[0]
 
-        if self._mode in ("gnn", "both"):
-            kv, mask = to_dense_batch(h, batch, batch_size=B)        # [B,Nmax,H]
-            key_pad = ~mask
-            cls_g, _ = self.attn_g(self.q_loc_g(loc_q).unsqueeze(1), kv, kv,
-                                   key_padding_mask=key_pad, need_weights=False)
-            loc_g, _ = self.attn_g(self.q_cls_g(cls_q).unsqueeze(1), kv, kv,
-                                   key_padding_mask=key_pad, need_weights=False)
-            cls_parts.append(cls_g.squeeze(1))
-            loc_parts.append(loc_g.squeeze(1))
+        # dense statement tensors (shared by both directions)
+        stmt_dense, stmt_mask = to_dense_batch(loc_feats, stmt_graph, batch_size=B)  # [B,Sm,ld]
 
-        if self._mode in ("lm", "both"):
-            kv = lm_hidden                                          # [B,L,LM_D]
+        # ── loc direction: statements query encoder units → per-statement ──
+        q = self.q_stmt(stmt_dense)                                     # [B,Sm,A]
+        kv_parts, kpad_parts = [], []
+        if self.kv_node is not None:
+            kvn, nmask = to_dense_batch(h, batch, batch_size=B)
+            kv_parts.append(self.kv_node(kvn))
+            kpad_parts.append(~nmask)
+        if self.kv_tok is not None:
+            kvt = lm_hidden
             if func_token_lines is not None:
-                key_pad = func_token_lines < 0                      # True = pad/special
-                # guard: a row with no valid token would NaN — keep at least one key
-                all_pad = key_pad.all(dim=1)
-                if all_pad.any():
-                    key_pad = key_pad.clone()
-                    key_pad[all_pad, 0] = False
+                tpad = func_token_lines < 0
+                allp = tpad.all(dim=1)
+                if allp.any():
+                    tpad = tpad.clone(); tpad[allp, 0] = False
             else:
-                key_pad = None
-            cls_l, _ = self.attn_l(self.q_loc_l(loc_q).unsqueeze(1), kv, kv,
-                                   key_padding_mask=key_pad, need_weights=False)
-            loc_l, _ = self.attn_l(self.q_cls_l(cls_q).unsqueeze(1), kv, kv,
-                                   key_padding_mask=key_pad, need_weights=False)
-            cls_parts.append(cls_l.squeeze(1))
-            loc_parts.append(loc_l.squeeze(1))
+                tpad = torch.zeros(*lm_hidden.shape[:2], dtype=torch.bool, device=h.device)
+            kv_parts.append(self.kv_tok(kvt))
+            kpad_parts.append(tpad)
+        kv = torch.cat(kv_parts, dim=1)                                 # [B,Σ,A]
+        kpad = torch.cat(kpad_parts, dim=1)
+        loc_ref, _ = self.attn_loc(q, kv, kv,
+                                   key_padding_mask=kpad, need_weights=False)  # [B,Sm,A]
+        stmt_cond = self.loc_out(loc_ref)[stmt_mask]                    # [S, ld]
 
-        cls_from_loc = torch.cat(cls_parts, dim=-1)                 # [B, loc_dim]
-        stmt_cond    = torch.cat(loc_parts, dim=-1)                 # [B, loc_dim]
-        fused_mod = fused + self.gate_cls * self.to_cls(cls_from_loc)
-        stmt_cond = self.gate_loc * stmt_cond
+        # ── cls direction: fused queries the graph's statements → per-graph ──
+        q_c = self.q_fused(fused).unsqueeze(1)                          # [B,1,A]
+        kv_s = self.kv_stmt(stmt_dense)                                 # [B,Sm,A]
+        empty = ~stmt_mask.any(dim=1)
+        kpad_s = ~stmt_mask
+        if empty.any():
+            kpad_s = kpad_s.clone(); kpad_s[empty, 0] = False
+        cls_ref, _ = self.attn_cls(q_c, kv_s, kv_s,
+                                   key_padding_mask=kpad_s, need_weights=False)
+        cross_c = self.to_cls(cls_ref.squeeze(1))                       # [B, fused_dim]
+
+        if self._residual:
+            fused_mod = fused + self.gate_cls * cross_c
+            stmt_cond = self.gate_loc * stmt_cond
+        else:
+            fused_mod = cross_c
         return fused_mod, stmt_cond
 
 
 class SelfAttnCrossTask(nn.Module):
-    """B4-alt — EDAT-style cross-task self-attention.
+    """EDAT-style — statements self-attend within their graph, query biased by
+    the classification signal. Mirrors EDAT's line_level_encoder (lines attend
+    each other) at per-statement granularity.
 
-    Self-attention over a task's own encoder units; the query is biased by the
-    OTHER task's signal:  Q = units + bias(other),  K = V = units.
-    Refined units are masked-mean pooled per graph. Mirrors EDAT's task-aware
-    attention fusion (query bias) rather than decoder-style cross-attention.
+    loc direction: statements self-attend (query biased by fused) → per-statement.
+    cls direction: statements self-attend (query biased by nothing extra), then
+                   pool per graph → per-graph classification signal.
     """
 
     def __init__(self, fused_dim: int, hidden_dim: int, lm_dim: int,
-                 mode: str, num_heads: int = 4):
+                 mode: str, num_heads: int = 4, residual: bool = True):
         super().__init__()
         self._mode = mode
+        self._residual = residual
         ld = loc_dim(mode, hidden_dim, lm_dim)
-        if mode in ("gnn", "both"):
-            self.bias_loc_g = nn.Linear(ld, hidden_dim)         # loc signal → cls-dir bias
-            self.bias_cls_g = nn.Linear(fused_dim, hidden_dim)  # cls signal → loc-dir bias
-            self.attn_g = nn.MultiheadAttention(hidden_dim, num_heads, batch_first=True)
-        if mode in ("lm", "both"):
-            self.bias_loc_l = nn.Linear(ld, lm_dim)
-            self.bias_cls_l = nn.Linear(fused_dim, lm_dim)
-            self.attn_l = nn.MultiheadAttention(lm_dim, num_heads, batch_first=True)
-        self.to_cls = nn.Linear(ld, fused_dim)
-        # Zero-init residual gates (ReZero / ControlNet style): no-op at init.
+        self._ld = ld
+        A = hidden_dim
+        self.stmt_in  = nn.Linear(ld, A)
+        self.bias_cls = nn.Linear(fused_dim, A)        # cls signal → query bias
+        self.attn     = nn.MultiheadAttention(A, num_heads, batch_first=True)
+        self.loc_out  = nn.Linear(A, ld)
+        self.to_cls   = nn.Linear(A, fused_dim)
         self.gate_cls = nn.Parameter(torch.zeros(1))
         self.gate_loc = nn.Parameter(torch.zeros(1))
 
-    @staticmethod
-    def _masked_mean(x: torch.Tensor, valid: torch.Tensor) -> torch.Tensor:
-        """x [B,N,D], valid [B,N,1] → [B,D]."""
-        return (x * valid).sum(dim=1) / valid.sum(dim=1).clamp(min=1)
-
-    def forward(self, fused: torch.Tensor, loc_proto: torch.Tensor,
-                h: torch.Tensor, batch: torch.Tensor, B: int,
-                lm_hidden: torch.Tensor | None,
-                func_token_lines: torch.Tensor | None
-                ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Returns (fused_mod [B, fused_dim], stmt_cond [B, loc_dim])."""
-        # MultiheadAttention requires q/k/v + its fp32 weights to share dtype;
-        # under AMP lm_hidden/h may be bf16 → cast all attention inputs to fp32.
+    def forward(self, fused, loc_feats, stmt_graph, h, batch, B,
+                lm_hidden, func_token_lines):
         fused = fused.float()
-        loc_proto = loc_proto.float()
-        h = h.float()
-        if lm_hidden is not None:
-            lm_hidden = lm_hidden.float()
-        cls_parts: list[torch.Tensor] = []
-        loc_parts: list[torch.Tensor] = []
-        loc_sig = loc_proto.detach()
-        cls_sig = fused.detach()
+        loc_feats = loc_feats.float()
 
-        if self._mode in ("gnn", "both"):
-            kv, mask = to_dense_batch(h, batch, batch_size=B)        # [B,N,H]
-            key_pad = ~mask
-            mf = mask.unsqueeze(-1).to(kv.dtype)
-            # cls direction: own units, query biased by loc signal
-            q_c = kv + self.bias_loc_g(loc_sig).unsqueeze(1)
-            ref_c, _ = self.attn_g(q_c, kv, kv, key_padding_mask=key_pad, need_weights=False)
-            cls_parts.append(self._masked_mean(ref_c, mf))
-            # loc direction: own units, query biased by cls signal
-            q_l = kv + self.bias_cls_g(cls_sig).unsqueeze(1)
-            ref_l, _ = self.attn_g(q_l, kv, kv, key_padding_mask=key_pad, need_weights=False)
-            loc_parts.append(self._masked_mean(ref_l, mf))
+        stmt_dense, stmt_mask = to_dense_batch(loc_feats, stmt_graph, batch_size=B)  # [B,Sm,ld]
+        units = self.stmt_in(stmt_dense)                                # [B,Sm,A]
+        kpad = ~stmt_mask
+        empty = ~stmt_mask.any(dim=1)
+        if empty.any():
+            kpad = kpad.clone(); kpad[empty, 0] = False
+        mf = stmt_mask.unsqueeze(-1).to(units.dtype)
 
-        if self._mode in ("lm", "both"):
-            kv = lm_hidden                                          # [B,L,LM_D]
-            if func_token_lines is not None:
-                key_pad = func_token_lines < 0
-                all_pad = key_pad.all(dim=1)
-                if all_pad.any():
-                    key_pad = key_pad.clone()
-                    key_pad[all_pad, 0] = False
-                valid = (~key_pad).unsqueeze(-1).to(kv.dtype)
-            else:
-                key_pad = None
-                valid = torch.ones(*kv.shape[:2], 1, device=kv.device, dtype=kv.dtype)
-            q_c = kv + self.bias_loc_l(loc_sig).unsqueeze(1)
-            ref_c, _ = self.attn_l(q_c, kv, kv, key_padding_mask=key_pad, need_weights=False)
-            cls_parts.append(self._masked_mean(ref_c, valid))
-            q_l = kv + self.bias_cls_l(cls_sig).unsqueeze(1)
-            ref_l, _ = self.attn_l(q_l, kv, kv, key_padding_mask=key_pad, need_weights=False)
-            loc_parts.append(self._masked_mean(ref_l, valid))
+        # loc direction: statements self-attend, query biased by cls
+        q_l = units + self.bias_cls(fused.detach()).unsqueeze(1)
+        ref_l, _ = self.attn(q_l, units, units, key_padding_mask=kpad, need_weights=False)
+        stmt_cond = self.loc_out(ref_l)[stmt_mask]                      # [S, ld]
 
-        cls_from_loc = torch.cat(cls_parts, dim=-1)                 # [B, loc_dim]
-        stmt_cond    = torch.cat(loc_parts, dim=-1)                 # [B, loc_dim]
-        fused_mod = fused + self.gate_cls * self.to_cls(cls_from_loc)
-        stmt_cond = self.gate_loc * stmt_cond
+        # cls direction: statements self-attend (own query), pool per graph
+        ref_c, _ = self.attn(units, units, units, key_padding_mask=kpad, need_weights=False)
+        pooled = (ref_c * mf).sum(dim=1) / mf.sum(dim=1).clamp(min=1)    # [B, A]
+        cross_c = self.to_cls(pooled)                                   # [B, fused_dim]
+
+        if self._residual:
+            fused_mod = fused + self.gate_cls * cross_c
+            stmt_cond = self.gate_loc * stmt_cond
+        else:
+            fused_mod = cross_c
         return fused_mod, stmt_cond
 
 
 def build_cross_task(method: str, fused_dim: int, hidden_dim: int,
                      num_classes: int, lm_dim: int, localization_encoder: str,
-                     num_heads: int = 4, mmoe_task_encoder: bool = False
-                     ) -> nn.Module | None:
+                     num_heads: int = 4, mmoe_task_encoder: bool = False,
+                     residual: bool = True) -> nn.Module | None:
     """Factory — returns the cross-task module for `method`, or None for 'none'."""
     if method == "none":
         return None
     if method == "cross_attention":
-        return CrossTaskAttn(fused_dim, hidden_dim, lm_dim, localization_encoder, num_heads)
+        return CrossTaskAttn(fused_dim, hidden_dim, lm_dim, localization_encoder,
+                             num_heads, residual=residual)
     if method == "self_attention":
-        return SelfAttnCrossTask(fused_dim, hidden_dim, lm_dim, localization_encoder, num_heads)
+        return SelfAttnCrossTask(fused_dim, hidden_dim, lm_dim, localization_encoder,
+                                 num_heads, residual=residual)
     if method == "mmoe":
         return MMOECrossTask(fused_dim, hidden_dim, lm_dim, localization_encoder,
-                             task_encoder=mmoe_task_encoder)
+                             task_encoder=mmoe_task_encoder, residual=residual)
     raise ValueError(
         "cross_task_method must be none|cross_attention|self_attention|mmoe, "
         f"got {method!r}"

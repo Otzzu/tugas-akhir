@@ -311,6 +311,12 @@ model:
   # Support: lmgat_codebert, cross_task_method=mmoe
   mmoe_task_encoder: false
 
+  # Cross-task fusion mode (ablation):
+  #   true  — gated residual side-branch (fused + γ·cross), fat func_head
+  #   false — in-path replace (fused_mod = cross), simplified LayerNorm+Linear head
+  # Support: lmgat_codebert, cross_task_method != none
+  cross_task_residual: true
+
   # ── HierarchicalSupConLoss ─────────────────────────────────────────────────
   # Enable Hierarchical Supervised Contrastive Loss on the pre-head embedding z.
   # When false, supcon_weight and all supcon_* fields below are ignored.
