@@ -1,13 +1,10 @@
-# Phase 2 — B4-tt: A4-best (both concat) + MMOE + task encoder + thin func_head.
+# Phase 2 — B5: A4-best (both concat) + MMOE with per-task encoder.
 # Base: A4 both concat (best all-rounder), epoch_adaptive loss.
-# Varies: cross_task_method = mmoe, mmoe_task_encoder=true, cross_task_residual=false.
-#   - mmoe_task_encoder: per-task MLP adapter (EDAT TaskSpecificEncoder, light)
-#   - cross_task_residual=false: in-path replace (no zero-init gate)
-#                                → func_head thinned to LayerNorm+Linear (EDAT-style)
-# EDAT-faithful path: task encoder + shared experts do adaptation, head just projects.
+# Varies: cross_task_method = mmoe + mmoe_task_encoder=true (per-task MLP adapter
+#         before the shared experts — EDAT's TaskSpecificEncoder, light variant).
 #
 # Run (cloud, Linux):
-#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase2/B4_mmoe_taskenc_thin.yaml
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase4/B4_mmoe_taskenc.yaml
 
 data:
   source: megavul
@@ -31,7 +28,6 @@ model:
   graph_pool: mean
   cross_task_method: mmoe
   mmoe_task_encoder: true
-  cross_task_residual: false
   hidden_dim: 256
   num_layers: 4
   dropout: 0.3

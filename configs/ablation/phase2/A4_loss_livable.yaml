@@ -6,7 +6,7 @@
 # No epoch_adaptive_weights — LIVABLE loss handles rebalancing internally.
 #
 # Run (cloud, Linux):
-#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase1/A4_lmgat_codebert_both_livable.yaml
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase2/A4_loss_livable.yaml
 
 data:
   source: megavul

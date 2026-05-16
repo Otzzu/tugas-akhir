@@ -1,10 +1,9 @@
-# Phase 2 — B5: A4-best (both concat) + MMOE with per-task encoder.
+# A4 variation: A4-best (both concat) + meanmax graph pool.
 # Base: A4 both concat (best all-rounder), epoch_adaptive loss.
-# Varies: cross_task_method = mmoe + mmoe_task_encoder=true (per-task MLP adapter
-#         before the shared experts — EDAT's TaskSpecificEncoder, light variant).
+# Varies: graph_pool = meanmax (0.8*max + 0.6*mean, parameter-free).
 #
 # Run (cloud, Linux):
-#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase2/B5_mmoe_taskenc.yaml
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase3/A4_pool_meanmax.yaml
 
 data:
   source: megavul
@@ -25,9 +24,8 @@ model:
   func_max_length: 1024
   localization_encoder: both
   stmt_both_mode: concat
-  graph_pool: mean
-  cross_task_method: mmoe
-  mmoe_task_encoder: true
+  graph_pool: meanmax
+  cross_task_method: none
   hidden_dim: 256
   num_layers: 4
   dropout: 0.3
