@@ -175,9 +175,9 @@ class CrossTaskAttn(nn.Module):
             kv, mask = to_dense_batch(h, batch, batch_size=B)        # [B,Nmax,H]
             key_pad = ~mask
             cls_g, _ = self.attn_g(self.q_loc_g(loc_q).unsqueeze(1), kv, kv,
-                                   key_padding_mask=key_pad)
+                                   key_padding_mask=key_pad, need_weights=False)
             loc_g, _ = self.attn_g(self.q_cls_g(cls_q).unsqueeze(1), kv, kv,
-                                   key_padding_mask=key_pad)
+                                   key_padding_mask=key_pad, need_weights=False)
             cls_parts.append(cls_g.squeeze(1))
             loc_parts.append(loc_g.squeeze(1))
 
@@ -193,9 +193,9 @@ class CrossTaskAttn(nn.Module):
             else:
                 key_pad = None
             cls_l, _ = self.attn_l(self.q_loc_l(loc_q).unsqueeze(1), kv, kv,
-                                   key_padding_mask=key_pad)
+                                   key_padding_mask=key_pad, need_weights=False)
             loc_l, _ = self.attn_l(self.q_cls_l(cls_q).unsqueeze(1), kv, kv,
-                                   key_padding_mask=key_pad)
+                                   key_padding_mask=key_pad, need_weights=False)
             cls_parts.append(cls_l.squeeze(1))
             loc_parts.append(loc_l.squeeze(1))
 
@@ -262,11 +262,11 @@ class SelfAttnCrossTask(nn.Module):
             mf = mask.unsqueeze(-1).to(kv.dtype)
             # cls direction: own units, query biased by loc signal
             q_c = kv + self.bias_loc_g(loc_sig).unsqueeze(1)
-            ref_c, _ = self.attn_g(q_c, kv, kv, key_padding_mask=key_pad)
+            ref_c, _ = self.attn_g(q_c, kv, kv, key_padding_mask=key_pad, need_weights=False)
             cls_parts.append(self._masked_mean(ref_c, mf))
             # loc direction: own units, query biased by cls signal
             q_l = kv + self.bias_cls_g(cls_sig).unsqueeze(1)
-            ref_l, _ = self.attn_g(q_l, kv, kv, key_padding_mask=key_pad)
+            ref_l, _ = self.attn_g(q_l, kv, kv, key_padding_mask=key_pad, need_weights=False)
             loc_parts.append(self._masked_mean(ref_l, mf))
 
         if self._mode in ("lm", "both"):
@@ -282,10 +282,10 @@ class SelfAttnCrossTask(nn.Module):
                 key_pad = None
                 valid = torch.ones(*kv.shape[:2], 1, device=kv.device, dtype=kv.dtype)
             q_c = kv + self.bias_loc_l(loc_sig).unsqueeze(1)
-            ref_c, _ = self.attn_l(q_c, kv, kv, key_padding_mask=key_pad)
+            ref_c, _ = self.attn_l(q_c, kv, kv, key_padding_mask=key_pad, need_weights=False)
             cls_parts.append(self._masked_mean(ref_c, valid))
             q_l = kv + self.bias_cls_l(cls_sig).unsqueeze(1)
-            ref_l, _ = self.attn_l(q_l, kv, kv, key_padding_mask=key_pad)
+            ref_l, _ = self.attn_l(q_l, kv, kv, key_padding_mask=key_pad, need_weights=False)
             loc_parts.append(self._masked_mean(ref_l, valid))
 
         cls_from_loc = torch.cat(cls_parts, dim=-1)                 # [B, loc_dim]
