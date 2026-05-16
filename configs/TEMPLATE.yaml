@@ -124,6 +124,7 @@ model:
 
   # Graph-level pooling for the function classification representation.
   #   mean      — global mean pool over nodes (default)
+  #   meanmax   — 0.8*max + 0.6*mean (parameter-free, peak + context)
   #   attention — gated attention pool: per-node score → softmax → weighted sum
   # Support: lmgat_codebert
   graph_pool: mean
@@ -304,6 +305,11 @@ model:
   #   mmoe            — Multi-gate Mixture-of-Experts (shared expert pool + gates)
   # Support: lmgat_codebert
   cross_task_method: none
+
+  # MMOE only — per-task MLP encoder before the shared experts (EDAT's
+  # TaskSpecificEncoder, light variant). false = single Linear projection.
+  # Support: lmgat_codebert, cross_task_method=mmoe
+  mmoe_task_encoder: false
 
   # ── HierarchicalSupConLoss ─────────────────────────────────────────────────
   # Enable Hierarchical Supervised Contrastive Loss on the pre-head embedding z.

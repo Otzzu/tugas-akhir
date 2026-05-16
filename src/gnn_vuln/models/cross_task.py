@@ -86,12 +86,24 @@ class MMOECrossTask(nn.Module):
     """
 
     def __init__(self, fused_dim: int, hidden_dim: int, lm_dim: int, mode: str,
-                 expert_num: int = 4, expert_dim: int | None = None):
+                 expert_num: int = 4, expert_dim: int | None = None,
+                 task_encoder: bool = False):
         super().__init__()
         ld = loc_dim(mode, hidden_dim, lm_dim)
         D = expert_dim or hidden_dim
-        self.cls_in = nn.Linear(fused_dim, D)
-        self.loc_in = nn.Linear(ld, D)
+
+        def _proj(in_dim: int) -> nn.Module:
+            # task_encoder: per-task MLP adapter (EDAT TaskSpecificEncoder, light).
+            # else: single Linear projection.
+            if task_encoder:
+                return nn.Sequential(
+                    nn.Linear(in_dim, D), nn.LayerNorm(D), nn.ReLU(),
+                    nn.Dropout(0.1), nn.Linear(D, D),
+                )
+            return nn.Linear(in_dim, D)
+
+        self.cls_in = _proj(fused_dim)
+        self.loc_in = _proj(ld)
         self.experts = nn.ModuleList([
             nn.Sequential(
                 nn.Linear(D, D), nn.LayerNorm(D), nn.ReLU(), nn.Dropout(0.1),
@@ -297,7 +309,8 @@ class SelfAttnCrossTask(nn.Module):
 
 def build_cross_task(method: str, fused_dim: int, hidden_dim: int,
                      num_classes: int, lm_dim: int, localization_encoder: str,
-                     num_heads: int = 4) -> nn.Module | None:
+                     num_heads: int = 4, mmoe_task_encoder: bool = False
+                     ) -> nn.Module | None:
     """Factory — returns the cross-task module for `method`, or None for 'none'."""
     if method == "none":
         return None
@@ -306,7 +319,8 @@ def build_cross_task(method: str, fused_dim: int, hidden_dim: int,
     if method == "self_attention":
         return SelfAttnCrossTask(fused_dim, hidden_dim, lm_dim, localization_encoder, num_heads)
     if method == "mmoe":
-        return MMOECrossTask(fused_dim, hidden_dim, lm_dim, localization_encoder)
+        return MMOECrossTask(fused_dim, hidden_dim, lm_dim, localization_encoder,
+                             task_encoder=mmoe_task_encoder)
     raise ValueError(
         "cross_task_method must be none|cross_attention|self_attention|mmoe, "
         f"got {method!r}"

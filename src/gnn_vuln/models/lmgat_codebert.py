@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import global_mean_pool
+from torch_geometric.nn import global_mean_pool, global_max_pool
 from torch_geometric.nn.aggr import AttentionalAggregation
 from gnn_vuln.models.base import VulnDetectorBase
 from gnn_vuln.models.encoders import GATEncoder
@@ -21,14 +21,15 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  localization_encoder="gnn", use_flash_attention=False, compile_lm=False,
                  use_grad_checkpoint=True,
                  stmt_both_mode="concat", stmt_lm_alpha=0.5,
-                 cross_task_method="none", graph_pool="mean"):
+                 cross_task_method="none", graph_pool="mean",
+                 mmoe_task_encoder=False):
         super().__init__()
         self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride, use_flash_attention, compile_lm, use_grad_checkpoint)
         self._loc_enc = localization_encoder
         self.encoder   = GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout, edge_dim, add_self_loops, use_skip)
-        # Graph-level pooling: mean or gated attention
-        assert graph_pool in ("mean", "attention"), \
-            f"graph_pool must be mean|attention, got {graph_pool!r}"
+        # Graph-level pooling: mean | meanmax | attention
+        assert graph_pool in ("mean", "meanmax", "attention"), \
+            f"graph_pool must be mean|meanmax|attention, got {graph_pool!r}"
         self._graph_pool = graph_pool
         self.attn_pool = (
             AttentionalAggregation(gate_nn=nn.Linear(hidden_dim, 1))
@@ -42,16 +43,19 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         self.cross_task = build_cross_task(
             cross_task_method, hidden_dim + self._lm_dim, hidden_dim, num_classes,
             self._lm_dim, localization_encoder, num_heads,
+            mmoe_task_encoder=mmoe_task_encoder,
         )
 
     def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
                 func_input_ids=None, func_attention_mask=None,
                 func_token_lines=None):
         h = self.encoder(x, edge_index, edge_attr)
-        h_graph = (
-            self.attn_pool(h, batch) if self.attn_pool is not None
-            else global_mean_pool(h, batch)
-        )
+        if self._graph_pool == "attention":
+            h_graph = self.attn_pool(h, batch)
+        elif self._graph_pool == "meanmax":
+            h_graph = 0.8 * global_max_pool(h, batch) + 0.6 * global_mean_pool(h, batch)
+        else:
+            h_graph = global_mean_pool(h, batch)
         B = h_graph.size(0)
         if self._loc_enc != "gnn":
             lm_emb, lm_hidden = self._lm_embed_full(func_input_ids, func_attention_mask, B, x.device)
@@ -106,5 +110,6 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             stmt_both_mode=getattr(cfg.model, "stmt_both_mode", "concat"),
             stmt_lm_alpha=getattr(cfg.model, "stmt_lm_alpha", 0.5),
             cross_task_method=getattr(cfg.model, "cross_task_method", "none"),
+            mmoe_task_encoder=getattr(cfg.model, "mmoe_task_encoder", False),
             graph_pool=getattr(cfg.model, "graph_pool", "mean"),
         )

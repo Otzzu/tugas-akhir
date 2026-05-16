@@ -77,6 +77,7 @@ class ModelConfig:
     dropout: float = 0.3
     # Graph-level pooling for the function classification representation.
     #   mean      — global mean pool over nodes (default)
+    #   meanmax   — 0.8*max + 0.6*mean (parameter-free, peak + context)
     #   attention — gated attention pool: per-node score → softmax → weighted sum
     # Support: lmgat_codebert
     graph_pool: str = "mean"
@@ -110,6 +111,10 @@ class ModelConfig:
     #   mmoe            — Multi-gate Mixture-of-Experts (Ma et al. 2018): shared
     #                     expert pool + per-task gates (EDAT's released code)
     cross_task_method: str = "none"
+    # MMOE only: replace the single Linear task projections with a per-task MLP
+    # encoder (Linear→LN→ReLU→Dropout→Linear) — EDAT's TaskSpecificEncoder, light
+    # variant. Gives each task a private adapter before the shared experts.
+    mmoe_task_encoder: bool = False
     # ── Statement localization "both" mode ────────────────────────────────────
     # Only used when localization_encoder="both". Controls how GNN + LM features combine.
     #   concat   — torch.cat([gnn, lm]) (legacy, LM dim dominates GNN by 3:1 on UniXcoder)
