@@ -4,19 +4,14 @@ from __future__ import annotations
 
 from gnn_vuln.config import Config
 from gnn_vuln.models.base import VulnDetectorBase
-from gnn_vuln.models.lmgcn import LMGCNVulnDetector
 from gnn_vuln.models.lmgat_codebert import LMGATCodeBERTVulnDetector
 from gnn_vuln.models.lmgat_codebert_mtl import LMGATCodeBERTMTLVulnDetector
 from gnn_vuln.models.lmgat_mcs import LMGATMCSVulnDetector
-from gnn_vuln.models.lmgin import LMGINVulnDetector
 from gnn_vuln.models.lmgat_interp import LMGATInterpVulnDetector
 from gnn_vuln.models.lmgat_seq import LMGATSeqVulnDetector
-from gnn_vuln.models.lmggnn import LMGNNVulnDetector
 from gnn_vuln.models.lmgat_waves_seq import LMGATWavesSeqVulnDetector
 from gnn_vuln.models.lmgat_dualflow import LMGATDualFlowVulnDetector
 from gnn_vuln.models.lmgat_hcdfgat import LMGATHCDFGATVulnDetector
-from gnn_vuln.models.lmrgcn import LMRGCNVulnDetector
-from gnn_vuln.models.lmrgcn_codebert import LMRGCNCodeBERTVulnDetector
 
 # ── MTL head validation ────────────────────────────────────────────────────────
 
@@ -56,19 +51,14 @@ def _parse_active_heads(cfg: Config) -> frozenset[str]:
 # ── Registry ──────────────────────────────────────────────────────────────────
 
 MODEL_REGISTRY: dict[str, type[VulnDetectorBase]] = {
-    "lmgcn":              LMGCNVulnDetector,
     "lmgat_codebert":     LMGATCodeBERTVulnDetector,
     "lmgat_codebert_mtl": LMGATCodeBERTMTLVulnDetector,
     "lmgat_mcs":          LMGATMCSVulnDetector,
-    "lmgin":              LMGINVulnDetector,
     "lmgat_interp":       LMGATInterpVulnDetector,
     "lmgat_seq":          LMGATSeqVulnDetector,
-    "lmggnn":             LMGNNVulnDetector,
     "lmgat_waves_seq":    LMGATWavesSeqVulnDetector,
     "lmgat_dualflow":     LMGATDualFlowVulnDetector,
     "lmgat_hcdfgat":      LMGATHCDFGATVulnDetector,
-    "lmrgcn":             LMRGCNVulnDetector,
-    "lmrgcn_codebert":    LMRGCNCodeBERTVulnDetector,
 }
 
 

@@ -9,14 +9,6 @@ from loguru import logger
 from gnn_vuln.config import Config
 from gnn_vuln.models.base import VulnDetectorBase
 
-# Architectures that fine-tune an LM branch with a separate (lower) lr
-_FT_ARCHS = frozenset({
-    "lmgat_codebert", "lmgat_mcs", "lmgat_seq", "lmgat_waves_seq",
-    "lmggnn", "lmgat_codebert_mtl", "lmgat_dualflow", "lmgat_hcdfgat",
-    "lmrgcn_codebert",
-})
-
-
 def build_optimizer_and_scheduler(
     model: nn.Module,
     cfg: Config,
@@ -33,8 +25,9 @@ def build_optimizer_and_scheduler(
                                      each batch inside train_epoch().
     step_scheduler_per_batch=False → epoch-level scheduler (plateau or cosine).
     """
-    arch = cfg.model.architecture.lower()
-    is_ft = arch in _FT_ARCHS
+    # Fine-tune path = the model has a live LM branch. Robust to live_lm=none
+    # (lmgat_codebert without a func LM → plain Adam, no separate LM lr group).
+    is_ft = isinstance(model, VulnDetectorBase) and model.has_live_lm()
     lr_scheduler = getattr(cfg.train, "lr_scheduler", "plateau").lower()
 
     if is_ft:

@@ -19,7 +19,9 @@ data:
   top_cwe: 10
 
 model:
-  architecture: lmgcn
+  architecture: lmgat_codebert
+  gnn_model: gcn
+  live_lm: none
   pretrained_lm: microsoft/unixcoder-base
   add_func_tokens: true       # selects _ft_top10.pt dataset
   hidden_dim: 256

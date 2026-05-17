@@ -13,7 +13,7 @@ import torch.nn.functional as F
 from torch_geometric.nn import global_mean_pool, global_max_pool, global_add_pool
 from torch_geometric.nn.aggr import AttentionalAggregation
 from gnn_vuln.models.base import VulnDetectorBase
-from gnn_vuln.models.encoders import GATEncoder
+from gnn_vuln.models.encoders import build_gnn_encoder
 from gnn_vuln.models.heads import FuncHead, ThinFuncHead, StmtHead
 from gnn_vuln.models.cross_task import build_cross_task, statement_features
 
@@ -33,7 +33,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  stmt_both_mode="concat", stmt_lm_alpha=0.5,
                  cross_task_method="none", graph_pool="mean",
                  mmoe_task_encoder=False, cross_task_residual=True,
-                 mmoe_loc_transformer=False, live_lm="func"):
+                 mmoe_loc_transformer=False, live_lm="func",
+                 gnn_model="gat", num_relations=7, num_bases=None):
         super().__init__()
         assert live_lm in _VALID_LIVE_LM, \
             f"live_lm must be one of {_VALID_LIVE_LM}, got {live_lm!r}"
@@ -57,7 +58,11 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                 lm_per_line=(live_lm == "func_and_line"),
             )
         self._loc_enc = localization_encoder
-        self.encoder = GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout, edge_dim, add_self_loops, use_skip)
+        self.encoder = build_gnn_encoder(
+            gnn_model, in_channels, hidden_dim, num_layers, dropout,
+            num_heads=num_heads, edge_dim=edge_dim, add_self_loops=add_self_loops,
+            use_skip=use_skip, num_relations=num_relations, num_bases=num_bases,
+        )
         # Graph-level pooling: mean | meanmax | attention | dualflow
         assert graph_pool in ("mean", "meanmax", "attention", "dualflow"), \
             f"graph_pool must be mean|meanmax|attention|dualflow, got {graph_pool!r}"
@@ -175,4 +180,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             graph_pool=getattr(cfg.model, "graph_pool", "mean"),
             mmoe_loc_transformer=getattr(cfg.model, "mmoe_loc_transformer", False),
             live_lm=getattr(cfg.model, "live_lm", "func"),
+            gnn_model=getattr(cfg.model, "gnn_model", "gat"),
+            num_relations=getattr(cfg.model, "num_relations", 7),
+            num_bases=getattr(cfg.model, "num_bases", None),
         )

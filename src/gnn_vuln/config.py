@@ -67,7 +67,15 @@ class DataConfig:
 
 @dataclass
 class ModelConfig:
-    architecture: str = "lmgcn"  # lmgcn | lmgat_codebert | lmgat_ft | lmgat_mc
+    architecture: str = "lmgat_codebert"  # lmgat_codebert | lmgat_codebert_mtl | ...
+    # GNN encoder backbone (lmgat_codebert). Replaces the old standalone
+    # lmgcn / lmgin / lmrgcn / lmrgcn_codebert / lmggnn architectures.
+    #   gat  — GATv2Conv, edge-feature attention (uses heads, edge_dim)
+    #   gcn  — GCNConv, edge-agnostic
+    #   gin  — GINEConv, per-layer edge projection (uses edge_dim)
+    #   rgcn — RGCNConv, one weight per edge type (uses num_relations, num_bases)
+    #   ggnn — GatedGraphConv, edge-agnostic
+    gnn_model: str = "gat"
     pretrained_lm: str = "microsoft/codebert-base"  # HuggingFace model ID for node embeddings (frozen)
     func_lm: str = ""               # live LM for function branch; if empty falls back to pretrained_lm
     add_func_tokens: bool = False   # tokenize full function text → stored in Data for live LM
@@ -83,8 +91,10 @@ class ModelConfig:
     #               single-encoder suspicion head, no two-stage GNN
     # Support: lmgat_codebert
     graph_pool: str = "mean"
-    heads: int = 4              # number of GAT attention heads (lmgat* only)
-    edge_dim: int = 7          # edge feature dimension injected into GATv2 attention (lmgat* only)
+    heads: int = 4              # number of GAT attention heads (gnn_model=gat)
+    edge_dim: int = 7          # edge feature dimension (gnn_model=gat injects into GATv2 attention; gin projects it)
+    num_relations: int = 7     # RGCN: number of edge-type relations (gnn_model=rgcn)
+    num_bases: int | None = None  # RGCN: basis-decomposition count, None = no decomposition (gnn_model=rgcn)
     num_classes: int = 2        # 2 = binary; set higher for multi-class
     # Statement-level MIL head
     mil_weight: float = 0.5     # λ: weight of stmt MIL loss vs function loss

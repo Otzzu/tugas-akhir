@@ -17,7 +17,9 @@ data:
   top_cwe: 10
 
 model:
-  architecture: lmrgcn
+  architecture: lmgat_codebert
+  gnn_model: rgcn
+  live_lm: none
   pretrained_lm: microsoft/unixcoder-base   # frozen node embeddings (selects dataset)
   add_func_tokens: true
   hidden_dim: 256

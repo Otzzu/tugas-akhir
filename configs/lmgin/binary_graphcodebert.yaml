@@ -12,7 +12,9 @@ data:
   max_nodes: 1000
 
 model:
-  architecture: lmgin
+  architecture: lmgat_codebert
+  gnn_model: gin
+  live_lm: none
   pretrained_lm: microsoft/graphcodebert-base
   add_func_tokens: true           # reuse _ft processed file
   hidden_dim: 256

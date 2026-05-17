@@ -94,6 +94,16 @@ model:
   # Architecture key (see top of file for full list).
   architecture: lmgat_hcdfgat
 
+  # GNN encoder backbone (lmgat_codebert). Replaces the old standalone
+  # lmgcn / lmgin / lmrgcn / lmrgcn_codebert / lmggnn architectures.
+  #   gat  — GATv2Conv, edge-feature attention (uses heads, edge_dim)
+  #   gcn  — GCNConv, edge-agnostic
+  #   gin  — GINEConv, per-layer edge projection (uses edge_dim)
+  #   rgcn — RGCNConv, one weight per edge type (uses num_relations, num_bases)
+  #   ggnn — GatedGraphConv, edge-agnostic
+  # Support: lmgat_codebert
+  gnn_model: gat
+
   # HuggingFace model ID for frozen node embedding generation and as fallback
   # func_lm if func_lm is empty. Node embeddings are pre-computed and cached.
   # Common values: microsoft/codebert-base | microsoft/unixcoder-base |
@@ -146,7 +156,8 @@ model:
 
   # Edge feature dimension injected into GATv2 attention computation.
   # Default 7 = one-hot CPG edge types (AST/CFG/CDG/DDG/PDG/CALL/REACHING_DEF).
-  # Support: all lmgat* architectures
+  # gnn_model=gat injects it into attention; gnn_model=gin projects it per layer.
+  # Support: gnn_model=gat | gin
   edge_dim: 31
 
   # Number of output classes. 2 = binary (benign/vuln). 11 = 10 CWE + benign.
@@ -279,17 +290,17 @@ model:
   # Support: lmgat_codebert_mtl (use_edge_emb=true)
   edge_coarse_dim: 16
 
-  # ── Relational GCN (lmrgcn / lmrgcn_codebert) ────────────────────────────
+  # ── Relational GCN (gnn_model=rgcn) ──────────────────────────────────────
   # Number of edge relation types for RGCNConv. Must match the number of distinct
   # edge types encoded in edge_attr (integer relation IDs, not one-hot).
   # Typical: 7 (AST/CFG/CDG/DDG/PDG/CALL/REACHING_DEF) or 17 (extended CPG).
-  # Support: lmrgcn | lmrgcn_codebert
+  # Support: gnn_model=rgcn
   num_relations: 7
 
   # RGCN basis decomposition — number of basis matrices. null = no decomposition
   # (one full weight matrix per relation). Set to 4–8 to reduce parameters when
   # num_relations is large (e.g. 17). Only relevant when num_relations > ~8.
-  # Support: lmrgcn | lmrgcn_codebert
+  # Support: gnn_model=rgcn
   num_bases: null
 
   # ── Architecture-specific fields ──────────────────────────────────────────

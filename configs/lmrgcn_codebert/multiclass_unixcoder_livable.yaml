@@ -20,7 +20,9 @@ data:
   top_cwe: 10
 
 model:
-  architecture: lmrgcn_codebert
+  architecture: lmgat_codebert
+  gnn_model: rgcn
+  live_lm: func
   pretrained_lm: microsoft/unixcoder-base   # frozen node embeddings (selects dataset)
   func_lm: microsoft/unixcoder-base         # live LM branch
   add_func_tokens: true

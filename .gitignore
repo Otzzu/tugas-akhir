@@ -54,6 +54,7 @@ src/VulChecker/
 src/vul-LMGNN/
 src/gnn_vuln/joern/
 src/SCLCVD/
+src/EDAT/
 
 # Downloaded tools / secrets
 gdrive.exe

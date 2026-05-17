@@ -284,3 +284,46 @@ class GINEncoder(nn.Module):
             x = F.relu(x + residual) if residual is not None else F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
         return x
+
+
+# ── Encoder factory ───────────────────────────────────────────────────────────
+
+def build_gnn_encoder(
+    gnn_model: str,
+    in_channels: int,
+    hidden_dim: int,
+    num_layers: int,
+    dropout: float,
+    num_heads: int = 4,
+    edge_dim: int = NUM_EDGE_TYPES,
+    add_self_loops: bool = False,
+    use_skip: bool = False,
+    num_relations: int = NUM_EDGE_TYPES,
+    num_bases: int | None = None,
+) -> nn.Module:
+    """Build a GNN encoder by name. All encoders share forward(x, edge_index, edge_attr).
+
+    gat  — GATv2Conv  (uses num_heads, edge_dim, add_self_loops)
+    gcn  — GCNConv     (edge-agnostic; uses add_self_loops)
+    gin  — GINEConv    (uses edge_dim)
+    rgcn — RGCNConv    (uses num_relations, num_bases)
+    ggnn — GatedGraphConv (edge-agnostic)
+    """
+    m = gnn_model.lower()
+    if m == "gat":
+        return GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout,
+                          edge_dim, add_self_loops, use_skip)
+    if m == "gcn":
+        return GCNEncoder(in_channels, hidden_dim, num_layers, dropout,
+                          add_self_loops, use_skip)
+    if m == "gin":
+        return GINEncoder(in_channels, hidden_dim, num_layers, dropout,
+                          edge_dim, use_skip)
+    if m == "rgcn":
+        return RGCNEncoder(in_channels, hidden_dim, num_layers, dropout,
+                           num_relations, num_bases, use_skip)
+    if m == "ggnn":
+        return GGNNEncoder(in_channels, hidden_dim, num_layers, dropout, use_skip)
+    raise ValueError(
+        f"gnn_model must be gat|gcn|gin|rgcn|ggnn, got {gnn_model!r}"
+    )
