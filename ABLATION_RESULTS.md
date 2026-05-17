@@ -200,8 +200,8 @@ attention gate, just milder. Parameter-free meanmax still wins.
 | E3 | — | `E3_mmoe.yaml` | mmoe | _pending_ |
 | E4 | `20260516_152322_lmgat_codebert_multiclass` | `E4_mmoe_taskenc.yaml` | mmoe + task encoder | 40 |
 | E5 | `20260516_171751_lmgat_codebert_multiclass` | `E5_mmoe_taskenc_thin.yaml` | mmoe + task encoder + thin head | 35 |
-| E6 | — | `E6_crossattn_noresidual.yaml` | cross_attention, residual off | _pending_ |
-| E7 | — | `E7_selfattn_noresidual.yaml` | self_attention, residual off | _pending_ |
+| E6 | `20260517_042939_lmgat_codebert_multiclass` | `E6_crossattn_noresidual.yaml` | cross_attention, residual off | 92 |
+| E7 | `20260517_084804_lmgat_codebert_multiclass` | `E7_selfattn_noresidual.yaml` | self_attention, residual off | 58 |
 
 > **Earlier cross-task results removed.** A prior set of E1/E2/E3 runs was
 > trained **before the per-statement line-level cross-task code was correct**
@@ -220,6 +220,8 @@ attention gate, just milder. Parameter-free meanmax still wins.
 | E2 | self_attention | 0.504 | **0.538** | **0.537** | 0.897 | 0.606 |
 | E4 | mmoe + task encoder | 0.479 | 0.535 | 0.535 | 0.883 | 0.620 |
 | E5 | mmoe + taskenc + thin | 0.480 | 0.509 | 0.509 | 0.835 | 0.658 |
+| E6 | cross_attention, residual off | 0.375 | 0.377 | 0.379 | 0.882 | 0.300 |
+| E7 | self_attention, residual off | 0.414 | 0.433 | 0.433 | 0.863 | 0.443 |
 
 ## Localization
 
@@ -230,22 +232,35 @@ attention gate, just milder. Parameter-free meanmax still wins.
 | E2 | self_attention | 0.792 | 0.858 | 0.969 | 0.089 | 0.285 | 0.134 |
 | E4 | mmoe + task encoder | 0.785 | 0.848 | 0.968 | 0.244 | 0.411 | 0.031 |
 | E5 | mmoe + taskenc + thin | 1.165 | 0.846 | 0.962 | **0.295** | **0.453** | **0.018** |
+| E6 | cross_attention, residual off | 1.337 | 0.745 | 0.959 | 0.165 | 0.315 | 0.075 |
+| E7 | self_attention, residual off | 1.253 | 0.839 | 0.943 | 0.207 | 0.434 | 0.046 |
 
 With the corrected line-level code, **cross_attention (E1) beats the E0 baseline**
 on macro F1 (0.530 vs 0.519) — and also best IFA + AUC-ROC. E2 self_attention →
 best accuracy / F1-w but lower macro F1. MMOE variants (E4, E5) collapse macro F1;
 E5 (thin head) trades classification away for the best localization coverage
-(R@20%LOC 0.453, Effort@20%R 0.018). E3 plain mmoe and E6/E7 (residual-off) pending.
+(R@20%LOC 0.453, Effort@20%R 0.018).
 
-**Phase 5 winner (so far): E1 cross_attention — first method to beat the baseline F1.**
+**Residual off (E6, E7) collapses hard** — macro F1 0.375 / 0.414, far below every
+residual-on variant. `cross_task_residual=false` does in-path replace
+(`fused_mod = cross`), discarding the original fused representation entirely — the
+model must route everything through the freshly-init cross-task module from
+scratch. The zero-init residual gate is load-bearing: it lets the cross-task
+signal grow from a baseline-safe no-op instead of overwriting it. E3 plain mmoe
+still pending.
+
+**Phase 5 winner: E1 cross_attention — only method to beat the baseline F1; the
+zero-init residual gate is essential (E6/E7 confirm in-path replace fails).**
 
 ---
 
 # Phase 6 — Language Model (node_lm / func_lm)
 
 `configs/ablation/phase6/` — varies the two language models with
-`localization_encoder=gnn` and `graph_pool=meanmax` (Phase 4 winner) fixed,
-to isolate each LM's effect on classification.
+`localization_encoder=both` and `graph_pool=meanmax` (Phase 4 winner) fixed
+(matching the F1 baseline), isolating each LM's effect. CodeT5+ per-token
+states for the `both` localizer come from its internal T5 encoder
+(`lm_full_codet5p`, projected to 256-dim).
 
 - **node_lm** (`pretrained_lm`) — frozen, builds node features in the .pt cache
 - **func_lm** (`func_lm`) — live, fine-tuned function-level branch
@@ -274,6 +289,9 @@ Any config with CodeT5+ as func_lm (F3, F4) uses `func_max_length=512` and
 | F2 | _pending_ | | | | | | |
 | F3 | _pending_ | | | | | | |
 | F4 | _pending_ | | | | | | |
+
+All F-configs use the Phase 3 winner loss (no focal + label_smoothing 0.1 + cosine,
+wd 1e-3, patience 15) — same as F1's meanmax baseline and phases 4-5.
 
 ---
 

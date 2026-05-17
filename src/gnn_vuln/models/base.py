@@ -10,6 +10,7 @@ from transformers import AutoConfig, AutoModel
 
 from gnn_vuln.models._lm_utils import (
     lm_hidden_dim, lm_pool, lm_pool_windowed, lm_full_windowed, lm_per_line_embed,
+    lm_full_codet5p, _is_codet5p_embedding,
 )
 
 
@@ -118,6 +119,12 @@ class VulnDetectorBase(nn.Module):
         """
         if func_input_ids is None:
             return torch.zeros(B, self._lm_dim, device=device), None
+        # CodeT5+ embedding model — public forward is pooled-only. Pull per-token
+        # states from the internal T5 encoder so localization=lm|both works.
+        if _is_codet5p_embedding(self.codebert):
+            return lm_full_codet5p(
+                self.codebert, func_input_ids, func_attention_mask, self._matryoshka_dim,
+            )
         # Per-line embedding — EDAT-style line isolation (reuses func tokens)
         if self._lm_per_line and func_token_lines is not None:
             try:

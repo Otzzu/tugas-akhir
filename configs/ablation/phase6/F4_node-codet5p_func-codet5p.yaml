@@ -25,7 +25,8 @@ model:
   func_lm: Salesforce/codet5p-110m-embedding         # func LM
   add_func_tokens: true
   func_max_length: 512           # CodeT5+ trained max length (not 1024)
-  localization_encoder: gnn
+  localization_encoder: both
+  stmt_both_mode: concat
   graph_pool: meanmax            # Phase 4 winner
   hidden_dim: 256
   num_layers: 4
@@ -47,12 +48,15 @@ train:
   lm_lr: 0.00001
   warmup_ratio: 0.1
   grad_clip: 1.0
-  weight_decay: 0.0001
-  patience: 25
+  weight_decay: 0.001
+  patience: 15
   early_stop_metric: f1
   use_class_weights: true
-  focal_loss_gamma: 2.0
+  focal_loss_gamma: 0.0
   epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
   device: cuda
   use_amp: true
   use_flash_attention: false      # CodeT5+ does not support flash_attention_2

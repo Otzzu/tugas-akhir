@@ -24,7 +24,8 @@ model:
   func_lm: microsoft/unixcoder-base                  # func LM (baseline)
   add_func_tokens: true
   func_max_length: 1024
-  localization_encoder: gnn
+  localization_encoder: both
+  stmt_both_mode: concat
   graph_pool: meanmax            # Phase 4 winner
   hidden_dim: 256
   num_layers: 4

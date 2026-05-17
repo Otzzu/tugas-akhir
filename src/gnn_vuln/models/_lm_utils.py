@@ -191,6 +191,35 @@ def lm_pool_windowed(
     return sum_embs / count
 
 
+def lm_full_codet5p(
+    model,
+    input_ids: torch.Tensor,
+    attention_mask: torch.Tensor | None,
+    matryoshka_dim: int | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Per-token + pooled embeddings for a CodeT5+ embedding model.
+
+    The public forward of `codet5p-*-embedding` returns only the pooled
+    [B, d] vector. For statement localization we also need per-token states:
+    run the internal T5 encoder, then apply the model's projection head per
+    token so the per-token features live in the SAME projected space as the
+    pooled embedding.
+
+    Returns (pooled [B, d], per_token [B, L, d]).
+    T5 relative-position bias overflows in fp16/bf16 → force fp32.
+    """
+    dev = input_ids.device
+    with torch.autocast(device_type=dev.type, enabled=False):
+        enc = model.encoder(input_ids=input_ids, attention_mask=attention_mask)
+        hs = enc.last_hidden_state.float()                  # [B, L, d_model]
+        per_token = model.proj(hs)                          # [B, L, d]
+        pooled = model(input_ids=input_ids, attention_mask=attention_mask).float()  # [B, d]
+    if matryoshka_dim is not None:
+        pooled    = pooled[:, :matryoshka_dim]
+        per_token = per_token[:, :, :matryoshka_dim]
+    return pooled, per_token
+
+
 def lm_full_windowed(
     model,
     is_enc_dec: bool,

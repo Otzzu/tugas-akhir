@@ -1,7 +1,7 @@
-# Phase F — F3: vary func_lm — node=UniXcoder, func=CodeT5+ (node fixed at baseline)
+# Phase 6 — F3: vary func_lm — node=UniXcoder, func=CodeT5+ (node fixed at baseline)
 # Tests CodeT5+ as the live function-level LM vs UniXcoder.
-# CodeT5+ embedding returns a pooled tensor (no last_hidden_state) — works with
-# localization_encoder=gnn; would fall back to CLS-only under lm/both.
+# CodeT5+'s public forward is pooled-only, but lm_full_codet5p pulls per-token
+# states from its internal T5 encoder (proj'd to 256) → localization=both works.
 #
 # .pt build: configs/data/megavul_multiclass_top25_node-unixcoder_func-codet5p.yaml
 # Run (cloud, Linux):
@@ -25,7 +25,8 @@ model:
   func_lm: Salesforce/codet5p-110m-embedding         # func LM (varied)
   add_func_tokens: true
   func_max_length: 512           # CodeT5+ trained max length (not 1024)
-  localization_encoder: gnn
+  localization_encoder: both
+  stmt_both_mode: concat
   graph_pool: meanmax            # Phase 4 winner
   hidden_dim: 256
   num_layers: 4
@@ -47,12 +48,15 @@ train:
   lm_lr: 0.00001
   warmup_ratio: 0.1
   grad_clip: 1.0
-  weight_decay: 0.0001
-  patience: 25
+  weight_decay: 0.001
+  patience: 15
   early_stop_metric: f1
   use_class_weights: true
-  focal_loss_gamma: 2.0
+  focal_loss_gamma: 0.0
   epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
   device: cuda
   use_amp: true
   use_flash_attention: false      # CodeT5+ does not support flash_attention_2
