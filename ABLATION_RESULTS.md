@@ -156,25 +156,30 @@ runs — superseded, kept for reference only.
 
 `configs/ablation/phase4/` — base A4-L1 (Phase 3 winner). Varies `graph_pool`
 (function classification representation): mean / gated attention / meanmax
-(0.8·max + 0.6·mean).
+(0.8·max + 0.6·mean) / dualflow (suspicion-weighted focal + mean context).
 
 | Variant | Run ID | graph_pool | Epochs |
 |---|---|---|---|
 | mean | (= A4-L1, `20260514_174326`) | mean | 31 |
 | attention | `20260515_235912_lmgat_codebert_multiclass` | attention | 50 |
 | meanmax | `20260516_125619_lmgat_codebert_multiclass` | meanmax | 48 |
+| dualflow | `20260517_013824_lmgat_codebert_multiclass` | dualflow | 38 |
 
 | Variant | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@20%LOC ↑ |
 |---|---|---|---|---|---|---|---|---|---|
 | mean | **0.519** | 0.518 | 0.517 | **0.915** | 0.630 | 0.789 | 0.887 | 0.965 | 0.403 |
 | attention | 0.437 | 0.522 | 0.523 | 0.895 | 0.625 | 1.253 | 0.805 | 0.943 | 0.439 |
 | meanmax | 0.517 | **0.538** | **0.539** | 0.911 | 0.502 | **0.644** | **0.900** | **0.982** | **0.487** |
+| dualflow | 0.496 | 0.528 | 0.528 | 0.896 | 0.667 | 0.717 | 0.886 | 0.971 | 0.417 |
 
 Attention pool collapses macro F1 (−0.082) — the learnable gate over-parameterizes
 and overfits tail classes. Mean and meanmax tie on macro F1 (0.519 vs 0.517) — but
 **meanmax wins everywhere else**: best accuracy, F1-w, and all localization metrics.
 Parameter-free (the max channel sharpens the peak signal without the attention
-gate's overfit).
+gate's overfit). dualflow (learned per-node suspicion → focal + context) lands
+mid-pack: macro F1 0.496 (below both mean and meanmax), localization between mean
+and meanmax — its learned suspicion gate carries the same overfit risk as the
+attention gate, just milder. Parameter-free meanmax still wins.
 
 **Phase 4 winner: meanmax.**
 
@@ -239,21 +244,23 @@ E5 (thin head) trades classification away for the best localization coverage
 # Phase 6 — Language Model (node_lm / func_lm)
 
 `configs/ablation/phase6/` — varies the two language models with
-`localization_encoder=gnn` fixed, to isolate each LM's effect on
-classification (no codet5p `last_hidden_state` dependency).
+`localization_encoder=gnn` and `graph_pool=meanmax` (Phase 4 winner) fixed,
+to isolate each LM's effect on classification.
 
 - **node_lm** (`pretrained_lm`) — frozen, builds node features in the .pt cache
 - **func_lm** (`func_lm`) — live, fine-tuned function-level branch
 
 | ID | Config | node_lm | func_lm | .pt build config |
 |---|---|---|---|---|
-| F1 | — (= A2 baseline, `20260513_210613`) | UniXcoder | UniXcoder | `node-unixcoder_func-unixcoder` |
+| F1 | — (= Phase 4 meanmax, `20260516_125619`) | UniXcoder | UniXcoder | `node-unixcoder_func-unixcoder` |
 | F2 | `F2_node-codet5p_func-unixcoder.yaml` | CodeT5+ | UniXcoder | `node-codet5p_func-unixcoder` |
 | F3 | `F3_node-unixcoder_func-codet5p.yaml` | UniXcoder | CodeT5+ | `node-unixcoder_func-codet5p` |
 | F4 | `F4_node-codet5p_func-codet5p.yaml` | CodeT5+ | CodeT5+ | `node-codet5p_func-codet5p` |
 
-F1 (both UniXcoder, localization=gnn) is identical to **Phase 1 A2** — no
-re-run needed, A2 serves as the baseline.
+F1 (both UniXcoder, localization=gnn, **meanmax**) is identical to the Phase 4
+**meanmax** run — no re-run needed, it serves as the baseline. (Not A2 — A2 uses
+`graph_pool=mean`; using the meanmax run keeps F1 on the same pool as F2/F3/F4 so
+the comparison isolates the LM, not the pool.)
 
 CodeT5+ = `Salesforce/codet5p-110m-embedding` — pooled-tensor output, **256-dim**
 (not 768; `lm_hidden_dim` probes it, `in_channels` adapts from the .pt).
@@ -263,7 +270,7 @@ Any config with CodeT5+ as func_lm (F3, F4) uses `func_max_length=512` and
 
 | ID | Test F1 | Test Acc | F1-w | AUC-ROC | IFA ↓ | Top-1 ↑ | R@20%LOC ↑ |
 |---|---|---|---|---|---|---|---|
-| F1 (= A2) | 0.494 | 0.500 | — | 0.907 | 0.89 | 0.874 | 0.401 |
+| F1 (= meanmax) | 0.517 | 0.538 | 0.539 | 0.911 | 0.644 | 0.900 | 0.487 |
 | F2 | _pending_ | | | | | | |
 | F3 | _pending_ | | | | | | |
 | F4 | _pending_ | | | | | | |

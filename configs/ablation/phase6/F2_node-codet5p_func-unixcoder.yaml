@@ -25,6 +25,7 @@ model:
   add_func_tokens: true
   func_max_length: 1024
   localization_encoder: gnn
+  graph_pool: meanmax            # Phase 4 winner
   hidden_dim: 256
   num_layers: 4
   dropout: 0.3

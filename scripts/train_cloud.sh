@@ -196,9 +196,16 @@ download_dataset() {
         [[ -n "$cfg_storage" ]] && storage="$cfg_storage"
     fi
 
-    # Already downloaded this session
+    # Already downloaded this session — but only skip if files still present.
+    # A prior --clean-every run may have deleted the .pt; re-download in that case.
     for d in "${DOWNLOADED_DATASETS[@]:-}"; do
-        [[ "$d" == "$dataset" ]] && return 0
+        if [[ "$d" == "$dataset" ]]; then
+            if [[ -d "$local_dir" ]] || compgen -G "${PROCESSED_DIR}/${local_name}*.pt" > /dev/null 2>&1; then
+                return 0
+            fi
+            info "Dataset was cleaned earlier — re-downloading: $local_name"
+            break
+        fi
     done
 
     if [[ -d "$local_dir" ]] || compgen -G "${PROCESSED_DIR}/${local_name}*.pt" > /dev/null 2>&1; then
