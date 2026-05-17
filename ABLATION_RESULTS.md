@@ -7,8 +7,9 @@ Phase structure:
 - **Phase 1 — Encoder & Localization**: live-LM vs frozen, localization encoder
 - **Phase 2 — GNN+LM Localization Fusion**: how GNN + LM statement features combine
 - **Phase 3 — Loss Function**: focal / epoch-adaptive / LIVABLE tuning
-- **Phase 4 — Graph Pooling**: mean / attention / meanmax
+- **Phase 4 — Graph Pooling**: mean / attention / meanmax / dualflow
 - **Phase 5 — Multi-Task / Cross-Task**: bidirectional cross-task coupling
+- **Phase 6 — Language Model**: node_lm / func_lm choice (UniXcoder / CodeT5+)
 
 ---
 
@@ -189,36 +190,76 @@ gate's overfit).
 | ID | Run ID | Config | cross_task_method | Epochs |
 |---|---|---|---|---|
 | E0 | `20260514_174326_lmgat_codebert_multiclass` | — | none (= A4-L1 baseline) | 31 |
-| E1 | `20260515_211228_lmgat_codebert_multiclass` | `E1_crossattn.yaml` | cross_attention | 58 |
-| E2 | `20260516_055225_lmgat_codebert_multiclass` | `E2_selfattn.yaml` | self_attention | 63 |
-| E3 | `20260516_101335_lmgat_codebert_multiclass` | `E3_mmoe.yaml` | mmoe | 40 |
+| E1 | `20260516_213244_lmgat_codebert_multiclass` | `E1_crossattn.yaml` | cross_attention | 31 |
+| E2 | `20260516_185818_lmgat_codebert_multiclass` | `E2_selfattn.yaml` | self_attention | 55 |
+| E3 | — | `E3_mmoe.yaml` | mmoe | _pending_ |
+| E4 | `20260516_152322_lmgat_codebert_multiclass` | `E4_mmoe_taskenc.yaml` | mmoe + task encoder | 40 |
+| E5 | `20260516_171751_lmgat_codebert_multiclass` | `E5_mmoe_taskenc_thin.yaml` | mmoe + task encoder + thin head | 35 |
+| E6 | — | `E6_crossattn_noresidual.yaml` | cross_attention, residual off | _pending_ |
+| E7 | — | `E7_selfattn_noresidual.yaml` | self_attention, residual off | _pending_ |
 
-(`E4_mmoe_taskenc.yaml`, `E5_mmoe_taskenc_thin.yaml` — pending runs.)
+> **Earlier cross-task results removed.** A prior set of E1/E2/E3 runs was
+> trained **before the per-statement line-level cross-task code was correct**
+> (they collapsed the localization view to a per-graph vector instead of
+> conditioning each statement). Those metrics were invalid and deleted.
+> Invalidated run IDs (kept on disk, do not report): `20260515_211228`,
+> `20260516_055225`, `20260516_101335`.
+> The E1/E2/E4/E5 results below are from corrected-code runs.
 
 ## Classification
 
-| ID | Method | Val F1 | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. |
-|---|---|---|---|---|---|---|---|
-| E0 | none (A4-L1) | 0.560 | **0.519** | 0.518 | 0.517 | 0.915 | 0.630 |
-| E1 | cross_attention | 0.526 | 0.468 | 0.507 | 0.505 | 0.909 | 0.462 |
-| E2 | self_attention | 0.548 | 0.488 | **0.556** | **0.555** | **0.919** | 0.466 |
-| E3 | mmoe | 0.553 | 0.497 | 0.541 | 0.541 | 0.907 | 0.625 |
+| ID | Method | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. |
+|---|---|---|---|---|---|---|
+| E0 | none (A4-L1) | 0.519 | 0.518 | 0.517 | 0.915 | 0.630 |
+| E1 | cross_attention | **0.530** | 0.532 | 0.533 | **0.919** | 0.615 |
+| E2 | self_attention | 0.504 | **0.538** | **0.537** | 0.897 | 0.606 |
+| E4 | mmoe + task encoder | 0.479 | 0.535 | 0.535 | 0.883 | 0.620 |
+| E5 | mmoe + taskenc + thin | 0.480 | 0.509 | 0.509 | 0.835 | 0.658 |
 
 ## Localization
 
 | ID | Method | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
 |---|---|---|---|---|---|---|---|
-| E0 | none (A4-L1) | **0.789** | **0.887** | 0.965 | **0.238** | **0.403** | **0.031** |
-| E1 | cross_attention | 1.309 | 0.830 | 0.962 | 0.086 | 0.197 | 0.205 |
-| E2 | self_attention | 1.195 | 0.808 | **0.978** | 0.089 | 0.210 | 0.186 |
-| E3 | mmoe | 0.837 | 0.873 | 0.965 | 0.151 | 0.273 | 0.106 |
+| E0 | none (A4-L1) | 0.789 | **0.887** | 0.965 | 0.238 | 0.403 | 0.031 |
+| E1 | cross_attention | **0.717** | 0.823 | **0.971** | 0.209 | 0.381 | 0.045 |
+| E2 | self_attention | 0.792 | 0.858 | 0.969 | 0.089 | 0.285 | 0.134 |
+| E4 | mmoe + task encoder | 0.785 | 0.848 | 0.968 | 0.244 | 0.411 | 0.031 |
+| E5 | mmoe + taskenc + thin | 1.165 | 0.846 | 0.962 | **0.295** | **0.453** | **0.018** |
 
-Cross-task **attention** methods (E1, E2) hurt — localization collapsed (R@20%LOC
-halved). MMOE (E3) is the least harmful — IFA near baseline, R@20%LOC above the
-attention methods. Still: **no cross-task method beats the E0 baseline.** Per-statement
-cross-task + line-level transformer encoder variants (E4, E5) pending re-run.
+With the corrected line-level code, **cross_attention (E1) beats the E0 baseline**
+on macro F1 (0.530 vs 0.519) — and also best IFA + AUC-ROC. E2 self_attention →
+best accuracy / F1-w but lower macro F1. MMOE variants (E4, E5) collapse macro F1;
+E5 (thin head) trades classification away for the best localization coverage
+(R@20%LOC 0.453, Effort@20%R 0.018). E3 plain mmoe and E6/E7 (residual-off) pending.
 
-**Phase 5 winner (so far): E0 baseline — cross-task not yet beneficial.**
+**Phase 5 winner (so far): E1 cross_attention — first method to beat the baseline F1.**
+
+---
+
+# Phase 6 — Language Model (node_lm / func_lm)
+
+`configs/ablation/phase6/` — varies the two language models with
+`localization_encoder=gnn` fixed, to isolate each LM's effect on
+classification (no codet5p `last_hidden_state` dependency).
+Axes varied one at a time (F1 = baseline, F2 varies node, F3 varies func):
+
+- **node_lm** (`pretrained_lm`) — frozen, builds node features in the .pt cache
+- **func_lm** (`func_lm`) — live, fine-tuned function-level branch
+
+| ID | Config | node_lm | func_lm | .pt build config |
+|---|---|---|---|---|
+| F1 | `F1_node-unixcoder_func-unixcoder.yaml` | UniXcoder | UniXcoder | `node-unixcoder_func-unixcoder` |
+| F2 | `F2_node-codet5p_func-unixcoder.yaml` | CodeT5+ | UniXcoder | `node-codet5p_func-unixcoder` |
+| F3 | `F3_node-unixcoder_func-codet5p.yaml` | UniXcoder | CodeT5+ | `node-unixcoder_func-codet5p` |
+
+CodeT5+ = `Salesforce/codet5p-110m-embedding` (pooled-tensor output, 256-dim).
+Each combo needs its own .pt build (node features + func tokenizer differ).
+
+| ID | Test F1 | Test Acc | F1-w | AUC-ROC | IFA ↓ | Top-1 ↑ | R@20%LOC ↑ |
+|---|---|---|---|---|---|---|---|
+| F1 | _pending_ | | | | | | |
+| F2 | _pending_ | | | | | | |
+| F3 | _pending_ | | | | | | |
 
 ---
 

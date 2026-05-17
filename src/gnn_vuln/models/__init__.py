@@ -3,7 +3,6 @@
 from gnn_vuln.models.base import VulnDetectorBase
 from gnn_vuln.models.registry import MODEL_REGISTRY, build_model, _parse_active_heads
 from gnn_vuln.models.lmgcn import LMGCNVulnDetector
-from gnn_vuln.models.lmgat import LMGATVulnDetector
 from gnn_vuln.models.lmgat_codebert import LMGATCodeBERTVulnDetector
 from gnn_vuln.models.lmgat_codebert_mtl import LMGATCodeBERTMTLVulnDetector
 from gnn_vuln.models.lmgat_mcs import LMGATMCSVulnDetector
@@ -23,7 +22,6 @@ __all__ = [
     "build_model",
     "_parse_active_heads",
     "LMGCNVulnDetector",
-    "LMGATVulnDetector",
     "LMGATCodeBERTVulnDetector",
     "LMGATCodeBERTMTLVulnDetector",
     "LMGATMCSVulnDetector",

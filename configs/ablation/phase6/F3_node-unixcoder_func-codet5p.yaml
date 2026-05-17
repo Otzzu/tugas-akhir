@@ -1,0 +1,63 @@
+# Phase F — F3: vary func_lm — node=UniXcoder, func=CodeT5+ (node fixed at baseline)
+# Tests CodeT5+ as the live function-level LM vs UniXcoder.
+# CodeT5+ embedding returns a pooled tensor (no last_hidden_state) — works with
+# localization_encoder=gnn; would fall back to CLS-only under lm/both.
+#
+# .pt build: configs/data/megavul_multiclass_top25_node-unixcoder_func-codet5p.yaml
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase6/F3_node-unixcoder_func-codet5p.yaml
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: func
+  pretrained_lm: microsoft/unixcoder-base            # node LM (baseline)
+  func_lm: Salesforce/codet5p-110m-embedding         # func LM (varied)
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26                 # 25 Top-25 CWEs + benign
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: false
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  lm_lr: 0.00001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.0001
+  patience: 25
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 2.0
+  epoch_adaptive_weights: true
+  device: cuda
+  use_amp: true
+  use_flash_attention: true
+  grad_accum_steps: 1             # batch=32 × 1 = effective 32
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 8
+  prefetch_factor: 2

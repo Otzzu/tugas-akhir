@@ -246,9 +246,14 @@ class TrainingSession:
         pin_mem     = self.device.type == "cuda"
 
         # Strip heavy func-token tensors from collation for non-LM architectures.
-        # lmgat/lmgcn don't use func_input_ids but the _ft dataset carries them,
-        # causing 64×1024 token stacks per batch for no reason.
-        _needs_func_tokens = cfg.model.architecture not in ("lmgat", "lmgcn", "lmrgcn", "lmgin", "lmggnn")
+        # GNN-only models don't use func_input_ids but the _ft dataset carries
+        # them, causing 64×1024 token stacks per batch for no reason.
+        # lmgat_codebert with live_lm=none is GNN-only too → also strip.
+        _gnn_only_archs = ("lmgcn", "lmrgcn", "lmgin", "lmggnn")
+        _needs_func_tokens = (
+            cfg.model.architecture not in _gnn_only_archs
+            and getattr(cfg.model, "live_lm", "func") != "none"
+        )
         _FUNC_TOKEN_KEYS = ("func_input_ids", "func_attention_mask", "func_token_lines")
         def _strip_collate_fn(batch):
             from torch_geometric.data import Batch

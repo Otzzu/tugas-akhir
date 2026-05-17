@@ -5,7 +5,6 @@ from __future__ import annotations
 from gnn_vuln.config import Config
 from gnn_vuln.models.base import VulnDetectorBase
 from gnn_vuln.models.lmgcn import LMGCNVulnDetector
-from gnn_vuln.models.lmgat import LMGATVulnDetector
 from gnn_vuln.models.lmgat_codebert import LMGATCodeBERTVulnDetector
 from gnn_vuln.models.lmgat_codebert_mtl import LMGATCodeBERTMTLVulnDetector
 from gnn_vuln.models.lmgat_mcs import LMGATMCSVulnDetector
@@ -58,7 +57,6 @@ def _parse_active_heads(cfg: Config) -> frozenset[str]:
 
 MODEL_REGISTRY: dict[str, type[VulnDetectorBase]] = {
     "lmgcn":              LMGCNVulnDetector,
-    "lmgat":              LMGATVulnDetector,
     "lmgat_codebert":     LMGATCodeBERTVulnDetector,
     "lmgat_codebert_mtl": LMGATCodeBERTMTLVulnDetector,
     "lmgat_mcs":          LMGATMCSVulnDetector,

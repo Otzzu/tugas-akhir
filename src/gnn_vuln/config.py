@@ -67,7 +67,7 @@ class DataConfig:
 
 @dataclass
 class ModelConfig:
-    architecture: str = "lmgcn"  # lmgcn | lmgat | lmgat_ft | lmgat_mc
+    architecture: str = "lmgcn"  # lmgcn | lmgat_codebert | lmgat_ft | lmgat_mc
     pretrained_lm: str = "microsoft/codebert-base"  # HuggingFace model ID for node embeddings (frozen)
     func_lm: str = ""               # live LM for function branch; if empty falls back to pretrained_lm
     add_func_tokens: bool = False   # tokenize full function text → stored in Data for live LM
@@ -102,14 +102,18 @@ class ModelConfig:
     # When func_chunk_size > 0, set this to func_chunk_size * N_chunks you want to cover.
     # E.g. func_chunk_size=512, func_max_length=2048 → up to 4 windows per function.
     func_max_length: int = 512  # default matches model trained length
-    # Per-line LM embedding (EDAT-style line isolation). When true, function
-    # tokens are regrouped per source line — each line forwarded through the LM
-    # independently → per-line [CLS]. Localization (lm/both) then sees per-line
-    # isolated embeddings instead of function-context-pooled tokens. Reuses
-    # func_input_ids — no separate per-line tokenization, no .pt rebuild.
-    # Pair with mmoe_loc_transformer to recover cross-line context (EDAT does).
-    # Support: lmgat_codebert with localization_encoder=lm|both
-    lm_per_line: bool = False
+    # Live LM branch mode (lmgat_codebert).
+    #   none          — no live LM. GNN-only, fused = h_graph (no LM concat).
+    #                   localization_encoder MUST be "gnn" (lm/both need LM).
+    #                   Replaces the old standalone "lmgat" architecture.
+    #   func          — function-level forward (single [CLS] over full function,
+    #                   sliding window via func_chunk_size if set). Default.
+    #   func_and_line — func-level [CLS] for classification + per-line LM forward
+    #                   for localization. EDAT-style line isolation: each source
+    #                   line forwarded through LM independently → per-line [CLS]
+    #                   used as synthetic hidden for localization. Pair with
+    #                   mmoe_loc_transformer to recover cross-line context.
+    live_lm: str = "func"
     # ── Bidirectional cross-task (Phase 2, lmgat_codebert) ────────────────────
     # Makes localization (stmt_head) and classification (func_head) inform each
     # other.

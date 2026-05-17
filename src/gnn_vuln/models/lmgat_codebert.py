@@ -1,4 +1,11 @@
-"""lmgat_codebert.py — Arch3: GATv2Conv + live LM (fine-tuned)."""
+"""lmgat_codebert.py — Unified GATv2 + (optional) live LM.
+
+live_lm modes:
+  - none          : GNN only (replaces old lmgat). fused = h_graph. No LM forwards.
+  - func          : func-level [CLS] (sliding window if func_chunk_size>0). Default.
+  - func_and_line : func-level [CLS] for cls + per-line LM forward for localization
+                    (EDAT-style line isolation). Reuses func_input_ids.
+"""
 from __future__ import annotations
 import torch
 import torch.nn as nn
@@ -12,6 +19,9 @@ from gnn_vuln.models.cross_task import build_cross_task, statement_features
 
 NODE_FEAT_DIM = 773
 
+_VALID_LIVE_LM = ("none", "func", "func_and_line")
+
+
 class LMGATCodeBERTVulnDetector(VulnDetectorBase):
     def __init__(self, pretrained_lm="microsoft/unixcoder-base", func_lm="",
                  in_channels=NODE_FEAT_DIM, hidden_dim=256, num_layers=4,
@@ -23,11 +33,31 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  stmt_both_mode="concat", stmt_lm_alpha=0.5,
                  cross_task_method="none", graph_pool="mean",
                  mmoe_task_encoder=False, cross_task_residual=True,
-                 mmoe_loc_transformer=False, lm_per_line=False):
+                 mmoe_loc_transformer=False, live_lm="func"):
         super().__init__()
-        self._build_lm_branch(pretrained_lm, func_lm, matryoshka_dim, func_chunk_size, func_chunk_stride, use_flash_attention, compile_lm, use_grad_checkpoint, lm_per_line=lm_per_line)
+        assert live_lm in _VALID_LIVE_LM, \
+            f"live_lm must be one of {_VALID_LIVE_LM}, got {live_lm!r}"
+        self._live_lm = live_lm
+        # When no live LM, localization must be gnn-only (lm/both need LM hidden).
+        if live_lm == "none":
+            assert localization_encoder == "gnn", (
+                f"live_lm='none' requires localization_encoder='gnn', "
+                f"got {localization_encoder!r}. Live LM hidden states are unavailable."
+            )
+            assert cross_task_method == "none", (
+                f"live_lm='none' requires cross_task_method='none', "
+                f"got {cross_task_method!r}. Cross-task methods need LM features."
+            )
+            self._lm_dim = 0
+        else:
+            self._build_lm_branch(
+                pretrained_lm, func_lm, matryoshka_dim,
+                func_chunk_size, func_chunk_stride,
+                use_flash_attention, compile_lm, use_grad_checkpoint,
+                lm_per_line=(live_lm == "func_and_line"),
+            )
         self._loc_enc = localization_encoder
-        self.encoder   = GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout, edge_dim, add_self_loops, use_skip)
+        self.encoder = GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout, edge_dim, add_self_loops, use_skip)
         # Graph-level pooling: mean | meanmax | attention | dualflow
         assert graph_pool in ("mean", "meanmax", "attention", "dualflow"), \
             f"graph_pool must be mean|meanmax|attention|dualflow, got {graph_pool!r}"
@@ -73,6 +103,16 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         else:
             h_graph = global_mean_pool(h, batch)
         B = h_graph.size(0)
+        # ── LM branch ─────────────────────────────────────────────────────────
+        if self._live_lm == "none":
+            # GNN-only: fused = h_graph. Skip all LM forwards, stmt head GNN-only.
+            logit = self.func_head(h_graph)
+            stmt_scores = (
+                self.stmt_head.score(h, batch, node_line)
+                if node_line is not None else None
+            )
+            return logit, stmt_scores
+
         if self._loc_enc != "gnn":
             lm_emb, lm_hidden = self._lm_embed_full(
                 func_input_ids, func_attention_mask, B, x.device, func_token_lines,
@@ -134,5 +174,5 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             cross_task_residual=getattr(cfg.model, "cross_task_residual", True),
             graph_pool=getattr(cfg.model, "graph_pool", "mean"),
             mmoe_loc_transformer=getattr(cfg.model, "mmoe_loc_transformer", False),
-            lm_per_line=getattr(cfg.model, "lm_per_line", False),
+            live_lm=getattr(cfg.model, "live_lm", "func"),
         )
