@@ -24,7 +24,7 @@ model:
   pretrained_lm: microsoft/unixcoder-base            # node LM (baseline)
   func_lm: Salesforce/codet5p-110m-embedding         # func LM (varied)
   add_func_tokens: true
-  func_max_length: 1024
+  func_max_length: 512           # CodeT5+ trained max length (not 1024)
   localization_encoder: gnn
   hidden_dim: 256
   num_layers: 4
@@ -54,7 +54,7 @@ train:
   epoch_adaptive_weights: true
   device: cuda
   use_amp: true
-  use_flash_attention: true
+  use_flash_attention: false      # CodeT5+ does not support flash_attention_2
   grad_accum_steps: 1             # batch=32 × 1 = effective 32
   save_last_every: 10
   compile_model: false

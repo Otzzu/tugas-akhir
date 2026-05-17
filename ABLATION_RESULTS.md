@@ -241,25 +241,32 @@ E5 (thin head) trades classification away for the best localization coverage
 `configs/ablation/phase6/` — varies the two language models with
 `localization_encoder=gnn` fixed, to isolate each LM's effect on
 classification (no codet5p `last_hidden_state` dependency).
-Axes varied one at a time (F1 = baseline, F2 varies node, F3 varies func):
 
 - **node_lm** (`pretrained_lm`) — frozen, builds node features in the .pt cache
 - **func_lm** (`func_lm`) — live, fine-tuned function-level branch
 
 | ID | Config | node_lm | func_lm | .pt build config |
 |---|---|---|---|---|
-| F1 | `F1_node-unixcoder_func-unixcoder.yaml` | UniXcoder | UniXcoder | `node-unixcoder_func-unixcoder` |
+| F1 | — (= A2 baseline, `20260513_210613`) | UniXcoder | UniXcoder | `node-unixcoder_func-unixcoder` |
 | F2 | `F2_node-codet5p_func-unixcoder.yaml` | CodeT5+ | UniXcoder | `node-codet5p_func-unixcoder` |
 | F3 | `F3_node-unixcoder_func-codet5p.yaml` | UniXcoder | CodeT5+ | `node-unixcoder_func-codet5p` |
+| F4 | `F4_node-codet5p_func-codet5p.yaml` | CodeT5+ | CodeT5+ | `node-codet5p_func-codet5p` |
 
-CodeT5+ = `Salesforce/codet5p-110m-embedding` (pooled-tensor output, 256-dim).
+F1 (both UniXcoder, localization=gnn) is identical to **Phase 1 A2** — no
+re-run needed, A2 serves as the baseline.
+
+CodeT5+ = `Salesforce/codet5p-110m-embedding` — pooled-tensor output, **256-dim**
+(not 768; `lm_hidden_dim` probes it, `in_channels` adapts from the .pt).
 Each combo needs its own .pt build (node features + func tokenizer differ).
+Any config with CodeT5+ as func_lm (F3, F4) uses `func_max_length=512` and
+`use_flash_attention=false` — CodeT5+ caps at 512 tokens, no flash_attention_2.
 
 | ID | Test F1 | Test Acc | F1-w | AUC-ROC | IFA ↓ | Top-1 ↑ | R@20%LOC ↑ |
 |---|---|---|---|---|---|---|---|
-| F1 | _pending_ | | | | | | |
+| F1 (= A2) | 0.494 | 0.500 | — | 0.907 | 0.89 | 0.874 | 0.401 |
 | F2 | _pending_ | | | | | | |
 | F3 | _pending_ | | | | | | |
+| F4 | _pending_ | | | | | | |
 
 ---
 

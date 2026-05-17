@@ -1,12 +1,11 @@
-# Phase F — F1: LM ablation BASELINE — node=UniXcoder, func=UniXcoder
-# Varies the language models; localization fixed at gnn to isolate LM effect
-# on classification (no codet5p last_hidden_state dependency).
-#   node_lm  (pretrained_lm) — frozen, builds node features in the .pt cache
-#   func_lm  (func_lm)       — live, fine-tuned function-level branch
+# Phase 6 — F4: both LMs = CodeT5+ — node=CodeT5+, func=CodeT5+
+# Tests CodeT5+ as the whole-stack LM (frozen node encoder + live func branch).
+# CodeT5+ embedding output is 256-dim (not 768) — lm_hidden_dim probes it,
+# in_channels adapts from the .pt; CodeT5+ caps at 512 tokens, no flash-attn.
 #
-# .pt build: configs/data/megavul_multiclass_top25_node-unixcoder_func-unixcoder.yaml
+# .pt build: configs/data/megavul_multiclass_top25_node-codet5p_func-codet5p.yaml
 # Run (cloud, Linux):
-#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase6/F1_node-unixcoder_func-unixcoder.yaml
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase6/F4_node-codet5p_func-codet5p.yaml
 
 data:
   source: megavul
@@ -22,10 +21,10 @@ data:
 model:
   architecture: lmgat_codebert
   live_lm: func
-  pretrained_lm: microsoft/unixcoder-base       # node LM
-  func_lm: microsoft/unixcoder-base             # func LM
+  pretrained_lm: Salesforce/codet5p-110m-embedding   # node LM
+  func_lm: Salesforce/codet5p-110m-embedding         # func LM
   add_func_tokens: true
-  func_max_length: 1024
+  func_max_length: 512           # CodeT5+ trained max length (not 1024)
   localization_encoder: gnn
   hidden_dim: 256
   num_layers: 4
@@ -55,7 +54,7 @@ train:
   epoch_adaptive_weights: true
   device: cuda
   use_amp: true
-  use_flash_attention: true
+  use_flash_attention: false      # CodeT5+ does not support flash_attention_2
   grad_accum_steps: 1             # batch=32 × 1 = effective 32
   save_last_every: 10
   compile_model: false

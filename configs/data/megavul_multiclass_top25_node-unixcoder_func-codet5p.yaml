@@ -13,12 +13,12 @@ model:
   pretrained_lm: microsoft/unixcoder-base
   func_lm: Salesforce/codet5p-110m-embedding
   add_func_tokens: true
-  func_max_length: 1024
+  func_max_length: 512           # CodeT5+ trained max length (not 1024)
   num_classes: 26  # 25 Top-25 CWEs present in MegaVul + benign
   num_groups: 16
   active_heads: [binary, group, cwe]
 
 train:
   device: cuda
-  use_flash_attention: true
+  use_flash_attention: false     # CodeT5+ does not support flash_attention_2
   compile_model: true
