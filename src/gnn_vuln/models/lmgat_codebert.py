@@ -15,11 +15,12 @@ from torch_geometric.nn.aggr import AttentionalAggregation
 from gnn_vuln.models.base import VulnDetectorBase
 from gnn_vuln.models.encoders import build_gnn_encoder
 from gnn_vuln.models.heads import FuncHead, ThinFuncHead, StmtHead
-from gnn_vuln.models.cross_task import build_cross_task, statement_features
+from gnn_vuln.models.cross_task import build_cross_task, statement_features, _LineLevelEncoder
+from gnn_vuln.models._lm_utils import scatter_lines_to_tokens, _PERLINE_MAX_LINE
 
 NODE_FEAT_DIM = 773
 
-_VALID_LIVE_LM = ("none", "func", "func_and_line")
+_VALID_LIVE_LM = ("none", "func", "func_and_line", "line")
 
 
 class LMGATCodeBERTVulnDetector(VulnDetectorBase):
@@ -34,7 +35,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  cross_task_method="none", graph_pool="mean",
                  mmoe_task_encoder=False, cross_task_residual=True,
                  mmoe_loc_transformer=False, live_lm="func",
-                 gnn_model="gat", num_relations=7, num_bases=None):
+                 gnn_model="gat", num_relations=7, num_bases=None,
+                 codet5p_raw_encoder=False, codet5p_normalize_per_token=False):
         super().__init__()
         assert live_lm in _VALID_LIVE_LM, \
             f"live_lm must be one of {_VALID_LIVE_LM}, got {live_lm!r}"
@@ -56,7 +58,16 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                 func_chunk_size, func_chunk_stride,
                 use_flash_attention, compile_lm, use_grad_checkpoint,
                 lm_per_line=(live_lm == "func_and_line"),
+                codet5p_raw_encoder=codet5p_raw_encoder,
+                codet5p_normalize_per_token=codet5p_normalize_per_token,
             )
+        # Line-level transformer (live_lm=line): contextualizes per-line LM
+        # embeddings across the function. Classification = meanmax pool of its
+        # output; localization = its per-line output. No whole-function forward.
+        self.line_encoder = (
+            _LineLevelEncoder(self._lm_dim, self._lm_dim, num_layers=2, num_heads=num_heads)
+            if live_lm == "line" else None
+        )
         self._loc_enc = localization_encoder
         self.encoder = build_gnn_encoder(
             gnn_model, in_channels, hidden_dim, num_layers, dropout,
@@ -118,7 +129,21 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             )
             return logit, stmt_scores
 
-        if self._loc_enc != "gnn":
+        if self._live_lm == "line":
+            # Hierarchical: per-line LM forward → line transformer (cross-line
+            # context). Classification = meanmax pool; localization = per-line.
+            # No whole-function forward — function length is unbounded.
+            line_cls, uniq_sid, _, _ = self._lm_embed_per_line_raw(
+                func_input_ids, func_token_lines,
+            )
+            line_graph = (uniq_sid // _PERLINE_MAX_LINE).long()
+            line_ctx = self.line_encoder(line_cls, line_graph, B)        # [n, lm_dim]
+            lm_emb = (0.8 * global_max_pool(line_ctx, line_graph, size=B)
+                      + 0.6 * global_mean_pool(line_ctx, line_graph, size=B))
+            lm_hidden = scatter_lines_to_tokens(
+                line_ctx, uniq_sid, func_token_lines, B, func_input_ids.size(1),
+            )
+        elif self._loc_enc != "gnn":
             lm_emb, lm_hidden = self._lm_embed_full(
                 func_input_ids, func_attention_mask, B, x.device, func_token_lines,
             )
@@ -183,4 +208,6 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             gnn_model=getattr(cfg.model, "gnn_model", "gat"),
             num_relations=getattr(cfg.model, "num_relations", 7),
             num_bases=getattr(cfg.model, "num_bases", None),
+            codet5p_raw_encoder=getattr(cfg.model, "codet5p_raw_encoder", False),
+            codet5p_normalize_per_token=getattr(cfg.model, "codet5p_normalize_per_token", False),
         )

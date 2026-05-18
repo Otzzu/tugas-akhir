@@ -265,12 +265,14 @@ states for the `both` localizer come from its internal T5 encoder
 - **node_lm** (`pretrained_lm`) — frozen, builds node features in the .pt cache
 - **func_lm** (`func_lm`) — live, fine-tuned function-level branch
 
-| ID | Config | node_lm | func_lm | .pt build config |
-|---|---|---|---|---|
-| F1 | — (= Phase 4 meanmax, `20260516_125619`) | UniXcoder | UniXcoder | `node-unixcoder_func-unixcoder` |
-| F2 | `F2_node-codet5p_func-unixcoder.yaml` | CodeT5+ | UniXcoder | `node-codet5p_func-unixcoder` |
-| F3 | `F3_node-unixcoder_func-codet5p.yaml` | UniXcoder | CodeT5+ | `node-unixcoder_func-codet5p` |
-| F4 | `F4_node-codet5p_func-codet5p.yaml` | CodeT5+ | CodeT5+ | `node-codet5p_func-codet5p` |
+| ID | Config | node_lm | func_lm | .pt build config | Run ID | Epochs |
+|---|---|---|---|---|---|---|
+| F1 | — (= Phase 4 meanmax, `20260516_125619`) | UniXcoder | UniXcoder | `node-unixcoder_func-unixcoder` | `20260516_125619` | 48 |
+| F2 | `F2_node-codet5p_func-unixcoder.yaml` | CodeT5+ | UniXcoder | `node-codet5p_func-unixcoder` | `20260518_021722` | 48 |
+| F3 | `F3_node-unixcoder_func-codet5p.yaml` | UniXcoder | CodeT5+ | `node-unixcoder_func-codet5p` | `20260517_171638` | 67 |
+| F4 | `F4_node-codet5p_func-codet5p.yaml` | CodeT5+ | CodeT5+ | `node-codet5p_func-codet5p` | _pending_ | — |
+| F5 | `F5_node-unixcoder_func-codet5p-raw.yaml` | UniXcoder | CodeT5+ raw (768-dim `<s>`) | `node-unixcoder_func-codet5p` | _pending_ | — |
+| F6 | `F6_node-unixcoder_func-codet5p-normed.yaml` | UniXcoder | CodeT5+ proj+norm per-token | `node-unixcoder_func-codet5p` | _pending_ | — |
 
 F1 (both UniXcoder, localization=gnn, **meanmax**) is identical to the Phase 4
 **meanmax** run — no re-run needed, it serves as the baseline. (Not A2 — A2 uses
@@ -283,15 +285,32 @@ Each combo needs its own .pt build (node features + func tokenizer differ).
 Any config with CodeT5+ as func_lm (F3, F4) uses `func_max_length=512` and
 `use_flash_attention=false` — CodeT5+ caps at 512 tokens, no flash_attention_2.
 
-| ID | Test F1 | Test Acc | F1-w | AUC-ROC | IFA ↓ | Top-1 ↑ | R@20%LOC ↑ |
-|---|---|---|---|---|---|---|---|
-| F1 (= meanmax) | 0.517 | 0.538 | 0.539 | 0.911 | 0.644 | 0.900 | 0.487 |
-| F2 | _pending_ | | | | | | |
-| F3 | _pending_ | | | | | | |
-| F4 | _pending_ | | | | | | |
+| ID | Test F1 | Test Acc | F1-w | AUC-ROC | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+|---|---|---|---|---|---|---|---|---|---|---|
+| F1 (= meanmax) | 0.517 | 0.538 | 0.539 | 0.911 | 0.644 | 0.900 | 0.982 | 0.269 | 0.487 | 0.025 |
+| F2 (node=CT5+) | **0.502** | **0.554** | **0.552** | **0.906** | 0.745 | 0.899 | 0.982 | 0.232 | 0.415 | 0.032 |
+| F3 (func=CT5+) | 0.444 | 0.517 | 0.523 | 0.897 | **0.512** | **0.946** | **0.985** | **0.374** | **0.586** | **0.016** |
+| F4 (both=CT5+) | _pending_ | | | | | | | | | |
+| F5 (func=CT5+ raw) | _pending_ | | | | | | | | | |
+| F6 (func=CT5+ normed) | _pending_ | | | | | | | | | |
 
 All F-configs use the Phase 3 winner loss (no focal + label_smoothing 0.1 + cosine,
 wd 1e-3, patience 15) — same as F1's meanmax baseline and phases 4-5.
+
+**F2 (node=CodeT5+)** improves classification: +0.985 macro F1 vs F1 baseline
+(0.502 vs 0.517 — gap vs baseline is −0.015, but best among F2/F3 variants),
+best accuracy (0.554), best AUC-ROC (0.906). Localization weaker than F1 (IFA 0.745,
+R@20% 0.415 vs 0.487). CodeT5+ node embeddings carry richer program semantics but
+less precise statement-level signal.
+
+**F3 (func=CodeT5+)** trades classification for localization: macro F1 drops to 0.444
+(worst of F2/F3) but localization dominates — best IFA (0.512), Top-1 (0.946),
+R@5% (0.374), R@20% (0.586), Effort (0.016). CodeT5+ function-level hidden captures
+finer per-token context useful for statement scoring even at 512-token cap.
+
+**Key finding:** node_lm choice governs classification; func_lm choice governs
+localization. F4 (both=CodeT5+) will test whether combining gains is additive or
+trade-off is intrinsic. F4 pending.
 
 ---
 

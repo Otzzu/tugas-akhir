@@ -10,7 +10,7 @@ from transformers import AutoConfig, AutoModel
 
 from gnn_vuln.models._lm_utils import (
     lm_hidden_dim, lm_pool, lm_pool_windowed, lm_full_windowed, lm_per_line_embed,
-    lm_full_codet5p, _is_codet5p_embedding,
+    lm_per_line_raw, lm_full_codet5p, lm_full_codet5p_raw, _is_codet5p_embedding,
 )
 
 
@@ -48,6 +48,8 @@ class VulnDetectorBase(nn.Module):
         compile_lm: bool = False,
         use_grad_checkpoint: bool = True,
         lm_per_line: bool = False,
+        codet5p_raw_encoder: bool = False,
+        codet5p_normalize_per_token: bool = False,
     ) -> None:
         """
         Load a live LM and store as self.codebert.
@@ -85,7 +87,13 @@ class VulnDetectorBase(nn.Module):
                 self.codebert = torch.compile(self.codebert, mode="reduce-overhead", dynamic=False)
             except Exception:
                 pass  # unsupported platform or torch version — skip silently
-        self._lm_dim = lm_hidden_dim(self.codebert, matryoshka_dim)
+        self._codet5p_raw = codet5p_raw_encoder and _is_codet5p_embedding(self.codebert)
+        self._codet5p_norm_per_token = codet5p_normalize_per_token
+        if self._codet5p_raw:
+            d = getattr(self.codebert.config, "d_model", 768)
+            self._lm_dim = min(d, matryoshka_dim) if matryoshka_dim else d
+        else:
+            self._lm_dim = lm_hidden_dim(self.codebert, matryoshka_dim)
         self._is_enc_dec = getattr(
             self.codebert.config, "is_encoder_decoder", False
         )
@@ -119,11 +127,17 @@ class VulnDetectorBase(nn.Module):
         """
         if func_input_ids is None:
             return torch.zeros(B, self._lm_dim, device=device), None
+        # CodeT5+ raw: skip proj/L2-norm, use <s> token hidden (d_model dim).
+        if self._codet5p_raw:
+            return lm_full_codet5p_raw(
+                self.codebert, func_input_ids, func_attention_mask, self._matryoshka_dim,
+            )
         # CodeT5+ embedding model — public forward is pooled-only. Pull per-token
         # states from the internal T5 encoder so localization=lm|both works.
         if _is_codet5p_embedding(self.codebert):
             return lm_full_codet5p(
                 self.codebert, func_input_ids, func_attention_mask, self._matryoshka_dim,
+                normalize_per_token=self._codet5p_norm_per_token,
             )
         # Per-line embedding — EDAT-style line isolation (reuses func tokens)
         if self._lm_per_line and func_token_lines is not None:
@@ -181,6 +195,12 @@ class VulnDetectorBase(nn.Module):
         if func_input_ids is None:
             return torch.zeros(B, self._lm_dim, device=device)
 
+        if self._codet5p_raw:
+            cls, _ = lm_full_codet5p_raw(
+                self.codebert, func_input_ids, func_attention_mask, self._matryoshka_dim,
+            )
+            return cls
+
         if self._func_chunk_size > 0:
             return lm_pool_windowed(
                 self.codebert,
@@ -199,6 +219,19 @@ class VulnDetectorBase(nn.Module):
             func_attention_mask,
             matryoshka_dim=self._matryoshka_dim,
         )
+
+    def _lm_embed_per_line_raw(
+        self,
+        func_input_ids: torch.Tensor,
+        func_token_lines: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, int, int]:
+        """Per-line LM forward → (line_cls [n, lm_dim], uniq_sid [n], B, L).
+
+        Used by live_lm=line: each source line forwarded through the LM
+        independently → per-line [CLS]. No whole-function forward. The caller
+        (a line-level transformer) recovers cross-line context.
+        """
+        return lm_per_line_raw(self.codebert, func_input_ids, func_token_lines)
 
     # ── Optimizer helpers ─────────────────────────────────────────────────────
 

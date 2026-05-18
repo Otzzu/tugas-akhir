@@ -123,6 +123,13 @@ class ModelConfig:
     #                   line forwarded through LM independently → per-line [CLS]
     #                   used as synthetic hidden for localization. Pair with
     #                   mmoe_loc_transformer to recover cross-line context.
+    #   line          — fully hierarchical, NO whole-function forward. Each line
+    #                   forwarded through the LM independently → per-line [CLS];
+    #                   a line-level transformer adds cross-line context.
+    #                   Classification = meanmax pool of the transformer output;
+    #                   localization = its per-line output. Function length is
+    #                   unbounded (no func_max_length truncation). BERT-family
+    #                   func_lm only (needs last_hidden_state per line).
     live_lm: str = "func"
     # ── Bidirectional cross-task (Phase 2, lmgat_codebert) ────────────────────
     # Makes localization (stmt_head) and classification (func_head) inform each
@@ -161,6 +168,14 @@ class ModelConfig:
     #   gated    — per-statement learnable gate σ(W·[gnn;lm_proj]), no manual α
     stmt_both_mode: str = "concat"
     stmt_lm_alpha: float = 0.5   # only for stmt_both_mode="weighted"
+    # Use raw CodeT5+ encoder hidden states (d_model dim, no proj/L2-norm) instead
+    # of the model's projected 256-dim output. <s> token used for classification,
+    # full hidden for localization. Only active when func_lm is a codet5p-*-embedding.
+    codet5p_raw_encoder: bool = False
+    # Apply F.normalize(dim=-1) to CodeT5+ per-token projected vectors so they
+    # match the unit-norm scale of the pooled embedding. F3 leaves per_token
+    # unnormalized; F6 tests whether normalizing per-token improves localization.
+    codet5p_normalize_per_token: bool = False
 
 
 @dataclass

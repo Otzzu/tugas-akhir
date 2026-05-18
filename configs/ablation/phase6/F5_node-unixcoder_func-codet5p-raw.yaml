@@ -1,0 +1,70 @@
+# Phase 6 — F5: func=CodeT5+ raw encoder hidden (<s> token, 768-dim, no proj/L2-norm)
+# Same as F3 but skips codet5p-110m-embedding's proj+normalize — uses raw T5 encoder
+# hidden at position 0 (<s> token, analogous to [CLS] in UniXcoder) for classification,
+# full 768-dim per-token hidden for localization.
+# Compares projected-256 (F3) vs raw-768 (<s>) for CodeT5+ func_lm.
+#
+# .pt build: same as F3 — configs/data/megavul_multiclass_top25_node-unixcoder_func-codet5p.yaml
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase6/F5_node-unixcoder_func-codet5p-raw.yaml
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: func
+  pretrained_lm: microsoft/unixcoder-base            # node LM (same as F3)
+  func_lm: Salesforce/codet5p-110m-embedding         # func LM (same as F3)
+  codet5p_raw_encoder: true                          # use raw 768-dim <s> token
+  add_func_tokens: true
+  func_max_length: 512           # CodeT5+ trained max length
+  localization_encoder: both
+  stmt_both_mode: concat
+  graph_pool: meanmax            # Phase 4 winner
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26                 # 25 Top-25 CWEs + benign
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: false
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  lm_lr: 0.00001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: true
+  use_flash_attention: false      # CodeT5+ does not support flash_attention_2
+  grad_accum_steps: 1
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 8
+  prefetch_factor: 2

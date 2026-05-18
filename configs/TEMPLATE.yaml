@@ -233,6 +233,12 @@ model:
   #                   synthetic hidden. Reuses func_input_ids (no .pt rebuild).
   #                   Pair with mmoe_loc_transformer to recover cross-line context.
   #                   Use with localization_encoder=lm|both.
+  #   line          — fully hierarchical, NO whole-function forward. Per-line LM
+  #                   forward → line-level transformer (cross-line context).
+  #                   Classification = meanmax pool of transformer output;
+  #                   localization = its per-line output. Function length
+  #                   unbounded (no func_max_length truncation). BERT-family
+  #                   func_lm only.
   # Support: lmgat_codebert
   live_lm: func
 
