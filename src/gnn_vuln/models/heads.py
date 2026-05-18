@@ -184,8 +184,13 @@ class StmtHead(nn.Module):
                         gnn_max  = gnn_max  + cg
                         gnn_mean = gnn_mean + cg
                     if lm_max_emb is None:
-                        s = _ALPHA_MAX * self.max_head(gnn_max.float()) + _ALPHA_MEAN * self.mean_head(gnn_mean.float()) if self._both_mode == "concat" else \
-                            _ALPHA_MAX * self.max_head_gnn(gnn_max.float()) + _ALPHA_MEAN * self.mean_head_gnn(gnn_mean.float())
+                        if self._both_mode == "concat":
+                            lm_d = self.max_head.in_features - self._hidden_dim
+                            z = torch.zeros(lm_d, device=device, dtype=gnn_max.dtype)
+                            s = _ALPHA_MAX * self.max_head(torch.cat([gnn_max, z]).float()) + \
+                                _ALPHA_MEAN * self.mean_head(torch.cat([gnn_mean, z]).float())
+                        else:
+                            s = _ALPHA_MAX * self.max_head_gnn(gnn_max.float()) + _ALPHA_MEAN * self.mean_head_gnn(gnn_mean.float())
                     else:
                         lm_mx, lm_mn = lm_max_emb[i], lm_mean_emb[i]
                         if cl is not None:

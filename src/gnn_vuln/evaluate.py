@@ -316,6 +316,10 @@ def main() -> None:
     model = build_model(cfg, in_channels).to(device)
     load_checkpoint(model, args.checkpoint, device=str(device))
     logger.info(f"Model loaded from {args.checkpoint}")
+    from gnn_vuln.models.heads import StmtHead
+    for m in model.modules():
+        if isinstance(m, StmtHead):
+            m._vectorized = True
 
     run_id = Path(args.checkpoint).parent.name
     results_dir = cfg.train.results_dir / run_id
