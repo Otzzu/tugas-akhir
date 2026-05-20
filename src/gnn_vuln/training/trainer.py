@@ -108,6 +108,8 @@ class Trainer:
         use_livable_real: bool = False,
         livable_focal_gamma: float = 2.0,
         livable_label_smoothing: float = 0.1,
+        pgd=None,             # EmbeddingPGD | None
+        pgd_tokenizer=None,   # HF tokenizer for func-LM
     ):
         self.model              = model
         self.optimizer          = optimizer
@@ -131,6 +133,8 @@ class Trainer:
         self.use_livable_real   = use_livable_real
         self.livable_focal_gamma = livable_focal_gamma
         self.livable_label_smoothing = livable_label_smoothing
+        self.pgd                = pgd
+        self.pgd_tokenizer      = pgd_tokenizer
         self._current_epoch     = 1
         self._total_epochs      = 100
 
@@ -275,6 +279,22 @@ class Trainer:
 
             with autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.use_amp):
                 _, loss = self._forward(batch, class_weight)
+
+            # EDAT adversarial training: perturb identifier embeddings,
+            # add adversarial loss. Runs adversarial forward in FP32 (no AMP)
+            # so the retained clean graph and adv graph can be backprop-ed
+            # together via loss_clean + loss_adv.
+            if self.pgd is not None and self.pgd_tokenizer is not None:
+                func_ids = getattr(batch, "func_input_ids", None)
+                _cw = class_weight
+                _batch = batch
+                loss_adv = self.pgd.adv_loss(
+                    loss_clean=loss,
+                    func_input_ids=func_ids,
+                    tokenizer=self.pgd_tokenizer,
+                    forward_fn=lambda: self._forward(_batch, _cw)[1],
+                )
+                loss = loss + loss_adv
 
             # Scale loss so gradient magnitude is independent of accum_steps
             loss = loss / accum

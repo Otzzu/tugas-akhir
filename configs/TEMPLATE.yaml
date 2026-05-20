@@ -551,6 +551,29 @@ train:
   # Support: all architectures
   grad_accum_steps: 1
 
+  # ── EDAT — Embedding-layer Driven Adversarial Training ───────────────────
+  # Injects FGSM-sign perturbations into identifier (variable/function name)
+  # token embeddings during training. Improves robustness and generalisation,
+  # especially on rare CWE types (long-tail classes).
+  #
+  # Algorithm (K-step FGSM-sign, matching EDAT paper code):
+  #   δ_{t+1} = clamp(δ_t + α·sign(∇L_clean), -ε, ε)   for t = 1..K
+  #   L_total  = L_clean + L_adv(perturbed identifiers)
+  #
+  # Only C identifier tokens (extracted via tree-sitter, keywords excluded)
+  # are perturbed — syntactic validity preserved.
+  #
+  # Constraints:
+  #   - Requires live_lm != none (needs word_embeddings to perturb)
+  #   - Incompatible with compile_model: true
+  #   - Doubles LM forward passes per batch → ~40-60% slower training
+  #
+  # Support: lmgat_codebert (and any arch with live LM branch)
+  use_edat: false
+  edat_epsilon: 0.02   # L∞ perturbation bound on embedding table
+  edat_alpha: 0.01     # FGSM step size α per ascent step
+  edat_steps: 3        # number of ascent steps K
+
 # ---------------------------------------------------------------------------
 # EWC-DR — Continual Learning (optional, omit entire section to disable)
 # ---------------------------------------------------------------------------

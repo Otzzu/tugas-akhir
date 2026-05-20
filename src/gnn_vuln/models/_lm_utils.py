@@ -237,7 +237,9 @@ def lm_full_codet5p(
         enc = model.encoder(input_ids=input_ids, attention_mask=attention_mask)
         hs = enc.last_hidden_state.float()                  # [B, L, d_model]
         per_token = model.proj(hs)                          # [B, L, d]
-        pooled = model(input_ids=input_ids, attention_mask=attention_mask).float()  # [B, d]
+        # Reuse per_token[<s>] for pooled — avoids a second full encoder forward.
+        # codet5p-*-embedding pools the <s> token (index 0), projects, then L2-normalises.
+        pooled = F.normalize(per_token[:, 0, :], dim=-1).float()       # [B, d]
     if normalize_per_token:
         per_token = F.normalize(per_token, dim=-1)
     if matryoshka_dim is not None:

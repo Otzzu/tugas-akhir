@@ -141,6 +141,33 @@ class TrainingSession:
         total_steps = len(train_loader) * cfg.train.epochs
         optimizer, scheduler, step_per_batch = build_optimizer_and_scheduler(model, cfg, total_steps)
 
+        # EDAT adversarial training setup
+        pgd = pgd_tokenizer = None
+        if getattr(cfg.train, "use_edat", False):
+            if getattr(cfg.train, "compile_model", False):
+                logger.warning("use_edat=true conflicts with compile_model=true — EDAT disabled")
+            elif not (hasattr(model, "codebert") or
+                      (hasattr(model, "module") and hasattr(model.module, "codebert"))):
+                logger.warning("use_edat=true but model has no live LM — EDAT disabled")
+            else:
+                from gnn_vuln.training.pgd import EmbeddingPGD
+                pgd = EmbeddingPGD(
+                    model,
+                    epsilon=getattr(cfg.train, "edat_epsilon", 0.02),
+                    alpha=getattr(cfg.train,   "edat_alpha",   1e-2),
+                    n_steps=getattr(cfg.train, "edat_steps",   3),
+                )
+                # Reuse dataset's func tokenizer (initialised on first data access)
+                if hasattr(dataset, "_tok_cache") and dataset._tok_cache is not None:
+                    pgd_tokenizer = dataset._tok_cache
+                else:
+                    from gnn_vuln.data.dataset_lm import _load_tokenizer
+                    _func_lm = getattr(cfg.model, "func_lm", "") or getattr(
+                        cfg.model, "pretrained_lm", "microsoft/unixcoder-base"
+                    )
+                    pgd_tokenizer = _load_tokenizer(_func_lm)
+                logger.info("EDAT enabled — adversarial identifier perturbation active")
+
         grad_accum_steps = getattr(cfg.train, "grad_accum_steps", 1)
         trainer = Trainer(
             model=model, optimizer=optimizer, scheduler=scheduler,
@@ -155,6 +182,7 @@ class TrainingSession:
             use_livable_real=self._use_livable_real,
             livable_focal_gamma=getattr(cfg.train, "focal_loss_gamma", 2.0),
             livable_label_smoothing=getattr(cfg.train, "label_smoothing", 0.1),
+            pgd=pgd, pgd_tokenizer=pgd_tokenizer,
         )
         trainer.set_grad_clip(self._grad_clip)
 

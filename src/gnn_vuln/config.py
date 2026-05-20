@@ -217,6 +217,15 @@ class TrainConfig:
     # Enable only for replication studies — costs 20-40% training speed.
     # For ablation statistical comparisons, prefer multi-seed runs with this flag off.
     deterministic: bool = False
+    # ── EDAT adversarial training (Embedding-layer Driven Adversarial Training) ─
+    # Perturbs identifier token embeddings (variable/function names) during training
+    # to improve robustness and generalisation on rare CWE types.
+    # Requires live_lm != 'none' and compile_model=false.
+    # Doubles effective LM forward passes per batch — expect ~40-60% slower training.
+    use_edat: bool = False
+    edat_epsilon: float = 0.02   # L∞ perturbation bound on embedding table
+    edat_alpha:   float = 1e-2   # FGSM step size per ascent step
+    edat_steps:   int   = 3      # number of FGSM-sign ascent steps K
 
 
 @dataclass
