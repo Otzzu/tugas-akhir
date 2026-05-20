@@ -9,6 +9,8 @@
 # Flags:
 #   --init          Force run setup_cloud.sh + reinstall rclone.conf (fresh server)
 #   --skip          Skip setup_cloud.sh + rclone setup entirely (already configured)
+#   --resume        Pass --resume to train.py — continues from last_{arch}.pt if found.
+#                   MODEL_DIR detection relaxed: reusing an existing checkpoint dir is OK.
 #   --clean-every N Delete dataset .pt cache after every Nth run (0 = never, default: 0)
 #                   Use N=total_runs to clean only after last run (safe for shared datasets).
 #                   Clean happens inside background upload after rclone finishes.
@@ -48,15 +50,17 @@ CONFIG_LIST=()
 DATASET_LIST=()
 FLAG_INIT=false    # --init: force run setup_cloud.sh + rclone setup regardless of state
 FLAG_SKIP=false    # --skip: skip setup_cloud.sh + rclone setup entirely
+FLAG_RESUME=false  # --resume: pass --resume to train.py (continues from last_{arch}.pt)
 CLEAN_EVERY=0      # --clean-every N: delete dataset .pt after every Nth run (0 = never)
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --config)        CONFIG_LIST+=("$2");  shift 2 ;;
         --dataset)       DATASET_LIST+=("$2"); shift 2 ;;
-        --init)          FLAG_INIT=true;       shift ;;
-        --skip)          FLAG_SKIP=true;       shift ;;
-        --clean-every)   CLEAN_EVERY="$2";     shift 2 ;;
+        --init)          FLAG_INIT=true;        shift ;;
+        --skip)          FLAG_SKIP=true;        shift ;;
+        --resume)        FLAG_RESUME=true;      shift ;;
+        --clean-every)   CLEAN_EVERY="$2";      shift 2 ;;
         -h|--help)
             sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
@@ -265,8 +269,10 @@ download_dataset() {
 # ─── 4. Train ────────────────────────────────────────────────────────────────
 run_train() {
     local config="$1"
-    info "Training: $config"
-    PYTHONPATH=src python -m gnn_vuln.train --config "$config"
+    local extra_args=""
+    $FLAG_RESUME && extra_args="--resume"
+    info "Training: $config${extra_args:+ ($extra_args)}"
+    PYTHONPATH=src python -m gnn_vuln.train --config "$config" $extra_args
     success "Training done: $config"
 }
 
@@ -399,8 +405,12 @@ for i in "${!CONFIG_LIST[@]}"; do
 
     # Find the new checkpoint dir (newest after training)
     MODEL_DIR=$(ls -dt ${CHECKPOINTS_DIR}/* 2>/dev/null | head -1)
-    if [[ -z "$MODEL_DIR" || "$MODEL_DIR" == "$BEFORE" ]]; then
-        error "Could not detect new checkpoint dir after training"
+    if [[ -z "$MODEL_DIR" ]]; then
+        error "Could not detect checkpoint dir after training"
+        exit 1
+    fi
+    if [[ "$MODEL_DIR" == "$BEFORE" ]] && ! $FLAG_RESUME; then
+        error "Could not detect new checkpoint dir after training (dir unchanged — if resuming, add --resume)"
         exit 1
     fi
     MODEL_ID=$(basename "$MODEL_DIR")
