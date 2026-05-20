@@ -176,6 +176,9 @@ class ModelConfig:
     # match the unit-norm scale of the pooled embedding. F3 leaves per_token
     # unnormalized; F6 tests whether normalizing per-token improves localization.
     codet5p_normalize_per_token: bool = False
+    # Apply F.normalize(dim=-1) to GNN h_graph (classification) and per-node h
+    # (localization) before concat/stmt_head. Symmetric to codet5p_normalize_per_token.
+    normalize_gnn_output: bool = False
 
 
 @dataclass

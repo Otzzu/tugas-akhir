@@ -270,9 +270,9 @@ states for the `both` localizer come from its internal T5 encoder
 | F1 | — (= Phase 4 meanmax, `20260516_125619`) | UniXcoder | UniXcoder | `node-unixcoder_func-unixcoder` | `20260516_125619` | 48 |
 | F2 | `F2_node-codet5p_func-unixcoder.yaml` | CodeT5+ | UniXcoder | `node-codet5p_func-unixcoder` | `20260518_021722` | 48 |
 | F3 | `F3_node-unixcoder_func-codet5p.yaml` | UniXcoder | CodeT5+ | `node-unixcoder_func-codet5p` | `20260517_171638` | 67 |
-| F4 | `F4_node-codet5p_func-codet5p.yaml` | CodeT5+ | CodeT5+ | `node-codet5p_func-codet5p` | _pending_ | — |
-| F5 | `F5_node-unixcoder_func-codet5p-raw.yaml` | UniXcoder | CodeT5+ raw (768-dim `<s>`) | `node-unixcoder_func-codet5p` | _pending_ | — |
-| F6 | `F6_node-unixcoder_func-codet5p-normed.yaml` | UniXcoder | CodeT5+ proj+norm per-token | `node-unixcoder_func-codet5p` | _pending_ | — |
+| F4 | `F4_node-codet5p_func-codet5p.yaml` | CodeT5+ | CodeT5+ | `node-codet5p_func-codet5p` | `20260518_103922` | 66 |
+| F5 | `F5_node-unixcoder_func-codet5p-raw.yaml` | UniXcoder | CodeT5+ raw (768-dim `<s>`) | `node-unixcoder_func-codet5p` | `20260519_154339` | 54 |
+| F6 | `F6_node-unixcoder_func-codet5p-normed.yaml` | UniXcoder | CodeT5+ proj+norm per-token | `node-unixcoder_func-codet5p` | `20260519_224619` | 34 |
 
 F1 (both UniXcoder, localization=gnn, **meanmax**) is identical to the Phase 4
 **meanmax** run — no re-run needed, it serves as the baseline. (Not A2 — A2 uses
@@ -285,14 +285,16 @@ Each combo needs its own .pt build (node features + func tokenizer differ).
 Any config with CodeT5+ as func_lm (F3, F4) uses `func_max_length=512` and
 `use_flash_attention=false` — CodeT5+ caps at 512 tokens, no flash_attention_2.
 
+Bolds = best among F2–F6 (new configs; F1 is unchanged baseline).
+
 | ID | Test F1 | Test Acc | F1-w | AUC-ROC | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
 |---|---|---|---|---|---|---|---|---|---|---|
 | F1 (= meanmax) | 0.517 | 0.538 | 0.539 | 0.911 | 0.644 | 0.900 | 0.982 | 0.269 | 0.487 | 0.025 |
-| F2 (node=CT5+) | **0.502** | **0.554** | **0.552** | **0.906** | 0.745 | 0.899 | 0.982 | 0.232 | 0.415 | 0.032 |
+| F2 (node=CT5+) | **0.502** | 0.554 | 0.552 | **0.906** | 0.745 | 0.899 | 0.982 | 0.232 | 0.415 | 0.032 |
 | F3 (func=CT5+) | 0.444 | 0.517 | 0.523 | 0.897 | **0.512** | **0.946** | **0.985** | **0.374** | **0.586** | **0.016** |
-| F4 (both=CT5+) | _pending_ | | | | | | | | | |
-| F5 (func=CT5+ raw) | _pending_ | | | | | | | | | |
-| F6 (func=CT5+ normed) | _pending_ | | | | | | | | | |
+| F4 (both=CT5+) | 0.475 | 0.548 | 0.552 | 0.833 | 0.991 | 0.857 | 0.958 | 0.254 | 0.436 | 0.024 |
+| F5 (func=CT5+ raw 768) | 0.499 | **0.568** | **0.566** | 0.897 | 1.186 | 0.925 | 0.977 | 0.308 | 0.547 | 0.022 |
+| F6 (func=CT5+ norm 256) | 0.459 | 0.520 | 0.520 | 0.905 | 0.734 | 0.934 | 0.982 | 0.353 | 0.560 | **0.016** |
 
 All F-configs use the Phase 3 winner loss (no focal + label_smoothing 0.1 + cosine,
 wd 1e-3, patience 15) — same as F1's meanmax baseline and phases 4-5.
@@ -308,9 +310,32 @@ less precise statement-level signal.
 R@5% (0.374), R@20% (0.586), Effort (0.016). CodeT5+ function-level hidden captures
 finer per-token context useful for statement scoring even at 512-token cap.
 
-**Key finding:** node_lm choice governs classification; func_lm choice governs
-localization. F4 (both=CodeT5+) will test whether combining gains is additive or
-trade-off is intrinsic. F4 pending.
+**F5 (func=CodeT5+ raw 768-dim)** gives best accuracy (0.568) and F1-w (0.566) among
+all F-configs, but localization collapses — IFA 1.186 (worst), R@20% 0.547. Root
+cause: concat becomes `[GNN-256 | LM-768]` = 1024-dim with LM occupying 75% — GNN
+statement-level signal drowned by the larger raw LM vectors.
+
+**F6 (func=CodeT5+ proj+norm 256-dim)** normalizes per-token projected vectors to
+unit norm. Localization partially recovers vs F5 (IFA 0.734 vs 1.186) but F3
+(unnormalized proj-256) still wins (IFA 0.512, R@20% 0.586). Surprisingly,
+unit-norm HURTS localization slightly vs F3 — amplitude variation in unnormalized
+per-token vectors may encode statement-level suspicion signal that normalization
+discards. F6 ties F3 on Effort@20%R (0.016). Classification degrades vs F5
+(macro F1 0.459 vs 0.499) — consistent with the dimension-balance being restored
+(256+256=512, equal GNN/LM) but the normalization removing useful scale info.
+
+**Updated key finding:** LM embedding dimension relative to GNN dim governs the
+classification/localization trade-off — not just LM model choice. Raw 768-dim
+(F5) maximises classification but kills localization via GNN signal suppression in
+concat. Projected 256-dim (F3) keeps GNN/LM at equal dim (256+256) and is best
+for localization. Normalization (F6) is neutral-to-harmful for localization.
+**F4 (both=CodeT5+)** — both node and func LM are CodeT5+. Classification: macro F1
+0.475, AUC 0.833 (worst AUC of all F-configs). Localization: IFA 0.991, R@20%
+0.436 — worse than F3 (func=CT5+, IFA 0.512) and F2 (node=CT5+, IFA 0.745).
+Combining CodeT5+ at both levels does NOT compound gains — the two CodeT5+ branches
+interfere rather than complement. AUC collapse (0.833 vs 0.906 F2) suggests
+ranking quality degrades when node features and live LM share the same embedding
+space, reducing diversity. The trade-off is intrinsic, not additive.
 
 ---
 
@@ -334,3 +359,6 @@ trade-off is intrinsic. F4 pending.
 | B2 cross_attn | 129.6M | 169s | 2.72 | — |
 | B3 self_attn | 129.6M | 245s | 4.29 | — |
 | B4 mmoe | 129.6M | 165s | 1.83 | — |
+| F4 both=CT5+ | 137.0M | 323s | 5.94 | 9.1 GB |
+| F5 CT5+ raw | 138.2M | 457s | 6.86 | 8.4 GB |
+| F6 CT5+ norm | 138.0M | 460s | 4.35 | 8.7 GB |

@@ -345,6 +345,28 @@ model:
   #          lmgat_codebert_mtl | lmgat_hcdfgat
   localization_encoder: gnn
 
+  # Statement-level localization feature concat mode when localization_encoder=both.
+  # Values: concat (default) | alpha (learned weighted sum, stmt_lm_alpha weight)
+  # Support: lmgat_codebert (localization_encoder=both)
+  stmt_both_mode: concat
+
+  # Learned weight for LM features in stmt_both_mode=alpha (0.0=GNN only, 1.0=LM only).
+  # Support: lmgat_codebert (stmt_both_mode=alpha)
+  stmt_lm_alpha: 0.5
+
+  # Apply F.normalize(dim=-1) to CodeT5+ per-token projected vectors so they
+  # match the unit-norm scale of the pooled embedding.
+  # F3: per_token unnormalized 256-dim. F6: per_token unit-norm 256-dim.
+  # Tests whether per-token scale inconsistency affects localization.
+  # Support: lmgat_codebert (func_lm=Salesforce/codet5p-*-embedding)
+  codet5p_normalize_per_token: false
+
+  # Apply F.normalize(dim=-1) to GNN h_graph (classification) and per-node h
+  # (localization) before concat/stmt_head. Symmetric to codet5p_normalize_per_token.
+  # F7: both GNN and LM sides unit-normed → tests scale imbalance vs dim-ratio.
+  # Support: lmgat_codebert
+  normalize_gnn_output: false
+
   # ── Bidirectional cross-task (Phase 2) ────────────────────────────────────
   # Makes localization (stmt_head) and classification (func_head) inform each other.
   #   none            — independent heads (Phase 1 baseline)

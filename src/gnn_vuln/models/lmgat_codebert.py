@@ -36,8 +36,10 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  mmoe_task_encoder=False, cross_task_residual=True,
                  mmoe_loc_transformer=False, live_lm="func",
                  gnn_model="gat", num_relations=7, num_bases=None,
-                 codet5p_raw_encoder=False, codet5p_normalize_per_token=False):
+                 codet5p_raw_encoder=False, codet5p_normalize_per_token=False,
+                 normalize_gnn_output=False):
         super().__init__()
+        self._normalize_gnn_output = normalize_gnn_output
         assert live_lm in _VALID_LIVE_LM, \
             f"live_lm must be one of {_VALID_LIVE_LM}, got {live_lm!r}"
         self._live_lm = live_lm
@@ -119,12 +121,14 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         else:
             h_graph = global_mean_pool(h, batch)
         B = h_graph.size(0)
+        # Per-node GNN features for localization (optionally unit-normed, symmetric to F6 per_token norm).
+        h_loc = F.normalize(h, dim=-1) if self._normalize_gnn_output else h
         # ── LM branch ─────────────────────────────────────────────────────────
         if self._live_lm == "none":
             # GNN-only: fused = h_graph. Skip all LM forwards, stmt head GNN-only.
             logit = self.func_head(h_graph)
             stmt_scores = (
-                self.stmt_head.score(h, batch, node_line)
+                self.stmt_head.score(h_loc, batch, node_line)
                 if node_line is not None else None
             )
             return logit, stmt_scores
@@ -150,13 +154,15 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         else:
             lm_emb = self._lm_embed(func_input_ids, func_attention_mask, B, x.device)
             lm_hidden = None
+        if self._normalize_gnn_output:
+            h_graph = F.normalize(h_graph, dim=-1)
         fused = torch.cat([h_graph, lm_emb], dim=-1)
 
         ct = self._cross_task_method
         if ct == "none" or node_line is None:
             logit = self.func_head(fused)
             stmt_scores = (
-                self.stmt_head.score(h, batch, node_line, lm_hidden, func_token_lines)
+                self.stmt_head.score(h_loc, batch, node_line, lm_hidden, func_token_lines)
                 if node_line is not None else None
             )
             return logit, stmt_scores
@@ -165,14 +171,14 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         # statement_features uses the SAME sid formula as StmtHead → cond [S,
         # loc_dim] aligns directly with StmtHead's statements.
         loc_feats, stmt_graph, _ = statement_features(
-            h, batch, node_line, lm_hidden, func_token_lines, self._loc_enc,
+            h_loc, batch, node_line, lm_hidden, func_token_lines, self._loc_enc,
         )
         fused_mod, stmt_cond = self.cross_task(
-            fused, loc_feats.detach(), stmt_graph, h, batch, B,
+            fused, loc_feats.detach(), stmt_graph, h_loc, batch, B,
             lm_hidden, func_token_lines,
         )
         logit = self.func_head(fused_mod)
-        stmt_scores = self.stmt_head.score(h, batch, node_line, lm_hidden, func_token_lines, cond=stmt_cond)
+        stmt_scores = self.stmt_head.score(h_loc, batch, node_line, lm_hidden, func_token_lines, cond=stmt_cond)
         return logit, stmt_scores
 
     @classmethod
@@ -210,4 +216,5 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             num_bases=getattr(cfg.model, "num_bases", None),
             codet5p_raw_encoder=getattr(cfg.model, "codet5p_raw_encoder", False),
             codet5p_normalize_per_token=getattr(cfg.model, "codet5p_normalize_per_token", False),
+            normalize_gnn_output=getattr(cfg.model, "normalize_gnn_output", False),
         )
