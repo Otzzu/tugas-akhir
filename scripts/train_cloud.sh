@@ -272,6 +272,7 @@ run_train() {
     local extra_args=""
     $FLAG_RESUME && extra_args="--resume"
     info "Training: $config${extra_args:+ ($extra_args)}"
+    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
     PYTHONPATH=src python -m gnn_vuln.train --config "$config" $extra_args
     success "Training done: $config"
 }
