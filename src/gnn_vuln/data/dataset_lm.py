@@ -377,11 +377,13 @@ class CodeBERTGraphDataset(Dataset):
         func_max_length: int = 512,
         force_rebuild: bool = False,
         storage: str = "inmemory",  # "inmemory" | "lazy"
+        precompute_line_cls: bool = False,
         transform=None,
         pre_transform=None,
     ):
         self._force_rebuild = force_rebuild
         self._storage = storage  # "inmemory" | "lazy"
+        self._precompute_line_cls = precompute_line_cls
         self._func_max_length = func_max_length
         self.max_nodes = max_nodes
         self._embedder_device = embedder_device
@@ -1424,6 +1426,58 @@ class CodeBERTGraphDataset(Dataset):
 
     def len(self) -> int:
         return self._n_graphs
+
+    def precompute_line_cls_all(self, device: str = "cpu") -> None:
+        """Pre-compute per-line LM CLS embeddings for all graphs and cache to disk.
+
+        Stores func_line_cls [n_lines, lm_dim] and func_line_ids [n_lines] into
+        each graph's .pt file (lazy) or in-memory Data object (inmemory).
+        Skips graphs that already have func_line_cls. Call once before training
+        when precompute_line_cls=True so DataLoader workers never run LM inference.
+        """
+        from tqdm import tqdm
+        from transformers import AutoModel
+        from gnn_vuln.models._lm_utils import lm_per_line_raw, _PERLINE_MAX_LINE
+
+        _dev = torch.device(device)
+        logger.info(f"Precomputing per-line CLS embeddings ({self._func_lm}) on {_dev}…")
+        model = AutoModel.from_pretrained(self._func_lm, trust_remote_code=True).eval().to(_dev)
+        model.requires_grad_(False)
+
+        n_patched = 0
+        for idx in tqdm(range(len(self)), desc="line_cls precompute", unit="graph"):
+            if self._storage == "inmemory":
+                g = self._graphs[idx]
+            else:
+                g = torch.load(self._graphs_dir / f"{idx}.pt", weights_only=False)
+
+            if hasattr(g, "func_line_cls"):
+                continue
+            if not (hasattr(g, "func_input_ids") and g.func_input_ids is not None):
+                continue
+            if not (hasattr(g, "func_token_lines") and g.func_token_lines is not None):
+                continue
+
+            ids = g.func_input_ids.to(_dev)    # [1, L]
+            tl  = g.func_token_lines.to(_dev)  # [1, L]
+            with torch.no_grad():
+                line_cls, uniq_sid, _, _ = lm_per_line_raw(model, ids, tl)
+            # B=1 → uniq_sid = line_num (graph_idx=0); graph-local line IDs
+            g.func_line_cls = line_cls.cpu().float()
+            g.func_line_ids = (uniq_sid % _PERLINE_MAX_LINE).cpu()
+
+            if self._storage == "inmemory":
+                self._graphs[idx] = g
+            else:
+                try:
+                    torch.save(g, self._graphs_dir / f"{idx}.pt")
+                except Exception:
+                    pass
+            n_patched += 1
+
+        del model
+        torch.cuda.empty_cache()
+        logger.info(f"Precomputed line CLS for {n_patched} graphs ({len(self) - n_patched} already cached).")
 
     def _patch_func_token_lines(self, g: Data, idx: int) -> Data:
         """Compute func_token_lines on-the-fly for graphs missing the attribute.

@@ -37,7 +37,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  mmoe_loc_transformer=False, live_lm="func",
                  gnn_model="gat", num_relations=7, num_bases=None,
                  codet5p_raw_encoder=False, codet5p_normalize_per_token=False,
-                 normalize_gnn_output=False):
+                 normalize_gnn_output=False, freeze_func_lm=False):
         super().__init__()
         self._normalize_gnn_output = normalize_gnn_output
         assert live_lm in _VALID_LIVE_LM, \
@@ -62,6 +62,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                 lm_per_line=(live_lm == "func_and_line"),
                 codet5p_raw_encoder=codet5p_raw_encoder,
                 codet5p_normalize_per_token=codet5p_normalize_per_token,
+                freeze_func_lm=freeze_func_lm,
             )
         # Line-level transformer (live_lm=line): contextualizes per-line LM
         # embeddings across the function. Classification = meanmax pool of its
@@ -107,7 +108,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
 
     def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
                 func_input_ids=None, func_attention_mask=None,
-                func_token_lines=None):
+                func_token_lines=None,
+                func_line_cls=None, func_line_ids=None, func_line_cls_batch=None):
         h = self.encoder(x, edge_index, edge_attr)
         if self._graph_pool == "attention":
             h_graph = self.attn_pool(h, batch)
@@ -137,10 +139,18 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             # Hierarchical: per-line LM forward → line transformer (cross-line
             # context). Classification = meanmax pool; localization = per-line.
             # No whole-function forward — function length is unbounded.
-            line_cls, uniq_sid, _, _ = self._lm_embed_per_line_raw(
-                func_input_ids, func_token_lines,
-            )
-            line_graph = (uniq_sid // _PERLINE_MAX_LINE).long()
+            # Fast path: use precomputed per-line CLS from dataset cache when available
+            # (set by precompute_line_cls=True + freeze_func_lm=True). DataLoader
+            # follow_batch creates func_line_cls_batch [total_lines] = graph index.
+            if func_line_cls is not None and func_line_cls_batch is not None:
+                line_cls   = func_line_cls.to(x.device)        # [total_lines, lm_dim]
+                line_graph = func_line_cls_batch.to(x.device)  # [total_lines]
+                uniq_sid   = line_graph * _PERLINE_MAX_LINE + func_line_ids.to(x.device)
+            else:
+                line_cls, uniq_sid, _, _ = self._lm_embed_per_line_raw(
+                    func_input_ids, func_token_lines,
+                )
+                line_graph = (uniq_sid // _PERLINE_MAX_LINE).long()
             line_ctx = self.line_encoder(line_cls, line_graph, B)        # [n, lm_dim]
             lm_emb = (0.8 * global_max_pool(line_ctx, line_graph, size=B)
                       + 0.6 * global_mean_pool(line_ctx, line_graph, size=B))
@@ -217,4 +227,5 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             codet5p_raw_encoder=getattr(cfg.model, "codet5p_raw_encoder", False),
             codet5p_normalize_per_token=getattr(cfg.model, "codet5p_normalize_per_token", False),
             normalize_gnn_output=getattr(cfg.model, "normalize_gnn_output", False),
+            freeze_func_lm=getattr(cfg.model, "freeze_func_lm", False),
         )

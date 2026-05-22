@@ -267,6 +267,7 @@ class TrainingSession:
             resample_seed=getattr(cfg.data, "resample_seed", 42),
             func_max_length=getattr(cfg.model, "func_max_length", 512),
             storage=getattr(cfg.data, "storage", "inmemory"),
+            precompute_line_cls=getattr(cfg.model, "precompute_line_cls", False),
         )
         bs          = cfg.train.batch_size
         num_workers = getattr(cfg.train, "num_workers",    4)
@@ -277,7 +278,11 @@ class TrainingSession:
         # lmgat_codebert with live_lm=none uses no func_input_ids but the _ft
         # dataset still carries them — 64×1024 token stacks per batch for nothing.
         _needs_func_tokens = getattr(cfg.model, "live_lm", "func") != "none"
+        _precompute_line_cls = getattr(cfg.model, "precompute_line_cls", False)
         _FUNC_TOKEN_KEYS = ("func_input_ids", "func_attention_mask", "func_token_lines")
+        # follow_batch=['func_line_cls'] → Batch.from_data_list creates func_line_cls_batch
+        # [total_lines] with graph index per line, needed when using cached line embeddings.
+        _follow_batch = ["func_line_cls"] if _precompute_line_cls else []
         def _strip_collate_fn(batch):
             from torch_geometric.data import Batch
             if not _needs_func_tokens:
@@ -285,7 +290,7 @@ class TrainingSession:
                     for k in _FUNC_TOKEN_KEYS:
                         if hasattr(g, k):
                             delattr(g, k)
-            return Batch.from_data_list(batch)
+            return Batch.from_data_list(batch, follow_batch=_follow_batch)
 
         _seed = cfg.train.seed
 
@@ -315,6 +320,11 @@ class TrainingSession:
         if use_official:
             val_ds  = CodeBERTGraphDataset(source=source_val,  **kwargs)
             test_ds = CodeBERTGraphDataset(source=source_test, **kwargs)
+            if _precompute_line_cls:
+                _lm_dev = str(self.device)
+                dataset.precompute_line_cls_all(_lm_dev)
+                val_ds.precompute_line_cls_all(_lm_dev)
+                test_ds.precompute_line_cls_all(_lm_dev)
             train_idx = list(range(len(dataset)))
             loaders = (
                 DataLoader(dataset, batch_size=bs, shuffle=True, **dl_kw),
@@ -322,6 +332,8 @@ class TrainingSession:
                 DataLoader(test_ds, batch_size=bs, **dl_kw),
             )
         else:
+            if _precompute_line_cls:
+                dataset.precompute_line_cls_all(str(self.device))
             train_idx, val_idx, test_idx = dataset.get_splits(seed=cfg.train.seed)
             loaders = (
                 DataLoader(dataset[train_idx], batch_size=bs, shuffle=True, **dl_kw),

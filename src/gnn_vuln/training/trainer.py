@@ -157,12 +157,18 @@ class Trainer:
         edge_attr  = getattr(batch, "edge_attr",  None)
 
         if hasattr(self.model, "codebert"):
-            func_ids   = getattr(batch, "func_input_ids",      None)
-            func_mask  = getattr(batch, "func_attention_mask", None)
-            func_tlines = getattr(batch, "func_token_lines",   None)
+            func_ids        = getattr(batch, "func_input_ids",      None)
+            func_mask       = getattr(batch, "func_attention_mask", None)
+            func_tlines     = getattr(batch, "func_token_lines",    None)
+            func_line_cls   = getattr(batch, "func_line_cls",       None)
+            func_line_ids   = getattr(batch, "func_line_ids",       None)
+            func_line_cls_b = getattr(batch, "func_line_cls_batch", None)
             out = self.model(
                 batch.x, batch.edge_index, batch.batch,
                 node_line, edge_attr, func_ids, func_mask, func_tlines,
+                func_line_cls=func_line_cls,
+                func_line_ids=func_line_ids,
+                func_line_cls_batch=func_line_cls_b,
             )
         else:
             out = self.model(batch.x, batch.edge_index, batch.batch, node_line, edge_attr)

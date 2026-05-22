@@ -50,6 +50,7 @@ class VulnDetectorBase(nn.Module):
         lm_per_line: bool = False,
         codet5p_raw_encoder: bool = False,
         codet5p_normalize_per_token: bool = False,
+        freeze_func_lm: bool = False,
     ) -> None:
         """
         Load a live LM and store as self.codebert.
@@ -65,6 +66,11 @@ class VulnDetectorBase(nn.Module):
             Only used when func_chunk_size > 0.
         use_flash_attention : bool
             Load the LM with flash_attention_2 if available. Requires flash-attn package.
+        freeze_func_lm : bool
+            When True, freeze all func_lm weights (requires_grad=False). The LM still
+            runs forward passes for feature extraction but weights are not updated.
+            Disables gradient checkpointing (no grads flow through). No LM optimizer
+            group is created (has_live_lm returns False, lm_parameters returns []).
         """
         _func_lm = func_lm if func_lm else pretrained_lm
         _cfg = AutoConfig.from_pretrained(_func_lm, trust_remote_code=True)
@@ -79,7 +85,10 @@ class VulnDetectorBase(nn.Module):
             except ImportError:
                 pass  # flash-attn not installed — fall back silently
         self.codebert = AutoModel.from_pretrained(_func_lm, **load_kwargs)
-        if use_grad_checkpoint and hasattr(self.codebert, "gradient_checkpointing_enable"):
+        self._freeze_func_lm = freeze_func_lm
+        if freeze_func_lm:
+            self.codebert.requires_grad_(False)
+        elif use_grad_checkpoint and hasattr(self.codebert, "gradient_checkpointing_enable"):
             self.codebert.config.use_cache = False
             self.codebert.gradient_checkpointing_enable()
         if compile_lm:
@@ -237,14 +246,14 @@ class VulnDetectorBase(nn.Module):
 
     def lm_parameters(self) -> list[nn.Parameter]:
         """Return LM parameters for a separate optimizer param group.
-        Returns empty list for frozen-embedding models (no live LM)."""
-        if hasattr(self, "codebert"):
+        Returns empty list for frozen-embedding models or when freeze_func_lm=True."""
+        if hasattr(self, "codebert") and not getattr(self, "_freeze_func_lm", False):
             return list(self.codebert.parameters())
         return []
 
     def has_live_lm(self) -> bool:
-        """True when the model has a live fine-tunable LM branch."""
-        return hasattr(self, "codebert")
+        """True when the model has a trainable live LM branch (not frozen)."""
+        return hasattr(self, "codebert") and not getattr(self, "_freeze_func_lm", False)
 
     # ── Config constructor ────────────────────────────────────────────────────
 

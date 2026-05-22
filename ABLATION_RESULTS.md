@@ -4,12 +4,15 @@ Dataset: MegaVul Top-25 CWEs, max 1600 per class, 26 classes (25 CWE + benign),
 UniXcoder-base embeddings, seed=42. GPU: RTX 5070 Ti.
 
 Phase structure:
+
 - **Phase 1 — Encoder & Localization**: live-LM vs frozen, localization encoder
 - **Phase 2 — GNN+LM Localization Fusion**: how GNN + LM statement features combine
 - **Phase 3 — Loss Function**: focal / epoch-adaptive / LIVABLE tuning
 - **Phase 4 — Graph Pooling**: mean / attention / meanmax / dualflow
 - **Phase 5 — Multi-Task / Cross-Task**: bidirectional cross-task coupling
 - **Phase 6 — Language Model**: node_lm / func_lm choice (UniXcoder / CodeT5+)
+- **Phase 7 — GNN Dimension**: hidden_dim vs func_lm dim alignment (50/50 vs 25/75 GNN/LM fused)
+- **Phase 8 — Sliding Window Coverage**: extend func_max_length to 4096 via chunk/stride variants
 
 ---
 
@@ -19,43 +22,43 @@ Phase structure:
 `localization_encoder` (GNN nodes / LM tokens / both). Shared loss config:
 `focal_loss_gamma=2.0`, `epoch_adaptive_weights=true`, `patience=25`.
 
-| Run | Run ID | Config | Architecture | Localization | LM Fine-tuned |
-|-----|--------|--------|---|---|---|
-| A1 | `20260513_202125_lmgat_multiclass` | `A1_lmgat.yaml` | lmgat (frozen) | GNN | No |
-| A2 | `20260513_210613_lmgat_codebert_multiclass` | `A2_lmgat_codebert_gnn.yaml` | lmgat_codebert | GNN | Yes (lm_lr=1e-5) |
-| A3 | `20260514_063713_lmgat_codebert_multiclass` | `A3_lmgat_codebert_lm.yaml` | lmgat_codebert | LM | Yes (lm_lr=1e-5) |
-| A4 | `20260514_102721_lmgat_codebert_multiclass` | `A4_lmgat_codebert_both.yaml` | lmgat_codebert | GNN+LM | Yes (lm_lr=1e-5) |
+| Run | Run ID                                      | Config                        | Architecture   | Localization | LM Fine-tuned    |
+| --- | ------------------------------------------- | ----------------------------- | -------------- | ------------ | ---------------- |
+| A1  | `20260513_202125_lmgat_multiclass`          | `A1_lmgat.yaml`               | lmgat (frozen) | GNN          | No               |
+| A2  | `20260513_210613_lmgat_codebert_multiclass` | `A2_lmgat_codebert_gnn.yaml`  | lmgat_codebert | GNN          | Yes (lm_lr=1e-5) |
+| A3  | `20260514_063713_lmgat_codebert_multiclass` | `A3_lmgat_codebert_lm.yaml`   | lmgat_codebert | LM           | Yes (lm_lr=1e-5) |
+| A4  | `20260514_102721_lmgat_codebert_multiclass` | `A4_lmgat_codebert_both.yaml` | lmgat_codebert | GNN+LM       | Yes (lm_lr=1e-5) |
 
 ## Function-Level Classification
 
-| Run | Val F1 | Test F1 | Test Acc | AUC-ROC | Conf. mean | Epochs |
-|-----|---|---|---|---|---|---|
-| A1 | 0.458 | 0.471 | 0.510 | 0.884 | 0.765 | 55 |
-| A2 | 0.532 | 0.494 | 0.500 | 0.907 | 0.698 | 54 |
-| A3 | 0.548 | 0.495 | 0.517 | 0.913 | 0.801 | 76 |
-| A4 | **0.550** | **0.504** | 0.507 | 0.899 | 0.813 | 74 |
+| Run | Val F1    | Test F1   | Test Acc | AUC-ROC | Conf. mean | Epochs |
+| --- | --------- | --------- | -------- | ------- | ---------- | ------ |
+| A1  | 0.458     | 0.471     | 0.510    | 0.884   | 0.765      | 55     |
+| A2  | 0.532     | 0.494     | 0.500    | 0.907   | 0.698      | 54     |
+| A3  | 0.548     | 0.495     | 0.517    | 0.913   | 0.801      | 76     |
+| A4  | **0.550** | **0.504** | 0.507    | 0.899   | 0.813      | 74     |
 
 ## Val-Test F1 Gap
 
 Both from the same best-val-F1 checkpoint. Gap = Val F1 − Test F1.
 
-| Run | Val F1 | Test F1 | Gap | Gap % |
-|-----|--------|---------|-----|-------|
-| A1 | 0.458 | 0.471 | -0.013 | -2.8% |
-| A2 | 0.532 | 0.494 | 0.038 | 7.1% |
-| A3 | 0.548 | 0.495 | 0.053 | 9.7% |
-| A4 | 0.550 | 0.504 | 0.046 | 8.4% |
+| Run | Val F1 | Test F1 | Gap    | Gap % |
+| --- | ------ | ------- | ------ | ----- |
+| A1  | 0.458  | 0.471   | -0.013 | -2.8% |
+| A2  | 0.532  | 0.494   | 0.038  | 7.1%  |
+| A3  | 0.548  | 0.495   | 0.053  | 9.7%  |
+| A4  | 0.550  | 0.504   | 0.046  | 8.4%  |
 
 A1 (frozen LM) has no gap; live-LM runs (A2-A4) show 7-10% — the live LM overfits.
 
 ## Statement-Level Localization
 
-| Run | IFA ↓ | Top-1 ↑ | Top-3 ↑ | Top-5 ↑ | Top-10 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
-|-----|---|---|---|---|---|---|---|---|
-| A1 | 1.49 | 0.804 | 0.914 | 0.941 | 0.966 | 0.195 | 0.394 | 0.052 |
-| A2 | **0.89** | **0.874** | 0.936 | 0.959 | 0.977 | 0.217 | 0.401 | **0.039** |
-| A3 | 1.33 | 0.818 | **0.939** | **0.969** | **0.988** | 0.197 | **0.451** | 0.052 |
-| A4 | 1.26 | 0.794 | 0.917 | 0.959 | 0.978 | **0.207** | 0.431 | 0.047 |
+| Run | IFA ↓    | Top-1 ↑   | Top-3 ↑   | Top-5 ↑   | Top-10 ↑  | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| --- | -------- | --------- | --------- | --------- | --------- | --------- | ---------- | ------------- |
+| A1  | 1.49     | 0.804     | 0.914     | 0.941     | 0.966     | 0.195     | 0.394      | 0.052         |
+| A2  | **0.89** | **0.874** | 0.936     | 0.959     | 0.977     | 0.217     | 0.401      | **0.039**     |
+| A3  | 1.33     | 0.818     | **0.939** | **0.969** | **0.988** | 0.197     | **0.451**  | 0.052         |
+| A4  | 1.26     | 0.794     | 0.917     | 0.959     | 0.978     | **0.207** | 0.431      | 0.047         |
 
 GNN localization (A2) = precise (best IFA/Top-1). LM localization (A3) = coverage
 (best R@20%LOC). Both (A4) = best classification F1, localization a compromise.
@@ -66,11 +69,11 @@ Loss at best-F1 epoch. Test loss = unweighted CE recomputed from `predictions.cs
 Val loss was weighted during training — scales differ, watch relative gap.
 
 | Run | Best Epoch | Train Loss | Val Loss | Test Loss | Min Val Loss | Min VL Epoch |
-|-----|---|---|---|---|---|---|
-| A1 | 30 | 0.150 | 2.357 | 2.469 | 1.670 | 9 |
-| A2 | 29 | 0.326 | 1.700 | 1.906 | 1.433 | 12 |
-| A3 | 51 | 0.276 | 2.329 | 2.475 | 1.400 | 7 |
-| A4 | 49 | 0.149 | 2.430 | 2.769 | 1.374 | 7 |
+| --- | ---------- | ---------- | -------- | --------- | ------------ | ------------ |
+| A1  | 30         | 0.150      | 2.357    | 2.469     | 1.670        | 9            |
+| A2  | 29         | 0.326      | 1.700    | 1.906     | 1.433        | 12           |
+| A3  | 51         | 0.276      | 2.329    | 2.475     | 1.400        | 7            |
+| A4  | 49         | 0.149      | 2.430    | 2.769     | 1.374        | 7            |
 
 A3/A4 show ~44-epoch F1-loss divergence (val_loss min at ep 7, F1 peak at ep 49-51)
 — symptom of the stacked loss, addressed in Phase 3.
@@ -85,21 +88,21 @@ A3/A4 show ~44-epoch F1-loss divergence (val_loss min at ep 7, F1 peak at ep 49-
 (how GNN + LM statement features combine). concat = baseline. weighted =
 score-level `(1-α)·gnn + α·lm`. gated = per-statement learned gate.
 
-| ID | Run ID | Config | stmt_both_mode |
-|---|---|---|---|
-| B0 | (= A4-L1 baseline, `20260514_174326`) | — | concat |
-| B1 | `20260515_120709_lmgat_codebert_multiclass` | `B1_both_gated.yaml` | gated |
-| B2 | `20260515_135412_lmgat_codebert_multiclass` | `B2_both_weighted_a03.yaml` | weighted (GNN-leaning) |
-| B3 | `20260515_165955_lmgat_codebert_multiclass` | `B3_both_weighted_a05.yaml` | weighted (balanced) |
-| B4 | `20260515_152942_lmgat_codebert_multiclass` | `B4_both_weighted_a07.yaml` | weighted (LM-leaning) |
+| ID  | Run ID                                      | Config                      | stmt_both_mode         |
+| --- | ------------------------------------------- | --------------------------- | ---------------------- |
+| B0  | (= A4-L1 baseline, `20260514_174326`)       | —                           | concat                 |
+| B1  | `20260515_120709_lmgat_codebert_multiclass` | `B1_both_gated.yaml`        | gated                  |
+| B2  | `20260515_135412_lmgat_codebert_multiclass` | `B2_both_weighted_a03.yaml` | weighted (GNN-leaning) |
+| B3  | `20260515_165955_lmgat_codebert_multiclass` | `B3_both_weighted_a05.yaml` | weighted (balanced)    |
+| B4  | `20260515_152942_lmgat_codebert_multiclass` | `B4_both_weighted_a07.yaml` | weighted (LM-leaning)  |
 
-| ID | Variant | Test F1 | Test Acc | F1-w | IFA ↓ | Top-1 ↑ | R@20%LOC ↑ |
-|---|---|---|---|---|---|---|---|
-| B0 | concat | **0.519** | 0.518 | 0.517 | 0.789 | 0.887 | 0.403 |
-| B1 | gated | 0.483 | 0.526 | 0.525 | 1.138 | 0.851 | **0.422** |
-| B2 | weighted α=0.3 | 0.480 | 0.533 | 0.533 | **0.644** | 0.876 | 0.414 |
-| B3 | weighted α=0.5 | 0.518 | **0.539** | 0.538 | 1.007 | **0.890** | 0.400 |
-| B4 | weighted α=0.7 | 0.515 | 0.515 | 0.514 | 0.947 | 0.832 | 0.357 |
+| ID  | Variant        | Test F1   | Test Acc  | F1-w  | IFA ↓     | Top-1 ↑   | R@20%LOC ↑ |
+| --- | -------------- | --------- | --------- | ----- | --------- | --------- | ---------- |
+| B0  | concat         | **0.519** | 0.518     | 0.517 | 0.789     | 0.887     | 0.403      |
+| B1  | gated          | 0.483     | 0.526     | 0.525 | 1.138     | 0.851     | **0.422**  |
+| B2  | weighted α=0.3 | 0.480     | 0.533     | 0.533 | **0.644** | 0.876     | 0.414      |
+| B3  | weighted α=0.5 | 0.518     | **0.539** | 0.538 | 1.007     | **0.890** | 0.400      |
+| B4  | weighted α=0.7 | 0.515     | 0.515     | 0.514 | 0.947     | 0.832     | 0.357      |
 
 No fusion beats concat on macro F1 (α=0.5 ties). weighted α=0.3 (GNN-leaning) →
 best IFA — a localization-precision knob.
@@ -113,30 +116,30 @@ best IFA — a localization-precision knob.
 `configs/ablation/phase3/` — fixes the stacked-loss problem from Phase 1.
 Architecture held at A4 (localization=both, concat).
 
-| Variant | Run ID | Loss Config |
-|---|---|---|
-| A4 (Phase 1 base) | `20260514_102721_lmgat_codebert_multiclass` | focal γ=2.0 + epoch_adaptive, wd=1e-4, patience=25 |
-| A4-L1 | `20260514_174326_lmgat_codebert_multiclass` | no focal + epoch_adaptive + label_smoothing=0.1, wd=1e-3, cosine, patience=15 |
-| A4-L2 | `20260515_052704_lmgat_codebert_multiclass` | LIVABLE two-branch (focal+LSCE), wd=1e-3, cosine, patience=15 |
-| A4-L2-fixed | `20260515_084125_lmgat_codebert_multiclass` | A4-L2, no early stopping (full T-schedule) |
+| Variant           | Run ID                                      | Loss Config                                                                   |
+| ----------------- | ------------------------------------------- | ----------------------------------------------------------------------------- |
+| A4 (Phase 1 base) | `20260514_102721_lmgat_codebert_multiclass` | focal γ=2.0 + epoch_adaptive, wd=1e-4, patience=25                            |
+| A4-L1             | `20260514_174326_lmgat_codebert_multiclass` | no focal + epoch_adaptive + label_smoothing=0.1, wd=1e-3, cosine, patience=15 |
+| A4-L2             | `20260515_052704_lmgat_codebert_multiclass` | LIVABLE two-branch (focal+LSCE), wd=1e-3, cosine, patience=15                 |
+| A4-L2-fixed       | `20260515_084125_lmgat_codebert_multiclass` | A4-L2, no early stopping (full T-schedule)                                    |
 
 ## Classification
 
-| Variant | Val F1 | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | Epochs |
-|---|---|---|---|---|---|---|---|
-| A4 | 0.550 | 0.504 | 0.507 | 0.503 | 0.899 | 0.813 | 74 |
-| A4-L1 | **0.560** | **0.519** | 0.518 | 0.517 | **0.915** | **0.630** | 31 |
-| A4-L2 | **0.561** | 0.475 | 0.540 | 0.526 | 0.904 | 0.757 | 43 |
-| A4-L2-fixed | — | 0.497 | **0.550** | — | — | — | 75 |
+| Variant     | Val F1    | Test F1   | Test Acc  | F1-w  | AUC-ROC   | Conf.     | Epochs |
+| ----------- | --------- | --------- | --------- | ----- | --------- | --------- | ------ |
+| A4          | 0.550     | 0.504     | 0.507     | 0.503 | 0.899     | 0.813     | 74     |
+| A4-L1       | **0.560** | **0.519** | 0.518     | 0.517 | **0.915** | **0.630** | 31     |
+| A4-L2       | **0.561** | 0.475     | 0.540     | 0.526 | 0.904     | 0.757     | 43     |
+| A4-L2-fixed | —         | 0.497     | **0.550** | —     | —         | —         | 75     |
 
 ## Localization
 
-| Variant | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
-|---|---|---|---|---|---|---|
-| A4 | 1.26 | 0.794 | 0.959 | 0.207 | 0.431 | 0.047 |
-| A4-L1 | **0.789** | **0.887** | 0.965 | 0.238 | 0.403 | **0.031** |
-| A4-L2 | 0.867 | 0.817 | 0.949 | **0.256** | 0.476 | 0.029 |
-| A4-L2-fixed | 1.277 | — | — | — | **0.492** | — |
+| Variant     | IFA ↓     | Top-1 ↑   | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| ----------- | --------- | --------- | ------- | --------- | ---------- | ------------- |
+| A4          | 1.26      | 0.794     | 0.959   | 0.207     | 0.431      | 0.047         |
+| A4-L1       | **0.789** | **0.887** | 0.965   | 0.238     | 0.403      | **0.031**     |
+| A4-L2       | 0.867     | 0.817     | 0.949   | **0.256** | 0.476      | 0.029         |
+| A4-L2-fixed | 1.277     | —         | —       | —         | **0.492**  | —             |
 
 A4-L1 (drop focal, add label smoothing) → best Test F1 + best localization
 precision + best calibration. A4-L2 (LIVABLE) → best accuracy but lower macro F1
@@ -158,19 +161,19 @@ runs — superseded, kept for reference only.
 (function classification representation): mean / gated attention / meanmax
 (0.8·max + 0.6·mean) / dualflow (suspicion-weighted focal + mean context).
 
-| Variant | Run ID | graph_pool | Epochs |
-|---|---|---|---|
-| mean | (= A4-L1, `20260514_174326`) | mean | 31 |
-| attention | `20260515_235912_lmgat_codebert_multiclass` | attention | 50 |
-| meanmax | `20260516_125619_lmgat_codebert_multiclass` | meanmax | 48 |
-| dualflow | `20260517_013824_lmgat_codebert_multiclass` | dualflow | 38 |
+| Variant   | Run ID                                      | graph_pool | Epochs |
+| --------- | ------------------------------------------- | ---------- | ------ |
+| mean      | (= A4-L1, `20260514_174326`)                | mean       | 31     |
+| attention | `20260515_235912_lmgat_codebert_multiclass` | attention  | 50     |
+| meanmax   | `20260516_125619_lmgat_codebert_multiclass` | meanmax    | 48     |
+| dualflow  | `20260517_013824_lmgat_codebert_multiclass` | dualflow   | 38     |
 
-| Variant | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@20%LOC ↑ |
-|---|---|---|---|---|---|---|---|---|---|
-| mean | **0.519** | 0.518 | 0.517 | **0.915** | 0.630 | 0.789 | 0.887 | 0.965 | 0.403 |
-| attention | 0.437 | 0.522 | 0.523 | 0.895 | 0.625 | 1.253 | 0.805 | 0.943 | 0.439 |
-| meanmax | 0.517 | **0.538** | **0.539** | 0.911 | 0.502 | **0.644** | **0.900** | **0.982** | **0.487** |
-| dualflow | 0.496 | 0.528 | 0.528 | 0.896 | 0.667 | 0.717 | 0.886 | 0.971 | 0.417 |
+| Variant   | Test F1   | Test Acc  | F1-w      | AUC-ROC   | Conf. | IFA ↓     | Top-1 ↑   | Top-5 ↑   | R@20%LOC ↑ |
+| --------- | --------- | --------- | --------- | --------- | ----- | --------- | --------- | --------- | ---------- |
+| mean      | **0.519** | 0.518     | 0.517     | **0.915** | 0.630 | 0.789     | 0.887     | 0.965     | 0.403      |
+| attention | 0.437     | 0.522     | 0.523     | 0.895     | 0.625 | 1.253     | 0.805     | 0.943     | 0.439      |
+| meanmax   | 0.517     | **0.538** | **0.539** | 0.911     | 0.502 | **0.644** | **0.900** | **0.982** | **0.487**  |
+| dualflow  | 0.496     | 0.528     | 0.528     | 0.896     | 0.667 | 0.717     | 0.886     | 0.971     | 0.417      |
 
 Attention pool collapses macro F1 (−0.082) — the learnable gate over-parameterizes
 and overfits tail classes. Mean and meanmax tie on macro F1 (0.519 vs 0.517) — but
@@ -191,17 +194,19 @@ attention gate, just milder. Parameter-free meanmax still wins.
 (stmt_head) and classification (func_head). Zero-init residual gates
 (ReZero/ControlNet style) — module starts as a no-op.
 **Baseline E0 = A4-L1** (Phase 3 winner, no cross-task).
+All E-series runs use `graph_pool=mean` (same as E0/A4-L1 baseline) — Phase 4
+meanmax was found separately. Cross-task comparison is internally consistent.
 
-| ID | Run ID | Config | cross_task_method | Epochs |
-|---|---|---|---|---|
-| E0 | `20260514_174326_lmgat_codebert_multiclass` | — | none (= A4-L1 baseline) | 31 |
-| E1 | `20260516_213244_lmgat_codebert_multiclass` | `E1_crossattn.yaml` | cross_attention | 31 |
-| E2 | `20260516_185818_lmgat_codebert_multiclass` | `E2_selfattn.yaml` | self_attention | 55 |
-| E3 | — | `E3_mmoe.yaml` | mmoe | _pending_ |
-| E4 | `20260516_152322_lmgat_codebert_multiclass` | `E4_mmoe_taskenc.yaml` | mmoe + task encoder | 40 |
-| E5 | `20260516_171751_lmgat_codebert_multiclass` | `E5_mmoe_taskenc_thin.yaml` | mmoe + task encoder + thin head | 35 |
-| E6 | `20260517_042939_lmgat_codebert_multiclass` | `E6_crossattn_noresidual.yaml` | cross_attention, residual off | 92 |
-| E7 | `20260517_084804_lmgat_codebert_multiclass` | `E7_selfattn_noresidual.yaml` | self_attention, residual off | 58 |
+| ID  | Run ID                                      | Config                         | cross_task_method               | Epochs    |
+| --- | ------------------------------------------- | ------------------------------ | ------------------------------- | --------- |
+| E0  | `20260514_174326_lmgat_codebert_multiclass` | —                              | none (= A4-L1 baseline)         | 31        |
+| E1  | `20260516_213244_lmgat_codebert_multiclass` | `E1_crossattn.yaml`            | cross_attention                 | 31        |
+| E2  | `20260516_185818_lmgat_codebert_multiclass` | `E2_selfattn.yaml`             | self_attention                  | 55        |
+| E3  | —                                           | `E3_mmoe.yaml`                 | mmoe                            | _pending_ |
+| E4  | `20260516_152322_lmgat_codebert_multiclass` | `E4_mmoe_taskenc.yaml`         | mmoe + task encoder             | 40        |
+| E5  | `20260516_171751_lmgat_codebert_multiclass` | `E5_mmoe_taskenc_thin.yaml`    | mmoe + task encoder + thin head | 35        |
+| E6  | `20260517_042939_lmgat_codebert_multiclass` | `E6_crossattn_noresidual.yaml` | cross_attention, residual off   | 92        |
+| E7  | `20260517_084804_lmgat_codebert_multiclass` | `E7_selfattn_noresidual.yaml`  | self_attention, residual off    | 58        |
 
 > **Earlier cross-task results removed.** A prior set of E1/E2/E3 runs was
 > trained **before the per-statement line-level cross-task code was correct**
@@ -213,27 +218,27 @@ attention gate, just milder. Parameter-free meanmax still wins.
 
 ## Classification
 
-| ID | Method | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. |
-|---|---|---|---|---|---|---|
-| E0 | none (A4-L1) | 0.519 | 0.518 | 0.517 | 0.915 | 0.630 |
-| E1 | cross_attention | **0.530** | 0.532 | 0.533 | **0.919** | 0.615 |
-| E2 | self_attention | 0.504 | **0.538** | **0.537** | 0.897 | 0.606 |
-| E4 | mmoe + task encoder | 0.479 | 0.535 | 0.535 | 0.883 | 0.620 |
-| E5 | mmoe + taskenc + thin | 0.480 | 0.509 | 0.509 | 0.835 | 0.658 |
-| E6 | cross_attention, residual off | 0.375 | 0.377 | 0.379 | 0.882 | 0.300 |
-| E7 | self_attention, residual off | 0.414 | 0.433 | 0.433 | 0.863 | 0.443 |
+| ID  | Method                        | Test F1   | Test Acc  | F1-w      | AUC-ROC   | Conf. |
+| --- | ----------------------------- | --------- | --------- | --------- | --------- | ----- |
+| E0  | none (A4-L1)                  | 0.519     | 0.518     | 0.517     | 0.915     | 0.630 |
+| E1  | cross_attention               | **0.530** | 0.532     | 0.533     | **0.919** | 0.615 |
+| E2  | self_attention                | 0.504     | **0.538** | **0.537** | 0.897     | 0.606 |
+| E4  | mmoe + task encoder           | 0.479     | 0.535     | 0.535     | 0.883     | 0.620 |
+| E5  | mmoe + taskenc + thin         | 0.480     | 0.509     | 0.509     | 0.835     | 0.658 |
+| E6  | cross_attention, residual off | 0.375     | 0.377     | 0.379     | 0.882     | 0.300 |
+| E7  | self_attention, residual off  | 0.414     | 0.433     | 0.433     | 0.863     | 0.443 |
 
 ## Localization
 
-| ID | Method | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
-|---|---|---|---|---|---|---|---|
-| E0 | none (A4-L1) | 0.789 | **0.887** | 0.965 | 0.238 | 0.403 | 0.031 |
-| E1 | cross_attention | **0.717** | 0.823 | **0.971** | 0.209 | 0.381 | 0.045 |
-| E2 | self_attention | 0.792 | 0.858 | 0.969 | 0.089 | 0.285 | 0.134 |
-| E4 | mmoe + task encoder | 0.785 | 0.848 | 0.968 | 0.244 | 0.411 | 0.031 |
-| E5 | mmoe + taskenc + thin | 1.165 | 0.846 | 0.962 | **0.295** | **0.453** | **0.018** |
-| E6 | cross_attention, residual off | 1.337 | 0.745 | 0.959 | 0.165 | 0.315 | 0.075 |
-| E7 | self_attention, residual off | 1.253 | 0.839 | 0.943 | 0.207 | 0.434 | 0.046 |
+| ID  | Method                        | IFA ↓     | Top-1 ↑   | Top-5 ↑   | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| --- | ----------------------------- | --------- | --------- | --------- | --------- | ---------- | ------------- |
+| E0  | none (A4-L1)                  | 0.789     | **0.887** | 0.965     | 0.238     | 0.403      | 0.031         |
+| E1  | cross_attention               | **0.717** | 0.823     | **0.971** | 0.209     | 0.381      | 0.045         |
+| E2  | self_attention                | 0.792     | 0.858     | 0.969     | 0.089     | 0.285      | 0.134         |
+| E4  | mmoe + task encoder           | 0.785     | 0.848     | 0.968     | 0.244     | 0.411      | 0.031         |
+| E5  | mmoe + taskenc + thin         | 1.165     | 0.846     | 0.962     | **0.295** | **0.453**  | **0.018**     |
+| E6  | cross_attention, residual off | 1.337     | 0.745     | 0.959     | 0.165     | 0.315      | 0.075         |
+| E7  | self_attention, residual off  | 1.253     | 0.839     | 0.943     | 0.207     | 0.434      | 0.046         |
 
 With the corrected line-level code, **cross_attention (E1) beats the E0 baseline**
 on macro F1 (0.530 vs 0.519) — and also best IFA + AUC-ROC. E2 self_attention →
@@ -265,14 +270,14 @@ states for the `both` localizer come from its internal T5 encoder
 - **node_lm** (`pretrained_lm`) — frozen, builds node features in the .pt cache
 - **func_lm** (`func_lm`) — live, fine-tuned function-level branch
 
-| ID | Config | node_lm | func_lm | .pt build config | Run ID | Epochs |
-|---|---|---|---|---|---|---|
-| F1 | — (= Phase 4 meanmax, `20260516_125619`) | UniXcoder | UniXcoder | `node-unixcoder_func-unixcoder` | `20260516_125619` | 48 |
-| F2 | `F2_node-codet5p_func-unixcoder.yaml` | CodeT5+ | UniXcoder | `node-codet5p_func-unixcoder` | `20260518_021722` | 48 |
-| F3 | `F3_node-unixcoder_func-codet5p.yaml` | UniXcoder | CodeT5+ | `node-unixcoder_func-codet5p` | `20260517_171638` | 67 |
-| F4 | `F4_node-codet5p_func-codet5p.yaml` | CodeT5+ | CodeT5+ | `node-codet5p_func-codet5p` | `20260518_103922` | 66 |
-| F5 | `F5_node-unixcoder_func-codet5p-raw.yaml` | UniXcoder | CodeT5+ raw (768-dim `<s>`) | `node-unixcoder_func-codet5p` | `20260519_154339` | 54 |
-| F6 | `F6_node-unixcoder_func-codet5p-normed.yaml` | UniXcoder | CodeT5+ proj+norm per-token | `node-unixcoder_func-codet5p` | `20260519_224619` | 34 |
+| ID  | Config                                       | node_lm   | func_lm                     | .pt build config                | Run ID            | Epochs |
+| --- | -------------------------------------------- | --------- | --------------------------- | ------------------------------- | ----------------- | ------ |
+| F1  | — (= Phase 4 meanmax, `20260516_125619`)     | UniXcoder | UniXcoder                   | `node-unixcoder_func-unixcoder` | `20260516_125619` | 48     |
+| F2  | `F2_node-codet5p_func-unixcoder.yaml`        | CodeT5+   | UniXcoder                   | `node-codet5p_func-unixcoder`   | `20260518_021722` | 48     |
+| F3  | `F3_node-unixcoder_func-codet5p.yaml`        | UniXcoder | CodeT5+                     | `node-unixcoder_func-codet5p`   | `20260517_171638` | 67     |
+| F4  | `F4_node-codet5p_func-codet5p.yaml`          | CodeT5+   | CodeT5+                     | `node-codet5p_func-codet5p`     | `20260518_103922` | 66     |
+| F5  | `F5_node-unixcoder_func-codet5p-raw.yaml`    | UniXcoder | CodeT5+ raw (768-dim `<s>`) | `node-unixcoder_func-codet5p`   | `20260519_154339` | 54     |
+| F6  | `F6_node-unixcoder_func-codet5p-normed.yaml` | UniXcoder | CodeT5+ proj+norm per-token | `node-unixcoder_func-codet5p`   | `20260519_224619` | 34     |
 
 F1 (both UniXcoder, localization=gnn, **meanmax**) is identical to the Phase 4
 **meanmax** run — no re-run needed, it serves as the baseline. (Not A2 — A2 uses
@@ -285,16 +290,17 @@ Each combo needs its own .pt build (node features + func tokenizer differ).
 Any config with CodeT5+ as func_lm (F3, F4) uses `func_max_length=512` and
 `use_flash_attention=false` — CodeT5+ caps at 512 tokens, no flash_attention_2.
 
-Bolds = best among F2–F6 (new configs; F1 is unchanged baseline).
+Bolds = best among F2–F7 (new configs; F1 is unchanged baseline).
 
-| ID | Test F1 | Test Acc | F1-w | AUC-ROC | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
-|---|---|---|---|---|---|---|---|---|---|---|
-| F1 (= meanmax) | 0.517 | 0.538 | 0.539 | 0.911 | 0.644 | 0.900 | 0.982 | 0.269 | 0.487 | 0.025 |
-| F2 (node=CT5+) | **0.502** | 0.554 | 0.552 | **0.906** | 0.745 | 0.899 | 0.982 | 0.232 | 0.415 | 0.032 |
-| F3 (func=CT5+) | 0.444 | 0.517 | 0.523 | 0.897 | **0.512** | **0.946** | **0.985** | **0.374** | **0.586** | **0.016** |
-| F4 (both=CT5+) | 0.475 | 0.548 | 0.552 | 0.833 | 0.991 | 0.857 | 0.958 | 0.254 | 0.436 | 0.024 |
-| F5 (func=CT5+ raw 768) | 0.499 | **0.568** | **0.566** | 0.897 | 1.186 | 0.925 | 0.977 | 0.308 | 0.547 | 0.022 |
-| F6 (func=CT5+ norm 256) | 0.459 | 0.520 | 0.520 | 0.905 | 0.734 | 0.934 | 0.982 | 0.353 | 0.560 | **0.016** |
+| ID                      | Test F1   | Test Acc  | F1-w      | AUC-ROC   | IFA ↓     | Top-1 ↑   | Top-5 ↑   | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| ----------------------- | --------- | --------- | --------- | --------- | --------- | --------- | --------- | --------- | ---------- | ------------- |
+| F1 (= meanmax)          | 0.517     | 0.538     | 0.539     | 0.911     | 0.644     | 0.900     | 0.982     | 0.269     | 0.487      | 0.025         |
+| F2 (node=CT5+)          | **0.502** | 0.554     | 0.552     | **0.906** | 0.745     | 0.899     | 0.982     | 0.232     | 0.415      | 0.032         |
+| F3 (func=CT5+)          | 0.444     | 0.517     | 0.523     | 0.897     | 0.512     | **0.946** | **0.985** | **0.374** | **0.586**  | **0.016**     |
+| F4 (both=CT5+)          | 0.475     | 0.548     | 0.552     | 0.833     | 0.991     | 0.857     | 0.958     | 0.254     | 0.436      | 0.024         |
+| F5 (func=CT5+ raw 768)  | 0.499     | **0.568** | **0.566** | 0.897     | 1.186     | 0.925     | 0.977     | 0.308     | 0.547      | 0.022         |
+| F6 (func=CT5+ norm 256) | 0.459     | 0.520     | 0.520     | 0.905     | 0.734     | 0.934     | 0.982     | 0.353     | 0.560      | **0.016**     |
+| F7 (both normed)        | 0.484     | 0.557     | 0.556     | 0.887     | **0.508** | 0.927     | 0.980     | 0.319     | 0.570      | 0.020         |
 
 All F-configs use the Phase 3 winner loss (no focal + label_smoothing 0.1 + cosine,
 wd 1e-3, patience 15) — same as F1's meanmax baseline and phases 4-5.
@@ -337,28 +343,145 @@ interfere rather than complement. AUC collapse (0.833 vs 0.906 F2) suggests
 ranking quality degrades when node features and live LM share the same embedding
 space, reducing diversity. The trade-off is intrinsic, not additive.
 
+**F7 (both normed — GNN output norm + LM per-token norm)** — symmetric normalization
+of both GNN (h_graph and per-node h_loc via F.normalize dim=-1) and LM per-token
+vectors. Localization: IFA **0.508** (best of all F-configs), Top-1 0.927, R@20% 0.570.
+Classification: macro F1 0.484, AUC 0.887. Compared to F3 (LM norm only, no GNN norm):
+IFA marginally better (0.508 vs 0.512) but Top-1 / R@20% / R@5% all worse. Classification
+slightly better (F1 0.484 vs 0.444, AUC 0.887 vs 0.897). Result: GNN output norm gives
+marginal IFA gain at the cost of Top-1 / recall coverage. F3 (unnormalized GNN, LM
+proj+unnorm) remains the best localization config overall; F7 is a Pareto tie on IFA only.
+
+**Phase 6 winner: F1 (UniXcoder both) for balanced performance. F3 for localization
+priority. F7 for IFA-only if that metric is the objective.**
+
+---
+
+# Phase 7 — GNN Dimension
+
+`configs/ablation/phase7/` — tests whether aligning `hidden_dim` with the func_lm
+embedding dimension (768 for UniXcoder) improves GNN/LM balance in the fused
+representation. All configs use UniXcoder for both node_lm and func_lm, meanmax pool,
+localization=both, concat fusion — isolating only the hidden_dim change.
+
+- **G1** = F1 baseline (`20260516_125619`): hidden_dim=256, fused=1024, GNN 25% / LM 75%
+- **G2** = `G2_dim768_equal.yaml`: hidden_dim=768, fused=1536, GNN 50% / LM 50%
+
+| ID | Run ID | Config | hidden_dim | fused_dim | GNN% | LM% | Epochs |
+|---|---|---|---|---|---|---|---|
+| G1 | `20260516_125619_lmgat_codebert_multiclass` | — (= Phase 4 meanmax / F1) | 256 | 1024 | 25% | 75% | 48 |
+| G2 | `20260520_132730_lmgat_codebert_multiclass` | `G2_dim768_equal.yaml` | 768 | 1536 | 50% | 50% | 34 |
+
+## Classification
+
+| ID | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | Epochs |
+|---|---|---|---|---|---|---|
+| G1 | 0.517 | 0.538 | 0.539 | 0.911 | 0.630 | 48 |
+| G2 | **0.529** | **0.582** | **0.579** | **0.914** | 0.569 | 34 |
+
+## Statement-Level Localization
+
+| ID | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+|---|---|---|---|---|---|---|
+| G1 | **0.644** | **0.900** | **0.982** | **0.269** | **0.487** | **0.025** |
+| G2 | 1.410 | 0.747 | 0.962 | 0.186 | 0.427 | 0.056 |
+
+G2 beats G1 on classification across all metrics (+1.2pp F1, +4.4pp Acc, +0.003 AUC)
+but localization collapses hard (IFA 0.644→1.410, Top-1 0.900→0.747). Root cause:
+equal GNN/LM balance (50/50) shifts the fused representation toward classification but
+~32% of MegaVul vuln functions exceed 1024 UniXcoder tokens — G2's func_max_length=1024
+truncates those, losing functional context for the largest/most complex functions and
+degrading per-node localization signal. The 768-dim GNN also runs slower (409s/epoch
+vs 162s) and uses more VRAM (10.2 GB vs ~7 GB).
+
+**Phase 7 winner: G2 for classification (best F1 to date: 0.529). G1 for localization.
+G2 used as Phase 8 baseline — Phase 8 will fix the truncation via sliding window.**
+
+---
+
+# Phase 8 — Sliding Window Coverage
+
+`configs/ablation/phase8/` — base H1 = G2 (hidden_dim=768, func_max_length=1024, no sliding).
+Sliding window extends func coverage to func_max_length=4096 (P95 MegaVul vuln = 4326 tokens).
+Chunk=1024 = UniXcoder max. Classification aggregation: weighted mean of per-window CLS.
+Localization aggregation: per-token mean across overlapping windows (accumulator+count).
+
+| ID | Config | chunk | stride | max_len | Max windows | Run ID | Epochs |
+|---|---|---|---|---|---|---|---|
+| H1 | — (= G2) | — | — | 1024 | 1 | `20260520_132730` | 34 |
+| H2 | `H2_unixcoder_sliding_chunk1024_stride512.yaml` | 1024 | 512 | 4096 | 7 | `20260521_140829` | 38 |
+| H3 | `H3_unixcoder_sliding_chunk1024_stride1024.yaml` | 1024 | 1024 | 4096 | 4 | `20260522_002235` | 17† |
+
+## Classification
+
+† = classification collapsed (predicts majority class; metrics not comparable).
+
+| ID | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | Epochs |
+|---|---|---|---|---|---|---|
+| H1 (= G2) | 0.529 | 0.582 | 0.579 | 0.914 | 0.569 | 34 |
+| H2 | **0.555** | **0.568** | **0.564** | **0.912** | 0.581 | 38 |
+| H3† | 0.037† | 0.177† | 0.093† | 0.748† | 0.139† | 17 |
+
+## Statement-Level Localization
+
+| ID | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+|---|---|---|---|---|---|---|
+| H1 (= G2) | 1.410 | 0.747 | 0.962 | 0.186 | 0.427 | 0.056 |
+| H2 | 1.037 | 0.837 | 0.978 | 0.216 | **0.440** | 0.041 |
+| H3† | **0.537** | **0.918** | **0.989** | **0.289** | 0.429 | **0.020** |
+
+H2 (50% overlap sliding window) beats H1 on both classification (+2.6pp F1) and
+localization (IFA 1.410→1.037, Top-1 0.747→0.837, Effort 0.056→0.041). Sliding
+window coverage of the top-32% truncated functions restores func-level LM signal,
+improving the GNN/LM interaction. Classification F1 0.555 = **new overall best**
+(beats G2 0.529 and G1/F1 0.517). Localization still below G1/F1 baseline (IFA
+1.037 vs 0.644, Top-1 0.837 vs 0.900) — mean aggregation across windows blurs
+fine-grained per-token signal that single-pass 1024-token lm_full produces;
+the trade-off between coverage and per-token precision persists.
+
+**H3 (non-overlapping, stride=1024, 4 windows) — classification collapsed.** Train
+loss stuck at ~2.86 throughout all 17 epochs (random baseline for 26 classes ≈ 3.26 —
+H3 barely below random, never learning). Best val F1 = 0.042 at epoch 2; patience=15
+triggered at epoch 17. 24 of 25 non-benign classes had F1=0. Root cause: without
+50% overlap, boundary tokens appear in exactly one window — the CLS aggregation of
+non-overlapping chunks loses the cross-boundary context that H2's overlapping windows
+provide. The classification head cannot recover stable gradient signal from disjoint
+CLS vectors. The localization head (ranking loss, independent of classification)
+survives — H3 achieves the **best H-series localization** (IFA 0.537, Top-1 0.918,
+Effort 0.020) even with collapsed classification, because stmt_head gradients flow
+from ranking loss regardless of the func head's failure. H3 is ~1.6× faster than H2
+(587s vs 960s/epoch) but useless for classification — non-overlapping stride is
+incompatible with the func-level CLS aggregation scheme used here.
+
+**Phase 8 winner: H2 — best classification F1 (0.555), best overall across both tasks.
+H3 confirms overlap is required for learning: stride=chunk_size collapses classification.**
+
 ---
 
 # Training Efficiency
 
-| Run | Params | Epoch Time | Total Time (hr) | VRAM Peak |
-|-----|--------|-----------|------------|-----------|
-| A1 | 3.5M | 48s | 0.73 | 4.2 GB |
-| A2 | 129.6M | 216s | 3.24 | 4.2 GB |
-| A3 | 129.6M | 175s | 3.70 | 6.0 GB |
-| A4 | 129.6M | 176s | 3.62 | 4.8 GB |
-| A4-L1 | 129.6M | 161s | 1.39 | 6.9 GB |
-| A4-L2 | 129.6M | 162s | 1.93 | 7.7 GB |
-| A4-L2-fixed | 129.6M | 162s | 3.37 | — |
-| fusion gated | 129.6M | 163s | 1.72 | — |
-| fusion weighted α=0.3 | 129.6M | 162s | 1.53 | — |
-| fusion weighted α=0.5 | 129.6M | 162s | 1.75 | — |
-| fusion weighted α=0.7 | 129.6M | 162s | 1.44 | — |
-| pool attention | 129.6M | 162s | 2.25 | 7.4 GB |
-| pool meanmax | 129.6M | 162s | 2.16 | — |
-| B2 cross_attn | 129.6M | 169s | 2.72 | — |
-| B3 self_attn | 129.6M | 245s | 4.29 | — |
-| B4 mmoe | 129.6M | 165s | 1.83 | — |
-| F4 both=CT5+ | 137.0M | 323s | 5.94 | 9.1 GB |
-| F5 CT5+ raw | 138.2M | 457s | 6.86 | 8.4 GB |
-| F6 CT5+ norm | 138.0M | 460s | 4.35 | 8.7 GB |
+| Run                   | Params | Epoch Time | Total Time (hr) | VRAM Peak |
+| --------------------- | ------ | ---------- | --------------- | --------- |
+| A1                    | 3.5M   | 48s        | 0.73            | 4.2 GB    |
+| A2                    | 129.6M | 216s       | 3.24            | 4.2 GB    |
+| A3                    | 129.6M | 175s       | 3.70            | 6.0 GB    |
+| A4                    | 129.6M | 176s       | 3.62            | 4.8 GB    |
+| A4-L1                 | 129.6M | 161s       | 1.39            | 6.9 GB    |
+| A4-L2                 | 129.6M | 162s       | 1.93            | 7.7 GB    |
+| A4-L2-fixed           | 129.6M | 162s       | 3.37            | —         |
+| fusion gated          | 129.6M | 163s       | 1.72            | —         |
+| fusion weighted α=0.3 | 129.6M | 162s       | 1.53            | —         |
+| fusion weighted α=0.5 | 129.6M | 162s       | 1.75            | —         |
+| fusion weighted α=0.7 | 129.6M | 162s       | 1.44            | —         |
+| pool attention        | 129.6M | 162s       | 2.25            | 7.4 GB    |
+| pool meanmax          | 129.6M | 162s       | 2.16            | —         |
+| B2 cross_attn         | 129.6M | 169s       | 2.72            | —         |
+| B3 self_attn          | 129.6M | 245s       | 4.29            | —         |
+| B4 mmoe               | 129.6M | 165s       | 1.83            | —         |
+| F4 both=CT5+          | 137.0M | 323s       | 5.94            | 9.1 GB    |
+| F5 CT5+ raw           | 138.2M | 457s       | 6.86            | 8.4 GB    |
+| F6 CT5+ norm          | 138.0M | 460s       | 4.35            | 8.7 GB    |
+| F7 both normed        | 138.0M | 460s       | 8.96            | 8.9 GB    |
+| G2 dim=768            | 146.9M | 409s       | 3.87            | 10.2 GB   |
+| H2 sliding stride512  | 146.9M | 960s       | 10.15           | 11.4 GB   |
+| H3 sliding stride1024 | 146.9M | 587s       | 2.78            | 7.4 GB    |

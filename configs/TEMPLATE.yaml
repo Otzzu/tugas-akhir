@@ -242,6 +242,24 @@ model:
   # Support: lmgat_codebert
   live_lm: func
 
+  # Freeze func_lm weights — LM runs forward passes for feature extraction but
+  # weights are not updated. No lm_lr optimizer group is created (same effect as
+  # live_lm=none but the LM is still loaded and used for embeddings).
+  # Useful for Phase 9 ablation: frozen LM as fixed feature extractor vs fine-tuned.
+  # Note: gradient_checkpointing is disabled automatically when freeze_func_lm=true.
+  # Support: lmgat_codebert
+  freeze_func_lm: false
+
+  # Pre-compute per-line LM CLS embeddings and cache them in each graph's .pt file.
+  # Intended for live_lm=line + freeze_func_lm=true: the frozen LM runs once before
+  # training, embeddings saved to disk, DataLoader workers never run LM inference.
+  # Precompute runs on the training device before the first epoch; subsequent runs
+  # skip already-cached graphs (patch-on-first-use, saves back to disk).
+  # Requires: live_lm=line, storage=lazy (lazy storage saves per-graph .pt files).
+  # DataLoader automatically gets follow_batch=['func_line_cls'] when enabled.
+  # Support: lmgat_codebert (live_lm=line)
+  precompute_line_cls: false
+
   # ── Statement-level MIL localisation ──────────────────────────────────────
   # Weight of statement-level MIL loss relative to function-level CE loss.
   # 0.0 disables MIL. Typical: 0.3–0.5.
