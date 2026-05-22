@@ -1427,7 +1427,7 @@ class CodeBERTGraphDataset(Dataset):
     def len(self) -> int:
         return self._n_graphs
 
-    def precompute_line_cls_all(self, device: str = "cpu", force: bool = False) -> None:
+    def precompute_line_cls_all(self, device: str = "cpu", force: bool = True) -> None:
         """Pre-compute per-line LM CLS embeddings for all graphs and cache to disk.
 
         Reads g.raw_func, splits by source line, tokenizes each line independently
@@ -1452,7 +1452,7 @@ class CodeBERTGraphDataset(Dataset):
         sep_id  = getattr(cfg, "eos_token_id", None) or 2
         pad_id  = getattr(cfg, "pad_token_id", None) or 1
         lm_dim  = cfg.hidden_size
-        MAX_CONTENT = 126   # tokens per line before CLS+SEP (total 128)
+        MAX_CONTENT = 1022  # tokens per line before CLS+SEP (UniXcoder max 1024)
         SUB_BATCH   = 512
 
         n_patched = 0

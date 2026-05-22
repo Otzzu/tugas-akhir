@@ -253,8 +253,9 @@ model:
   # Pre-compute per-line LM CLS embeddings and cache them in each graph's .pt file.
   # Intended for live_lm=line + freeze_func_lm=true: the frozen LM runs once before
   # training, embeddings saved to disk, DataLoader workers never run LM inference.
-  # Precompute runs on the training device before the first epoch; subsequent runs
-  # skip already-cached graphs (patch-on-first-use, saves back to disk).
+  # Reads g.raw_func (full source text stored in every .pt) so ALL lines are encoded —
+  # no global func_max_length truncation. Per-line limit: 1022 content tokens (UniXcoder max).
+  # Precompute always overwrites stale data (force=True default) to pick up raw_func-based CLS.
   # Requires: live_lm=line, storage=lazy (lazy storage saves per-graph .pt files).
   # DataLoader automatically gets follow_batch=['func_line_cls'] when enabled.
   # Support: lmgat_codebert (live_lm=line)

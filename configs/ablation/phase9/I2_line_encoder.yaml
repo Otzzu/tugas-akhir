@@ -7,11 +7,12 @@
 #   Localization = per-line encoder output scattered back to token positions.
 #   func_lm weights frozen (no lm_lr group); only GNN + line_encoder + heads train.
 # Same .pt build as I1/H1/G2: node-unixcoder_func-unixcoder, func_max_length=1024.
-#   Lines past token 1024 fall outside stored func_input_ids and are not encoded.
+#   func_max_length kept at 1024 for _ds_name() compatibility; precompute uses raw_func
+#   (full source text stored in .pt) so ALL lines are encoded (up to 1022 tokens each).
 # use_flash_attention=true: FA2 enabled; per-line seqs are short but modern FA2 handles them.
-# compile_model=true: applied to self.codebert only; variable line lengths may cause
-#   recompilations per unique seq_len (dynamic=False traces new kernel each shape).
-#   Acceptable overhead for speedup on repeated shapes.
+# compile_model=false: _LineLevelEncoder uses to_dense_batch (data-dependent shape) which
+#   causes GuardOnDataDependentSymNode; scatter_lines_to_tokens uses boolean masks → nonzero.
+#   Disabled for correctness; re-enable only after verifying dynamo guards.
 #
 # .pt build: configs/data/megavul_multiclass_top25_node-unixcoder_func-unixcoder.yaml
 # Run (cloud, Linux):
@@ -37,7 +38,6 @@ model:
   live_lm: line
   freeze_func_lm: true
   precompute_line_cls: true
-  force_precompute_line_cls: true
   localization_encoder: both
   stmt_both_mode: concat
   graph_pool: meanmax
@@ -75,7 +75,7 @@ train:
   use_flash_attention: true
   grad_accum_steps: 4
   save_last_every: 10
-  compile_model: true
+  compile_model: false
   stmt_head_vectorized: true
   num_workers: 8
   prefetch_factor: 2
