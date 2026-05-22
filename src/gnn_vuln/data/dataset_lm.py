@@ -1447,6 +1447,7 @@ class CodeBERTGraphDataset(Dataset):
         logger.info(f"Precomputing per-line CLS embeddings ({self._func_lm}) on {_dev}…")
         model = AutoModel.from_pretrained(self._func_lm, trust_remote_code=True).eval().to(_dev)
         model.requires_grad_(False)
+        torch.set_float32_matmul_precision("high")
         try:
             model = torch.compile(model, dynamic=True)
         except Exception:
