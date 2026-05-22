@@ -149,7 +149,10 @@ def load_checkpoint(model: torch.nn.Module, path: str | Path, device: str = "cpu
     if not path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {path}")
     state = torch.load(path, map_location=device, weights_only=False)
-    model.load_state_dict(state["model_state_dict"])
+    sd = state["model_state_dict"]
+    if any(k.startswith("_orig_mod.") for k in sd):
+        sd = {k.removeprefix("_orig_mod."): v for k, v in sd.items()}
+    model.load_state_dict(sd)
     logger.info(f"Checkpoint loaded ← {path}")
     return {k: v for k, v in state.items() if k != "model_state_dict"}
 
@@ -169,7 +172,10 @@ def load_resume_checkpoint(
     if not path.exists():
         raise FileNotFoundError(f"Resume checkpoint not found: {path}")
     state = torch.load(path, map_location=device, weights_only=False)
-    model.load_state_dict(state["model_state_dict"])
+    sd = state["model_state_dict"]
+    if any(k.startswith("_orig_mod.") for k in sd):
+        sd = {k.removeprefix("_orig_mod."): v for k, v in sd.items()}
+    model.load_state_dict(sd)
     optimizer.load_state_dict(state["optimizer_state_dict"])
     scheduler.load_state_dict(state["scheduler_state_dict"])
     meta = {k: v for k, v in state.items()
