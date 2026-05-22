@@ -126,6 +126,7 @@ class StmtHead(nn.Module):
             return self._score_vectorized(h, batch, node_line, lm_hidden, func_token_lines, cond)
         return self._score_loop(h, batch, node_line, lm_hidden, func_token_lines, cond)
 
+    @torch.compiler.disable
     def _score_loop(
         self,
         h: torch.Tensor,
@@ -209,6 +210,7 @@ class StmtHead(nn.Module):
             result.append(torch.stack(scores))
         return result
 
+    @torch.compiler.disable
     def _score_vectorized(
         self,
         h: torch.Tensor,
@@ -361,6 +363,7 @@ class MulticlassStmtHead(nn.Module):
         self.max_head  = nn.Linear(hidden_dim, num_classes)
         self.mean_head = nn.Linear(hidden_dim, num_classes)
 
+    @torch.compiler.disable
     def score(
         self,
         h: torch.Tensor,

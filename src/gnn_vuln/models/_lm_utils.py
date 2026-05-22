@@ -441,6 +441,7 @@ def lm_per_line_raw(
     return cls_out, uniq_sid, B, L
 
 
+@torch.compiler.disable
 def scatter_lines_to_tokens(
     per_line: torch.Tensor,
     uniq_sid: torch.Tensor,
