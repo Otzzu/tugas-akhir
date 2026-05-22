@@ -133,6 +133,7 @@ class _LineLevelEncoder(nn.Module):
         )
         self.encoder = nn.TransformerEncoder(layer, num_layers=num_layers)
 
+    @torch.compiler.disable
     def forward(self, x: torch.Tensor, stmt_graph: torch.Tensor, B: int) -> torch.Tensor:
         """x [S, in_dim], stmt_graph [S], B = num graphs → [S, D]."""
         if x.shape[0] == 0:
