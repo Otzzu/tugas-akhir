@@ -229,6 +229,7 @@ class VulnDetectorBase(nn.Module):
             matryoshka_dim=self._matryoshka_dim,
         )
 
+    @torch.compiler.disable
     def _lm_embed_per_line_raw(
         self,
         func_input_ids: torch.Tensor,
