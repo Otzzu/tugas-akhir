@@ -1427,22 +1427,33 @@ class CodeBERTGraphDataset(Dataset):
     def len(self) -> int:
         return self._n_graphs
 
-    def precompute_line_cls_all(self, device: str = "cpu") -> None:
+    def precompute_line_cls_all(self, device: str = "cpu", force: bool = False) -> None:
         """Pre-compute per-line LM CLS embeddings for all graphs and cache to disk.
 
-        Stores func_line_cls [n_lines, lm_dim] and func_line_ids [n_lines] into
-        each graph's .pt file (lazy) or in-memory Data object (inmemory).
-        Skips graphs that already have func_line_cls. Call once before training
-        when precompute_line_cls=True so DataLoader workers never run LM inference.
+        Reads g.raw_func, splits by source line, tokenizes each line independently
+        (no global func_max_length truncation). All lines get encoded — only per-line
+        truncation applies (max 126 content tokens → 128 with CLS+SEP).
+
+        Stores func_line_cls [n_lines, lm_dim] and func_line_ids [n_lines, 1-indexed]
+        into each graph's .pt file (lazy) or in-memory Data object (inmemory).
+        Skips graphs that already have func_line_cls unless force=True.
         """
         from tqdm import tqdm
         from transformers import AutoModel
-        from gnn_vuln.models._lm_utils import lm_per_line_raw, _PERLINE_MAX_LINE
 
         _dev = torch.device(device)
         logger.info(f"Precomputing per-line CLS embeddings ({self._func_lm}) on {_dev}…")
         model = AutoModel.from_pretrained(self._func_lm, trust_remote_code=True).eval().to(_dev)
         model.requires_grad_(False)
+        tokenizer = _load_tokenizer(self._func_lm)
+
+        cfg = model.config
+        cls_id  = getattr(cfg, "bos_token_id", None) or 0
+        sep_id  = getattr(cfg, "eos_token_id", None) or 2
+        pad_id  = getattr(cfg, "pad_token_id", None) or 1
+        lm_dim  = cfg.hidden_size
+        MAX_CONTENT = 126   # tokens per line before CLS+SEP (total 128)
+        SUB_BATCH   = 512
 
         n_patched = 0
         for idx in tqdm(range(len(self)), desc="line_cls precompute", unit="graph"):
@@ -1451,20 +1462,42 @@ class CodeBERTGraphDataset(Dataset):
             else:
                 g = torch.load(self._graphs_dir / f"{idx}.pt", weights_only=False)
 
-            if hasattr(g, "func_line_cls"):
-                continue
-            if not (hasattr(g, "func_input_ids") and g.func_input_ids is not None):
-                continue
-            if not (hasattr(g, "func_token_lines") and g.func_token_lines is not None):
+            if hasattr(g, "func_line_cls") and not force:
                 continue
 
-            ids = g.func_input_ids.to(_dev)    # [1, L]
-            tl  = g.func_token_lines.to(_dev)  # [1, L]
+            raw_func = getattr(g, "raw_func", None)
+            if not raw_func:
+                continue
+
+            # Tokenize each source line independently — no global truncation
+            seqs, line_nums = [], []
+            for line_idx, line in enumerate(raw_func.splitlines()):
+                if not line.strip():
+                    continue
+                toks = tokenizer.encode(line.strip(), add_special_tokens=False)[:MAX_CONTENT]
+                seqs.append([cls_id] + toks + [sep_id])
+                line_nums.append(line_idx + 1)  # 1-indexed, matches func_token_lines
+
+            if not seqs:
+                continue
+
+            max_len = max(len(s) for s in seqs)
+            batch_ids = torch.full((len(seqs), max_len), pad_id, dtype=torch.long, device=_dev)
+            batch_msk = torch.zeros(len(seqs), max_len, dtype=torch.long, device=_dev)
+            for i, seq in enumerate(seqs):
+                batch_ids[i, :len(seq)] = torch.tensor(seq, dtype=torch.long, device=_dev)
+                batch_msk[i, :len(seq)] = 1
+
+            n_lines = len(seqs)
+            cls_out = torch.zeros(n_lines, lm_dim, device=_dev)
             with torch.no_grad():
-                line_cls, uniq_sid, _, _ = lm_per_line_raw(model, ids, tl)
-            # B=1 → uniq_sid = line_num (graph_idx=0); graph-local line IDs
-            g.func_line_cls = line_cls.cpu().float()
-            g.func_line_ids = (uniq_sid % _PERLINE_MAX_LINE).cpu()
+                for st in range(0, n_lines, SUB_BATCH):
+                    en  = min(st + SUB_BATCH, n_lines)
+                    out = model(input_ids=batch_ids[st:en], attention_mask=batch_msk[st:en])
+                    cls_out[st:en] = out.last_hidden_state[:, 0].float()
+
+            g.func_line_cls = cls_out.cpu().float()
+            g.func_line_ids = torch.tensor(line_nums, dtype=torch.long)
 
             if self._storage == "inmemory":
                 self._graphs[idx] = g

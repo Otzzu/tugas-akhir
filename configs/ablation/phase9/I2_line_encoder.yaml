@@ -37,6 +37,7 @@ model:
   live_lm: line
   freeze_func_lm: true
   precompute_line_cls: true
+  force_precompute_line_cls: true
   localization_encoder: both
   stmt_both_mode: concat
   graph_pool: meanmax
