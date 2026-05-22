@@ -1432,11 +1432,13 @@ class CodeBERTGraphDataset(Dataset):
 
         Reads g.raw_func, splits by source line, tokenizes each line independently
         (no global func_max_length truncation). All lines get encoded — only per-line
-        truncation applies (max 126 content tokens → 128 with CLS+SEP).
+        truncation applies (max 1022 content tokens → 1024 with CLS+SEP).
 
         Stores func_line_cls [n_lines, lm_dim] and func_line_ids [n_lines, 1-indexed]
         into each graph's .pt file (lazy) or in-memory Data object (inmemory).
         Skips graphs that already have func_line_cls unless force=True.
+        Model is always torch.compiled (dynamic=True) for speed — precompute is
+        offline inference-only so compile is safe regardless of training config.
         """
         from tqdm import tqdm
         from transformers import AutoModel
@@ -1445,6 +1447,10 @@ class CodeBERTGraphDataset(Dataset):
         logger.info(f"Precomputing per-line CLS embeddings ({self._func_lm}) on {_dev}…")
         model = AutoModel.from_pretrained(self._func_lm, trust_remote_code=True).eval().to(_dev)
         model.requires_grad_(False)
+        try:
+            model = torch.compile(model, dynamic=True)
+        except Exception:
+            pass  # unsupported platform or torch version
         tokenizer = _load_tokenizer(self._func_lm)
 
         cfg = model.config
