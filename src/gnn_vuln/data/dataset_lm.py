@@ -1437,8 +1437,6 @@ class CodeBERTGraphDataset(Dataset):
         Stores func_line_cls [n_lines, lm_dim] and func_line_ids [n_lines, 1-indexed]
         into each graph's .pt file (lazy) or in-memory Data object (inmemory).
         Skips graphs that already have func_line_cls unless force=True.
-        Model is always torch.compiled (dynamic=True) for speed — precompute is
-        offline inference-only so compile is safe regardless of training config.
         """
         from tqdm import tqdm
         from transformers import AutoModel
@@ -1448,10 +1446,6 @@ class CodeBERTGraphDataset(Dataset):
         model = AutoModel.from_pretrained(self._func_lm, trust_remote_code=True).eval().to(_dev)
         model.requires_grad_(False)
         torch.set_float32_matmul_precision("high")
-        try:
-            model = torch.compile(model, dynamic=True)
-        except Exception:
-            pass  # unsupported platform or torch version
         tokenizer = _load_tokenizer(self._func_lm)
 
         cfg = model.config
