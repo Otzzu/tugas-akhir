@@ -74,7 +74,7 @@ train:
   use_flash_attention: true
   grad_accum_steps: 4
   save_last_every: 10
-  compile_model: true
+  compile_model: false
   stmt_head_vectorized: true
   num_workers: 8
   prefetch_factor: 2
