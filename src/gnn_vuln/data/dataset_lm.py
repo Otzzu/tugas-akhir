@@ -1427,12 +1427,19 @@ class CodeBERTGraphDataset(Dataset):
     def len(self) -> int:
         return self._n_graphs
 
-    def precompute_line_cls_all(self, device: str = "cpu", force: bool = True) -> None:
+    def precompute_line_cls_all(
+        self, device: str = "cpu", force: bool = True, context_lines: int = 0
+    ) -> None:
         """Pre-compute per-line LM CLS embeddings for all graphs and cache to disk.
 
-        Reads g.raw_func, splits by source line, tokenizes each line independently
-        (no global func_max_length truncation). All lines get encoded — only per-line
-        truncation applies (max 1022 content tokens → 1024 with CLS+SEP).
+        Reads g.raw_func, splits by source line, tokenizes each line (with optional
+        surrounding context). All lines get encoded — only per-line truncation applies
+        (max 1022 content tokens → 1024 with CLS+SEP).
+
+        context_lines: number of source lines above AND below to include in each line's
+        input. 0 = encode each line in isolation (I2 behaviour). N > 0 = encode
+        line ± N neighbours joined with newline → richer per-line CLS with local
+        token-level cross-line context (I4+ behaviour).
 
         Stores func_line_cls [n_lines, lm_dim] and func_line_ids [n_lines, 1-indexed]
         into each graph's .pt file (lazy) or in-memory Data object (inmemory).
@@ -1470,12 +1477,21 @@ class CodeBERTGraphDataset(Dataset):
             if not raw_func:
                 continue
 
-            # Tokenize each source line independently — no global truncation
+            # Tokenize each source line (optionally with ±context_lines neighbours)
+            all_lines = raw_func.splitlines()
             seqs, line_nums = [], []
-            for line_idx, line in enumerate(raw_func.splitlines()):
+            for line_idx, line in enumerate(all_lines):
                 if not line.strip():
                     continue
-                toks = tokenizer.encode(line.strip(), add_special_tokens=False)[:MAX_CONTENT]
+                if context_lines > 0:
+                    ctx_start = max(0, line_idx - context_lines)
+                    ctx_end   = min(len(all_lines), line_idx + context_lines + 1)
+                    ctx_text  = "\n".join(
+                        l for l in all_lines[ctx_start:ctx_end] if l.strip()
+                    )
+                    toks = tokenizer.encode(ctx_text, add_special_tokens=False)[:MAX_CONTENT]
+                else:
+                    toks = tokenizer.encode(line.strip(), add_special_tokens=False)[:MAX_CONTENT]
                 seqs.append([cls_id] + toks + [sep_id])
                 line_nums.append(line_idx + 1)  # 1-indexed, matches func_token_lines
 

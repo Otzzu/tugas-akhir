@@ -279,6 +279,7 @@ class TrainingSession:
         # dataset still carries them — 64×1024 token stacks per batch for nothing.
         _needs_func_tokens = getattr(cfg.model, "live_lm", "func") != "none"
         _precompute_line_cls = getattr(cfg.model, "precompute_line_cls", False)
+        _line_context_lines  = getattr(cfg.model, "line_context_lines", 0)
         _FUNC_TOKEN_KEYS = ("func_input_ids", "func_attention_mask", "func_token_lines")
         # follow_batch=['func_line_cls'] → Batch.from_data_list creates func_line_cls_batch
         # [total_lines] with graph index per line, needed when using cached line embeddings.
@@ -322,9 +323,9 @@ class TrainingSession:
             test_ds = CodeBERTGraphDataset(source=source_test, **kwargs)
             if _precompute_line_cls:
                 _lm_dev = str(self.device)
-                dataset.precompute_line_cls_all(_lm_dev)
-                val_ds.precompute_line_cls_all(_lm_dev)
-                test_ds.precompute_line_cls_all(_lm_dev)
+                dataset.precompute_line_cls_all(_lm_dev, context_lines=_line_context_lines)
+                val_ds.precompute_line_cls_all(_lm_dev, context_lines=_line_context_lines)
+                test_ds.precompute_line_cls_all(_lm_dev, context_lines=_line_context_lines)
             train_idx = list(range(len(dataset)))
             loaders = (
                 DataLoader(dataset, batch_size=bs, shuffle=True, **dl_kw),
@@ -333,7 +334,7 @@ class TrainingSession:
             )
         else:
             if _precompute_line_cls:
-                dataset.precompute_line_cls_all(str(self.device))
+                dataset.precompute_line_cls_all(str(self.device), context_lines=_line_context_lines)
             train_idx, val_idx, test_idx = dataset.get_splits(seed=cfg.train.seed)
             loaders = (
                 DataLoader(dataset[train_idx], batch_size=bs, shuffle=True, **dl_kw),

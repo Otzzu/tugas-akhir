@@ -261,6 +261,15 @@ model:
   # Support: lmgat_codebert (live_lm=line)
   precompute_line_cls: false
 
+  # Number of neighbouring source lines above AND below to include in each line's
+  # LM input during precompute_line_cls_all. 0 = encode each line in isolation (I2).
+  # N > 0 = encode line ± N context lines joined with \n → richer per-line CLS with
+  # token-level cross-line interactions within the context window (I4+ style).
+  # Per-line input still truncated to 1022 content tokens (UniXcoder max 1024).
+  # NOTE: changing this value overwrites existing func_line_cls in .pt files (force=True).
+  # Support: lmgat_codebert (live_lm=line, precompute_line_cls=true)
+  line_context_lines: 0
+
   # ── Statement-level MIL localisation ──────────────────────────────────────
   # Weight of statement-level MIL loss relative to function-level CE loss.
   # 0.0 disables MIL. Typical: 0.3–0.5.
