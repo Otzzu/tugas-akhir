@@ -293,7 +293,10 @@ def lm_full_windowed(
     Overlap regions average naturally via accumulator + count.
 
     Returns:
-        cls    : [B, hidden] — position 0's averaged hidden (= chunk-0 [CLS])
+        cls    : [B, hidden] — mean-pool over all windows (mean of real tokens per
+                 window, then mean across windows). Covers the full function regardless
+                 of length — equivalent to lm_pool_windowed but computed jointly with
+                 the per-token accumulation so no extra LM forwards are needed.
         hidden : [B, L, hidden] — per-original-position averaged hidden states
 
     Fast path: if L ≤ chunk_size, returns a single forward.
@@ -317,6 +320,10 @@ def lm_full_windowed(
     hidden_dim = model.config.hidden_size if matryoshka_dim is None else matryoshka_dim
     hidden_acc = torch.zeros(B, L, hidden_dim, device=device, dtype=torch.float32)
     count      = torch.zeros(B, L, 1,          device=device, dtype=torch.float32)
+    # Per-window mean-pool accumulator for cls — covers full function for classification.
+    # Each window contributes its mean-pooled token representation (real tokens only).
+    cls_acc = torch.zeros(B, hidden_dim, device=device, dtype=torch.float32)
+    cls_cnt = torch.zeros(B,             device=device, dtype=torch.float32)
     out_dtype = None
 
     start = 0
@@ -346,16 +353,26 @@ def lm_full_windowed(
             w = mask_chunk.unsqueeze(-1).float()          # [B, end-start, 1]
             hidden_acc[:, start:end] += chunk_fp32 * w
             count[:, start:end]      += w
+            # Mean-pool this window's real tokens → [B, H]; zero out empty samples
+            w_1d     = mask_chunk.float()                 # [B, end-start]
+            valid_b  = (w_1d.sum(dim=1) > 0).float()     # [B]
+            win_mean = (chunk_fp32 * w_1d.unsqueeze(-1)).sum(dim=1) \
+                       / w_1d.sum(dim=1, keepdim=True).clamp(min=1)  # [B, H]
+            cls_acc += win_mean * valid_b.unsqueeze(-1)
+            cls_cnt += valid_b
         else:
             hidden_acc[:, start:end] += chunk_fp32
             count[:, start:end]      += 1.0
+            cls_acc += chunk_fp32.mean(dim=1)
+            cls_cnt += 1.0
 
         if end == L:
             break
         start += stride
 
-    hidden = (hidden_acc / count.clamp(min=1)).to(out_dtype or input_ids.new_zeros(1).float().dtype)
-    cls = hidden[:, 0]
+    _dtype = out_dtype or input_ids.new_zeros(1).float().dtype
+    hidden = (hidden_acc / count.clamp(min=1)).to(_dtype)
+    cls    = (cls_acc / cls_cnt.unsqueeze(-1).clamp(min=1)).to(_dtype)
     return cls, hidden
 
 

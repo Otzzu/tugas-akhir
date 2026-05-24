@@ -8,7 +8,7 @@
 #
 # dim breakdown (same as G2):
 #   h_graph: 768 (hidden_dim=768)
-#   lm_emb:  768 (UniXcoder CLS, mean across windows)
+#   lm_emb:  768 (mean-pool over real tokens per window, averaged across windows)
 #   fused:  1536 → GNN 50% / LM 50%
 #
 # VRAM note: hidden_dim=768 + 7 windows → high VRAM. batch_size=8 + grad_accum=4.

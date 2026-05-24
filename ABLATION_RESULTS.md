@@ -402,10 +402,17 @@ G2 used as Phase 8 baseline — Phase 8 will fix the truncation via sliding wind
 
 # Phase 8 — Sliding Window Coverage
 
+> **⚠ H2/H3 results INVALID — bug in `lm_full_windowed` discovered post-run.**
+> `cls = hidden[:, 0]` returned position 0's hidden from the FIRST window only —
+> classification was still truncated at 1024 tokens despite sliding window.
+> Fix: cls now computed as mean-pool over all real tokens per window, averaged across
+> windows (same as `lm_pool_windowed`). H2 must be re-run with fixed code.
+> H2-rerun config = same `H2_unixcoder_sliding_chunk1024_stride512.yaml`.
+
 `configs/ablation/phase8/` — base H1 = G2 (hidden_dim=768, func_max_length=1024, no sliding).
 Sliding window extends func coverage to func_max_length=4096 (P95 MegaVul vuln = 4326 tokens).
-Chunk=1024 = UniXcoder max. Classification aggregation: weighted mean of per-window CLS.
-Localization aggregation: per-token mean across overlapping windows (accumulator+count).
+Chunk=1024 = UniXcoder max. Classification aggregation: mean-pool over real tokens per window,
+averaged across windows. Localization aggregation: per-token mean across overlapping windows.
 
 | ID | Config | chunk | stride | max_len | Max windows | Run ID | Epochs |
 |---|---|---|---|---|---|---|---|
