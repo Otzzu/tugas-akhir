@@ -13,6 +13,7 @@ Phase structure:
 - **Phase 6 — Language Model**: node_lm / func_lm choice (UniXcoder / CodeT5+)
 - **Phase 7 — GNN Dimension**: hidden_dim vs func_lm dim alignment (50/50 vs 25/75 GNN/LM fused)
 - **Phase 8 — Sliding Window Coverage**: extend func_max_length to 4096 via chunk/stride variants
+- **Phase 9 — Line-Level Encoder**: hierarchical encoding — per-line LM → cross-line transformer; frozen vs live LM
 
 ---
 
@@ -458,6 +459,75 @@ H3 confirms overlap is required for learning: stride=chunk_size collapses classi
 
 ---
 
+# Phase 9 — Line-Level Encoder
+
+`configs/ablation/phase9/` — base I1 = H1 = G2 (hidden_dim=768, meanmax, localization=both, no sliding window).
+Varies the LM encoding strategy: whole-function forward (I1) vs hierarchical per-line LM forward
+→ `_LineLevelEncoder` (2-layer cross-line transformer) for cross-line context.
+Classification = meanmax pool of line_encoder output [B, 768].
+Localization = per-line encoder output scattered back to token positions.
+
+- **I1** = H1 = G2 baseline (live_lm=func, whole-function forward)
+- **I2** = live_lm=line, freeze_func_lm=true, precompute_line_cls=true
+  - Frozen UniXcoder → per-line [CLS] precomputed from raw_func (all lines, no global truncation)
+  - Only GNN + line_encoder + heads trained; no lm_lr group
+- **I3** = live_lm=line, freeze_func_lm=false, no precompute
+  - Per-line LM forward each batch; LM weights updated jointly with line_encoder
+
+| ID | Run ID | Config | live_lm | freeze_func_lm | precompute | Epochs |
+|---|---|---|---|---|---|---|
+| I1 | `20260520_132730` (= H1/G2) | — | func | No | — | 34 |
+| I2 | `20260522_070552_lmgat_codebert_multiclass` | `I2_line_encoder.yaml` | line | Yes | Yes | 84 |
+| I3 | `20260522_135012_lmgat_codebert_multiclass` | `I3_line_encoder_live.yaml` | line | No | No | 27† |
+
+## Classification
+
+† = classification collapsed (predicts majority class only; metrics not comparable).
+
+| ID | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | Epochs |
+|---|---|---|---|---|---|---|
+| I1 (= H1/G2) | **0.529** | **0.582** | **0.579** | **0.914** | 0.569 | 34 |
+| I2 | 0.390 | 0.402 | 0.402 | 0.880 | 0.311 | 84 |
+| I3† | 0.017† | 0.152† | 0.044† | 0.774† | 0.586† | 27 |
+
+## Statement-Level Localization
+
+| ID | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+|---|---|---|---|---|---|---|
+| I1 (= H1/G2) | 1.410 | 0.747 | 0.962 | 0.186 | 0.427 | 0.056 |
+| I2 | 2.116 | 0.666 | 0.924 | 0.200 | 0.390 | 0.051 |
+| I3† | **1.164** | **0.795** | **0.955** | 0.186 | **0.428** | 0.057 |
+
+**I2 (frozen LM + line encoder)** — classification drops significantly vs I1 baseline
+(F1 0.390 vs 0.529, −0.139). Localization also degrades (IFA 2.116 vs 1.410, Top-1
+0.666 vs 0.747). Root cause: frozen LM cannot be fine-tuned for the classification
+task — precomputed per-line CLS embeddings are fixed features without task adaptation.
+The cross-line transformer has no gradient signal from the LM to improve. Training ran
+84 epochs (patience=15 triggered at ep 69; best val F1=0.405) — the extra epochs
+reflect the optimizer searching for a better combination of the fixed LM features and
+trainable GNN/heads.
+
+**I3 (live LM + line encoder) — classification collapsed** (F1 0.017, predicts
+class 0 only, same pattern as H3). Best val F1 = 0.009 at epoch 2; patience=15
+triggered at epoch 27. Root cause: per-line LM forward replaces the whole-function
+CLS forward entirely — the classification head loses global function-level context.
+The cross-line transformer contextualizes lines but operates at statement granularity;
+it cannot recover the function-level semantic representation needed to distinguish
+26 CWE classes. Unlike I2 (frozen LM at least produces consistent per-line features
+from a stable pretrained model), I3's live LM receives conflicting gradient signals —
+CWE classification requires whole-function semantics but the LM only ever sees
+individual lines. Localization survives (ranking loss flows through stmt_head
+independently of func_head failure).
+
+**Phase 9 finding: line-level LM encoding is incompatible with function-level
+CWE multiclass classification.** Both frozen (I2) and live (I3) variants underperform
+I1 on classification. Whole-function CLS (H1/G2/H2 approach) is necessary for
+classification. The hierarchical design loses global context that 26-class CWE
+discrimination requires. Phase 9 is a negative result — confirms H2 sliding window
+as the better path for extending LM coverage.
+
+---
+
 # Training Efficiency
 
 | Run                   | Params | Epoch Time | Total Time (hr) | VRAM Peak |
@@ -485,3 +555,5 @@ H3 confirms overlap is required for learning: stride=chunk_size collapses classi
 | G2 dim=768            | 146.9M | 409s       | 3.87            | 10.2 GB   |
 | H2 sliding stride512  | 146.9M | 960s       | 10.15           | 11.4 GB   |
 | H3 sliding stride1024 | 146.9M | 587s       | 2.78            | 7.4 GB    |
+| I2 line frozen        | 161.7M | 285s       | 6.66            | 9.5 GB    |
+| I3 line live          | 161.7M | 644s       | 4.84            | 11.0 GB   |
