@@ -11,6 +11,7 @@ from transformers import AutoConfig, AutoModel
 from gnn_vuln.models._lm_utils import (
     lm_hidden_dim, lm_pool, lm_pool_windowed, lm_full_windowed, lm_per_line_embed,
     lm_per_line_raw, lm_full_codet5p, lm_full_codet5p_raw, _is_codet5p_embedding,
+    WindowAttentionPool, _is_decoder_only,
 )
 
 
@@ -51,6 +52,7 @@ class VulnDetectorBase(nn.Module):
         codet5p_raw_encoder: bool = False,
         codet5p_normalize_per_token: bool = False,
         freeze_func_lm: bool = False,
+        window_attn_pool: bool = False,
     ) -> None:
         """
         Load a live LM and store as self.codebert.
@@ -85,6 +87,7 @@ class VulnDetectorBase(nn.Module):
             except ImportError:
                 pass  # flash-attn not installed — fall back silently
         self.codebert = AutoModel.from_pretrained(_func_lm, **load_kwargs)
+        self._is_decoder_only_lm = _is_decoder_only(self.codebert)
         self._freeze_func_lm = freeze_func_lm
         if freeze_func_lm:
             self.codebert.requires_grad_(False)
@@ -111,6 +114,11 @@ class VulnDetectorBase(nn.Module):
         # Default stride to chunk_size // 2 (50% overlap) when not explicitly set
         self._func_chunk_stride = func_chunk_stride if func_chunk_stride > 0 else max(1, func_chunk_size // 2)
         self._lm_per_line = lm_per_line
+        # Window attention pool — replaces mean-pool over window CLS vectors when enabled.
+        # Only meaningful when func_chunk_size > 0 (sliding window active).
+        self._use_window_attn_pool = window_attn_pool and func_chunk_size > 0
+        if self._use_window_attn_pool:
+            self.window_attn_pool = WindowAttentionPool(self._lm_dim)
 
     def _lm_embed_full(
         self,
@@ -163,6 +171,17 @@ class VulnDetectorBase(nn.Module):
         # Sliding-window full forward — per-token hidden aligned to input positions
         if self._func_chunk_size > 0:
             try:
+                if getattr(self, "_use_window_attn_pool", False):
+                    win_cls, win_mask, hidden = lm_full_windowed(
+                        self.codebert, self._is_enc_dec,
+                        func_input_ids, func_attention_mask,
+                        chunk_size=self._func_chunk_size,
+                        stride=self._func_chunk_stride,
+                        matryoshka_dim=self._matryoshka_dim,
+                        return_window_cls=True,
+                    )
+                    cls = self.window_attn_pool(win_cls, win_mask)
+                    return cls, hidden
                 return lm_full_windowed(
                     self.codebert, self._is_enc_dec,
                     func_input_ids, func_attention_mask,
@@ -179,7 +198,14 @@ class VulnDetectorBase(nn.Module):
                 attention_mask=func_attention_mask,
             )
             hidden = out.last_hidden_state  # [B, L, hidden]
-            cls = hidden[:, 0]              # [B, hidden] — CLS token
+            if getattr(self, "_is_decoder_only_lm", False):
+                if func_attention_mask is not None:
+                    last_idx = func_attention_mask.sum(dim=1) - 1  # [B]
+                    cls = hidden[torch.arange(B, device=hidden.device), last_idx]
+                else:
+                    cls = hidden[:, -1]
+            else:
+                cls = hidden[:, 0]          # [B, hidden] — CLS token
             if self._matryoshka_dim is not None:
                 cls    = cls[:, :self._matryoshka_dim]
                 hidden = hidden[:, :, :self._matryoshka_dim]

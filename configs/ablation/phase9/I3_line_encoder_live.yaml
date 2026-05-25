@@ -12,8 +12,8 @@
 # Same .pt build as I1/H1/G2: node-unixcoder_func-unixcoder, func_max_length=1024.
 #   Lines past token 1024 fall outside stored func_input_ids and are not encoded.
 # use_flash_attention=true: FA2 helps on per-line short seqs under live LM.
-# compile_model=true: variable line lengths cause recompilations (dynamic=False).
-#   More recompilations than I2 since LM is live and shapes vary per batch.
+# compile_model=false: _LineLevelEncoder uses to_dense_batch (data-dependent shape)
+#   which causes GuardOnDataDependentSymNode; disabled for correctness.
 #
 # .pt build: configs/data/megavul_multiclass_top25_node-unixcoder_func-unixcoder.yaml
 # Run (cloud, Linux):
@@ -58,7 +58,7 @@ model:
 train:
   seed: 42
   epochs: 100
-  batch_size: 8
+  batch_size: 32
   lr: 0.001
   lm_lr: 1.0e-5
   warmup_ratio: 0.1
@@ -75,7 +75,7 @@ train:
   device: cuda
   use_amp: true
   use_flash_attention: true
-  grad_accum_steps: 4
+  grad_accum_steps: 1
   save_last_every: 10
   compile_model: false
   stmt_head_vectorized: true

@@ -1,0 +1,81 @@
+# Phase 10 — J2: jina-embeddings-v2-base-code as func_lm (encoder-only, 8192 tokens)
+# Base: J1 = I1 = H1 = G2 (hidden_dim=768, meanmax, localization=both, UniXcoder func_lm 1024t)
+# Varies: func_lm=jinaai/jina-embeddings-v2-base-code.
+#   Encoder-only (BERT+ALiBi) → bidirectional → localization=both works correctly.
+#   Native 8192-token context via ALiBi positional encoding (trained at 512, extrapolates).
+#   func_max_length=4096: covers P95+ of MegaVul functions; no sliding window needed.
+#   hidden_dim=768 unchanged — jina-v2-code also outputs 768-dim; no GNN resize.
+#   trust_remote_code=True required (custom JinaBert architecture with ALiBi).
+#   CLS token at position 0 as classification vector (BERT-style).
+#
+# Research question: Does an encoder-only code LM with 8x longer context (4096 vs 1024)
+#   improve over UniXcoder (J1)? Jina-v2-code trained on GitHub code + 150M code QA pairs.
+#   Same GNN dim → fused = 768+768 = 1536; same 50/50 split as G2/I1.
+#   No .pt rebuild needed if existing node-unixcoder_func-jina-v2 .pt available;
+#   otherwise rebuild: configs/data/megavul_multiclass_top25_node-unixcoder_func-jina-v2-code.yaml
+#
+# .pt build: configs/data/megavul_multiclass_top25_node-unixcoder_func-jina-v2-code.yaml
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase10/J2_jina_embeddings_v2_code.yaml
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: jinaai/jina-embeddings-v2-base-code
+  add_func_tokens: true
+  func_max_length: 5120
+  live_lm: func
+  freeze_func_lm: false
+  localization_encoder: both
+  stmt_both_mode: concat
+  graph_pool: meanmax
+  cross_task_method: none
+  hidden_dim: 768
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: false
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  lm_lr: 1.0e-5
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: true
+  use_flash_attention: true
+  grad_accum_steps: 1
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 8
+  prefetch_factor: 2

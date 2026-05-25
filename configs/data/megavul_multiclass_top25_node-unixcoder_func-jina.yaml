@@ -1,0 +1,23 @@
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  max_per_class: 1600
+  resample_seed: 42
+  filter_top25_dangerous: true
+  filter_owasp: false
+
+model:
+  architecture: lmgat_codebert
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: jinaai/jina-code-embeddings-0.5b
+  add_func_tokens: true
+  func_max_length: 4096   # Jina long-context (Qwen tokenizer); covers P95+ of MegaVul functions
+  num_classes: 26
+  matryoshka_dim: 512
+
+train:
+  device: cuda
+  use_flash_attention: true
+  compile_model: false

@@ -1,7 +1,7 @@
 # Ablation Results
 
 Dataset: MegaVul Top-25 CWEs, max 1600 per class, 26 classes (25 CWE + benign),
-UniXcoder-base embeddings, seed=42. GPU: RTX 5070 Ti.
+UniXcoder-base embeddings, seed=42. GPU: RTX 5070 Ti (Phase 1–7); RTX 5090 for Phase 8 reruns (H2/H3) and Phase 9.
 
 Phase structure:
 
@@ -12,7 +12,7 @@ Phase structure:
 - **Phase 5 — Multi-Task / Cross-Task**: bidirectional cross-task coupling
 - **Phase 6 — Language Model**: node_lm / func_lm choice (UniXcoder / CodeT5+)
 - **Phase 7 — GNN Dimension**: hidden_dim vs func_lm dim alignment (50/50 vs 25/75 GNN/LM fused)
-- **Phase 8 — Sliding Window Coverage**: extend func_max_length to 4096 via chunk/stride variants
+- **Phase 8 — Sliding Window Coverage**: extend func_max_length to 5120 via chunk/stride variants
 - **Phase 9 — Line-Level Encoder**: hierarchical encoding — per-line LM → cross-line transformer; frozen vs live LM
 
 ---
@@ -402,67 +402,62 @@ G2 used as Phase 8 baseline — Phase 8 will fix the truncation via sliding wind
 
 # Phase 8 — Sliding Window Coverage
 
-> **⚠ H2/H3 results INVALID — bug in `lm_full_windowed` discovered post-run.**
-> `cls = hidden[:, 0]` returned position 0's hidden from the FIRST window only —
-> classification was still truncated at 1024 tokens despite sliding window.
-> Fix: cls now computed as mean-pool over all real tokens per window, averaged across
-> windows (same as `lm_pool_windowed`). H2 must be re-run with fixed code.
-> H2-rerun config = same `H2_unixcoder_sliding_chunk1024_stride512.yaml`.
-
 `configs/ablation/phase8/` — base H1 = G2 (hidden_dim=768, func_max_length=1024, no sliding).
-Sliding window extends func coverage to func_max_length=4096 (P95 MegaVul vuln = 4326 tokens).
+Sliding window extends func coverage to func_max_length=5120 (covers MegaVul P95 = 4326 tokens with CLS/SEP overhead).
 Chunk=1024 = UniXcoder max. Classification aggregation: mean-pool over real tokens per window,
 averaged across windows. Localization aggregation: per-token mean across overlapping windows.
+H2 and H3 results are from reruns with fixed `lm_full_windowed` (mean-pool CLS across windows)
+and ml5120 dataset on RTX 5090. Earlier H2/H3 runs with ml1024 never activated sliding window
+(fast path always triggered when func_max_length=max_length=1024).
 
 | ID | Config | chunk | stride | max_len | Max windows | Run ID | Epochs |
 |---|---|---|---|---|---|---|---|
 | H1 | — (= G2) | — | — | 1024 | 1 | `20260520_132730` | 34 |
-| H2 | `H2_unixcoder_sliding_chunk1024_stride512.yaml` | 1024 | 512 | 4096 | 7 | `20260521_140829` | 38 |
-| H3 | `H3_unixcoder_sliding_chunk1024_stride1024.yaml` | 1024 | 1024 | 4096 | 4 | `20260522_002235` | 17† |
+| H2 | `H2_unixcoder_sliding_chunk1024_stride512.yaml` | 1024 | 512 | 5120 | 9 | `20260525_104032` | 30 |
+| H3 | `H3_unixcoder_sliding_chunk1024_stride1024.yaml` | 1024 | 1024 | 5120 | 5 | `20260525_125031` | 31 |
 
 ## Classification
 
-† = classification collapsed (predicts majority class; metrics not comparable).
-
 | ID | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | Epochs |
 |---|---|---|---|---|---|---|
-| H1 (= G2) | 0.529 | 0.582 | 0.579 | 0.914 | 0.569 | 34 |
-| H2 | **0.555** | **0.568** | **0.564** | **0.912** | 0.581 | 38 |
-| H3† | 0.037† | 0.177† | 0.093† | 0.748† | 0.139† | 17 |
+| H1 (= G2) | **0.529** | **0.582** | **0.579** | **0.914** | 0.569 | 34 |
+| H2 | 0.459 | 0.508 | 0.507 | 0.890 | 0.588 | 30 |
+| H3 | 0.528 | 0.529 | 0.533 | 0.895 | 0.587 | 31 |
 
 ## Statement-Level Localization
 
 | ID | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
 |---|---|---|---|---|---|---|
 | H1 (= G2) | 1.410 | 0.747 | 0.962 | 0.186 | 0.427 | 0.056 |
-| H2 | 1.037 | 0.837 | 0.978 | 0.216 | **0.440** | 0.041 |
-| H3† | **0.537** | **0.918** | **0.989** | **0.289** | 0.429 | **0.020** |
+| H2 | **1.025** | **0.876** | 0.971 | 0.193 | 0.395 | 0.052 |
+| H3 | 1.047 | 0.873 | **0.978** | **0.221** | **0.442** | **0.041** |
 
-H2 (50% overlap sliding window) beats H1 on both classification (+2.6pp F1) and
-localization (IFA 1.410→1.037, Top-1 0.747→0.837, Effort 0.056→0.041). Sliding
-window coverage of the top-32% truncated functions restores func-level LM signal,
-improving the GNN/LM interaction. Classification F1 0.555 = **new overall best**
-(beats G2 0.529 and G1/F1 0.517). Localization still below G1/F1 baseline (IFA
-1.037 vs 0.644, Top-1 0.837 vs 0.900) — mean aggregation across windows blurs
-fine-grained per-token signal that single-pass 1024-token lm_full produces;
-the trade-off between coverage and per-token precision persists.
+Both H2 and H3 use ml5120 dataset with fixed `lm_full_windowed` (mean-pool CLS across windows),
+so sliding window is genuinely active for functions exceeding 1024 tokens (~32% of MegaVul vuln functions).
 
-**H3 (non-overlapping, stride=1024, 4 windows) — classification collapsed.** Train
-loss stuck at ~2.86 throughout all 17 epochs (random baseline for 26 classes ≈ 3.26 —
-H3 barely below random, never learning). Best val F1 = 0.042 at epoch 2; patience=15
-triggered at epoch 17. 24 of 25 non-benign classes had F1=0. Root cause: without
-50% overlap, boundary tokens appear in exactly one window — the CLS aggregation of
-non-overlapping chunks loses the cross-boundary context that H2's overlapping windows
-provide. The classification head cannot recover stable gradient signal from disjoint
-CLS vectors. The localization head (ranking loss, independent of classification)
-survives — H3 achieves the **best H-series localization** (IFA 0.537, Top-1 0.918,
-Effort 0.020) even with collapsed classification, because stmt_head gradients flow
-from ranking loss regardless of the func head's failure. H3 is ~1.6× faster than H2
-(587s vs 960s/epoch) but useless for classification — non-overlapping stride is
-incompatible with the func-level CLS aggregation scheme used here.
+**H2 (50% overlap, stride=512, 9 windows max)** — classification degrades vs H1 baseline
+(F1 0.459 vs 0.529, −0.070). Root cause: 9 overlapping windows produce a noisy mean-pool CLS —
+boundary regions appear in two consecutive windows, introducing redundant gradient signal that
+dilutes the per-window CLS. With 9 windows × batch_size=16 forward passes per batch, gradient
+variance is high relative to H1's single pass. Localization improves over H1 (IFA 1.025 vs
+1.410, Top-1 0.876 vs 0.747) because overlapping per-token accumulation covers more context
+without the CLS noise problem affecting stmt_head.
 
-**Phase 8 winner: H2 — best classification F1 (0.555), best overall across both tasks.
-H3 confirms overlap is required for learning: stride=chunk_size collapses classification.**
+**H3 (non-overlapping, stride=1024, 5 windows max)** — classification ties H1 (F1 0.528 vs
+0.529, −0.001). Unlike the prior invalid H3 run (ml1024, fast path always triggered), this
+run with ml5120 correctly engages 2–5 windows for longer functions. Non-overlapping windows
+avoid boundary-duplication noise: each position appears in exactly one window, giving a cleaner
+per-window CLS mean-pool. Localization also improves over H1 (IFA 1.047 vs 1.410, Top-1 0.873
+vs 0.747) and beats H2 on R@5%/R@20%/Effort despite marginally worse IFA and Top-1.
+H3 is 1.7× faster than H2 (150s vs 250s/epoch).
+
+Both H2 and H3 remain below the G1/F1 localization baseline (IFA 0.644, Top-1 0.900) —
+mean aggregation across windows blurs fine-grained per-token signal that single-pass lm_full
+produces for shorter functions already under 1024 tokens.
+
+**Phase 8 winner: H3 — ties H1 on classification (F1 0.528 ≈ 0.529), better localization
+(IFA 1.047 vs 1.410, R@20% 0.442 vs 0.427), and 1.7× faster than H2. H2 (overlapping)
+hurts classification despite better IFA/Top-1 localization precision.**
 
 ---
 
@@ -481,11 +476,12 @@ Localization = per-line encoder output scattered back to token positions.
 - **I3** = live_lm=line, freeze_func_lm=false, no precompute
   - Per-line LM forward each batch; LM weights updated jointly with line_encoder
 
-| ID | Run ID | Config | live_lm | freeze_func_lm | precompute | Epochs |
-|---|---|---|---|---|---|---|
-| I1 | `20260520_132730` (= H1/G2) | — | func | No | — | 34 |
-| I2 | `20260522_070552_lmgat_codebert_multiclass` | `I2_line_encoder.yaml` | line | Yes | Yes | 84 |
-| I3 | `20260522_135012_lmgat_codebert_multiclass` | `I3_line_encoder_live.yaml` | line | No | No | 27† |
+| ID | Run ID | Config | live_lm | freeze_func_lm | precompute | Line ctx | Epochs |
+|---|---|---|---|---|---|---|---|
+| I1 | `20260520_132730` (= H1/G2) | — | func | No | — | — | 34 |
+| I2 | `20260522_070552_lmgat_codebert_multiclass` | `I2_line_encoder.yaml` | line | Yes | Yes | — | 84 |
+| I3 | `20260522_135012_lmgat_codebert_multiclass` | `I3_line_encoder_live.yaml` | line | No | No | — | 27† |
+| I4 | `20260525_141857_lmgat_codebert_multiclass` | `I4_line_ctx5.yaml` | line | Yes | Yes | ±5 | 52 |
 
 ## Classification
 
@@ -496,6 +492,7 @@ Localization = per-line encoder output scattered back to token positions.
 | I1 (= H1/G2) | **0.529** | **0.582** | **0.579** | **0.914** | 0.569 | 34 |
 | I2 | 0.390 | 0.402 | 0.402 | 0.880 | 0.311 | 84 |
 | I3† | 0.017† | 0.152† | 0.044† | 0.774† | 0.586† | 27 |
+| I4 | 0.375 | 0.414 | 0.410 | 0.877 | 0.381 | 52 |
 
 ## Statement-Level Localization
 
@@ -504,6 +501,7 @@ Localization = per-line encoder output scattered back to token positions.
 | I1 (= H1/G2) | 1.410 | 0.747 | 0.962 | 0.186 | 0.427 | 0.056 |
 | I2 | 2.116 | 0.666 | 0.924 | 0.200 | 0.390 | 0.051 |
 | I3† | **1.164** | **0.795** | **0.955** | 0.186 | **0.428** | 0.057 |
+| I4 | 3.009 | 0.609 | 0.857 | 0.179 | 0.443 | 0.059 |
 
 **I2 (frozen LM + line encoder)** — classification drops significantly vs I1 baseline
 (F1 0.390 vs 0.529, −0.139). Localization also degrades (IFA 2.116 vs 1.410, Top-1
@@ -515,7 +513,7 @@ reflect the optimizer searching for a better combination of the fixed LM feature
 trainable GNN/heads.
 
 **I3 (live LM + line encoder) — classification collapsed** (F1 0.017, predicts
-class 0 only, same pattern as H3). Best val F1 = 0.009 at epoch 2; patience=15
+class 0 only). Best val F1 = 0.009 at epoch 2; patience=15
 triggered at epoch 27. Root cause: per-line LM forward replaces the whole-function
 CLS forward entirely — the classification head loses global function-level context.
 The cross-line transformer contextualizes lines but operates at statement granularity;
@@ -526,12 +524,24 @@ CWE classification requires whole-function semantics but the LM only ever sees
 individual lines. Localization survives (ranking loss flows through stmt_head
 independently of func_head failure).
 
+**I4 (frozen LM + line encoder + ±5 line context)** — adds per-line context: each
+line's [CLS] is precomputed from [line_{i-5} … line_i … line_{i+5}] concatenated
+and passed through UniXcoder jointly, so the per-line CLS can attend to neighbouring
+lines' tokens before the cross-line transformer. Classification drops further below I2
+(F1 0.375 vs 0.390) — the ±5 context window increases precompute cost but does not
+substitute for whole-function semantics at training time; the frozen LM cannot adapt
+to the 26-class CWE task regardless of context size. Localization: IFA worsens
+(3.009 vs 2.116), Top-1 worsens (0.609 vs 0.666), but R@20%LOC improves (0.443 vs
+0.390) — the broader context widens recall coverage at the cost of IFA/Top-1 precision.
+Overall I4 is worse than I2 on classification and mixed on localization.
+
 **Phase 9 finding: line-level LM encoding is incompatible with function-level
-CWE multiclass classification.** Both frozen (I2) and live (I3) variants underperform
-I1 on classification. Whole-function CLS (H1/G2/H2 approach) is necessary for
-classification. The hierarchical design loses global context that 26-class CWE
-discrimination requires. Phase 9 is a negative result — confirms H2 sliding window
-as the better path for extending LM coverage.
+CWE multiclass classification.** Frozen (I2, I4) and live (I3) variants all underperform
+I1 on classification. Adding line context ±5 (I4) worsens classification further vs I2
+and gives mixed localization (better R@20%, worse IFA/Top-1). Whole-function CLS
+(H3 approach) is necessary for classification; the hierarchical design loses global
+context that 26-class CWE discrimination requires. Phase 9 is a negative result —
+confirms H3 sliding window as the better path for extending LM coverage.
 
 ---
 
@@ -560,7 +570,8 @@ as the better path for extending LM coverage.
 | F6 CT5+ norm          | 138.0M | 460s       | 4.35            | 8.7 GB    |
 | F7 both normed        | 138.0M | 460s       | 8.96            | 8.9 GB    |
 | G2 dim=768            | 146.9M | 409s       | 3.87            | 10.2 GB   |
-| H2 sliding stride512  | 146.9M | 960s       | 10.15           | 11.4 GB   |
-| H3 sliding stride1024 | 146.9M | 587s       | 2.78            | 7.4 GB    |
+| H2 sliding stride512  | 146.9M | 250s       | 2.09            | 18.6 GB   |
+| H3 sliding stride1024 | 146.9M | 150s       | 1.30            | 17.1 GB   |
 | I2 line frozen        | 161.7M | 285s       | 6.66            | 9.5 GB    |
 | I3 line live          | 161.7M | 644s       | 4.84            | 11.0 GB   |
+| I4 line ctx±5 frozen  | 161.7M | 84s        | 1.22            | 17.4 GB   |

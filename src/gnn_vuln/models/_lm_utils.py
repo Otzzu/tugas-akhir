@@ -273,6 +273,36 @@ def lm_full_codet5p_raw(
     return cls, hs
 
 
+class WindowAttentionPool(torch.nn.Module):
+    """Attention pooling over per-window CLS vectors → single global CLS.
+
+    Replaces mean-pool over sliding-window CLS with a learned attention score,
+    so the model can up-weight windows most relevant to the CWE class.
+
+    Input : window_cls [B, N, hidden], valid_mask [B, N] bool (optional)
+    Output: [B, hidden] — attention-weighted sum over valid windows
+    """
+
+    def __init__(self, hidden_dim: int):
+        super().__init__()
+        self.score = torch.nn.Linear(hidden_dim, 1, bias=False)
+
+    def forward(
+        self,
+        window_cls: torch.Tensor,
+        valid_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        logits = self.score(window_cls).squeeze(-1)           # [B, N]
+        if valid_mask is not None:
+            logits = logits.masked_fill(~valid_mask, float("-inf"))
+        attn = torch.softmax(logits, dim=-1)                  # [B, N]
+        # Guard: if all windows invalid for a sample, attn = NaN → zero out
+        if valid_mask is not None:
+            any_valid = valid_mask.any(dim=-1, keepdim=True)  # [B, 1]
+            attn = torch.where(any_valid, attn, torch.zeros_like(attn))
+        return (attn.unsqueeze(-1) * window_cls).sum(dim=1)   # [B, hidden]
+
+
 def lm_full_windowed(
     model,
     is_enc_dec: bool,
@@ -281,7 +311,8 @@ def lm_full_windowed(
     chunk_size: int = 512,
     stride: int = 256,
     matryoshka_dim: int | None = None,
-) -> tuple[torch.Tensor, torch.Tensor]:
+    return_window_cls: bool = False,
+) -> tuple[torch.Tensor, ...]:
     """
     Sliding-window LM forward that returns per-token hidden states aligned to
     the original input positions. Used by `_lm_embed_full` for localization
@@ -292,14 +323,16 @@ def lm_full_windowed(
     token position's hidden state = mean of all chunks that contain it.
     Overlap regions average naturally via accumulator + count.
 
-    Returns:
-        cls    : [B, hidden] — mean-pool over all windows (mean of real tokens per
-                 window, then mean across windows). Covers the full function regardless
-                 of length — equivalent to lm_pool_windowed but computed jointly with
-                 the per-token accumulation so no extra LM forwards are needed.
+    Returns (return_window_cls=False, default):
+        cls    : [B, hidden] — mean-pool over all windows
         hidden : [B, L, hidden] — per-original-position averaged hidden states
 
-    Fast path: if L ≤ chunk_size, returns a single forward.
+    Returns (return_window_cls=True):
+        window_cls  : [B, N_windows, hidden] — per-window mean-pooled CLS
+        valid_mask  : [B, N_windows] bool — True if window has real tokens for that sample
+        hidden      : [B, L, hidden]
+
+    Fast path: if L ≤ chunk_size, returns a single forward (N_windows=1).
     """
     B, L = input_ids.shape
     device = input_ids.device
@@ -312,7 +345,20 @@ def lm_full_windowed(
         hidden = out.last_hidden_state
         if matryoshka_dim is not None:
             hidden = hidden[:, :, :matryoshka_dim]
-        return hidden[:, 0], hidden
+        if _is_decoder_only(model):
+            if attention_mask is not None:
+                last_idx = attention_mask.sum(dim=1) - 1     # [B]
+                cls = hidden[torch.arange(B, device=device), last_idx]
+            else:
+                cls = hidden[:, -1]
+        else:
+            cls = hidden[:, 0]
+        if return_window_cls:
+            # Single window: [B, 1, H], all valid
+            win_cls  = cls.unsqueeze(1)                       # [B, 1, H]
+            win_mask = torch.ones(B, 1, dtype=torch.bool, device=device)
+            return win_cls, win_mask, hidden
+        return cls, hidden
 
     stride = max(1, min(stride, chunk_size))
 
@@ -320,8 +366,10 @@ def lm_full_windowed(
     hidden_dim = model.config.hidden_size if matryoshka_dim is None else matryoshka_dim
     hidden_acc = torch.zeros(B, L, hidden_dim, device=device, dtype=torch.float32)
     count      = torch.zeros(B, L, 1,          device=device, dtype=torch.float32)
-    # Per-window mean-pool accumulator for cls — covers full function for classification.
-    # Each window contributes its mean-pooled token representation (real tokens only).
+    # Per-window CLS accumulators
+    win_cls_list:   list[torch.Tensor] = []   # [B, H] per window
+    win_valid_list: list[torch.Tensor] = []   # [B] bool per window
+    # Fallback mean-pool accumulators (return_window_cls=False)
     cls_acc = torch.zeros(B, hidden_dim, device=device, dtype=torch.float32)
     cls_cnt = torch.zeros(B,             device=device, dtype=torch.float32)
     out_dtype = None
@@ -353,17 +401,21 @@ def lm_full_windowed(
             w = mask_chunk.unsqueeze(-1).float()          # [B, end-start, 1]
             hidden_acc[:, start:end] += chunk_fp32 * w
             count[:, start:end]      += w
-            # Mean-pool this window's real tokens → [B, H]; zero out empty samples
-            w_1d     = mask_chunk.float()                 # [B, end-start]
-            valid_b  = (w_1d.sum(dim=1) > 0).float()     # [B]
+            w_1d    = mask_chunk.float()                  # [B, end-start]
+            valid_b = (w_1d.sum(dim=1) > 0)              # [B] bool
             win_mean = (chunk_fp32 * w_1d.unsqueeze(-1)).sum(dim=1) \
                        / w_1d.sum(dim=1, keepdim=True).clamp(min=1)  # [B, H]
-            cls_acc += win_mean * valid_b.unsqueeze(-1)
-            cls_cnt += valid_b
+            win_cls_list.append(win_mean)
+            win_valid_list.append(valid_b)
+            cls_acc += win_mean * valid_b.float().unsqueeze(-1)
+            cls_cnt += valid_b.float()
         else:
             hidden_acc[:, start:end] += chunk_fp32
             count[:, start:end]      += 1.0
-            cls_acc += chunk_fp32.mean(dim=1)
+            win_mean = chunk_fp32.mean(dim=1)
+            win_cls_list.append(win_mean)
+            win_valid_list.append(torch.ones(B, dtype=torch.bool, device=device))
+            cls_acc += win_mean
             cls_cnt += 1.0
 
         if end == L:
@@ -372,7 +424,18 @@ def lm_full_windowed(
 
     _dtype = out_dtype or input_ids.new_zeros(1).float().dtype
     hidden = (hidden_acc / count.clamp(min=1)).to(_dtype)
-    cls    = (cls_acc / cls_cnt.unsqueeze(-1).clamp(min=1)).to(_dtype)
+
+    if return_window_cls:
+        if win_cls_list:
+            win_cls  = torch.stack(win_cls_list,  dim=1).to(_dtype)  # [B, N, H]
+            win_mask = torch.stack(win_valid_list, dim=1)             # [B, N] bool
+        else:
+            # Degenerate: all windows empty — single zero window
+            win_cls  = torch.zeros(B, 1, hidden_dim, device=device, dtype=_dtype)
+            win_mask = torch.zeros(B, 1, dtype=torch.bool, device=device)
+        return win_cls, win_mask, hidden
+
+    cls = (cls_acc / cls_cnt.unsqueeze(-1).clamp(min=1)).to(_dtype)
     return cls, hidden
 
 

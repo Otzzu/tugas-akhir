@@ -1,0 +1,22 @@
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  max_per_class: 1600
+  resample_seed: 42
+  filter_top25_dangerous: true
+  filter_owasp: false
+
+model:
+  architecture: lmgat_codebert
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: answerdotai/ModernBERT-base
+  add_func_tokens: true
+  func_max_length: 4096
+  num_classes: 26
+
+train:
+  device: cuda
+  use_flash_attention: true
+  compile_model: false

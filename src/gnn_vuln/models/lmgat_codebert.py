@@ -37,7 +37,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  mmoe_loc_transformer=False, live_lm="func",
                  gnn_model="gat", num_relations=7, num_bases=None,
                  codet5p_raw_encoder=False, codet5p_normalize_per_token=False,
-                 normalize_gnn_output=False, freeze_func_lm=False):
+                 normalize_gnn_output=False, freeze_func_lm=False,
+                 window_attn_pool=False):
         super().__init__()
         self._normalize_gnn_output = normalize_gnn_output
         assert live_lm in _VALID_LIVE_LM, \
@@ -63,6 +64,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                 codet5p_raw_encoder=codet5p_raw_encoder,
                 codet5p_normalize_per_token=codet5p_normalize_per_token,
                 freeze_func_lm=freeze_func_lm,
+                window_attn_pool=window_attn_pool,
             )
         # Line-level transformer (live_lm=line): contextualizes per-line LM
         # embeddings across the function. Classification = meanmax pool of its
@@ -228,4 +230,5 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             codet5p_normalize_per_token=getattr(cfg.model, "codet5p_normalize_per_token", False),
             normalize_gnn_output=getattr(cfg.model, "normalize_gnn_output", False),
             freeze_func_lm=getattr(cfg.model, "freeze_func_lm", False),
+            window_attn_pool=getattr(cfg.model, "window_attn_pool", False),
         )
