@@ -1,19 +1,20 @@
 # Phase 8 — H2: G2-based sliding window, chunk=1024, stride=512 (50% overlap)
 # H1 baseline: G2 (no sliding, func_max_length=1024, hidden_dim=768, UniXcoder meanmax).
 # Extends G2 coverage to P95 MegaVul vuln (4326 tokens) via sliding window.
+# func_max_length=5120 = 5×chunk_size → covers MegaVul P95 (4326 raw tokens + CLS/SEP).
 #
 # chunk=1024 = UniXcoder max. stride=512 = 50% overlap.
 # Each token appears in ≥2 windows → better boundary coverage vs H3.
-# func_max_length=4096 → up to 7 windows per function.
+# func_max_length=5120 → up to 9 windows per function.
 #
 # dim breakdown (same as G2):
 #   h_graph: 768 (hidden_dim=768)
 #   lm_emb:  768 (mean-pool over real tokens per window, averaged across windows)
 #   fused:  1536 → GNN 50% / LM 50%
 #
-# VRAM note: hidden_dim=768 + 7 windows → high VRAM. batch_size=8 + grad_accum=4.
+# VRAM note: hidden_dim=768 + up to 9 windows → high VRAM. batch_size=4, grad_accum=8.
 #
-# .pt build: configs/data/megavul_multiclass_top25_node-unixcoder_func-unixcoder_ml4096.yaml
+# .pt build: configs/data/megavul_multiclass_top25_node-unixcoder_func-unixcoder_ml5120.yaml
 # Run (cloud, Linux):
 #   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase8/H2_unixcoder_sliding_chunk1024_stride512.yaml
 
@@ -33,7 +34,7 @@ model:
   pretrained_lm: microsoft/unixcoder-base
   func_lm: microsoft/unixcoder-base
   add_func_tokens: true
-  func_max_length: 4096
+  func_max_length: 5120
   func_chunk_size: 1024
   func_chunk_stride: 512
   localization_encoder: both
@@ -55,7 +56,7 @@ model:
 train:
   seed: 42
   epochs: 100
-  batch_size: 4
+  batch_size: 16
   lr: 0.001
   lm_lr: 0.00001
   warmup_ratio: 0.1
@@ -72,7 +73,7 @@ train:
   device: cuda
   use_amp: true
   use_flash_attention: true
-  grad_accum_steps: 8
+  grad_accum_steps: 2
   save_last_every: 10
   compile_model: false
   stmt_head_vectorized: true

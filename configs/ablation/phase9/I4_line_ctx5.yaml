@@ -13,7 +13,7 @@
 # NOTE: context window precompute overwrites func_line_cls in .pt files.
 #       Run I4 on a fresh pull or after I2 is finished — not in parallel on same .pt.
 #
-# .pt build: configs/data/megavul_multiclass_top25_node-unixcoder_func-unixcoder_ml4096.yaml
+# .pt build: configs/data/megavul_multiclass_top25_node-unixcoder_func-unixcoder_ml5120.yaml
 # Run (cloud, Linux):
 #   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase9/I4_line_ctx5.yaml
 
@@ -33,7 +33,7 @@ model:
   pretrained_lm: microsoft/unixcoder-base
   func_lm: microsoft/unixcoder-base
   add_func_tokens: true
-  func_max_length: 4096
+  func_max_length: 5120
   live_lm: line
   freeze_func_lm: true
   precompute_line_cls: true
@@ -57,7 +57,7 @@ model:
 train:
   seed: 42
   epochs: 100
-  batch_size: 8
+  batch_size: 16
   lr: 0.001
   warmup_ratio: 0.1
   grad_clip: 1.0
@@ -73,7 +73,7 @@ train:
   device: cuda
   use_amp: true
   use_flash_attention: true
-  grad_accum_steps: 4
+  grad_accum_steps: 2
   save_last_every: 10
   compile_model: false
   stmt_head_vectorized: true
