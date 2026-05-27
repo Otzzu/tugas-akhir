@@ -43,14 +43,6 @@ fi
 command -v pigz &>/dev/null || { info "pigz not found — falling back to gzip"; PIGZ=false; }
 PIGZ=${PIGZ:-true}
 
-# Auto-detect flash_attn
-USE_FA=$(python -c "import flash_attn; print('True')" 2>/dev/null || echo "False")
-if [[ "$USE_FA" == "True" ]]; then
-    info "flash_attn available — use_flash_attention=True"
-else
-    info "flash_attn not available — use_flash_attention=False"
-fi
-
 success "Environment OK"
 
 # ── Dataset names ─────────────────────────────────────────────────────────────
@@ -119,7 +111,7 @@ build_upload_clean() {
     local func_lm="$4"
 
     # ── Build ──────────────────────────────────────────────────────────────
-    info "Building $label... (flash_attn=${USE_FA})"
+    info "Building $label..."
     PYTHONPATH=src python -c "
 from gnn_vuln.data.dataset_lm import CodeBERTGraphDataset
 CodeBERTGraphDataset(
@@ -136,7 +128,7 @@ CodeBERTGraphDataset(
     max_nodes=2500,
     storage='lazy',
     embedder_device='cuda',
-    use_flash_attention=${USE_FA},
+    use_flash_attention=False,
 )
 print('Build complete: ${label}')
 "
