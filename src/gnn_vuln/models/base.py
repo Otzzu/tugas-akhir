@@ -102,7 +102,7 @@ class VulnDetectorBase(nn.Module):
             _cfg.add_cross_attention = False
         load_kwargs: dict = {"config": _cfg, "trust_remote_code": True}
         if torch.cuda.is_available():
-            load_kwargs["torch_dtype"] = torch.bfloat16
+            load_kwargs["dtype"] = torch.bfloat16
         if use_flash_attention:
             try:
                 import flash_attn  # noqa: F401

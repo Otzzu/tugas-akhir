@@ -109,7 +109,7 @@ class LMNodeEmbedder:
         load_kwargs: dict = {"trust_remote_code": True}
         if attn_impl:
             load_kwargs["attn_implementation"] = attn_impl
-            load_kwargs["torch_dtype"] = torch.bfloat16
+            load_kwargs["dtype"] = torch.bfloat16
 
         # Pre-load config and patch missing is_decoder (CodeT5p-embedding quirk)
         from transformers import AutoConfig
@@ -127,7 +127,7 @@ class LMNodeEmbedder:
                     f"{model_name} does not support Flash Attention 2 — falling back to standard attention. ({e})"
                 )
                 load_kwargs.pop("attn_implementation", None)
-                load_kwargs.pop("torch_dtype", None)
+                load_kwargs.pop("dtype", None)
                 attn_impl = None
                 self._flash = False
                 self.model = AutoModel.from_pretrained(model_name, **load_kwargs)
