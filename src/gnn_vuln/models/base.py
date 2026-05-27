@@ -9,6 +9,15 @@ import torch.nn as nn
 from loguru import logger
 from transformers import AutoConfig, AutoModel
 import transformers.pytorch_utils as _tpu
+import torch.utils.checkpoint as _cp
+
+# Gradient checkpointing: old reentrant mode doesn't preserve autocast context →
+# backward recompute runs in fp32 even when forward was bf16, doubling activation
+# memory. Patch checkpoint to default use_reentrant=False so autocast is preserved.
+_orig_checkpoint = _cp.checkpoint
+def _checkpoint_non_reentrant(fn, *args, use_reentrant=False, **kwargs):
+    return _orig_checkpoint(fn, *args, use_reentrant=use_reentrant, **kwargs)
+_cp.checkpoint = _checkpoint_non_reentrant
 
 # Jina-v2 custom code imports find_pruneable_heads_and_indices from
 # transformers.pytorch_utils, which was removed in newer transformers.
@@ -110,7 +119,12 @@ class VulnDetectorBase(nn.Module):
                 load_kwargs["attn_implementation"] = "flash_attention_2"
                 logger.info(f"flash_attention_2 enabled for {_func_lm} (flash-attn {flash_attn.__version__})")
             except ImportError:
-                logger.info(f"flash-attn not installed — {_func_lm} uses standard attention")
+                # Try sdpa (PyTorch built-in memory-efficient attention, no extra package).
+                # Eliminates O(n²) attention materialization for models that support it
+                # (ModernBERT, recent BERT variants). Jina-v2 uses trust_remote_code and
+                # may not honour attn_implementation — sdpa silently falls back to eager.
+                logger.info(f"flash-attn not installed — trying sdpa for {_func_lm}")
+                load_kwargs["attn_implementation"] = "sdpa"
         self.codebert = AutoModel.from_pretrained(_func_lm, **load_kwargs)
         self._is_decoder_only_lm = _is_decoder_only(self.codebert)
         self._freeze_func_lm = freeze_func_lm

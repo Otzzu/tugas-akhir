@@ -92,19 +92,25 @@ $UVP \
 echo "=== [6/6] Installing project package ==="
 $UVP -e .
 
-echo "=== [+] Installing flash-attn (prebuilt wheel — skips on failure) ==="
-# Build wheel URL from torch/python/abi env (same pattern as torch-scatter step).
-# Avoids ~30 min source compile by pulling matching prebuilt wheel.
+echo "=== [+] Installing flash-attn (prebuilt wheel → community wheel → source build fallback) ==="
 FA_VER="2.8.3"
 TORCH_MM=$($PYBIN -c "import torch; v=torch.__version__.split('+')[0].split('.'); print(f'{v[0]}.{v[1]}')")
 PY_TAG=$($PYBIN -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')")
 ABI=$($PYBIN -c "import torch; print('TRUE' if torch._C._GLIBCXX_USE_CXX11_ABI else 'FALSE')")
-# Use cu13 prefix for CUDA 13.x, cu12 for everything else
 if [[ "$CUDA_MAJOR" -ge 13 ]]; then FA_CUDA="cu13"; else FA_CUDA="cu12"; fi
-FA_URL="https://github.com/Dao-AILab/flash-attention/releases/download/v${FA_VER}/flash_attn-${FA_VER}+${FA_CUDA}torch${TORCH_MM}cxx11abi${ABI}-${PY_TAG}-${PY_TAG}-linux_x86_64.whl"
+FA_WHEEL="flash_attn-${FA_VER}+${FA_CUDA}torch${TORCH_MM}cxx11abi${ABI}-${PY_TAG}-${PY_TAG}-linux_x86_64.whl"
+FA_URL="https://github.com/Dao-AILab/flash-attention/releases/download/v${FA_VER}/${FA_WHEEL}"
+FA_URL_COMMUNITY="https://github.com/adithyaxx/flash-attention/releases/download/v${FA_VER}/${FA_WHEEL}"
 echo "    Wheel: ${FA_URL}"
-$UVP "${FA_URL}" \
-    || { echo "    Prebuilt wheel not found — skipping (training will use standard attention)"; true; }
+if $UVP "${FA_URL}" 2>/dev/null; then
+    echo "    flash-attn installed from official prebuilt wheel"
+elif $UVP "${FA_URL_COMMUNITY}" 2>/dev/null; then
+    echo "    flash-attn installed from community prebuilt wheel (adithyaxx/flash-attention)"
+else
+    echo "    Prebuilt wheel not found — building from source (~30 min)..."
+    $UVP flash-attn --no-build-isolation \
+        || echo "    flash-attn build failed — training will use standard attention"
+fi
 
 echo ""
 echo "=== Verification ==="
