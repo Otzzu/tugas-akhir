@@ -85,7 +85,7 @@ $UVP torch-scatter torch-sparse \
 
 echo "=== [5/6] Installing project dependencies ==="
 $UVP \
-  transformers loguru tqdm pyyaml \
+  "transformers>=4.48,<5.0" loguru tqdm pyyaml \
   numpy pandas scikit-learn networkx \
   datasets sentencepiece
 
