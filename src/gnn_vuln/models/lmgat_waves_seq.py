@@ -44,7 +44,7 @@ class LMGATWavesSeqVulnDetector(VulnDetectorBase):
             d_model=CODEBERT_DIM, nhead=stmt_transformer_heads,
             dropout=dropout, batch_first=True,
         )
-        self.stmt_transformer  = nn.TransformerEncoder(enc_layer, num_layers=stmt_transformer_layers)
+        self.stmt_transformer  = nn.TransformerEncoder(enc_layer, num_layers=stmt_transformer_layers, enable_nested_tensor=False)
         self.stmt_score_head   = nn.Linear(CODEBERT_DIM, 1)
 
         # Stage 2: GNN on x + suspicion (774D)

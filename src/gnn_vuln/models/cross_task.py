@@ -131,7 +131,7 @@ class _LineLevelEncoder(nn.Module):
             d_model=D, nhead=num_heads, dim_feedforward=D * 4,
             dropout=dropout, batch_first=True,
         )
-        self.encoder = nn.TransformerEncoder(layer, num_layers=num_layers)
+        self.encoder = nn.TransformerEncoder(layer, num_layers=num_layers, enable_nested_tensor=False)
 
     @torch.compiler.disable
     def forward(self, x: torch.Tensor, stmt_graph: torch.Tensor, B: int) -> torch.Tensor:

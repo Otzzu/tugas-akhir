@@ -7,6 +7,26 @@ from abc import abstractmethod
 import torch
 import torch.nn as nn
 from transformers import AutoConfig, AutoModel
+import transformers.pytorch_utils as _tpu
+
+# Jina-v2 custom code imports find_pruneable_heads_and_indices from
+# transformers.pytorch_utils, which was removed in newer transformers.
+if not hasattr(_tpu, "find_pruneable_heads_and_indices"):
+    from typing import List, Set, Tuple
+
+    def _find_pruneable_heads_and_indices(
+        heads: List[int], n_heads: int, head_size: int, already_pruned_heads: Set[int]
+    ) -> Tuple[Set[int], torch.LongTensor]:
+        mask = torch.ones(n_heads, head_size)
+        heads = set(heads) - already_pruned_heads
+        for head in heads:
+            head = head - sum(1 if h < head else 0 for h in already_pruned_heads)
+            mask[head] = 0
+        mask = mask.view(-1).contiguous().eq(1)
+        index: torch.LongTensor = torch.arange(len(mask))[mask].long()
+        return heads, index
+
+    _tpu.find_pruneable_heads_and_indices = _find_pruneable_heads_and_indices
 
 from gnn_vuln.models._lm_utils import (
     lm_hidden_dim, lm_pool, lm_pool_windowed, lm_full_windowed, lm_per_line_embed,
