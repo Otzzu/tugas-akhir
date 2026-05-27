@@ -6,6 +6,7 @@ from abc import abstractmethod
 
 import torch
 import torch.nn as nn
+from loguru import logger
 from transformers import AutoConfig, AutoModel
 import transformers.pytorch_utils as _tpu
 
@@ -107,8 +108,9 @@ class VulnDetectorBase(nn.Module):
             try:
                 import flash_attn  # noqa: F401
                 load_kwargs["attn_implementation"] = "flash_attention_2"
+                logger.info(f"flash_attention_2 enabled for {_func_lm} (flash-attn {flash_attn.__version__})")
             except ImportError:
-                pass  # flash-attn not installed — fall back silently
+                logger.info(f"flash-attn not installed — {_func_lm} uses standard attention")
         self.codebert = AutoModel.from_pretrained(_func_lm, **load_kwargs)
         self._is_decoder_only_lm = _is_decoder_only(self.codebert)
         self._freeze_func_lm = freeze_func_lm
