@@ -555,16 +555,16 @@ confirms H3 sliding window as the better path for extending LM coverage.
 | A4                    | RTX 5070 Ti | 129.6M | 176s       | 3.62            | 4.8 GB    |
 | A4-L1                 | RTX 5070 Ti | 129.6M | 161s       | 1.39            | 6.9 GB    |
 | A4-L2                 | RTX 5070 Ti | 129.6M | 162s       | 1.93            | 7.7 GB    |
-| A4-L2-fixed           | RTX 5070 Ti | 129.6M | 162s       | 3.37            | —         |
-| fusion gated          | RTX 5070 Ti | 129.6M | 163s       | 1.72            | —         |
-| fusion weighted α=0.3 | RTX 5070 Ti | 129.6M | 162s       | 1.53            | —         |
-| fusion weighted α=0.5 | RTX 5070 Ti | 129.6M | 162s       | 1.75            | —         |
-| fusion weighted α=0.7 | RTX 5070 Ti | 129.6M | 162s       | 1.44            | —         |
+| A4-L2-fixed           | RTX 5070 Ti | 129.6M | 162s       | 3.37            | 7.7 GB    |
+| fusion gated          | RTX 5070 Ti | 129.6M | 163s       | 1.72            | 7.8 GB    |
+| fusion weighted α=0.3 | RTX 5070 Ti | 129.6M | 162s       | 1.53            | 7.3 GB    |
+| fusion weighted α=0.5 | RTX 5070 Ti | 129.6M | 162s       | 1.75            | 7.4 GB    |
+| fusion weighted α=0.7 | RTX 5070 Ti | 129.6M | 162s       | 1.44            | 7.1 GB    |
 | pool attention        | RTX 5070 Ti | 129.6M | 162s       | 2.25            | 7.4 GB    |
-| pool meanmax          | RTX 5070 Ti | 129.6M | 162s       | 2.16            | —         |
-| B2 cross_attn         | RTX 5070 Ti | 129.6M | 169s       | 2.72            | —         |
-| B3 self_attn          | RTX 5070 Ti | 129.6M | 245s       | 4.29            | —         |
-| B4 mmoe               | RTX 5070 Ti | 129.6M | 165s       | 1.83            | —         |
+| pool meanmax          | RTX 5070 Ti | 129.6M | 162s       | 2.16            | 7.2 GB    |
+| B2 cross_attn         | RTX 5070 Ti | 129.6M | 169s       | 2.72            | 7.1 GB    |
+| B3 self_attn          | RTX 5070 Ti | 129.6M | 245s       | 4.29            | 7.3 GB    |
+| B4 mmoe               | RTX 5070 Ti | 129.6M | 165s       | 1.83            | 7.9 GB    |
 | F4 both=CT5+          | RTX 5070 Ti | 137.0M | 323s       | 5.94            | 9.1 GB    |
 | F5 CT5+ raw           | RTX 5070 Ti | 138.2M | 457s       | 6.86            | 8.4 GB    |
 | F6 CT5+ norm          | RTX 5070 Ti | 138.0M | 460s       | 4.35            | 8.7 GB    |
