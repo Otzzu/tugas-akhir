@@ -101,11 +101,12 @@ class VulnDetectorBase(nn.Module):
         if not hasattr(_cfg, "add_cross_attention"):
             _cfg.add_cross_attention = False
         load_kwargs: dict = {"config": _cfg, "trust_remote_code": True}
+        if torch.cuda.is_available():
+            load_kwargs["torch_dtype"] = torch.bfloat16
         if use_flash_attention:
             try:
                 import flash_attn  # noqa: F401
                 load_kwargs["attn_implementation"] = "flash_attention_2"
-                load_kwargs["torch_dtype"] = torch.bfloat16
             except ImportError:
                 pass  # flash-attn not installed — fall back silently
         self.codebert = AutoModel.from_pretrained(_func_lm, **load_kwargs)
