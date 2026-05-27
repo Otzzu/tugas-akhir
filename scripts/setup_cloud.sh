@@ -52,12 +52,16 @@ CUDA_MAJOR=$(echo "$CUDA_VER" | cut -d. -f1)
 CUDA_MINOR=$(echo "$CUDA_VER" | cut -d. -f2)
 echo "    Detected CUDA: ${CUDA_VER}"
 
-# Choose PyTorch wheel: CUDA >= 12.8 → cu128 (supports sm_120 Blackwell)
+# Choose PyTorch wheel: CUDA >= 13.0 → cu130 (native support, first wheel: 2.11.0)
+#                       CUDA >= 12.8 → cu128 (sm_120 Blackwell; first wheel: 2.9.0)
 #                       CUDA >= 12.4 → cu124
 #                       fallback      → cu121
-if [[ "$CUDA_MAJOR" -gt 12 ]] || [[ "$CUDA_MAJOR" -eq 12 && "$CUDA_MINOR" -ge 8 ]]; then
+if [[ "$CUDA_MAJOR" -ge 13 ]]; then
+    TORCH_CUDA="cu130"
+    TORCH_VER="2.11.0"
+elif [[ "$CUDA_MAJOR" -eq 12 && "$CUDA_MINOR" -ge 8 ]]; then
     TORCH_CUDA="cu128"
-    TORCH_VER="2.7.0"
+    TORCH_VER="2.9.0"
 elif [[ "$CUDA_MAJOR" -eq 12 && "$CUDA_MINOR" -ge 4 ]]; then
     TORCH_CUDA="cu124"
     TORCH_VER="2.6.0"

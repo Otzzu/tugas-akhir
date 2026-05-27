@@ -547,31 +547,31 @@ confirms H3 sliding window as the better path for extending LM coverage.
 
 # Training Efficiency
 
-| Run                   | Params | Epoch Time | Total Time (hr) | VRAM Peak |
-| --------------------- | ------ | ---------- | --------------- | --------- |
-| A1                    | 3.5M   | 48s        | 0.73            | 4.2 GB    |
-| A2                    | 129.6M | 216s       | 3.24            | 4.2 GB    |
-| A3                    | 129.6M | 175s       | 3.70            | 6.0 GB    |
-| A4                    | 129.6M | 176s       | 3.62            | 4.8 GB    |
-| A4-L1                 | 129.6M | 161s       | 1.39            | 6.9 GB    |
-| A4-L2                 | 129.6M | 162s       | 1.93            | 7.7 GB    |
-| A4-L2-fixed           | 129.6M | 162s       | 3.37            | —         |
-| fusion gated          | 129.6M | 163s       | 1.72            | —         |
-| fusion weighted α=0.3 | 129.6M | 162s       | 1.53            | —         |
-| fusion weighted α=0.5 | 129.6M | 162s       | 1.75            | —         |
-| fusion weighted α=0.7 | 129.6M | 162s       | 1.44            | —         |
-| pool attention        | 129.6M | 162s       | 2.25            | 7.4 GB    |
-| pool meanmax          | 129.6M | 162s       | 2.16            | —         |
-| B2 cross_attn         | 129.6M | 169s       | 2.72            | —         |
-| B3 self_attn          | 129.6M | 245s       | 4.29            | —         |
-| B4 mmoe               | 129.6M | 165s       | 1.83            | —         |
-| F4 both=CT5+          | 137.0M | 323s       | 5.94            | 9.1 GB    |
-| F5 CT5+ raw           | 138.2M | 457s       | 6.86            | 8.4 GB    |
-| F6 CT5+ norm          | 138.0M | 460s       | 4.35            | 8.7 GB    |
-| F7 both normed        | 138.0M | 460s       | 8.96            | 8.9 GB    |
-| G2 dim=768            | 146.9M | 409s       | 3.87            | 10.2 GB   |
-| H2 sliding stride512  | 146.9M | 250s       | 2.09            | 18.6 GB   |
-| H3 sliding stride1024 | 146.9M | 150s       | 1.30            | 17.1 GB   |
-| I2 line frozen        | 161.7M | 285s       | 6.66            | 9.5 GB    |
-| I3 line live          | 161.7M | 644s       | 4.84            | 11.0 GB   |
-| I4 line ctx±5 frozen  | 161.7M | 84s        | 1.22            | 17.4 GB   |
+| Run                   | GPU         | Params | Epoch Time | Total Time (hr) | VRAM Peak |
+| --------------------- | ----------- | ------ | ---------- | --------------- | --------- |
+| A1                    | RTX 5070 Ti | 3.5M   | 48s        | 0.73            | 4.2 GB    |
+| A2                    | RTX 5070 Ti | 129.6M | 216s       | 3.24            | 4.2 GB    |
+| A3                    | RTX 5070 Ti | 129.6M | 175s       | 3.70            | 6.0 GB    |
+| A4                    | RTX 5070 Ti | 129.6M | 176s       | 3.62            | 4.8 GB    |
+| A4-L1                 | RTX 5070 Ti | 129.6M | 161s       | 1.39            | 6.9 GB    |
+| A4-L2                 | RTX 5070 Ti | 129.6M | 162s       | 1.93            | 7.7 GB    |
+| A4-L2-fixed           | RTX 5070 Ti | 129.6M | 162s       | 3.37            | —         |
+| fusion gated          | RTX 5070 Ti | 129.6M | 163s       | 1.72            | —         |
+| fusion weighted α=0.3 | RTX 5070 Ti | 129.6M | 162s       | 1.53            | —         |
+| fusion weighted α=0.5 | RTX 5070 Ti | 129.6M | 162s       | 1.75            | —         |
+| fusion weighted α=0.7 | RTX 5070 Ti | 129.6M | 162s       | 1.44            | —         |
+| pool attention        | RTX 5070 Ti | 129.6M | 162s       | 2.25            | 7.4 GB    |
+| pool meanmax          | RTX 5070 Ti | 129.6M | 162s       | 2.16            | —         |
+| B2 cross_attn         | RTX 5070 Ti | 129.6M | 169s       | 2.72            | —         |
+| B3 self_attn          | RTX 5070 Ti | 129.6M | 245s       | 4.29            | —         |
+| B4 mmoe               | RTX 5070 Ti | 129.6M | 165s       | 1.83            | —         |
+| F4 both=CT5+          | RTX 5070 Ti | 137.0M | 323s       | 5.94            | 9.1 GB    |
+| F5 CT5+ raw           | RTX 5070 Ti | 138.2M | 457s       | 6.86            | 8.4 GB    |
+| F6 CT5+ norm          | RTX 5070 Ti | 138.0M | 460s       | 4.35            | 8.7 GB    |
+| F7 both normed        | RTX 5070 Ti | 138.0M | 460s       | 8.96            | 8.9 GB    |
+| G2 dim=768            | RTX 5070 Ti | 146.9M | 409s       | 3.87            | 10.2 GB   |
+| H2 sliding stride512  | RTX 5090    | 146.9M | 250s       | 2.09            | 18.6 GB   |
+| H3 sliding stride1024 | RTX 5090    | 146.9M | 150s       | 1.30            | 17.1 GB   |
+| I2 line frozen        | RTX 5090    | 161.7M | 285s       | 6.66            | 9.5 GB    |
+| I3 line live          | RTX 5090    | 161.7M | 644s       | 4.84            | 11.0 GB   |
+| I4 line ctx±5 frozen  | RTX 5090    | 161.7M | 84s        | 1.22            | 17.4 GB   |
