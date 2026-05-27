@@ -99,12 +99,12 @@ FA_VER="2.8.3"
 TORCH_MM=$($PYBIN -c "import torch; v=torch.__version__.split('+')[0].split('.'); print(f'{v[0]}.{v[1]}')")
 PY_TAG=$($PYBIN -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')")
 ABI=$($PYBIN -c "import torch; print('TRUE' if torch._C._GLIBCXX_USE_CXX11_ABI else 'FALSE')")
-FA_URL="https://github.com/Dao-AILab/flash-attention/releases/download/v${FA_VER}/flash_attn-${FA_VER}+cu12torch${TORCH_MM}cxx11abi${ABI}-${PY_TAG}-${PY_TAG}-linux_x86_64.whl"
+# Use cu13 prefix for CUDA 13.x, cu12 for everything else
+if [[ "$CUDA_MAJOR" -ge 13 ]]; then FA_CUDA="cu13"; else FA_CUDA="cu12"; fi
+FA_URL="https://github.com/Dao-AILab/flash-attention/releases/download/v${FA_VER}/flash_attn-${FA_VER}+${FA_CUDA}torch${TORCH_MM}cxx11abi${ABI}-${PY_TAG}-${PY_TAG}-linux_x86_64.whl"
 echo "    Wheel: ${FA_URL}"
 $UVP "${FA_URL}" \
-    || { echo "    Prebuilt wheel not found — falling back to source build (slow)"; \
-         $UVP flash-attn --no-build-isolation; } \
-    || echo "    flash-attn install failed — skipping (training will use standard attention)"
+    || { echo "    Prebuilt wheel not found — skipping (training will use standard attention)"; true; }
 
 echo ""
 echo "=== Verification ==="
