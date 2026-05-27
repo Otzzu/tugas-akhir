@@ -1,7 +1,7 @@
 # Ablation Results
 
 Dataset: MegaVul Top-25 CWEs, max 1600 per class, 26 classes (25 CWE + benign),
-UniXcoder-base embeddings, seed=42. GPU: RTX 5070 Ti (Phase 1–7); RTX 5090 for Phase 8 reruns (H2/H3) and Phase 9.
+UniXcoder-base embeddings, seed=42. GPU: RTX 5070 Ti (Phase 1–7, Phase 9 I2/I3); RTX 5090 for Phase 8 reruns (H2/H3) and Phase 9 I4.
 
 Phase structure:
 
@@ -572,6 +572,6 @@ confirms H3 sliding window as the better path for extending LM coverage.
 | G2 dim=768            | RTX 5070 Ti | 146.9M | 409s       | 3.87            | 10.2 GB   |
 | H2 sliding stride512  | RTX 5090    | 146.9M | 250s       | 2.09            | 18.6 GB   |
 | H3 sliding stride1024 | RTX 5090    | 146.9M | 150s       | 1.30            | 17.1 GB   |
-| I2 line frozen        | RTX 5090    | 161.7M | 285s       | 6.66            | 9.5 GB    |
-| I3 line live          | RTX 5090    | 161.7M | 644s       | 4.84            | 11.0 GB   |
+| I2 line frozen        | RTX 5070 Ti | 161.7M | 285s       | 6.66            | 9.5 GB    |
+| I3 line live          | RTX 5070 Ti | 161.7M | 644s       | 4.84            | 11.0 GB   |
 | I4 line ctx±5 frozen  | RTX 5090    | 161.7M | 84s        | 1.22            | 17.4 GB   |
