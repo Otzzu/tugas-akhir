@@ -98,6 +98,8 @@ class VulnDetectorBase(nn.Module):
         _cfg = AutoConfig.from_pretrained(_func_lm, trust_remote_code=True)
         if not hasattr(_cfg, "is_decoder"):
             _cfg.is_decoder = False
+        if not hasattr(_cfg, "add_cross_attention"):
+            _cfg.add_cross_attention = False
         load_kwargs: dict = {"config": _cfg, "trust_remote_code": True}
         if use_flash_attention:
             try:
