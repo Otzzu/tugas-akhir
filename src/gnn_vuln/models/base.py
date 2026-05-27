@@ -110,6 +110,10 @@ class VulnDetectorBase(nn.Module):
             _cfg.is_decoder = False
         if not hasattr(_cfg, "add_cross_attention"):
             _cfg.add_cross_attention = False
+        # Activate SDPA inside jina-v2's custom attention (attn_implementation='torch').
+        # Ignored by standard HF models (unknown config attr). Always set as baseline
+        # so jina uses PyTorch's memory-efficient scaled_dot_product_attention by default.
+        _cfg.attn_implementation = "torch"
         load_kwargs: dict = {"config": _cfg, "trust_remote_code": True}
         if torch.cuda.is_available():
             load_kwargs["dtype"] = torch.bfloat16
@@ -119,10 +123,8 @@ class VulnDetectorBase(nn.Module):
                 load_kwargs["attn_implementation"] = "flash_attention_2"
                 logger.info(f"flash_attention_2 enabled for {_func_lm} (flash-attn {flash_attn.__version__})")
             except ImportError:
-                # Try sdpa (PyTorch built-in memory-efficient attention, no extra package).
-                # Eliminates O(n²) attention materialization for models that support it
-                # (ModernBERT, recent BERT variants). Jina-v2 uses trust_remote_code and
-                # may not honour attn_implementation — sdpa silently falls back to eager.
+                # HF-level sdpa for standard models (ModernBERT etc.). Jina uses config-level
+                # attn_implementation='torch' set above instead of this HF dispatch path.
                 logger.info(f"flash-attn not installed — trying sdpa for {_func_lm}")
                 load_kwargs["attn_implementation"] = "sdpa"
         self.codebert = AutoModel.from_pretrained(_func_lm, **load_kwargs)
