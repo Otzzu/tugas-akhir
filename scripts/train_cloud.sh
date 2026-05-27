@@ -254,7 +254,11 @@ download_dataset() {
             local local_tar="${PROCESSED_DIR}/${remote_tar}"
             info "Found: ${remote_subdir}/${remote_tar}"
             rclone copy "${remote_subdir}/${remote_tar}" "$PROCESSED_DIR" --progress
-            tar -xzf "$local_tar" -C "$PROCESSED_DIR"
+            if command -v pigz &>/dev/null; then
+                tar -I pigz -xf "$local_tar" -C "$PROCESSED_DIR"
+            else
+                tar -xzf "$local_tar" -C "$PROCESSED_DIR"
+            fi
             rm -f "$local_tar"
             success "Dataset ready: $dataset"
             DOWNLOADED_DATASETS+=("$dataset")
