@@ -255,6 +255,8 @@ class TrainingSession:
         source_val      = getattr(cfg.data, "source_val",  "")
         source_test     = getattr(cfg.data, "source_test", "")
         use_official    = bool(source_val and source_test)
+        _use_balanced   = self._use_supcon and getattr(cfg.train, "supcon_balanced_sampling", False)
+        _classes_per_batch = getattr(cfg.train, "supcon_classes_per_batch", 8)
 
         kwargs = dict(
             root=str(cfg.data.processed_dir.parent), max_nodes=cfg.data.max_nodes,
@@ -330,8 +332,16 @@ class TrainingSession:
                 val_ds.precompute_line_cls_all(_lm_dev, context_lines=_line_context_lines)
                 test_ds.precompute_line_cls_all(_lm_dev, context_lines=_line_context_lines)
             train_idx = list(range(len(dataset)))
+            if _use_balanced:
+                from gnn_vuln.training.sampler import SupConBalancedSampler
+                _all_labels = dataset.get_all_labels().tolist()
+                _bs = SupConBalancedSampler(_all_labels, bs, _classes_per_batch, seed=_seed)
+                logger.info(f"SupConBalancedSampler: {_bs.classes_per_batch} classes × {_bs.samples_per_class} samples/class per batch")
+                train_dl = DataLoader(dataset, batch_sampler=_bs, **dl_kw)
+            else:
+                train_dl = DataLoader(dataset, batch_size=bs, shuffle=True, **dl_kw)
             loaders = (
-                DataLoader(dataset, batch_size=bs, shuffle=True, **dl_kw),
+                train_dl,
                 DataLoader(val_ds,  batch_size=bs, **dl_kw),
                 DataLoader(test_ds, batch_size=bs, **dl_kw),
             )
@@ -339,8 +349,17 @@ class TrainingSession:
             if _precompute_line_cls:
                 dataset.precompute_line_cls_all(str(self.device), context_lines=_line_context_lines)
             train_idx, val_idx, test_idx = dataset.get_splits(seed=cfg.train.seed)
+            if _use_balanced:
+                from gnn_vuln.training.sampler import SupConBalancedSampler
+                _all_labels = dataset.get_all_labels()
+                _train_labels = _all_labels[torch.tensor(train_idx, dtype=torch.long)].tolist()
+                _bs = SupConBalancedSampler(_train_labels, bs, _classes_per_batch, seed=_seed)
+                logger.info(f"SupConBalancedSampler: {_bs.classes_per_batch} classes × {_bs.samples_per_class} samples/class per batch")
+                train_dl = DataLoader(dataset[train_idx], batch_sampler=_bs, **dl_kw)
+            else:
+                train_dl = DataLoader(dataset[train_idx], batch_size=bs, shuffle=True, **dl_kw)
             loaders = (
-                DataLoader(dataset[train_idx], batch_size=bs, shuffle=True, **dl_kw),
+                train_dl,
                 DataLoader(dataset[val_idx],   batch_size=bs, **dl_kw),
                 DataLoader(dataset[test_idx],  batch_size=bs, **dl_kw),
             )
