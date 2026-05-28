@@ -41,7 +41,7 @@ if not hasattr(_tpu, "find_pruneable_heads_and_indices"):
 from gnn_vuln.models._lm_utils import (
     lm_hidden_dim, lm_pool, lm_pool_windowed, lm_full_windowed, lm_per_line_embed,
     lm_per_line_raw, lm_full_codet5p, lm_full_codet5p_raw, _is_codet5p_embedding,
-    WindowAttentionPool, _is_decoder_only,
+    WindowAttentionPool, CrossWindowAttn, _is_decoder_only,
 )
 
 
@@ -84,6 +84,8 @@ class VulnDetectorBase(nn.Module):
         freeze_func_lm: bool = False,
         window_attn_pool: bool = False,
         window_attn_hidden: bool = False,
+        window_center_weight: bool = False,
+        cross_window_attn: bool = False,
     ) -> None:
         """
         Load a live LM and store as self.codebert.
@@ -170,8 +172,11 @@ class VulnDetectorBase(nn.Module):
         # Only meaningful when func_chunk_size > 0 (sliding window active).
         self._use_window_attn_pool = window_attn_pool and func_chunk_size > 0
         self._use_window_attn_hidden = window_attn_hidden and self._use_window_attn_pool
+        self._use_window_center_weight = window_center_weight and func_chunk_size > 0
         if self._use_window_attn_pool:
             self.window_attn_pool = WindowAttentionPool(self._lm_dim)
+        if cross_window_attn and self._use_window_attn_pool:
+            self.cross_window_attn_module = CrossWindowAttn(self._lm_dim)
 
     def _lm_embed_full(
         self,
@@ -232,7 +237,10 @@ class VulnDetectorBase(nn.Module):
                         stride=self._func_chunk_stride,
                         matryoshka_dim=self._matryoshka_dim,
                         return_window_cls=True,
+                        use_center_weight=getattr(self, "_use_window_center_weight", False),
                     )
+                    if hasattr(self, "cross_window_attn_module"):
+                        hidden = self.cross_window_attn_module(hidden, win_cls, win_mask)
                     if getattr(self, "_use_window_attn_hidden", False):
                         cls, win_weights = self.window_attn_pool(win_cls, win_mask, return_weights=True)
                         # Scale per-token hidden by their window's attention weight.
@@ -251,6 +259,7 @@ class VulnDetectorBase(nn.Module):
                     chunk_size=self._func_chunk_size,
                     stride=self._func_chunk_stride,
                     matryoshka_dim=self._matryoshka_dim,
+                    use_center_weight=getattr(self, "_use_window_center_weight", False),
                 )
             except (AttributeError, TypeError):
                 # Non-BERT LM (e.g. CodeT5+) — fall back to pooled CLS-only

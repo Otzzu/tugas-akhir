@@ -307,6 +307,38 @@ class WindowAttentionPool(torch.nn.Module):
         return cls
 
 
+class CrossWindowAttn(torch.nn.Module):
+    """Cross-attention from per-token hidden states to window CLS vectors.
+
+    Each token attends over window-level summaries to refine its representation
+    with global function context. Residual + LayerNorm.
+
+    Input:
+        hidden  : [B, L, D] — per-token hidden states (overlap-averaged)
+        win_cls : [B, W, D] — per-window CLS vectors
+        win_mask: [B, W] bool — True = valid window (optional)
+    Output: [B, L, D] — refined hidden states
+    """
+
+    def __init__(self, hidden_dim: int, num_heads: int = 4):
+        super().__init__()
+        self.cross_attn = torch.nn.MultiheadAttention(hidden_dim, num_heads, batch_first=True, dropout=0.0)
+        self.norm = torch.nn.LayerNorm(hidden_dim)
+
+    def forward(
+        self,
+        hidden: torch.Tensor,
+        win_cls: torch.Tensor,
+        win_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        kpm = (~win_mask) if win_mask is not None else None
+        attn_out, _ = self.cross_attn(
+            hidden, win_cls.to(hidden.dtype), win_cls.to(hidden.dtype),
+            key_padding_mask=kpm,
+        )
+        return self.norm(hidden + attn_out)
+
+
 def lm_full_windowed(
     model,
     is_enc_dec: bool,
@@ -316,6 +348,7 @@ def lm_full_windowed(
     stride: int = 256,
     matryoshka_dim: int | None = None,
     return_window_cls: bool = False,
+    use_center_weight: bool = False,
 ) -> tuple[torch.Tensor, ...]:
     """
     Sliding-window LM forward that returns per-token hidden states aligned to
@@ -401,10 +434,20 @@ def lm_full_windowed(
             out_dtype = chunk_hidden.dtype
 
         chunk_fp32 = chunk_hidden.float()
+        # Center weighting: downweight boundary tokens (less context at window edges).
+        # Applied only to hidden_acc/count — win_cls stays plain mean-pooled.
+        chunk_len = end - start
+        if use_center_weight and chunk_len > 1:
+            half = (chunk_len - 1) / 2.0
+            pos = torch.arange(chunk_len, device=device, dtype=torch.float32)
+            cw = (1.0 - 0.9 * (pos - half).abs() / half).view(1, chunk_len, 1)
+        else:
+            cw = None
         if mask_chunk is not None:
             w = mask_chunk.unsqueeze(-1).float()          # [B, end-start, 1]
-            hidden_acc[:, start:end] += chunk_fp32 * w
-            count[:, start:end]      += w
+            eff_w = w * cw if cw is not None else w       # center-weighted mask
+            hidden_acc[:, start:end] += chunk_fp32 * eff_w
+            count[:, start:end]      += eff_w
             w_1d    = mask_chunk.float()                  # [B, end-start]
             valid_b = (w_1d.sum(dim=1) > 0)              # [B] bool
             win_mean = (chunk_fp32 * w_1d.unsqueeze(-1)).sum(dim=1) \
@@ -414,8 +457,9 @@ def lm_full_windowed(
             cls_acc += win_mean * valid_b.float().unsqueeze(-1)
             cls_cnt += valid_b.float()
         else:
-            hidden_acc[:, start:end] += chunk_fp32
-            count[:, start:end]      += 1.0
+            eff_w = cw if cw is not None else 1.0
+            hidden_acc[:, start:end] += chunk_fp32 * eff_w
+            count[:, start:end]      += (cw if cw is not None else 1.0)
             win_mean = chunk_fp32.mean(dim=1)
             win_cls_list.append(win_mean)
             win_valid_list.append(torch.ones(B, dtype=torch.bool, device=device))
