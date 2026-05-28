@@ -293,7 +293,7 @@ class WindowAttentionPool(torch.nn.Module):
         valid_mask: torch.Tensor | None = None,
         return_weights: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        logits = self.score(window_cls).squeeze(-1)           # [B, N]
+        logits = self.score(window_cls.to(self.score.weight.dtype)).squeeze(-1)  # [B, N]
         if valid_mask is not None:
             logits = logits.masked_fill(~valid_mask, float("-inf"))
         attn = torch.softmax(logits, dim=-1)                  # [B, N]
@@ -332,11 +332,12 @@ class CrossWindowAttn(torch.nn.Module):
         win_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         kpm = (~win_mask) if win_mask is not None else None
+        w_dtype = next(self.parameters()).dtype
         attn_out, _ = self.cross_attn(
-            hidden, win_cls.to(hidden.dtype), win_cls.to(hidden.dtype),
+            hidden.to(w_dtype), win_cls.to(w_dtype), win_cls.to(w_dtype),
             key_padding_mask=kpm,
         )
-        return self.norm(hidden + attn_out)
+        return self.norm(hidden.to(w_dtype) + attn_out)
 
 
 def lm_full_windowed(
