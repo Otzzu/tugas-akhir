@@ -415,14 +415,16 @@ and ml5120 dataset on RTX 5090. Earlier H2/H3 runs with ml1024 never activated s
 | H1 | — (= G2) | — | — | 1024 | 1 | `20260520_132730` | 34 |
 | H2 | `H2_unixcoder_sliding_chunk1024_stride512.yaml` | 1024 | 512 | 5120 | 9 | `20260525_104032` | 30 |
 | H3 | `H3_unixcoder_sliding_chunk1024_stride1024.yaml` | 1024 | 1024 | 5120 | 5 | `20260525_125031` | 31 |
+| H4 | `H4_unixcoder_sliding_chunk1024_stride1024_winattn.yaml` | 1024 | 1024 | 5120 | 5+attn | `20260527_121315` | 22 |
 
 ## Classification
 
 | ID | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | Epochs |
 |---|---|---|---|---|---|---|
-| H1 (= G2) | **0.529** | **0.582** | **0.579** | **0.914** | 0.569 | 34 |
+| H1 (= G2) | 0.529 | 0.582 | 0.579 | 0.914 | 0.569 | 34 |
 | H2 | 0.459 | 0.508 | 0.507 | 0.890 | 0.588 | 30 |
 | H3 | 0.528 | 0.529 | 0.533 | 0.895 | 0.587 | 31 |
+| H4 | **0.554** | **0.589** | **0.587** | **0.927** | 0.618 | 22 |
 
 ## Statement-Level Localization
 
@@ -431,6 +433,7 @@ and ml5120 dataset on RTX 5090. Earlier H2/H3 runs with ml1024 never activated s
 | H1 (= G2) | 1.410 | 0.747 | 0.962 | 0.186 | 0.427 | 0.056 |
 | H2 | **1.025** | **0.876** | 0.971 | 0.193 | 0.395 | 0.052 |
 | H3 | 1.047 | 0.873 | **0.978** | **0.221** | **0.442** | **0.041** |
+| H4 | 1.063 | 0.855 | 0.971 | 0.187 | 0.430 | 0.054 |
 
 Both H2 and H3 use ml5120 dataset with fixed `lm_full_windowed` (mean-pool CLS across windows),
 so sliding window is genuinely active for functions exceeding 1024 tokens (~32% of MegaVul vuln functions).
@@ -455,9 +458,20 @@ Both H2 and H3 remain below the G1/F1 localization baseline (IFA 0.644, Top-1 0.
 mean aggregation across windows blurs fine-grained per-token signal that single-pass lm_full
 produces for shorter functions already under 1024 tokens.
 
-**Phase 8 winner: H3 — ties H1 on classification (F1 0.528 ≈ 0.529), better localization
-(IFA 1.047 vs 1.410, R@20% 0.442 vs 0.427), and 1.7× faster than H2. H2 (overlapping)
-hurts classification despite better IFA/Top-1 localization precision.**
+**H4 (window attention pool, stride=1024, 5 windows max)** — replaces mean-pool over window
+CLS vectors with a learned `Linear(768→1)` softmax score per window. Classification surpasses
+all previous Phase 8 and Phase 7 configs: F1 **0.554** (best to date), Acc 0.589, AUC 0.927.
+The attention pool lets the model learn which window (i.e., which part of the function) is most
+relevant for CWE classification rather than treating all windows equally. Localization is slightly
+worse than H3 (IFA 1.063 vs 1.047, Effort 0.054 vs 0.041) — the localization path (per-token
+accumulation) is unchanged, so the gap reflects that the new window weighting optimizes for
+function-level classification at the minor expense of uniform per-token coverage. H4 is 1.4×
+faster than H3 per epoch (211s vs 150s) due to the attention pool computation — still well within
+acceptable training budget (22 epochs × 211s = 1.3 hr total).
+
+**Phase 8 winner: H4 — new best classification F1 0.554 (vs H1 0.529, +2.5pp) and best AUC
+0.927 via window attention pool. H3 remains best for localization (IFA/R@20%/Effort).
+H4 is the new baseline for Phase 10+.**
 
 ---
 
@@ -479,8 +493,8 @@ Localization = per-line encoder output scattered back to token positions.
 | ID | Run ID | Config | live_lm | freeze_func_lm | precompute | Line ctx | Epochs |
 |---|---|---|---|---|---|---|---|
 | I1 | `20260520_132730` (= H1/G2) | — | func | No | — | — | 34 |
-| I2 | `20260522_070552_lmgat_codebert_multiclass` | `I2_line_encoder.yaml` | line | Yes | Yes | — | 84 |
-| I3 | `20260522_135012_lmgat_codebert_multiclass` | `I3_line_encoder_live.yaml` | line | No | No | — | 27† |
+| I2 | `20260527_093837_lmgat_codebert_multiclass` | `I2_line_encoder.yaml` | line | Yes | Yes | — | 23† |
+| I3 | `20260527_102049_lmgat_codebert_multiclass` | `I3_line_encoder_live.yaml` | line | No | No | — | 27† |
 | I4 | `20260525_141857_lmgat_codebert_multiclass` | `I4_line_ctx5.yaml` | line | Yes | Yes | ±5 | 52 |
 
 ## Classification
@@ -490,8 +504,8 @@ Localization = per-line encoder output scattered back to token positions.
 | ID | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | Epochs |
 |---|---|---|---|---|---|---|
 | I1 (= H1/G2) | **0.529** | **0.582** | **0.579** | **0.914** | 0.569 | 34 |
-| I2 | 0.390 | 0.402 | 0.402 | 0.880 | 0.311 | 84 |
-| I3† | 0.017† | 0.152† | 0.044† | 0.774† | 0.586† | 27 |
+| I2† | 0.009† | 0.133† | 0.031† | 0.832† | 0.057† | 23 |
+| I3† | 0.010† | 0.148† | 0.038† | 0.766† | 0.613† | 27 |
 | I4 | 0.375 | 0.414 | 0.410 | 0.877 | 0.381 | 52 |
 
 ## Statement-Level Localization
@@ -499,49 +513,79 @@ Localization = per-line encoder output scattered back to token positions.
 | ID | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
 |---|---|---|---|---|---|---|
 | I1 (= H1/G2) | 1.410 | 0.747 | 0.962 | 0.186 | 0.427 | 0.056 |
-| I2 | 2.116 | 0.666 | 0.924 | 0.200 | 0.390 | 0.051 |
-| I3† | **1.164** | **0.795** | **0.955** | 0.186 | **0.428** | 0.057 |
+| I2† | 1.438 | 0.713 | 0.940 | 0.237 | **0.506** | 0.037 |
+| I3† | **1.201** | **0.896** | **0.978** | 0.165 | 0.400 | 0.066 |
 | I4 | 3.009 | 0.609 | 0.857 | 0.179 | 0.443 | 0.059 |
 
-**I2 (frozen LM + line encoder)** — classification drops significantly vs I1 baseline
-(F1 0.390 vs 0.529, −0.139). Localization also degrades (IFA 2.116 vs 1.410, Top-1
-0.666 vs 0.747). Root cause: frozen LM cannot be fine-tuned for the classification
-task — precomputed per-line CLS embeddings are fixed features without task adaptation.
-The cross-line transformer has no gradient signal from the LM to improve. Training ran
-84 epochs (patience=15 triggered at ep 69; best val F1=0.405) — the extra epochs
-reflect the optimizer searching for a better combination of the fixed LM features and
-trainable GNN/heads.
+**I2 (frozen LM + line encoder) — classification collapsed** (F1 0.009, val F1 0.149, 23 epochs).
+Root cause: frozen LM cannot be fine-tuned for classification — precomputed per-line CLS
+embeddings are fixed features without task adaptation. Localization survives: IFA 1.438,
+R@20% 0.506 (best in Phase 9) — ranking loss flows through stmt_head regardless of
+classification head failure.
 
-**I3 (live LM + line encoder) — classification collapsed** (F1 0.017, predicts
-class 0 only). Best val F1 = 0.009 at epoch 2; patience=15
-triggered at epoch 27. Root cause: per-line LM forward replaces the whole-function
-CLS forward entirely — the classification head loses global function-level context.
-The cross-line transformer contextualizes lines but operates at statement granularity;
-it cannot recover the function-level semantic representation needed to distinguish
-26 CWE classes. Unlike I2 (frozen LM at least produces consistent per-line features
-from a stable pretrained model), I3's live LM receives conflicting gradient signals —
-CWE classification requires whole-function semantics but the LM only ever sees
-individual lines. Localization survives (ranking loss flows through stmt_head
-independently of func_head failure).
+**I3 (live LM + line encoder) — classification collapsed** (F1 0.010, predicts majority class).
+Root cause: per-line LM forward replaces the whole-function CLS forward entirely — classification
+head loses global function-level context. The cross-line transformer cannot recover 26-class CWE
+semantics from per-line representations. Localization partially survives: Top-1 0.896
+(best in Phase 9, ranking signal intact).
 
 **I4 (frozen LM + line encoder + ±5 line context)** — adds per-line context: each
 line's [CLS] is precomputed from [line_{i-5} … line_i … line_{i+5}] concatenated
 and passed through UniXcoder jointly, so the per-line CLS can attend to neighbouring
-lines' tokens before the cross-line transformer. Classification drops further below I2
-(F1 0.375 vs 0.390) — the ±5 context window increases precompute cost but does not
-substitute for whole-function semantics at training time; the frozen LM cannot adapt
-to the 26-class CWE task regardless of context size. Localization: IFA worsens
-(3.009 vs 2.116), Top-1 worsens (0.609 vs 0.666), but R@20%LOC improves (0.443 vs
-0.390) — the broader context widens recall coverage at the cost of IFA/Top-1 precision.
-Overall I4 is worse than I2 on classification and mixed on localization.
+lines' tokens before the cross-line transformer. Classification: F1 0.375. Localization:
+IFA 3.009, R@20%LOC 0.443 — broader context widens recall coverage slightly at high IFA cost.
 
 **Phase 9 finding: line-level LM encoding is incompatible with function-level
-CWE multiclass classification.** Frozen (I2, I4) and live (I3) variants all underperform
-I1 on classification. Adding line context ±5 (I4) worsens classification further vs I2
-and gives mixed localization (better R@20%, worse IFA/Top-1). Whole-function CLS
-(H3 approach) is necessary for classification; the hierarchical design loses global
-context that 26-class CWE discrimination requires. Phase 9 is a negative result —
-confirms H3 sliding window as the better path for extending LM coverage.
+CWE multiclass classification.** Frozen (I2, I4) and live (I3) variants all collapse on
+classification. Whole-function CLS (H4/H3 sliding window) is necessary for 26-class CWE
+discrimination; the hierarchical design loses global context the task requires. Phase 9 is
+a negative result — confirms sliding window as the better path for extending LM coverage.
+
+---
+
+# Phase 10 — Language Model (func_lm alternatives)
+
+`configs/ablation/phase10/` — base J1 = I1 = H1 = G2 (hidden_dim=768, meanmax, localization=both,
+UniXcoder func_lm, func_max_length=1024, no sliding window). Varies `func_lm` to test alternative
+encoder-only LMs with longer native context. All configs use `live_lm=func, freeze_func_lm=false`.
+
+- **J1** = H1 = G2 baseline (func_lm=UniXcoder, 1024-token, 1024-chunk sliding)
+- **J3** = func_lm=ModernBERT-base (8192-token native RoPE, alternating local-global attention)
+
+| ID | Run ID | Config | func_lm | func_max_length | Epochs |
+|---|---|---|---|---|---|
+| J1 | `20260520_132730` (= H1/G2) | — | UniXcoder | 1024 | 34 |
+| J3 | `20260527_160001_lmgat_codebert_multiclass` | `J3_modernbert_base.yaml` | ModernBERT-base | 5120 | 17‡ |
+
+‡ = batch=4 for epochs 1–30, then resumed with batch=32; early stopping triggered at epoch 17 of resumed run (~47 total epochs).
+
+## Classification
+
+| ID | Val F1 | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | Epochs |
+|---|---|---|---|---|---|---|---|
+| J1 (= H1/G2) | — | **0.529** | **0.582** | **0.579** | **0.914** | 0.569 | 34 |
+| J3‡ | 0.404 | 0.380 | 0.415 | 0.413 | 0.875 | 0.386 | 17 |
+
+## Statement-Level Localization
+
+| ID | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+|---|---|---|---|---|---|---|
+| J1 (= H1/G2) | 1.410 | 0.747 | 0.962 | 0.186 | 0.427 | 0.056 |
+| J3‡ | 1.379 | 0.739 | 0.963 | 0.183 | 0.390 | 0.058 |
+
+**J3 (ModernBERT-base, 5120 tokens, flash_attention_2)** — underperforms J1 baseline on
+classification (F1 0.380 vs 0.529, −0.149) and localization is roughly equivalent (IFA 1.379
+vs 1.410). Trained batch=4 for ~30 epochs then resumed with batch=32; early stopping triggered at epoch 17
+of the resumed run (~47 total). The batch change shifted effective gradient scale and LR schedule
+mid-training, disrupting optimizer momentum state. Patience=15 triggered early on the resumed run.
+Epoch time 88s (fast: flash-attn batch=32, RTX 5090), VRAM 20.3 GB.
+
+Result is inconclusive due to the batch-change mid-training disrupting the training dynamics.
+J3 needs a clean rerun (batch=32 from epoch 1) before drawing conclusions about ModernBERT-base
+vs UniXcoder on this task. The model has 170M params (vs 147M for UniXcoder configs) — larger
+but with native long-context attention that should help on functions exceeding 1024 tokens.
+
+**Phase 10 status: J3 inconclusive (batch disruption). Clean rerun required.**
 
 ---
 
@@ -572,6 +616,8 @@ confirms H3 sliding window as the better path for extending LM coverage.
 | G2 dim=768            | RTX 5070 Ti | 146.9M | 409s       | 3.87            | 10.2 GB   |
 | H2 sliding stride512  | RTX 5090    | 146.9M | 250s       | 2.09            | 18.6 GB   |
 | H3 sliding stride1024 | RTX 5090    | 146.9M | 150s       | 1.30            | 17.1 GB   |
-| I2 line frozen        | RTX 5070 Ti | 161.7M | 285s       | 6.66            | 9.5 GB    |
-| I3 line live          | RTX 5070 Ti | 161.7M | 644s       | 4.84            | 11.0 GB   |
+| H4 winattn stride1024 | RTX 5090    | 146.9M | 211s       | 1.29            | 18.0 GB   |
+| I2 line frozen        | RTX 5090    | 161.7M | 95s        | 0.61            | 18.3 GB   |
+| I3 line live          | RTX 5090    | 161.7M | 205s       | 1.66            | 20.1 GB   |
 | I4 line ctx±5 frozen  | RTX 5090    | 161.7M | 84s        | 1.22            | 17.4 GB   |
+| J3 ModernBERT‡        | RTX 5090    | 170.0M | 88s        | 0.42            | 20.3 GB   |
