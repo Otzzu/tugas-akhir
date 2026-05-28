@@ -127,7 +127,17 @@ class VulnDetectorBase(nn.Module):
                 # attn_implementation='torch' set above instead of this HF dispatch path.
                 logger.info(f"flash-attn not installed — trying sdpa for {_func_lm}")
                 load_kwargs["attn_implementation"] = "sdpa"
-        self.codebert = AutoModel.from_pretrained(_func_lm, **load_kwargs)
+        try:
+            self.codebert = AutoModel.from_pretrained(_func_lm, **load_kwargs)
+        except ValueError as _fa2_err:
+            if "Flash Attention 2.0" in str(_fa2_err) and load_kwargs.get("attn_implementation") == "flash_attention_2":
+                # Model doesn't support HF flash_attention_2 dispatch (e.g. jina-v2).
+                # Fall back to config-level SDPA (attn_implementation='torch' set above).
+                logger.warning(f"{_func_lm} does not support flash_attention_2 — using config-level SDPA")
+                load_kwargs.pop("attn_implementation")
+                self.codebert = AutoModel.from_pretrained(_func_lm, **load_kwargs)
+            else:
+                raise
         self._is_decoder_only_lm = _is_decoder_only(self.codebert)
         self._freeze_func_lm = freeze_func_lm
         if freeze_func_lm:
