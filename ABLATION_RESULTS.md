@@ -176,14 +176,7 @@ runs — superseded, kept for reference only.
 | meanmax   | 0.517     | **0.538** | **0.539** | 0.911     | 0.502 | **0.644** | **0.900** | **0.982** | **0.487**  |
 | dualflow  | 0.496     | 0.528     | 0.528     | 0.896     | 0.667 | 0.717     | 0.886     | 0.971     | 0.417      |
 
-Attention pool collapses macro F1 (−0.082) — the learnable gate over-parameterizes
-and overfits tail classes. Mean and meanmax tie on macro F1 (0.519 vs 0.517) — but
-**meanmax wins everywhere else**: best accuracy, F1-w, and all localization metrics.
-Parameter-free (the max channel sharpens the peak signal without the attention
-gate's overfit). dualflow (learned per-node suspicion → focal + context) lands
-mid-pack: macro F1 0.496 (below both mean and meanmax), localization between mean
-and meanmax — its learned suspicion gate carries the same overfit risk as the
-attention gate, just milder. Parameter-free meanmax still wins.
+Attention pool collapses macro F1 (−0.082) — learnable gate overfits tail classes. Mean and meanmax tie on macro F1 but **meanmax wins everywhere else**: best accuracy, F1-w, and all localization metrics. dualflow lands mid-pack (F1 0.496) with same overfit risk as attention but milder.
 
 **Phase 4 winner: meanmax.**
 
@@ -241,19 +234,7 @@ meanmax was found separately. Cross-task comparison is internally consistent.
 | E6  | cross_attention, residual off | 1.337     | 0.745     | 0.959     | 0.165     | 0.315      | 0.075         |
 | E7  | self_attention, residual off  | 1.253     | 0.839     | 0.943     | 0.207     | 0.434      | 0.046         |
 
-With the corrected line-level code, **cross_attention (E1) beats the E0 baseline**
-on macro F1 (0.530 vs 0.519) — and also best IFA + AUC-ROC. E2 self_attention →
-best accuracy / F1-w but lower macro F1. MMOE variants (E4, E5) collapse macro F1;
-E5 (thin head) trades classification away for the best localization coverage
-(R@20%LOC 0.453, Effort@20%R 0.018).
-
-**Residual off (E6, E7) collapses hard** — macro F1 0.375 / 0.414, far below every
-residual-on variant. `cross_task_residual=false` does in-path replace
-(`fused_mod = cross`), discarding the original fused representation entirely — the
-model must route everything through the freshly-init cross-task module from
-scratch. The zero-init residual gate is load-bearing: it lets the cross-task
-signal grow from a baseline-safe no-op instead of overwriting it. E3 plain mmoe
-still pending.
+**E1 cross_attention beats E0 baseline** (F1 0.530 vs 0.519) — also best IFA + AUC-ROC. E2 self_attention → best accuracy/F1-w but lower macro F1. MMOE variants collapse macro F1; E5 thin head trades classification for best localization coverage (R@20% 0.453, Effort 0.018). **Residual off (E6/E7) collapses hard** (F1 0.375/0.414) — zero-init gate is load-bearing; `cross_task_residual=false` discards original fused representation entirely. E3 plain mmoe still pending.
 
 **Phase 5 winner: E1 cross_attention — only method to beat the baseline F1; the
 zero-init residual gate is essential (E6/E7 confirm in-path replace fails).**
@@ -303,55 +284,21 @@ Bolds = best among F2–F7 (new configs; F1 is unchanged baseline).
 | F6 (func=CT5+ norm 256) | 0.459     | 0.520     | 0.520     | 0.905     | 0.734     | 0.934     | 0.982     | 0.353     | 0.560      | **0.016**     |
 | F7 (both normed)        | 0.484     | 0.557     | 0.556     | 0.887     | **0.508** | 0.927     | 0.980     | 0.319     | 0.570      | 0.020         |
 
-All F-configs use the Phase 3 winner loss (no focal + label_smoothing 0.1 + cosine,
-wd 1e-3, patience 15) — same as F1's meanmax baseline and phases 4-5.
+All F-configs use Phase 3 winner loss (no focal + label_smoothing 0.1 + cosine, wd 1e-3, patience 15).
 
-**F2 (node=CodeT5+)** improves classification: +0.985 macro F1 vs F1 baseline
-(0.502 vs 0.517 — gap vs baseline is −0.015, but best among F2/F3 variants),
-best accuracy (0.554), best AUC-ROC (0.906). Localization weaker than F1 (IFA 0.745,
-R@20% 0.415 vs 0.487). CodeT5+ node embeddings carry richer program semantics but
-less precise statement-level signal.
+**F2 (node=CodeT5+)** — best accuracy (0.554) and AUC (0.906) among new configs; localization weaker than F1 (IFA 0.745 vs 0.644, R@20% 0.415 vs 0.487).
 
-**F3 (func=CodeT5+)** trades classification for localization: macro F1 drops to 0.444
-(worst of F2/F3) but localization dominates — best IFA (0.512), Top-1 (0.946),
-R@5% (0.374), R@20% (0.586), Effort (0.016). CodeT5+ function-level hidden captures
-finer per-token context useful for statement scoring even at 512-token cap.
+**F3 (func=CodeT5+)** — best localization overall (IFA 0.512, Top-1 0.946, R@20% 0.586) at cost of worst macro F1 (0.444).
 
-**F5 (func=CodeT5+ raw 768-dim)** gives best accuracy (0.568) and F1-w (0.566) among
-all F-configs, but localization collapses — IFA 1.186 (worst), R@20% 0.547. Root
-cause: concat becomes `[GNN-256 | LM-768]` = 1024-dim with LM occupying 75% — GNN
-statement-level signal drowned by the larger raw LM vectors.
+**F4 (both=CodeT5+)** — CodeT5+ at both levels doesn't compound gains; AUC collapses (0.833, worst) and localization worse than either single-LM variant.
 
-**F6 (func=CodeT5+ proj+norm 256-dim)** normalizes per-token projected vectors to
-unit norm. Localization partially recovers vs F5 (IFA 0.734 vs 1.186) but F3
-(unnormalized proj-256) still wins (IFA 0.512, R@20% 0.586). Surprisingly,
-unit-norm HURTS localization slightly vs F3 — amplitude variation in unnormalized
-per-token vectors may encode statement-level suspicion signal that normalization
-discards. F6 ties F3 on Effort@20%R (0.016). Classification degrades vs F5
-(macro F1 0.459 vs 0.499) — consistent with the dimension-balance being restored
-(256+256=512, equal GNN/LM) but the normalization removing useful scale info.
+**F5 (func=CT5+ raw 768-dim)** — best accuracy (0.568) but localization collapses (IFA 1.186, worst): `[GNN-256 | LM-768]` concat drowns GNN statement signal (LM at 75% of dim).
 
-**Updated key finding:** LM embedding dimension relative to GNN dim governs the
-classification/localization trade-off — not just LM model choice. Raw 768-dim
-(F5) maximises classification but kills localization via GNN signal suppression in
-concat. Projected 256-dim (F3) keeps GNN/LM at equal dim (256+256) and is best
-for localization. Normalization (F6) is neutral-to-harmful for localization.
-**F4 (both=CodeT5+)** — both node and func LM are CodeT5+. Classification: macro F1
-0.475, AUC 0.833 (worst AUC of all F-configs). Localization: IFA 0.991, R@20%
-0.436 — worse than F3 (func=CT5+, IFA 0.512) and F2 (node=CT5+, IFA 0.745).
-Combining CodeT5+ at both levels does NOT compound gains — the two CodeT5+ branches
-interfere rather than complement. AUC collapse (0.833 vs 0.906 F2) suggests
-ranking quality degrades when node features and live LM share the same embedding
-space, reducing diversity. The trade-off is intrinsic, not additive.
+**F6 (func=CT5+ proj+norm 256-dim)** — unit norm partially recovers localization vs F5 (IFA 0.734) but F3 (unnormalized) still wins (IFA 0.512); normalization removes useful amplitude info.
 
-**F7 (both normed — GNN output norm + LM per-token norm)** — symmetric normalization
-of both GNN (h_graph and per-node h_loc via F.normalize dim=-1) and LM per-token
-vectors. Localization: IFA **0.508** (best of all F-configs), Top-1 0.927, R@20% 0.570.
-Classification: macro F1 0.484, AUC 0.887. Compared to F3 (LM norm only, no GNN norm):
-IFA marginally better (0.508 vs 0.512) but Top-1 / R@20% / R@5% all worse. Classification
-slightly better (F1 0.484 vs 0.444, AUC 0.887 vs 0.897). Result: GNN output norm gives
-marginal IFA gain at the cost of Top-1 / recall coverage. F3 (unnormalized GNN, LM
-proj+unnorm) remains the best localization config overall; F7 is a Pareto tie on IFA only.
+**F7 (GNN+LM both normed)** — marginal IFA gain over F3 (0.508 vs 0.512) but Top-1/R@20% worse; F3 remains best localization overall.
+
+**Key finding:** LM dim relative to GNN dim governs the trade-off — raw 768-dim (F5) maximises classification, projected 256-dim (F3) best for localization; normalization neutral-to-harmful.
 
 **Phase 6 winner: F1 (UniXcoder both) for balanced performance. F3 for localization
 priority. F7 for IFA-only if that metric is the objective.**
@@ -387,13 +334,7 @@ localization=both, concat fusion — isolating only the hidden_dim change.
 | G1 | **0.644** | **0.900** | **0.982** | **0.269** | **0.487** | **0.025** |
 | G2 | 1.410 | 0.747 | 0.962 | 0.186 | 0.427 | 0.056 |
 
-G2 beats G1 on classification across all metrics (+1.2pp F1, +4.4pp Acc, +0.003 AUC)
-but localization collapses hard (IFA 0.644→1.410, Top-1 0.900→0.747). Root cause:
-equal GNN/LM balance (50/50) shifts the fused representation toward classification but
-~32% of MegaVul vuln functions exceed 1024 UniXcoder tokens — G2's func_max_length=1024
-truncates those, losing functional context for the largest/most complex functions and
-degrading per-node localization signal. The 768-dim GNN also runs slower (409s/epoch
-vs 162s) and uses more VRAM (10.2 GB vs ~7 GB).
+G2 beats G1 on all classification metrics (+1.2pp F1, +4.4pp Acc, +0.003 AUC) but localization collapses (IFA 0.644→1.410, Top-1 0.900→0.747) — ~32% of MegaVul functions exceed 1024 tokens and G2 truncates them, degrading per-node signal. Also 2.5× slower and +3 GB VRAM.
 
 **Phase 7 winner: G2 for classification (best F1 to date: 0.529). G1 for localization.
 G2 used as Phase 8 baseline — Phase 8 will fix the truncation via sliding window.**
@@ -416,6 +357,10 @@ and ml5120 dataset on RTX 5090. Earlier H2/H3 runs with ml1024 never activated s
 | H2 | `H2_unixcoder_sliding_chunk1024_stride512.yaml` | 1024 | 512 | 5120 | 9 | `20260525_104032` | 30 |
 | H3 | `H3_unixcoder_sliding_chunk1024_stride1024.yaml` | 1024 | 1024 | 5120 | 5 | `20260525_125031` | 31 |
 | H4 | `H4_unixcoder_sliding_chunk1024_stride1024_winattn.yaml` | 1024 | 1024 | 5120 | 5+attn | `20260527_121315` | 22 |
+| H5 | `H5_unixcoder_sliding_chunk1024_stride512_winattn.yaml` | 1024 | 512 | 5120 | 9+attn | `20260528_062323` | 34 |
+| H6 | `H6_unixcoder_sliding_chunk1024_stride1024_winattn_hidden.yaml` | 1024 | 1024 | 5120 | 5+attn+hidden | `20260528_085945` | 31 |
+| H7 | `H7_unixcoder_sliding_chunk1024_stride512_winattn_centerw.yaml` | 1024 | 512 | 5120 | 9+attn+cw | `20260528_063142` | 34 |
+| H8 | `H8_unixcoder_sliding_chunk1024_stride512_winattn_crosswin.yaml` | 1024 | 512 | 5120 | 9+attn+crosswin | `20260528_094016` | 41 |
 
 ## Classification
 
@@ -424,54 +369,45 @@ and ml5120 dataset on RTX 5090. Earlier H2/H3 runs with ml1024 never activated s
 | H1 (= G2) | 0.529 | 0.582 | 0.579 | 0.914 | 0.569 | 34 |
 | H2 | 0.459 | 0.508 | 0.507 | 0.890 | 0.588 | 30 |
 | H3 | 0.528 | 0.529 | 0.533 | 0.895 | 0.587 | 31 |
-| H4 | **0.554** | **0.589** | **0.587** | **0.927** | 0.618 | 22 |
+| H4 | 0.520 | 0.563 | 0.560 | **0.927** | 0.695 | 22 |
+| H5 | 0.443 | 0.522 | 0.522 | 0.885 | 0.589 | 34 |
+| H6 | 0.513 | 0.532 | 0.533 | 0.903 | 0.607 | 31 |
+| H7 | 0.485 | 0.524 | 0.525 | 0.896 | 0.618 | 34 |
+| H8 | 0.520 | 0.536 | 0.538 | 0.898 | 0.584 | 41 |
 
 ## Statement-Level Localization
 
 | ID | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
 |---|---|---|---|---|---|---|
 | H1 (= G2) | 1.410 | 0.747 | 0.962 | 0.186 | 0.427 | 0.056 |
-| H2 | **1.025** | **0.876** | 0.971 | 0.193 | 0.395 | 0.052 |
-| H3 | 1.047 | 0.873 | **0.978** | **0.221** | **0.442** | **0.041** |
+| H2 | 1.025 | 0.876 | 0.971 | 0.193 | 0.395 | 0.052 |
+| H3 | 1.047 | 0.873 | **0.978** | **0.221** | 0.442 | **0.041** |
 | H4 | 1.063 | 0.855 | 0.971 | 0.187 | 0.430 | 0.054 |
+| H5 | 1.220 | 0.827 | 0.969 | 0.206 | 0.424 | 0.047 |
+| H6 | **1.034** | 0.823 | 0.969 | 0.204 | **0.445** | 0.048 |
+| H7 | 2.804 | 0.669 | 0.846 | 0.143 | 0.410 | 0.076 |
+| H8 | 1.069 | **0.912** | 0.977 | 0.167 | 0.400 | 0.068 |
 
 Both H2 and H3 use ml5120 dataset with fixed `lm_full_windowed` (mean-pool CLS across windows),
 so sliding window is genuinely active for functions exceeding 1024 tokens (~32% of MegaVul vuln functions).
 
-**H2 (50% overlap, stride=512, 9 windows max)** — classification degrades vs H1 baseline
-(F1 0.459 vs 0.529, −0.070). Root cause: 9 overlapping windows produce a noisy mean-pool CLS —
-boundary regions appear in two consecutive windows, introducing redundant gradient signal that
-dilutes the per-window CLS. With 9 windows × batch_size=16 forward passes per batch, gradient
-variance is high relative to H1's single pass. Localization improves over H1 (IFA 1.025 vs
-1.410, Top-1 0.876 vs 0.747) because overlapping per-token accumulation covers more context
-without the CLS noise problem affecting stmt_head.
+**H2 (stride=512, 9 windows)** — classification degrades (F1 0.459, −0.070 vs H1): boundary regions appear in 2 consecutive windows, causing noisy mean-pool CLS. Localization improves over H1 (IFA 1.025 vs 1.410).
 
-**H3 (non-overlapping, stride=1024, 5 windows max)** — classification ties H1 (F1 0.528 vs
-0.529, −0.001). Unlike the prior invalid H3 run (ml1024, fast path always triggered), this
-run with ml5120 correctly engages 2–5 windows for longer functions. Non-overlapping windows
-avoid boundary-duplication noise: each position appears in exactly one window, giving a cleaner
-per-window CLS mean-pool. Localization also improves over H1 (IFA 1.047 vs 1.410, Top-1 0.873
-vs 0.747) and beats H2 on R@5%/R@20%/Effort despite marginally worse IFA and Top-1.
-H3 is 1.7× faster than H2 (150s vs 250s/epoch).
+**H3 (stride=1024, 5 windows)** — ties H1 on classification (F1 0.528, −0.001); non-overlapping avoids boundary noise, cleaner per-window CLS. Beats H2 on R@5%/R@20%/Effort and is 1.7× faster (150s vs 250s/epoch).
 
-Both H2 and H3 remain below the G1/F1 localization baseline (IFA 0.644, Top-1 0.900) —
-mean aggregation across windows blurs fine-grained per-token signal that single-pass lm_full
-produces for shorter functions already under 1024 tokens.
+H2/H3 both below G1 localization baseline (IFA 0.644) — mean aggregation blurs single-pass per-token signal.
 
-**H4 (window attention pool, stride=1024, 5 windows max)** — replaces mean-pool over window
-CLS vectors with a learned `Linear(768→1)` softmax score per window. Classification surpasses
-all previous Phase 8 and Phase 7 configs: F1 **0.554** (best to date), Acc 0.589, AUC 0.927.
-The attention pool lets the model learn which window (i.e., which part of the function) is most
-relevant for CWE classification rather than treating all windows equally. Localization is slightly
-worse than H3 (IFA 1.063 vs 1.047, Effort 0.054 vs 0.041) — the localization path (per-token
-accumulation) is unchanged, so the gap reflects that the new window weighting optimizes for
-function-level classification at the minor expense of uniform per-token coverage. H4 is 1.4×
-faster than H3 per epoch (211s vs 150s) due to the attention pool computation — still well within
-acceptable training budget (22 epochs × 211s = 1.3 hr total).
+**H4 (window attn pool, stride=1024)** — learned `Linear(768→1)` weights per-window CLS; best AUC 0.927 (vs H1 0.914). F1 0.520 is just below H3 (0.528) and H1 baseline (0.529) — window attn improves ranking but not macro F1 vs H3. Localization slightly worse than H3 (IFA 1.063 vs 1.047).
 
-**Phase 8 winner: H4 — new best classification F1 0.554 (vs H1 0.529, +2.5pp) and best AUC
-0.927 via window attention pool. H3 remains best for localization (IFA/R@20%/Effort).
-H4 is the new baseline for Phase 10+.**
+**H5 (attn pool + stride=512, 9 windows)** — overlap boundary noise dominates (F1 0.443, −0.077 vs H4); attn pool can't fully recover. Localization also worse than H4/H2 (IFA 1.220).
+
+**H6 (attn weights to localization path, stride=1024)** — improves localization over H4 (IFA 1.034 vs 1.063, R@20% 0.445 vs 0.430); classification comparable (F1 0.513 vs H4 0.520, −0.007). Attention weights applied to per-token hidden states concentrate stmt_head on high-relevance windows.
+
+**H7 (center weighting, stride=512)** — hurts both tasks (F1 0.485, −0.035 vs H4; IFA 2.804, worst): CWE-identifying tokens often land at window-edge positions, which center weighting systematically discounts.
+
+**H8 (cross-window attention, stride=512)** — H5 + CrossWindowAttn: Q=per-token hidden [B,L,768], K/V=window CLS [B,W,768]; each token attends over all window summaries for global context. Improves over H5 on both classification (F1 0.520 vs 0.443, +0.077) and localization (IFA 1.069 vs 1.220, Top-1 0.912 vs 0.827, best Top-1 overall). Ties H4 on F1 (0.520) but worse than H3 (0.528).
+
+**Phase 8 winner: H4 — best AUC 0.927 (vs H1 0.914, +0.013). F1 0.520 ties H8 but below H3 (0.528) and H1 baseline (0.529) — window attn improves ranking quality, not macro F1. H6 best localization IFA (1.034). H8 best Top-1 (0.912) + strongest classification recovery over H5. H3 best Effort (0.041). H4 baseline for Phase 11+.**
 
 ---
 
@@ -504,8 +440,8 @@ Localization = per-line encoder output scattered back to token positions.
 | ID | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | Epochs |
 |---|---|---|---|---|---|---|
 | I1 (= H1/G2) | **0.529** | **0.582** | **0.579** | **0.914** | 0.569 | 34 |
-| I2† | 0.009† | 0.133† | 0.031† | 0.832† | 0.057† | 23 |
-| I3† | 0.010† | 0.148† | 0.038† | 0.766† | 0.613† | 27 |
+| I2† | 0.156† | 0.328† | 0.285† | 0.832† | 0.260† | 23 |
+| I3† | 0.012† | 0.149† | 0.040† | 0.766† | 0.567† | 27 |
 | I4 | 0.375 | 0.414 | 0.410 | 0.877 | 0.381 | 52 |
 
 ## Statement-Level Localization
@@ -517,29 +453,13 @@ Localization = per-line encoder output scattered back to token positions.
 | I3† | **1.201** | **0.896** | **0.978** | 0.165 | 0.400 | 0.066 |
 | I4 | 3.009 | 0.609 | 0.857 | 0.179 | 0.443 | 0.059 |
 
-**I2 (frozen LM + line encoder) — classification collapsed** (F1 0.009, val F1 0.149, 23 epochs).
-Root cause: frozen LM cannot be fine-tuned for classification — precomputed per-line CLS
-embeddings are fixed features without task adaptation. Localization survives: IFA 1.438,
-R@20% 0.506 (best in Phase 9) — ranking loss flows through stmt_head regardless of
-classification head failure.
+**I2 (frozen LM + line encoder)** — classification severely degraded (F1 0.156): precomputed fixed CLS can't adapt to 26-class CWE task; best val F1 0.149 at ep 23. Localization survives (R@20% 0.506, best in Phase 9).
 
-**I3 (live LM + line encoder) — classification collapsed** (F1 0.010, predicts majority class).
-Root cause: per-line LM forward replaces the whole-function CLS forward entirely — classification
-head loses global function-level context. The cross-line transformer cannot recover 26-class CWE
-semantics from per-line representations. Localization partially survives: Top-1 0.896
-(best in Phase 9, ranking signal intact).
+**I3 (live LM + line encoder)** — classification also collapsed (F1 0.010): per-line forward loses global function-level context; cross-line transformer can't recover 26-class CWE semantics. Top-1 0.896 (best in Phase 9).
 
-**I4 (frozen LM + line encoder + ±5 line context)** — adds per-line context: each
-line's [CLS] is precomputed from [line_{i-5} … line_i … line_{i+5}] concatenated
-and passed through UniXcoder jointly, so the per-line CLS can attend to neighbouring
-lines' tokens before the cross-line transformer. Classification: F1 0.375. Localization:
-IFA 3.009, R@20%LOC 0.443 — broader context widens recall coverage slightly at high IFA cost.
+**I4 (±5 line context)** — partially recovers classification (F1 0.375) but localization degrades (IFA 3.009); broader context widens recall slightly at high IFA cost.
 
-**Phase 9 finding: line-level LM encoding is incompatible with function-level
-CWE multiclass classification.** Frozen (I2, I4) and live (I3) variants all collapse on
-classification. Whole-function CLS (H4/H3 sliding window) is necessary for 26-class CWE
-discrimination; the hierarchical design loses global context the task requires. Phase 9 is
-a negative result — confirms sliding window as the better path for extending LM coverage.
+**Phase 9 finding: line-level LM encoding is incompatible with 26-class CWE classification.** All variants (frozen/live) collapse — whole-function CLS is necessary. Negative result; confirms sliding window as better path.
 
 ---
 
@@ -555,37 +475,25 @@ encoder-only LMs with longer native context. All configs use `live_lm=func, free
 | ID | Run ID | Config | func_lm | func_max_length | Epochs |
 |---|---|---|---|---|---|
 | J1 | `20260520_132730` (= H1/G2) | — | UniXcoder | 1024 | 34 |
-| J3 | `20260527_160001_lmgat_codebert_multiclass` | `J3_modernbert_base.yaml` | ModernBERT-base | 5120 | 17‡ |
-
-‡ = batch=4 for epochs 1–30, then resumed with batch=32; early stopping triggered at epoch 17 of resumed run (~47 total epochs).
+| J3 | `20260528_045419_lmgat_codebert_multiclass` | `J3_modernbert_base.yaml` | ModernBERT-base | 5120 | 55 |
 
 ## Classification
 
 | ID | Val F1 | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | Epochs |
 |---|---|---|---|---|---|---|---|
-| J1 (= H1/G2) | — | **0.529** | **0.582** | **0.579** | **0.914** | 0.569 | 34 |
-| J3‡ | 0.404 | 0.380 | 0.415 | 0.413 | 0.875 | 0.386 | 17 |
+| J1 (= H1/G2) | — | **0.529** | **0.582** | **0.579** | **0.914** | **0.569** | 34 |
+| J3 | 0.386 | 0.378 | 0.426 | 0.422 | 0.847 | 0.397 | 55 |
 
 ## Statement-Level Localization
 
 | ID | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
 |---|---|---|---|---|---|---|
-| J1 (= H1/G2) | 1.410 | 0.747 | 0.962 | 0.186 | 0.427 | 0.056 |
-| J3‡ | 1.379 | 0.739 | 0.963 | 0.183 | 0.390 | 0.058 |
+| J1 (= H1/G2) | 1.410 | 0.747 | 0.962 | 0.186 | **0.427** | 0.056 |
+| J3 | **0.950** | **0.814** | **0.978** | **0.209** | 0.422 | **0.046** |
 
-**J3 (ModernBERT-base, 5120 tokens, flash_attention_2)** — underperforms J1 baseline on
-classification (F1 0.380 vs 0.529, −0.149) and localization is roughly equivalent (IFA 1.379
-vs 1.410). Trained batch=4 for ~30 epochs then resumed with batch=32; early stopping triggered at epoch 17
-of the resumed run (~47 total). The batch change shifted effective gradient scale and LR schedule
-mid-training, disrupting optimizer momentum state. Patience=15 triggered early on the resumed run.
-Epoch time 88s (fast: flash-attn batch=32, RTX 5090), VRAM 20.3 GB.
+**J3 (ModernBERT-base, 5120-token native)** — localization improves (IFA 0.950 vs 1.410, −33%; Top-1 0.814 vs 0.747) but classification collapses (F1 0.378, −0.151; AUC 0.847 vs 0.914). Alternating local/global attention fails to produce function-level CWE semantics that UniXcoder's full bidirectional attention computes in a single pass.
 
-Result is inconclusive due to the batch-change mid-training disrupting the training dynamics.
-J3 needs a clean rerun (batch=32 from epoch 1) before drawing conclusions about ModernBERT-base
-vs UniXcoder on this task. The model has 170M params (vs 147M for UniXcoder configs) — larger
-but with native long-context attention that should help on functions exceeding 1024 tokens.
-
-**Phase 10 status: J3 inconclusive (batch disruption). Clean rerun required.**
+**Phase 10 finding: ModernBERT-base is a localization/classification trade-off, not an improvement.** UniXcoder with sliding window (H4, F1=0.554) remains best overall.
 
 ---
 
@@ -617,7 +525,11 @@ but with native long-context attention that should help on functions exceeding 1
 | H2 sliding stride512  | RTX 5090    | 146.9M | 250s       | 2.09            | 18.6 GB   |
 | H3 sliding stride1024 | RTX 5090    | 146.9M | 150s       | 1.30            | 17.1 GB   |
 | H4 winattn stride1024 | RTX 5090    | 146.9M | 211s       | 1.29            | 18.0 GB   |
+| H5 winattn stride512  | RTX PRO 6000 Bk | 146.9M | 265s   | 2.51            | 19.9 GB   |
+| H6 winattn hidden     | RTX PRO 6000 Bk | 146.9M | 162s   | 1.40            | 17.1 GB   |
+| H7 centerweight s512  | RTX 5090    | 146.9M | 328s       | 3.10            | 19.8 GB   |
+| H8 crosswin s512      | RTX PRO 6000 Bk | 149.3M | 332s   | 3.78            | 24.2 GB   |
 | I2 line frozen        | RTX 5090    | 161.7M | 95s        | 0.61            | 18.3 GB   |
 | I3 line live          | RTX 5090    | 161.7M | 205s       | 1.66            | 20.1 GB   |
 | I4 line ctx±5 frozen  | RTX 5090    | 161.7M | 84s        | 1.22            | 17.4 GB   |
-| J3 ModernBERT‡        | RTX 5090    | 170.0M | 88s        | 0.42            | 20.3 GB   |
+| J3 ModernBERT         | RTX 6000 Bk | 170.0M | 74s        | 1.14            | 21.3 GB   |

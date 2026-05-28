@@ -99,6 +99,7 @@ class Trainer:
         binary_loss_weight: float = 0.0,
         supcon_fn: nn.Module | None = None,
         supcon_weight: float = 0.0,
+        self_supcon_weight: float = 0.0,
         use_amp: bool = False,
         amp_dtype: torch.dtype = torch.float16,
         scaler: GradScaler | None = None,
@@ -124,6 +125,7 @@ class Trainer:
         self.binary_loss_weight = binary_loss_weight
         self.supcon_fn          = supcon_fn
         self.supcon_weight      = supcon_weight
+        self.self_supcon_weight = self_supcon_weight
         self.use_amp            = use_amp
         self.amp_dtype          = amp_dtype
         self.scaler             = scaler
@@ -239,13 +241,32 @@ class Trainer:
                 )
                 loss = loss + self.rank_loss_weight * rl
 
-        # Hierarchical SupCon (HC-DFGAT / MTL+SupCon)
+        # Hierarchical SupCon — matrix distance only (no group requirement).
+        # group_ids falls back to batch.y: each class = its own group, so
+        # same_group is never True for different-class pairs → matrix handles
+        # all inter-CWE weights, intragroup_only=False in the loss config.
         if z_combined is not None and self.supcon_fn is not None and self.supcon_weight > 0.0:
-            group_ids = getattr(batch, "group_id", None)
-            if group_ids is not None:
-                cwe_vocab_ids = getattr(batch, "cwe_id", None)
-                sc = self.supcon_fn(z_combined, batch.y, group_ids, cwe_vocab_ids)
-                loss = loss + self.supcon_weight * sc
+            group_ids = getattr(batch, "group_id", batch.y)
+            cwe_vocab_ids = getattr(batch, "cwe_id", None)
+            sc = self.supcon_fn(z_combined, batch.y, group_ids, cwe_vocab_ids)
+            loss = loss + self.supcon_weight * sc
+
+        # Self-supervised NT-Xent loss (L_self from HierarchicalSupCon EMNLP 2024).
+        # Runs projector a second time (dropout active in training) → different view z2.
+        # Prevents intra-class collapse by anchoring each sample to its own stochastic views.
+        if (
+            self.self_supcon_weight > 0.0
+            and self.supcon_fn is not None
+            and z_combined is not None
+            and self.model.training
+            and hasattr(self.model, "supcon_head")
+            and self.model.supcon_head is not None
+            and hasattr(self.model, "_fused_for_supcon")
+            and self.model._fused_for_supcon is not None
+        ):
+            z2 = self.model.supcon_head(self.model._fused_for_supcon)
+            sl = self.supcon_fn.self_supervised_loss(z_combined, z2)
+            loss = loss + self.self_supcon_weight * sl
 
         # EWC-DR continual learning regularization
         if self.ewc is not None:

@@ -17,6 +17,7 @@ from gnn_vuln.models.encoders import build_gnn_encoder
 from gnn_vuln.models.heads import FuncHead, ThinFuncHead, StmtHead
 from gnn_vuln.models.cross_task import build_cross_task, statement_features, _LineLevelEncoder
 from gnn_vuln.models._lm_utils import scatter_lines_to_tokens, _PERLINE_MAX_LINE
+from gnn_vuln.models.supcon_head import SupConProjector
 
 NODE_FEAT_DIM = 773
 
@@ -41,7 +42,10 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  window_attn_pool=False,
                  window_attn_hidden=False,
                  window_center_weight=False,
-                 cross_window_attn=False):
+                 cross_window_attn=False,
+                 supcon_proj_dim=0,
+                 supcon_proj_hidden=256,
+                 supcon_proj_dropout=0.1):
         super().__init__()
         self._normalize_gnn_output = normalize_gnn_output
         assert live_lm in _VALID_LIVE_LM, \
@@ -113,6 +117,13 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             mmoe_task_encoder=mmoe_task_encoder, residual=cross_task_residual,
             mmoe_loc_transformer=mmoe_loc_transformer,
         )
+        _fused_dim_total = hidden_dim + self._lm_dim
+        self.supcon_head = (
+            SupConProjector(_fused_dim_total, supcon_proj_hidden, supcon_proj_dim,
+                            dropout=supcon_proj_dropout)
+            if supcon_proj_dim > 0 else None
+        )
+        self._fused_for_supcon: torch.Tensor | None = None
 
     def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
                 func_input_ids=None, func_attention_mask=None,
@@ -175,6 +186,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         if self._normalize_gnn_output:
             h_graph = F.normalize(h_graph, dim=-1)
         fused = torch.cat([h_graph, lm_emb], dim=-1)
+        self._fused_for_supcon = fused
+        proj_z = self.supcon_head(fused) if self.supcon_head is not None else None
 
         ct = self._cross_task_method
         if ct == "none" or node_line is None:
@@ -183,6 +196,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                 self.stmt_head.score(h_loc, batch, node_line, lm_hidden, func_token_lines)
                 if node_line is not None else None
             )
+            if proj_z is not None:
+                return logit, stmt_scores, proj_z
             return logit, stmt_scores
 
         # cross_attention | self_attention | mmoe — per-statement loc conditioning.
@@ -197,6 +212,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         )
         logit = self.func_head(fused_mod)
         stmt_scores = self.stmt_head.score(h_loc, batch, node_line, lm_hidden, func_token_lines, cond=stmt_cond)
+        if proj_z is not None:
+            return logit, stmt_scores, proj_z
         return logit, stmt_scores
 
     @classmethod
@@ -240,4 +257,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             window_attn_hidden=getattr(cfg.model, "window_attn_hidden", False),
             window_center_weight=getattr(cfg.model, "window_center_weight", False),
             cross_window_attn=getattr(cfg.model, "cross_window_attn", False),
+            supcon_proj_dim=getattr(cfg.model, "supcon_proj_dim", 0),
+            supcon_proj_hidden=getattr(cfg.model, "supcon_proj_hidden", 256),
+            supcon_proj_dropout=getattr(cfg.model, "supcon_proj_dropout", 0.1),
         )

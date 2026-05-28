@@ -100,9 +100,11 @@ class HierarchicalSupConLoss(nn.Module):
         power: float = 2.0,
         min_weight: float = 0.0,
         intragroup_only: bool = True,
+        self_temperature: float = 0.5,
     ) -> None:
         super().__init__()
         self.temperature = temperature
+        self.self_temperature = self_temperature
         self.alpha = alpha
         self.weight_fn = weight_fn
         self.exp_scale = exp_scale
@@ -198,6 +200,38 @@ class HierarchicalSupConLoss(nn.Module):
             weights[in_matrix] = continuous[in_matrix]
 
         return weights, in_matrix
+
+    # ------------------------------------------------------------------
+    # Self-supervised contrastive loss (NT-Xent / SimCLR)
+    # ------------------------------------------------------------------
+
+    def self_supervised_loss(
+        self,
+        z1: torch.Tensor,
+        z2: torch.Tensor,
+    ) -> torch.Tensor:
+        """NT-Xent loss between two dropout views of the same samples.
+
+        Prevents intra-class collapse by forcing each sample's two stochastic
+        projections to be mutually nearest neighbours across the batch.
+        Paper: HierarchicalSupCon (EMNLP 2024), L_self component (μ weight).
+
+        Parameters
+        ----------
+        z1, z2 : [B, D]  L2-normalised embeddings (two dropout draws).
+        """
+        B = z1.size(0)
+        if B < 2:
+            return torch.tensor(0.0, device=z1.device)
+        z = torch.cat([z1, z2], dim=0)                   # [2B, D]
+        sim = torch.matmul(z, z.T) / self.self_temperature  # [2B, 2B]
+        mask = torch.eye(2 * B, dtype=torch.bool, device=z.device)
+        sim.masked_fill_(mask, float("-inf"))
+        labels = torch.cat([
+            torch.arange(B, 2 * B, device=z.device),
+            torch.arange(0, B, device=z.device),
+        ])
+        return F.cross_entropy(sim, labels)
 
     # ------------------------------------------------------------------
     # Forward

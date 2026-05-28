@@ -80,8 +80,9 @@ class TrainingSession:
             if "group"  not in self._active_heads: self._group_loss_weight  = 0.0
             if "binary" not in self._active_heads: self._binary_loss_weight = 0.0
 
-        self._use_supcon    = getattr(cfg.model, "use_supcon", False)
-        self._supcon_weight = getattr(cfg.model, "supcon_weight", 0.1) if self._use_supcon else 0.0
+        self._use_supcon         = getattr(cfg.model, "use_supcon", False)
+        self._supcon_weight      = getattr(cfg.model, "supcon_weight", 0.1) if self._use_supcon else 0.0
+        self._self_supcon_weight = getattr(cfg.model, "supcon_self_weight", 0.0) if self._use_supcon else 0.0
 
     @classmethod
     def from_args(cls, args) -> "TrainingSession":
@@ -176,6 +177,7 @@ class TrainingSession:
             rank_loss_weight=self._rank_loss_weight, focal_gamma=self._focal_gamma,
             group_loss_weight=self._group_loss_weight, binary_loss_weight=self._binary_loss_weight,
             supcon_fn=supcon_fn, supcon_weight=self._supcon_weight,
+            self_supcon_weight=self._self_supcon_weight,
             use_amp=use_amp, amp_dtype=amp_dtype, scaler=scaler, ewc=ewc,
             grad_accum_steps=grad_accum_steps,
             label_smoothing=getattr(cfg.train, "label_smoothing", 0.0),
@@ -240,6 +242,7 @@ class TrainingSession:
             power=getattr(cfg.model, "supcon_power", 2.0),
             min_weight=getattr(cfg.model, "supcon_min_weight", 0.0),
             intragroup_only=getattr(cfg.model, "supcon_intragroup_only", True),
+            self_temperature=getattr(cfg.model, "supcon_self_temperature", 0.5),
         )
         return fn.to(self.device)
 
