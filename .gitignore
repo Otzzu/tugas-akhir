@@ -31,6 +31,9 @@ Thumbs.db
 .vscode/settings.json
 .idea/
 
+# Claude Code local config (commands, hooks — project-local, not for repo)
+.claude/
+
 # Env files
 .env
 *.env
