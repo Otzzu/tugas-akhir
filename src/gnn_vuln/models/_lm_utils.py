@@ -291,7 +291,8 @@ class WindowAttentionPool(torch.nn.Module):
         self,
         window_cls: torch.Tensor,
         valid_mask: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+        return_weights: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         logits = self.score(window_cls).squeeze(-1)           # [B, N]
         if valid_mask is not None:
             logits = logits.masked_fill(~valid_mask, float("-inf"))
@@ -300,7 +301,10 @@ class WindowAttentionPool(torch.nn.Module):
         if valid_mask is not None:
             any_valid = valid_mask.any(dim=-1, keepdim=True)  # [B, 1]
             attn = torch.where(any_valid, attn, torch.zeros_like(attn))
-        return (attn.unsqueeze(-1) * window_cls).sum(dim=1)   # [B, hidden]
+        cls = (attn.unsqueeze(-1) * window_cls).sum(dim=1)   # [B, hidden]
+        if return_weights:
+            return cls, attn                                  # [B, hidden], [B, N]
+        return cls
 
 
 def lm_full_windowed(

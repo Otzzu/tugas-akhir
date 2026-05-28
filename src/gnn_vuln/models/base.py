@@ -83,6 +83,7 @@ class VulnDetectorBase(nn.Module):
         codet5p_normalize_per_token: bool = False,
         freeze_func_lm: bool = False,
         window_attn_pool: bool = False,
+        window_attn_hidden: bool = False,
     ) -> None:
         """
         Load a live LM and store as self.codebert.
@@ -168,6 +169,7 @@ class VulnDetectorBase(nn.Module):
         # Window attention pool — replaces mean-pool over window CLS vectors when enabled.
         # Only meaningful when func_chunk_size > 0 (sliding window active).
         self._use_window_attn_pool = window_attn_pool and func_chunk_size > 0
+        self._use_window_attn_hidden = window_attn_hidden and self._use_window_attn_pool
         if self._use_window_attn_pool:
             self.window_attn_pool = WindowAttentionPool(self._lm_dim)
 
@@ -231,7 +233,17 @@ class VulnDetectorBase(nn.Module):
                         matryoshka_dim=self._matryoshka_dim,
                         return_window_cls=True,
                     )
-                    cls = self.window_attn_pool(win_cls, win_mask)
+                    if getattr(self, "_use_window_attn_hidden", False):
+                        cls, win_weights = self.window_attn_pool(win_cls, win_mask, return_weights=True)
+                        # Scale per-token hidden by their window's attention weight.
+                        # Designed for non-overlapping windows (stride >= chunk_size).
+                        L = hidden.size(1)
+                        n_wins = win_weights.size(1)
+                        tok_win = (torch.arange(L, device=hidden.device) // self._func_chunk_stride).clamp(max=n_wins - 1)
+                        scale = win_weights[:, tok_win]           # [B, L]
+                        hidden = hidden * scale.unsqueeze(-1)     # [B, L, D]
+                    else:
+                        cls = self.window_attn_pool(win_cls, win_mask)
                     return cls, hidden
                 return lm_full_windowed(
                     self.codebert, self._is_enc_dec,

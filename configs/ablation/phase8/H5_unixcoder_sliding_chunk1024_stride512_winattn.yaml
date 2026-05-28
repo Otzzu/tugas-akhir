@@ -1,0 +1,75 @@
+# Phase 8 — H5: H4 + stride=512 (overlap like H2, window attention pool like H4)
+# Base: H4 (window_attn_pool=true, stride=1024, 5 windows max).
+# Varies from H4: func_chunk_stride=512 → 50% overlap, up to 9 windows.
+#   Classification: window attention pool over 9 window CLS vectors.
+#   Localization: overlap-averaged per-token hidden (H2-style coverage).
+# Hypothesis: overlap improves per-token hidden coverage (better IFA/Top-1)
+#   while window attention pool fixes H2's CLS noise from equal-weight mean-pool.
+#
+# .pt build: configs/data/megavul_multiclass_top25_node-unixcoder_func-unixcoder_ml5120.yaml
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase8/H5_unixcoder_sliding_chunk1024_stride512_winattn.yaml
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 5120
+  func_chunk_size: 1024
+  func_chunk_stride: 512
+  window_attn_pool: true
+  window_attn_hidden: false
+  localization_encoder: both
+  stmt_both_mode: concat
+  graph_pool: meanmax
+  cross_task_method: none
+  hidden_dim: 768
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: false
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  lm_lr: 0.00001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: true
+  use_flash_attention: true
+  grad_accum_steps: 1
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 8
+  prefetch_factor: 2
