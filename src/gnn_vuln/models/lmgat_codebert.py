@@ -12,6 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import global_mean_pool, global_max_pool, global_add_pool
 from torch_geometric.nn.aggr import AttentionalAggregation
+from torch_geometric.utils import to_dense_batch
 from gnn_vuln.models.base import VulnDetectorBase
 from gnn_vuln.models.encoders import build_gnn_encoder
 from gnn_vuln.models.heads import FuncHead, ThinFuncHead, StmtHead
@@ -22,6 +23,44 @@ from gnn_vuln.models.supcon_head import SupConProjector
 NODE_FEAT_DIM = 773
 
 _VALID_LIVE_LM = ("none", "func", "func_and_line", "line")
+
+
+class CNNReadout(nn.Module):
+    """Multi-scale 1D CNN graph readout.
+
+    Treats sorted node hiddens as a sequence, applies parallel Conv1d with
+    kernel_sizes=(3,5,7), max-pools each over the node dimension, concatenates,
+    then projects back to out_dim. Captures local node-order patterns that
+    permutation-invariant mean/max pool cannot.
+    """
+
+    def __init__(self, in_dim: int, out_dim: int,
+                 kernel_sizes: tuple[int, ...] = (3, 5, 7),
+                 dropout: float = 0.1) -> None:
+        super().__init__()
+        self.convs = nn.ModuleList([
+            nn.Conv1d(in_dim, out_dim, k, padding=k // 2)
+            for k in kernel_sizes
+        ])
+        self.proj = nn.Linear(out_dim * len(kernel_sizes), out_dim)
+        self.norm = nn.LayerNorm(out_dim)
+        self.drop = nn.Dropout(dropout)
+
+    @torch.compiler.disable
+    def forward(self, h: torch.Tensor, batch: torch.Tensor, B: int) -> torch.Tensor:
+        x_dense, mask = to_dense_batch(h.float(), batch, batch_size=B)  # [B, N_max, D]
+        x = x_dense.permute(0, 2, 1)                                    # [B, D, N_max]
+        valid = mask.any(dim=1)                                          # [B]
+        parts = []
+        for conv in self.convs:
+            c = F.relu(conv(x))                                          # [B, out_dim, N_max]
+            c = c.masked_fill(~mask.unsqueeze(1), float("-inf"))
+            c_max = c.max(dim=-1).values                                 # [B, out_dim]
+            c_max[~valid] = 0.0
+            parts.append(c_max)
+        out = torch.cat(parts, dim=-1)                                   # [B, out_dim*K]
+        out = self.drop(F.relu(self.proj(out)))
+        return self.norm(out)
 
 
 class LMGATCodeBERTVulnDetector(VulnDetectorBase):
@@ -89,9 +128,9 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             num_heads=num_heads, edge_dim=edge_dim, add_self_loops=add_self_loops,
             use_skip=use_skip, num_relations=num_relations, num_bases=num_bases,
         )
-        # Graph-level pooling: mean | meanmax | attention | dualflow
-        assert graph_pool in ("mean", "meanmax", "attention", "dualflow"), \
-            f"graph_pool must be mean|meanmax|attention|dualflow, got {graph_pool!r}"
+        # Graph-level pooling: mean | meanmax | attention | dualflow | cnn
+        assert graph_pool in ("mean", "meanmax", "attention", "dualflow", "cnn"), \
+            f"graph_pool must be mean|meanmax|attention|dualflow|cnn, got {graph_pool!r}"
         self._graph_pool = graph_pool
         self.attn_pool = (
             AttentionalAggregation(gate_nn=nn.Linear(hidden_dim, 1))
@@ -99,6 +138,11 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         )
         # dualflow: per-node suspicion head → focal (suspicion-weighted) + context (mean)
         self.node_susp = nn.Linear(hidden_dim, 1) if graph_pool == "dualflow" else None
+        # cnn: multi-scale Conv1d readout over sorted node hiddens
+        self.cnn_pool = (
+            CNNReadout(hidden_dim, hidden_dim, kernel_sizes=(3, 5, 7), dropout=dropout)
+            if graph_pool == "cnn" else None
+        )
         # Thin head only for in-path MMOE (residual off + mmoe): MMOE's
         # task encoder + shared experts do the adaptation → head can be thin.
         # Attention methods don't carry that adaptation depth → keep fat head.
@@ -139,6 +183,9 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             s = torch.sigmoid(self.node_susp(h))                      # [N, 1]
             focal = global_add_pool(h * s, batch) / global_add_pool(s, batch).clamp(min=1e-6)
             h_graph = focal + global_mean_pool(h, batch)
+        elif self._graph_pool == "cnn":
+            B_hint = int(batch.max().item()) + 1 if batch.numel() > 0 else 1
+            h_graph = self.cnn_pool(h, batch, B_hint)
         else:
             h_graph = global_mean_pool(h, batch)
         B = h_graph.size(0)
