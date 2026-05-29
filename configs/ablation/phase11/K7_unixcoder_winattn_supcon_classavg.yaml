@@ -1,0 +1,90 @@
+# Phase 11 — K7: H4 + Hierarchical SupCon (matrix, w=0.2, linear, L_self) + BCL class-averaging
+# Same loss as K2 (w=0.2 linear dist matrix, L_self=0.2). Only change: loss reduction.
+# supcon_class_averaging=true: per-anchor losses grouped by CWE, mean within class,
+# then mean across classes. Each CWE contributes equally to gradient regardless of
+# batch frequency (BCL: Balanced Contrastive Learning, CVPR 2022, class-averaging component).
+# No balanced sampler (unlike K6) — isolates effect of class-averaging in reduction.
+#
+# .pt build: configs/data/megavul_multiclass_top25_node-unixcoder_func-unixcoder_ml5120.yaml
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase11/K7_unixcoder_winattn_supcon_classavg.yaml
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 5120
+  func_chunk_size: 1024
+  func_chunk_stride: 1024
+  window_attn_pool: true
+  window_attn_hidden: false
+  window_center_weight: false
+  cross_window_attn: false
+  localization_encoder: both
+  stmt_both_mode: concat
+  graph_pool: meanmax
+  cross_task_method: none
+  hidden_dim: 768
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: false
+  supcon_proj_dim: 128
+  supcon_proj_hidden: 256
+  supcon_proj_dropout: 0.1
+  use_supcon: true
+  supcon_weight: 0.2
+  supcon_self_weight: 0.2
+  supcon_temperature: 0.5
+  supcon_self_temperature: 0.5
+  supcon_alpha: 0.5
+  supcon_use_distance_matrix: true
+  cwe_dist_matrix: data/cwe/cwe_distance_matrix.json
+  supcon_weight_fn: linear
+  supcon_intragroup_only: false
+  supcon_class_averaging: true
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  lm_lr: 0.00001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: true
+  use_flash_attention: true
+  grad_accum_steps: 1
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 8
+  prefetch_factor: 2

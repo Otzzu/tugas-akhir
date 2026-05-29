@@ -243,6 +243,7 @@ class TrainingSession:
             min_weight=getattr(cfg.model, "supcon_min_weight", 0.0),
             intragroup_only=getattr(cfg.model, "supcon_intragroup_only", True),
             self_temperature=getattr(cfg.model, "supcon_self_temperature", 0.5),
+            class_averaging=getattr(cfg.model, "supcon_class_averaging", False),
         )
         return fn.to(self.device)
 

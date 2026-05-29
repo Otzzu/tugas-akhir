@@ -1,5 +1,9 @@
 # Ablation Results
 
+> **Metric source rule:** all classification + localization values come from `metrics_summary.json`.
+> `training_summary.json` used ONLY for epoch time, total time, VRAM, params, GPU.
+> Use `/ablation-metrics <run_id> [phase_dir]` to extract formatted rows — never copy by hand.
+
 Dataset: MegaVul Top-25 CWEs, max 1600 per class, 26 classes (25 CWE + benign),
 UniXcoder-base embeddings, seed=42. GPU: RTX 5070 Ti (Phase 1–7, Phase 9 I2/I3); RTX 5090 for Phase 8 reruns (H2/H3) and Phase 9 I4.
 
@@ -14,6 +18,8 @@ Phase structure:
 - **Phase 7 — GNN Dimension**: hidden_dim vs func_lm dim alignment (50/50 vs 25/75 GNN/LM fused)
 - **Phase 8 — Sliding Window Coverage**: extend func_max_length to 5120 via chunk/stride variants
 - **Phase 9 — Line-Level Encoder**: hierarchical encoding — per-line LM → cross-line transformer; frozen vs live LM
+- **Phase 10 — Language Model (func_lm alternatives)**: encoder-only LMs with longer native context (ModernBERT-base)
+- **Phase 11 — SupCon Loss Ablation**: supervised contrastive loss with CWE hierarchy distance matrix weighting
 
 ---
 
@@ -497,6 +503,43 @@ encoder-only LMs with longer native context. All configs use `live_lm=func, free
 
 ---
 
+# Phase 11 — SupCon Loss Ablation
+
+`configs/ablation/phase11/` — base K1 = H4 (window attn pool, stride=1024, hidden_dim=768, ml5120).
+Varies supervised contrastive loss (SupCon) with CWE hierarchy distance matrix weighting.
+All K-configs use `supcon_use_distance_matrix=true`, `cwe_dist_matrix=data/cwe/cwe_distance_matrix.json`.
+L_self = NT-Xent self-supervised collapse prevention (two dropout views of same function embedding).
+Loss: `L = L_CE + supcon_weight·L_SupCon(matrix) + supcon_self_weight·L_self`.
+
+| ID | Run ID | Config | supcon_weight | weight_fn | L_self weight | Epochs |
+|---|---|---|---|---|---|---|
+| K1 | `20260527_121315` (= H4) | — | 0 | — | 0 | 22 |
+| K2 | `20260528_142050_lmgat_codebert_multiclass` | `K2_unixcoder_winattn_supcon_w02.yaml` | 0.2 | linear | 0.2 | 33 |
+| K5 | `20260528_160806_lmgat_codebert_multiclass` | `K5_supcon_group.yaml` | 0.2 | group (intragroup_only) | 0.2 | 30 |
+| K6 | `20260528_175315_lmgat_codebert_multiclass` | `K6_unixcoder_winattn_supcon_balanced.yaml` | 0.2 | linear (balanced sampler 8cls×4) | 0.2 | 32 |
+
+## Classification
+
+| ID | Val F1 | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | Epochs |
+|---|---|---|---|---|---|---|---|
+| K1 (= H4) | 0.573 | 0.520 | 0.563 | 0.560 | 0.927 | 0.695 | 22 |
+| K2 | 0.502 | 0.461 | 0.527 | 0.527 | 0.874 | 0.607 | 33 |
+| K5 | 0.521 | 0.484 | 0.550 | 0.551 | 0.897 | 0.608 | 30 |
+| K6 | 0.513 | 0.500 | 0.503 | 0.504 | 0.892 | 0.579 | 32 |
+
+## Statement-Level Localization
+
+| ID | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+|---|---|---|---|---|---|---|
+| K1 (= H4) | 1.063 | 0.855 | 0.971 | 0.187 | 0.430 | 0.054 |
+| K2 | 12.167 | 0.253 | 0.526 | 0.055 | 0.207 | 0.194 |
+| K5 | 12.934 | 0.264 | 0.540 | 0.061 | 0.200 | 0.200 |
+| K6 | 12.935 | 0.235 | 0.512 | 0.048 | 0.196 | 0.203 |
+
+K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses both classification (F1 0.461, −0.059 vs K1) and localization (IFA 12.167, Top-1 0.253). SupCon loss at w=0.2 appears to overwhelm the classification signal with 26-class CWE embedding geometry constraints.
+
+---
+
 # Training Efficiency
 
 | Run                   | GPU         | Params | Epoch Time | Total Time (hr) | VRAM Peak |
@@ -533,3 +576,6 @@ encoder-only LMs with longer native context. All configs use `live_lm=func, free
 | I3 line live          | RTX 5090    | 161.7M | 205s       | 1.66            | 20.1 GB   |
 | I4 line ctx±5 frozen  | RTX 5090    | 161.7M | 84s        | 1.22            | 17.4 GB   |
 | J3 ModernBERT         | RTX 6000 Bk | 170.0M | 74s        | 1.14            | 21.3 GB   |
+| K2 supcon w0.2        | RTX 5090    | 147.3M | 190s       | 1.75            | 19.7 GB   |
+| K5 supcon group       | RTX 5090    | 147.3M | 190s       | 1.59            | 17.5 GB   |
+| K6 supcon balanced    | RTX 5090    | 147.3M | 188s       | 1.68            | 17.6 GB   |

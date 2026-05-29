@@ -101,6 +101,7 @@ class HierarchicalSupConLoss(nn.Module):
         min_weight: float = 0.0,
         intragroup_only: bool = True,
         self_temperature: float = 0.5,
+        class_averaging: bool = False,
     ) -> None:
         super().__init__()
         self.temperature = temperature
@@ -111,6 +112,7 @@ class HierarchicalSupConLoss(nn.Module):
         self.power = power
         self.min_weight = min_weight
         self.intragroup_only = intragroup_only
+        self.class_averaging = class_averaging
         self._has_matrix = False
 
         if dist_matrix_path is not None and cwe_vocab is not None:
@@ -336,5 +338,16 @@ class HierarchicalSupConLoss(nn.Module):
 
         n_pos = weights.sum(dim=1).clamp(min=1e-8)             # [A]
         per_anchor = -(weights * log_prob).sum(dim=1) / n_pos  # [A]
+
+        if self.class_averaging:
+            # BCL class-averaging: mean per class, then mean across classes.
+            # Each CWE contributes equally regardless of its batch frequency.
+            l_anc_hp = l_anc[has_pos]          # [A'] class labels for valid anchors
+            pa_hp    = per_anchor[has_pos]      # [A'] per-anchor losses
+            unique_cls = l_anc_hp.unique()
+            class_losses = torch.stack([
+                pa_hp[l_anc_hp == c].mean() for c in unique_cls
+            ])
+            return class_losses.mean()
 
         return per_anchor[has_pos].mean()
