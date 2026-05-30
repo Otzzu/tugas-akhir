@@ -67,7 +67,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
     def __init__(self, pretrained_lm="microsoft/unixcoder-base", func_lm="",
                  in_channels=NODE_FEAT_DIM, hidden_dim=256, num_layers=4,
                  dropout=0.3, num_classes=11, num_heads=4, edge_dim=7,
-                 add_self_loops=False, use_skip=False, matryoshka_dim=None,
+                 add_self_loops=False, use_skip=False, gnn_block_style="resnet",
+                 matryoshka_dim=None,
                  func_chunk_size=0, func_chunk_stride=0,
                  localization_encoder="gnn", use_flash_attention=False, compile_lm=False,
                  use_grad_checkpoint=True,
@@ -127,6 +128,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             gnn_model, in_channels, hidden_dim, num_layers, dropout,
             num_heads=num_heads, edge_dim=edge_dim, add_self_loops=add_self_loops,
             use_skip=use_skip, num_relations=num_relations, num_bases=num_bases,
+            block_style=gnn_block_style,
         )
         # Graph-level pooling: mean | meanmax | attention | dualflow | cnn
         assert graph_pool in ("mean", "meanmax", "attention", "dualflow", "cnn"), \
@@ -278,6 +280,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             edge_dim=getattr(cfg.model, "edge_dim", 7),
             add_self_loops=getattr(cfg.model, "add_self_loops", False),
             use_skip=getattr(cfg.model, "use_skip", False),
+            gnn_block_style=getattr(cfg.model, "gnn_block_style", "resnet"),
             matryoshka_dim=getattr(cfg.model, "matryoshka_dim", None),
             func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
             func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),

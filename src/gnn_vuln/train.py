@@ -142,6 +142,18 @@ class TrainingSession:
         total_steps = len(train_loader) * cfg.train.epochs
         optimizer, scheduler, step_per_batch = build_optimizer_and_scheduler(model, cfg, total_steps)
 
+        # ULMFiT gradual unfreezing (optional). When schedule is non-empty,
+        # all LM layers are frozen up-front and progressively unfrozen by epoch.
+        unfreezer = None
+        _unfreeze_schedule = getattr(cfg.train, "lm_unfreeze_schedule", []) or []
+        if _unfreeze_schedule and hasattr(model, "codebert") and model.has_live_lm():
+            from gnn_vuln.training.unfreezer import GradualUnfreezer
+            unfreezer = GradualUnfreezer(model.codebert, _unfreeze_schedule)
+            logger.info(
+                f"Gradual unfreezing enabled: schedule={_unfreeze_schedule} | "
+                f"{unfreezer.n_layers} LM layers detected"
+            )
+
         # EDAT adversarial training setup
         pgd = pgd_tokenizer = None
         if getattr(cfg.train, "use_edat", False):
@@ -210,7 +222,7 @@ class TrainingSession:
             trainer, train_loader, val_loader, test_loader,
             cm, class_weight, train_counts, stop_on_f1,
             best_val_f1, best_val_loss, patience_counter, start_epoch,
-            step_per_batch, optimizer, scheduler,
+            step_per_batch, optimizer, scheduler, unfreezer,
         )
 
     # ------------------------------------------------------------------
@@ -432,7 +444,7 @@ class TrainingSession:
         self, trainer, train_loader, val_loader, test_loader,
         cm: CheckpointManager, class_weight, train_counts,
         stop_on_f1, best_val_f1, best_val_loss, patience_counter, start_epoch,
-        step_per_batch, optimizer, scheduler,
+        step_per_batch, optimizer, scheduler, unfreezer=None,
     ) -> None:
         cfg = self.cfg
         save_last_every = getattr(cfg.train, "save_last_every", 1)
@@ -440,6 +452,10 @@ class TrainingSession:
         epoch_log: list[dict] = []
 
         for epoch in range(start_epoch, cfg.train.epochs + 1):
+            if unfreezer is not None:
+                msg = unfreezer.step(epoch)
+                if msg:
+                    logger.info(msg)
             if self._use_epoch_adaptive and train_counts is not None:
                 class_weight = epoch_adaptive_class_weights(
                     train_counts, epoch, cfg.train.epochs, cfg.model.num_classes, self.device

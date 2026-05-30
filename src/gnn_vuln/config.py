@@ -188,6 +188,13 @@ class TrainConfig:
     batch_size: int = 32
     lr: float = 1e-3
     lm_lr: float = 2e-5         # CodeBERT learning rate for lmgat_ft / lmgat_mc
+    # ULMFiT-style fine-tuning (Howard & Ruder 2018). Both work independently or together.
+    # LLRD: lr for transformer layer i = lm_lr * lm_llrd_decay^(N-1-i) where N = #layers
+    # → top layer ≈ lm_lr, bottom layer ≈ lm_lr * decay^(N-1). 1.0 = disabled (uniform).
+    lm_llrd_decay: float = 1.0
+    # Gradual unfreezing: schedule = [[start_epoch, n_top_layers_unfrozen | "all"], ...]
+    # Below first scheduled epoch: head only. Pass [] to disable.
+    lm_unfreeze_schedule: list = field(default_factory=list)
     warmup_ratio: float = 0.0   # fraction of total steps for linear warmup (0 = disabled)
     grad_clip: float = 0.0      # gradient clipping max norm (0 = disabled)
     weight_decay: float = 1e-4

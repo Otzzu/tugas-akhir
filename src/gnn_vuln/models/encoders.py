@@ -30,6 +30,10 @@ class GATEncoder(nn.Module):
     """
     Stack of GATv2Conv layers with BatchNorm + ReLU + Dropout.
     Optional residual skip connections.
+
+    block_style:
+      - "resnet"   (legacy default): Conv → BN → +residual → ReLU → Dropout
+      - "gnn_plus" (Luo 2025 ICML SOTA): Conv → BN → ReLU → Dropout → +residual
     """
 
     def __init__(
@@ -43,10 +47,14 @@ class GATEncoder(nn.Module):
         add_self_loops: bool = False,
         use_skip: bool = False,
         fill_value: float = 0.0,
+        block_style: str = "resnet",
     ):
         super().__init__()
+        assert block_style in ("resnet", "gnn_plus"), \
+            f"block_style must be 'resnet' or 'gnn_plus', got {block_style!r}"
         self.dropout = dropout
         self.use_skip = use_skip
+        self.block_style = block_style
 
         self.convs = nn.ModuleList()
         self.bns = nn.ModuleList()
@@ -81,8 +89,14 @@ class GATEncoder(nn.Module):
             residual = self.res_projs[i](x) if self.use_skip else None
             x = conv(x, edge_index, edge_attr=edge_attr)
             x = bn(x)
-            x = F.relu(x + residual) if residual is not None else F.relu(x)
-            x = F.dropout(x, p=self.dropout, training=self.training)
+            if self.block_style == "gnn_plus":
+                x = F.relu(x)
+                x = F.dropout(x, p=self.dropout, training=self.training)
+                if residual is not None:
+                    x = x + residual
+            else:
+                x = F.relu(x + residual) if residual is not None else F.relu(x)
+                x = F.dropout(x, p=self.dropout, training=self.training)
         return x
 
 
@@ -300,6 +314,7 @@ def build_gnn_encoder(
     use_skip: bool = False,
     num_relations: int = NUM_EDGE_TYPES,
     num_bases: int | None = None,
+    block_style: str = "resnet",
 ) -> nn.Module:
     """Build a GNN encoder by name. All encoders share forward(x, edge_index, edge_attr).
 
@@ -308,11 +323,13 @@ def build_gnn_encoder(
     gin  — GINEConv    (uses edge_dim)
     rgcn — RGCNConv    (uses num_relations, num_bases)
     ggnn — GatedGraphConv (edge-agnostic)
+
+    block_style: "resnet" (legacy) or "gnn_plus" (Luo 2025) — currently only GAT supports.
     """
     m = gnn_model.lower()
     if m == "gat":
         return GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout,
-                          edge_dim, add_self_loops, use_skip)
+                          edge_dim, add_self_loops, use_skip, block_style=block_style)
     if m == "gcn":
         return GCNEncoder(in_channels, hidden_dim, num_layers, dropout,
                           add_self_loops, use_skip)
