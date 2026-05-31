@@ -79,7 +79,11 @@ class LocalizationExtractor:
         )
 
     def _forward(self, batch, node_line, edge_attr):
-        rwse = getattr(batch, "rwse", None)
+        # Only read rwse if encoder uses PE — avoids PyG batch issues for non-PE configs.
+        rwse = None
+        _enc = getattr(self.model, "encoder", None)
+        if _enc is not None and getattr(_enc, "use_pe", False):
+            rwse = getattr(batch, "rwse", None)
         if hasattr(self.model, "codebert"):
             func_input_ids      = getattr(batch, "func_input_ids", None)
             func_attention_mask = getattr(batch, "func_attention_mask", None)

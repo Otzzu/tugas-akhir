@@ -157,7 +157,12 @@ class Trainer:
         """
         node_line  = getattr(batch, "node_line",  None)
         edge_attr  = getattr(batch, "edge_attr",  None)
-        rwse       = getattr(batch, "rwse",       None)
+        # Only pass rwse if model's GNN encoder actually uses PE — avoid PyG batch
+        # confusion for configs that don't enable PE but share dataset with PE configs.
+        rwse = None
+        _enc = getattr(self.model, "encoder", None)
+        if _enc is not None and getattr(_enc, "use_pe", False):
+            rwse = getattr(batch, "rwse", None)
 
         if hasattr(self.model, "codebert"):
             func_ids        = getattr(batch, "func_input_ids",      None)
