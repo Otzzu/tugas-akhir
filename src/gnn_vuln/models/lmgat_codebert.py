@@ -68,6 +68,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  in_channels=NODE_FEAT_DIM, hidden_dim=256, num_layers=4,
                  dropout=0.3, num_classes=11, num_heads=4, edge_dim=7,
                  add_self_loops=False, use_skip=False, gnn_block_style="resnet",
+                 gnn_norm_type="batch", gnn_activation="relu",
                  matryoshka_dim=None,
                  func_chunk_size=0, func_chunk_stride=0,
                  localization_encoder="gnn", use_flash_attention=False, compile_lm=False,
@@ -129,6 +130,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             num_heads=num_heads, edge_dim=edge_dim, add_self_loops=add_self_loops,
             use_skip=use_skip, num_relations=num_relations, num_bases=num_bases,
             block_style=gnn_block_style,
+            norm_type=gnn_norm_type, activation=gnn_activation,
         )
         # Graph-level pooling: mean | meanmax | attention | dualflow | cnn
         assert graph_pool in ("mean", "meanmax", "attention", "dualflow", "cnn"), \
@@ -175,7 +177,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                 func_input_ids=None, func_attention_mask=None,
                 func_token_lines=None,
                 func_line_cls=None, func_line_ids=None, func_line_cls_batch=None):
-        h = self.encoder(x, edge_index, edge_attr)
+        h = self.encoder(x, edge_index, edge_attr, batch=batch)
         if self._graph_pool == "attention":
             h_graph = self.attn_pool(h, batch)
         elif self._graph_pool == "meanmax":
@@ -281,6 +283,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             add_self_loops=getattr(cfg.model, "add_self_loops", False),
             use_skip=getattr(cfg.model, "use_skip", False),
             gnn_block_style=getattr(cfg.model, "gnn_block_style", "resnet"),
+            gnn_norm_type=getattr(cfg.model, "gnn_norm_type", "batch"),
+            gnn_activation=getattr(cfg.model, "gnn_activation", "relu"),
             matryoshka_dim=getattr(cfg.model, "matryoshka_dim", None),
             func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
             func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),

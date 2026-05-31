@@ -6,6 +6,25 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GATv2Conv, GCNConv, GINEConv, GatedGraphConv, RGCNConv
+from torch_geometric.nn.norm import GraphNorm
+
+
+def _build_norm(norm_type: str, hidden_dim: int) -> nn.Module:
+    """Build per-layer normalization. 'batch' (default) or 'graph' (Cai 2021 ICML)."""
+    if norm_type == "graph":
+        return GraphNorm(hidden_dim)
+    if norm_type == "batch":
+        return nn.BatchNorm1d(hidden_dim)
+    raise ValueError(f"norm_type must be 'batch' or 'graph', got {norm_type!r}")
+
+
+def _activation(act: str) -> callable:
+    """Pick activation. 'relu' (default) or 'elu' (original GAT 2018)."""
+    if act == "relu":
+        return F.relu
+    if act == "elu":
+        return F.elu
+    raise ValueError(f"activation must be 'relu' or 'elu', got {act!r}")
 
 # CPG edge types: AST, CFG, CDG, DDG, PDG, CALL, REACHING_DEF
 NUM_EDGE_TYPES = 7
@@ -28,12 +47,18 @@ def _build_res_projs(
 
 class GATEncoder(nn.Module):
     """
-    Stack of GATv2Conv layers with BatchNorm + ReLU + Dropout.
+    Stack of GATv2Conv layers with Norm + Activation + Dropout.
     Optional residual skip connections.
 
     block_style:
-      - "resnet"   (legacy default): Conv → BN → +residual → ReLU → Dropout
-      - "gnn_plus" (Luo 2025 ICML SOTA): Conv → BN → ReLU → Dropout → +residual
+      - "resnet"   (legacy default): Conv → Norm → +residual → Act → Dropout
+      - "gnn_plus" (Luo 2025 ICML SOTA): Conv → Norm → Act → Dropout → +residual
+    norm_type:
+      - "batch" (default) — BatchNorm1d
+      - "graph" — GraphNorm (Cai 2021 ICML, per-graph normalization, needs batch index)
+    activation:
+      - "relu" (default) — ReLU
+      - "elu" — ELU (original GAT 2018 activation)
     """
 
     def __init__(
@@ -48,6 +73,8 @@ class GATEncoder(nn.Module):
         use_skip: bool = False,
         fill_value: float = 0.0,
         block_style: str = "resnet",
+        norm_type: str = "batch",
+        activation: str = "relu",
     ):
         super().__init__()
         assert block_style in ("resnet", "gnn_plus"), \
@@ -55,6 +82,9 @@ class GATEncoder(nn.Module):
         self.dropout = dropout
         self.use_skip = use_skip
         self.block_style = block_style
+        self.norm_type = norm_type
+        self.act_fn = _activation(activation)
+        self._needs_batch = (norm_type == "graph")
 
         self.convs = nn.ModuleList()
         self.bns = nn.ModuleList()
@@ -65,7 +95,7 @@ class GATEncoder(nn.Module):
                 add_self_loops=add_self_loops, fill_value=fill_value,
             )
         )
-        self.bns.append(nn.BatchNorm1d(hidden_dim))
+        self.bns.append(_build_norm(norm_type, hidden_dim))
         for _ in range(num_layers - 1):
             self.convs.append(
                 GATv2Conv(
@@ -74,7 +104,7 @@ class GATEncoder(nn.Module):
                     add_self_loops=add_self_loops, fill_value=fill_value,
                 )
             )
-            self.bns.append(nn.BatchNorm1d(hidden_dim))
+            self.bns.append(_build_norm(norm_type, hidden_dim))
 
         if use_skip:
             self.res_projs = _build_res_projs(in_channels, hidden_dim, num_layers)
@@ -84,18 +114,19 @@ class GATEncoder(nn.Module):
         x: torch.Tensor,
         edge_index: torch.Tensor,
         edge_attr: torch.Tensor | None = None,
+        batch: torch.Tensor | None = None,
     ) -> torch.Tensor:
         for i, (conv, bn) in enumerate(zip(self.convs, self.bns)):
             residual = self.res_projs[i](x) if self.use_skip else None
             x = conv(x, edge_index, edge_attr=edge_attr)
-            x = bn(x)
+            x = bn(x, batch) if self._needs_batch else bn(x)
             if self.block_style == "gnn_plus":
-                x = F.relu(x)
+                x = self.act_fn(x)
                 x = F.dropout(x, p=self.dropout, training=self.training)
                 if residual is not None:
                     x = x + residual
             else:
-                x = F.relu(x + residual) if residual is not None else F.relu(x)
+                x = self.act_fn(x + residual) if residual is not None else self.act_fn(x)
                 x = F.dropout(x, p=self.dropout, training=self.training)
         return x
 
@@ -315,6 +346,8 @@ def build_gnn_encoder(
     num_relations: int = NUM_EDGE_TYPES,
     num_bases: int | None = None,
     block_style: str = "resnet",
+    norm_type: str = "batch",
+    activation: str = "relu",
 ) -> nn.Module:
     """Build a GNN encoder by name. All encoders share forward(x, edge_index, edge_attr).
 
@@ -329,7 +362,8 @@ def build_gnn_encoder(
     m = gnn_model.lower()
     if m == "gat":
         return GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout,
-                          edge_dim, add_self_loops, use_skip, block_style=block_style)
+                          edge_dim, add_self_loops, use_skip,
+                          block_style=block_style, norm_type=norm_type, activation=activation)
     if m == "gcn":
         return GCNEncoder(in_channels, hidden_dim, num_layers, dropout,
                           add_self_loops, use_skip)
