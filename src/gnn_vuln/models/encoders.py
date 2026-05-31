@@ -7,6 +7,33 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GATv2Conv, GCNConv, GINEConv, GatedGraphConv, RGCNConv
 from torch_geometric.nn.norm import GraphNorm
+from torch_geometric.utils import degree, to_torch_csr_tensor
+
+
+def _compute_rwse(edge_index: torch.Tensor, num_nodes: int, walk_length: int = 16) -> torch.Tensor:
+    """Random Walk Structural Encoding (Dwivedi 2022, used in GNN+ 2025).
+    Returns [N, walk_length] tensor: diagonal of (D^-1 A)^k for k=1..walk_length.
+    Each row = probability of returning to start node after k steps.
+    """
+    device = edge_index.device
+    row, col = edge_index[0], edge_index[1]
+    deg_inv = 1.0 / degree(row, num_nodes=num_nodes).clamp(min=1.0)
+    # Build sparse D^-1 A as edge weights (CSR for efficient mm)
+    edge_w = deg_inv[row]
+    adj = torch.sparse_coo_tensor(edge_index, edge_w, size=(num_nodes, num_nodes), device=device).coalesce()
+    pe = torch.zeros(num_nodes, walk_length, device=device)
+    # Iteratively: M_k = (D^-1 A)^k. Track diagonal each step.
+    M_k = adj
+    for k in range(walk_length):
+        # diag(M_k) — sum over output index for entries where row == col
+        idx = M_k.indices()
+        vals = M_k.values()
+        self_mask = idx[0] == idx[1]
+        if self_mask.any():
+            pe[idx[0][self_mask], k] = vals[self_mask]
+        if k < walk_length - 1:
+            M_k = torch.sparse.mm(M_k, adj).coalesce()
+    return pe
 
 
 def _build_norm(norm_type: str, hidden_dim: int) -> nn.Module:
@@ -77,6 +104,9 @@ class GATEncoder(nn.Module):
         activation: str = "relu",
         use_ffn: bool = False,
         ffn_expansion: int = 2,
+        use_pe: bool = False,
+        pe_walk_length: int = 16,
+        pe_dim: int = 28,
     ):
         super().__init__()
         assert block_style in ("resnet", "gnn_plus"), \
@@ -88,12 +118,23 @@ class GATEncoder(nn.Module):
         self.act_fn = _activation(activation)
         self._needs_batch = (norm_type == "graph")
         self.use_ffn = use_ffn
+        self.use_pe = use_pe
+        self.pe_walk_length = pe_walk_length
+
+        # PE encoder (GNN+ 2025 RWSE): random walk PE → BN → Linear → dim_pe.
+        # Concatenated to node features before first conv. Increases in_channels by pe_dim.
+        if use_pe:
+            self.pe_raw_norm = nn.BatchNorm1d(pe_walk_length)
+            self.pe_encoder = nn.Linear(pe_walk_length, pe_dim)
+            in_channels_eff = in_channels + pe_dim
+        else:
+            in_channels_eff = in_channels
 
         self.convs = nn.ModuleList()
         self.bns = nn.ModuleList()
         self.convs.append(
             GATv2Conv(
-                in_channels, hidden_dim, heads=num_heads, concat=False,
+                in_channels_eff, hidden_dim, heads=num_heads, concat=False,
                 dropout=dropout, edge_dim=edge_dim,
                 add_self_loops=add_self_loops, fill_value=fill_value,
             )
@@ -110,15 +151,17 @@ class GATEncoder(nn.Module):
             self.bns.append(_build_norm(norm_type, hidden_dim))
 
         if use_skip:
-            self.res_projs = _build_res_projs(in_channels, hidden_dim, num_layers)
+            self.res_projs = _build_res_projs(in_channels_eff, hidden_dim, num_layers)
 
-        # Per-layer FFN block (GNN+ 2025): FFN(h) = Norm(act(h·W1)·W2 + h)
-        # Internal residual: act(h·W1)·W2 then + h, then norm at end.
+        # Per-layer FFN block (GNN+ 2025 — matches official github.com/LUOyk1999/GNNPlus _ff_block).
+        # Block: BN(norm1) → [Linear → Act → Drop → Linear → Drop] → +residual → BN(norm2)
+        # 2x expansion (W1: D→2D, W2: 2D→D). Three BNs total per layer when FFN is on.
         if use_ffn:
             ffn_dim = hidden_dim * ffn_expansion
             self.ffn_w1 = nn.ModuleList([nn.Linear(hidden_dim, ffn_dim) for _ in range(num_layers)])
             self.ffn_w2 = nn.ModuleList([nn.Linear(ffn_dim, hidden_dim) for _ in range(num_layers)])
-            self.ffn_norms = nn.ModuleList([_build_norm(norm_type, hidden_dim) for _ in range(num_layers)])
+            self.ffn_norm1 = nn.ModuleList([_build_norm(norm_type, hidden_dim) for _ in range(num_layers)])
+            self.ffn_norm2 = nn.ModuleList([_build_norm(norm_type, hidden_dim) for _ in range(num_layers)])
 
     def forward(
         self,
@@ -127,6 +170,12 @@ class GATEncoder(nn.Module):
         edge_attr: torch.Tensor | None = None,
         batch: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        # PE: compute Random Walk Structural Encoding on-the-fly, project, concat to x.
+        if self.use_pe:
+            pe = _compute_rwse(edge_index, x.size(0), walk_length=self.pe_walk_length)
+            pe = self.pe_raw_norm(pe)
+            pe = self.pe_encoder(pe)
+            x = torch.cat([x, pe], dim=-1)
         for i, (conv, bn) in enumerate(zip(self.convs, self.bns)):
             residual = self.res_projs[i](x) if self.use_skip else None
             x = conv(x, edge_index, edge_attr=edge_attr)
@@ -139,11 +188,16 @@ class GATEncoder(nn.Module):
             else:
                 x = self.act_fn(x + residual) if residual is not None else self.act_fn(x)
                 x = F.dropout(x, p=self.dropout, training=self.training)
-            # FFN sub-block (GNN+ 2025): h → Linear → act → Linear → +h → Norm
+            # FFN sub-block (GNN+ 2025, matches official _ff_block exactly):
+            # x → BN(norm1) → [Linear1 → Act → Drop → Linear2 → Drop] → +x → BN(norm2)
             if self.use_ffn:
-                h = self.ffn_w2[i](self.act_fn(self.ffn_w1[i](x)))
-                h = h + x
-                x = self.ffn_norms[i](h, batch) if self._needs_batch else self.ffn_norms[i](h)
+                x = self.ffn_norm1[i](x, batch) if self._needs_batch else self.ffn_norm1[i](x)
+                ff = self.act_fn(self.ffn_w1[i](x))
+                ff = F.dropout(ff, p=self.dropout, training=self.training)
+                ff = self.ffn_w2[i](ff)
+                ff = F.dropout(ff, p=self.dropout, training=self.training)
+                x = x + ff
+                x = self.ffn_norm2[i](x, batch) if self._needs_batch else self.ffn_norm2[i](x)
         return x
 
 
@@ -366,6 +420,9 @@ def build_gnn_encoder(
     activation: str = "relu",
     use_ffn: bool = False,
     ffn_expansion: int = 2,
+    use_pe: bool = False,
+    pe_walk_length: int = 16,
+    pe_dim: int = 28,
 ) -> nn.Module:
     """Build a GNN encoder by name. All encoders share forward(x, edge_index, edge_attr).
 
@@ -382,7 +439,8 @@ def build_gnn_encoder(
         return GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout,
                           edge_dim, add_self_loops, use_skip,
                           block_style=block_style, norm_type=norm_type, activation=activation,
-                          use_ffn=use_ffn, ffn_expansion=ffn_expansion)
+                          use_ffn=use_ffn, ffn_expansion=ffn_expansion,
+                          use_pe=use_pe, pe_walk_length=pe_walk_length, pe_dim=pe_dim)
     if m == "gcn":
         return GCNEncoder(in_channels, hidden_dim, num_layers, dropout,
                           add_self_loops, use_skip)

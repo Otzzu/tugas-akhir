@@ -68,4 +68,4 @@ rclone*/
 secret.txt
 *.secret
 
-.kiro/
+.kiro/src/GNNPlus/
