@@ -53,6 +53,48 @@ def _activation(act: str) -> callable:
         return F.elu
     raise ValueError(f"activation must be 'relu' or 'elu', got {act!r}")
 
+
+@torch.no_grad()
+def apply_balanced_init(layers, beta: float = 2.0) -> None:
+    """Mustafa et al. NeurIPS 2023 'Are GATs Out of Balance?' — Procedure 2.6.
+
+    Approximated BalO for GATv2Conv layers:
+      1. Zero attention vector a^l for all layers l (Xav+ZeroAtt)
+      2. Apply orthogonal init to lin_l / lin_r weights (LL-Ortho base)
+      3. Scale first layer row norms to sqrt(beta) (default beta=2.0)
+      4. Balance inter-layer per-neuron norms (simplified: skip for multi-head GAT
+         due to shape complexity — Xav+Bal approximation still effective)
+
+    Paper showed BalO → 80.2% Cora vs Xavier 39.3% at L=10.
+    """
+    if not layers:
+        return
+    for conv in layers:
+        # Zero ALL attention parameters (handles GATConv 'att_src/dst' and GATv2Conv 'att')
+        for attr in ("att", "att_src", "att_dst", "att_l", "att_r"):
+            if hasattr(conv, attr):
+                p = getattr(conv, attr)
+                if isinstance(p, nn.Parameter):
+                    p.zero_()
+        # Orthogonal init for linear weights (LL-Ortho base)
+        for lin_name in ("lin", "lin_l", "lin_r", "lin_src", "lin_dst", "lin_edge"):
+            if hasattr(conv, lin_name):
+                lin = getattr(conv, lin_name)
+                if lin is not None and hasattr(lin, "weight") and lin.weight is not None:
+                    nn.init.orthogonal_(lin.weight)
+                    if hasattr(lin, "bias") and lin.bias is not None:
+                        lin.bias.zero_()
+    # Step 3: Scale first layer row norms to sqrt(beta)
+    first = layers[0]
+    for lin_name in ("lin_l", "lin_r"):
+        if hasattr(first, lin_name):
+            lin = getattr(first, lin_name)
+            if lin is None or not hasattr(lin, "weight"):
+                continue
+            W = lin.weight  # [out, in]
+            norms = W.norm(dim=1, keepdim=True).clamp(min=1e-6)
+            W.copy_(W / norms * (beta ** 0.5))
+
 # CPG edge types: AST, CFG, CDG, DDG, PDG, CALL, REACHING_DEF
 NUM_EDGE_TYPES = 7
 
@@ -107,6 +149,8 @@ class GATEncoder(nn.Module):
         use_pe: bool = False,
         pe_walk_length: int = 16,
         pe_dim: int = 28,
+        balanced_init: bool = False,
+        balanced_init_beta: float = 2.0,
     ):
         super().__init__()
         assert block_style in ("resnet", "gnn_plus"), \
@@ -152,6 +196,11 @@ class GATEncoder(nn.Module):
 
         if use_skip:
             self.res_projs = _build_res_projs(in_channels_eff, hidden_dim, num_layers)
+
+        # Apply Mustafa NeurIPS 2023 balanced init AFTER all layers built but BEFORE FFN add.
+        # Zeros attention vectors + orthogonal init + sqrt(beta) first-layer row scaling.
+        if balanced_init:
+            apply_balanced_init(self.convs, beta=balanced_init_beta)
 
         # Per-layer FFN block (GNN+ 2025 — matches official github.com/LUOyk1999/GNNPlus _ff_block).
         # Block: BN(norm1) → [Linear → Act → Drop → Linear → Drop] → +residual → BN(norm2)
@@ -425,6 +474,8 @@ def build_gnn_encoder(
     use_pe: bool = False,
     pe_walk_length: int = 16,
     pe_dim: int = 28,
+    balanced_init: bool = False,
+    balanced_init_beta: float = 2.0,
 ) -> nn.Module:
     """Build a GNN encoder by name. All encoders share forward(x, edge_index, edge_attr).
 
@@ -442,7 +493,8 @@ def build_gnn_encoder(
                           edge_dim, add_self_loops, use_skip,
                           block_style=block_style, norm_type=norm_type, activation=activation,
                           use_ffn=use_ffn, ffn_expansion=ffn_expansion,
-                          use_pe=use_pe, pe_walk_length=pe_walk_length, pe_dim=pe_dim)
+                          use_pe=use_pe, pe_walk_length=pe_walk_length, pe_dim=pe_dim,
+                          balanced_init=balanced_init, balanced_init_beta=balanced_init_beta)
     if m == "gcn":
         return GCNEncoder(in_channels, hidden_dim, num_layers, dropout,
                           add_self_loops, use_skip)

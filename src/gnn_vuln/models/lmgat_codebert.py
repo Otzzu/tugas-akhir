@@ -71,6 +71,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  gnn_norm_type="batch", gnn_activation="relu",
                  gnn_use_ffn=False, gnn_ffn_expansion=2,
                  gnn_use_pe=False, gnn_pe_walk_length=16, gnn_pe_dim=28,
+                 gnn_balanced_init=False, gnn_balanced_init_beta=2.0,
                  matryoshka_dim=None,
                  func_chunk_size=0, func_chunk_stride=0,
                  localization_encoder="gnn", use_flash_attention=False, compile_lm=False,
@@ -135,6 +136,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             norm_type=gnn_norm_type, activation=gnn_activation,
             use_ffn=gnn_use_ffn, ffn_expansion=gnn_ffn_expansion,
             use_pe=gnn_use_pe, pe_walk_length=gnn_pe_walk_length, pe_dim=gnn_pe_dim,
+            balanced_init=gnn_balanced_init, balanced_init_beta=gnn_balanced_init_beta,
         )
         # Graph-level pooling: mean | meanmax | attention | dualflow | cnn
         assert graph_pool in ("mean", "meanmax", "attention", "dualflow", "cnn"), \
@@ -295,6 +297,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             gnn_use_pe=getattr(cfg.model, "gnn_use_pe", False),
             gnn_pe_walk_length=getattr(cfg.model, "gnn_pe_walk_length", 16),
             gnn_pe_dim=getattr(cfg.model, "gnn_pe_dim", 28),
+            gnn_balanced_init=getattr(cfg.model, "gnn_balanced_init", False),
+            gnn_balanced_init_beta=getattr(cfg.model, "gnn_balanced_init_beta", 2.0),
             matryoshka_dim=getattr(cfg.model, "matryoshka_dim", None),
             func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
             func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),

@@ -554,6 +554,7 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N6  | `20260531_033903_lmgat_codebert_multiclass` | `N6_a1_l1_gnn_plus_graphnorm.yaml`     | meanmax    | true     | gnn_plus + GraphNorm       |
 | N7  | `20260531_042425_lmgat_codebert_multiclass` | `N7_a1_l1_gnn_plus_elu.yaml`           | meanmax    | true     | gnn_plus + ELU             |
 | N8  | `20260531_064326_lmgat_codebert_multiclass` | `N8_a1_l1_gnn_plus_graphnorm_elu.yaml` | meanmax    | true     | gnn_plus + GraphNorm + ELU |
+| N9  | `20260531_081742_lmgat_codebert_multiclass` | `N9_a1_l1_gnn_plus_elu_ffn.yaml`       | meanmax    | true     | gnn_plus + ELU + FFN       |
 
 ## Classification
 
@@ -567,6 +568,7 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N6  | **0.531** | 0.447     | 0.509     | 0.509     | **0.903** | 0.471 | 55     |
 | N7  | 0.505     | 0.450     | **0.510** | **0.511** | 0.902     | 0.482 | 55     |
 | N8  | 0.492     | **0.469** | 0.493     | 0.489     | 0.893     | 0.524 | 44     |
+| N9  | 0.479     | 0.391     | 0.445     | 0.454     | 0.863     | 0.368 | 72     |
 
 ## Statement-Level Localization
 
@@ -578,8 +580,9 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N4  | 1.672     | 0.714     | 0.931     | 0.242     | 0.449      | 0.033         |
 | N5  | 0.697     | 0.835     | 0.969     | 0.257     | 0.478      | 0.032         |
 | N6  | 0.654     | 0.829     | 0.965     | 0.248     | 0.480      | 0.029         |
-| N7  | **0.474** | **0.918** | **0.985** | **0.274** | **0.485**  | **0.023**     |
+| N7  | 0.474     | 0.918     | **0.985** | **0.274** | **0.485**  | **0.023**     |
 | N8  | 0.543     | 0.861     | 0.974     | 0.262     | 0.480      | 0.029         |
+| N9  | **0.372** | **0.930** | **0.985** | 0.255     | 0.468      | 0.027         |
 
 ---
 
@@ -630,3 +633,4 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N6 N5+GraphNorm       | RTX A4500       | 3.7M   | 49s        | 0.75            | 9.5 GB    |
 | N7 N5+ELU             | RTX A4500       | 3.7M   | 47s        | 0.72            | 9.3 GB    |
 | N8 N5+GraphNorm+ELU   | RTX A4500       | 3.7M   | 50s        | 0.61            | 10.7 GB   |
+| N9 N7+FFN             | RTX A4500       | 4.8M   | 50s        | 1.01            | 10.3 GB   |
