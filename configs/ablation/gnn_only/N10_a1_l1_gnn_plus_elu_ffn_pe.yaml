@@ -1,12 +1,13 @@
 # Local GNN-only N10 — N9 + Random Walk Structural Encoding (RWSE) PE.
 # Base: N9 (meanmax + use_skip + gnn_plus + ELU + FFN). Full GNN+ 2025 arch with PE.
-# PE: random walk landing probabilities length 16, projected to 28 dim, concat to input.
-# Matches GNN+ Table 8-13 RWSE setting (paper uses RWSE-32; we use 16 for speed).
+# PE: random walk landing probs length 32, projected to 28 dim, concat to input.
+# Matches GNN+ paper RWSE-32 default (ZINC, PATTERN, Peptides). Our graphs avg 334 nodes
+# (larger than molhiv 26, closer to Peptides 150) → longer walks needed.
 #
 # Precompute step (once per dataset, before first training):
-#   uv run python scripts/precompute_rwse.py \
+#   PYTHONPATH=src python scripts/precompute_rwse.py \
 #     --graphs-dir data/processed/lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42_graphs \
-#     --walk-length 16
+#     --walk-length 32
 #
 # If `data.rwse` attribute missing at runtime, encoder falls back to on-the-fly compute (slow).
 #
@@ -50,7 +51,7 @@ model:
   gnn_use_ffn: true
   gnn_ffn_expansion: 2
   gnn_use_pe: true
-  gnn_pe_walk_length: 16
+  gnn_pe_walk_length: 32
   gnn_pe_dim: 28
 
 train:
