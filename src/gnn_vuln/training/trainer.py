@@ -157,6 +157,7 @@ class Trainer:
         """
         node_line  = getattr(batch, "node_line",  None)
         edge_attr  = getattr(batch, "edge_attr",  None)
+        rwse       = getattr(batch, "rwse",       None)
 
         if hasattr(self.model, "codebert"):
             func_ids        = getattr(batch, "func_input_ids",      None)
@@ -171,9 +172,10 @@ class Trainer:
                 func_line_cls=func_line_cls,
                 func_line_ids=func_line_ids,
                 func_line_cls_batch=func_line_cls_b,
+                rwse=rwse,
             )
         else:
-            out = self.model(batch.x, batch.edge_index, batch.batch, node_line, edge_attr)
+            out = self.model(batch.x, batch.edge_index, batch.batch, node_line, edge_attr, rwse=rwse)
 
         # Unpack return tuple
         if len(out) == 5:

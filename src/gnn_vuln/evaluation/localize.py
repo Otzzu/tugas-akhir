@@ -79,6 +79,7 @@ class LocalizationExtractor:
         )
 
     def _forward(self, batch, node_line, edge_attr):
+        rwse = getattr(batch, "rwse", None)
         if hasattr(self.model, "codebert"):
             func_input_ids      = getattr(batch, "func_input_ids", None)
             func_attention_mask = getattr(batch, "func_attention_mask", None)
@@ -86,8 +87,9 @@ class LocalizationExtractor:
             return self.model(
                 batch.x, batch.edge_index, batch.batch, node_line, edge_attr,
                 func_input_ids, func_attention_mask, func_token_lines,
+                rwse=rwse,
             )
-        return self.model(batch.x, batch.edge_index, batch.batch, node_line, edge_attr)
+        return self.model(batch.x, batch.edge_index, batch.batch, node_line, edge_attr, rwse=rwse)
 
     @staticmethod
     def _unpack(out):

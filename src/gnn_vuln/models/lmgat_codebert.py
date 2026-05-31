@@ -180,8 +180,9 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
     def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
                 func_input_ids=None, func_attention_mask=None,
                 func_token_lines=None,
-                func_line_cls=None, func_line_ids=None, func_line_cls_batch=None):
-        h = self.encoder(x, edge_index, edge_attr, batch=batch)
+                func_line_cls=None, func_line_ids=None, func_line_cls_batch=None,
+                rwse=None):
+        h = self.encoder(x, edge_index, edge_attr, batch=batch, rwse=rwse)
         if self._graph_pool == "attention":
             h_graph = self.attn_pool(h, batch)
         elif self._graph_pool == "meanmax":

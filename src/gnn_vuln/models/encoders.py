@@ -169,11 +169,13 @@ class GATEncoder(nn.Module):
         edge_index: torch.Tensor,
         edge_attr: torch.Tensor | None = None,
         batch: torch.Tensor | None = None,
+        rwse: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        # PE: compute Random Walk Structural Encoding on-the-fly, project, concat to x.
+        # PE: prefer precomputed RWSE from dataset (batch.rwse). Fallback: compute on-the-fly.
         if self.use_pe:
-            pe = _compute_rwse(edge_index, x.size(0), walk_length=self.pe_walk_length)
-            pe = self.pe_raw_norm(pe)
+            if rwse is None:
+                rwse = _compute_rwse(edge_index, x.size(0), walk_length=self.pe_walk_length)
+            pe = self.pe_raw_norm(rwse)
             pe = self.pe_encoder(pe)
             x = torch.cat([x, pe], dim=-1)
         for i, (conv, bn) in enumerate(zip(self.convs, self.bns)):
