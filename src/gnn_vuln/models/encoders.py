@@ -75,6 +75,8 @@ class GATEncoder(nn.Module):
         block_style: str = "resnet",
         norm_type: str = "batch",
         activation: str = "relu",
+        use_ffn: bool = False,
+        ffn_expansion: int = 2,
     ):
         super().__init__()
         assert block_style in ("resnet", "gnn_plus"), \
@@ -85,6 +87,7 @@ class GATEncoder(nn.Module):
         self.norm_type = norm_type
         self.act_fn = _activation(activation)
         self._needs_batch = (norm_type == "graph")
+        self.use_ffn = use_ffn
 
         self.convs = nn.ModuleList()
         self.bns = nn.ModuleList()
@@ -109,6 +112,14 @@ class GATEncoder(nn.Module):
         if use_skip:
             self.res_projs = _build_res_projs(in_channels, hidden_dim, num_layers)
 
+        # Per-layer FFN block (GNN+ 2025): FFN(h) = Norm(act(h·W1)·W2 + h)
+        # Internal residual: act(h·W1)·W2 then + h, then norm at end.
+        if use_ffn:
+            ffn_dim = hidden_dim * ffn_expansion
+            self.ffn_w1 = nn.ModuleList([nn.Linear(hidden_dim, ffn_dim) for _ in range(num_layers)])
+            self.ffn_w2 = nn.ModuleList([nn.Linear(ffn_dim, hidden_dim) for _ in range(num_layers)])
+            self.ffn_norms = nn.ModuleList([_build_norm(norm_type, hidden_dim) for _ in range(num_layers)])
+
     def forward(
         self,
         x: torch.Tensor,
@@ -128,6 +139,11 @@ class GATEncoder(nn.Module):
             else:
                 x = self.act_fn(x + residual) if residual is not None else self.act_fn(x)
                 x = F.dropout(x, p=self.dropout, training=self.training)
+            # FFN sub-block (GNN+ 2025): h → Linear → act → Linear → +h → Norm
+            if self.use_ffn:
+                h = self.ffn_w2[i](self.act_fn(self.ffn_w1[i](x)))
+                h = h + x
+                x = self.ffn_norms[i](h, batch) if self._needs_batch else self.ffn_norms[i](h)
         return x
 
 
@@ -348,6 +364,8 @@ def build_gnn_encoder(
     block_style: str = "resnet",
     norm_type: str = "batch",
     activation: str = "relu",
+    use_ffn: bool = False,
+    ffn_expansion: int = 2,
 ) -> nn.Module:
     """Build a GNN encoder by name. All encoders share forward(x, edge_index, edge_attr).
 
@@ -363,7 +381,8 @@ def build_gnn_encoder(
     if m == "gat":
         return GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout,
                           edge_dim, add_self_loops, use_skip,
-                          block_style=block_style, norm_type=norm_type, activation=activation)
+                          block_style=block_style, norm_type=norm_type, activation=activation,
+                          use_ffn=use_ffn, ffn_expansion=ffn_expansion)
     if m == "gcn":
         return GCNEncoder(in_channels, hidden_dim, num_layers, dropout,
                           add_self_loops, use_skip)

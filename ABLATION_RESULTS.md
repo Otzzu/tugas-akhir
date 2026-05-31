@@ -544,27 +544,29 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 
 `configs/ablation/gnn_only/` — `live_lm=none` (no LM forward, GNN-only mode). Base = A1 + Phase 3 L1 loss settings (drop focal γ=0, label_smoothing=0.1, cosine, wd=1e-3, patience=15). Varies graph pooling, residual, GNN block order. Purpose: isolate GNN architectural effects without LM noise.
 
-| ID  | Run ID                                      | Config                             | graph_pool | use_skip | block_style          |
-| --- | ------------------------------------------- | ---------------------------------- | ---------- | -------- | -------------------- |
-| N1  | `20260530_194019_lmgat_codebert_multiclass` | `N1_a1_l1.yaml`                    | mean       | false    | resnet               |
-| N2  | `20260530_203000_lmgat_codebert_multiclass` | `N2_a1_l1_meanmax.yaml`            | meanmax    | false    | resnet               |
-| N3  | `20260530_213022_lmgat_codebert_multiclass` | `N3_a1_l1_cnn.yaml`                | cnn        | false    | resnet               |
-| N4  | `20260530_225801_lmgat_codebert_multiclass` | `N4_a1_l1_meanmax_residual.yaml`   | meanmax    | true     | resnet               |
-| N5  | `20260531_001117_lmgat_codebert_multiclass` | `N5_a1_l1_gnn_plus.yaml`           | meanmax    | true     | gnn_plus             |
-| N6  | `20260531_033903_lmgat_codebert_multiclass` | `N6_a1_l1_gnn_plus_graphnorm.yaml` | meanmax    | true     | gnn_plus + GraphNorm |
-| N7  | `20260531_042425_lmgat_codebert_multiclass` | `N7_a1_l1_gnn_plus_elu.yaml`       | meanmax    | true     | gnn_plus + ELU       |
+| ID  | Run ID                                      | Config                                 | graph_pool | use_skip | block_style                |
+| --- | ------------------------------------------- | -------------------------------------- | ---------- | -------- | -------------------------- |
+| N1  | `20260530_194019_lmgat_codebert_multiclass` | `N1_a1_l1.yaml`                        | mean       | false    | resnet                     |
+| N2  | `20260530_203000_lmgat_codebert_multiclass` | `N2_a1_l1_meanmax.yaml`                | meanmax    | false    | resnet                     |
+| N3  | `20260530_213022_lmgat_codebert_multiclass` | `N3_a1_l1_cnn.yaml`                    | cnn        | false    | resnet                     |
+| N4  | `20260530_225801_lmgat_codebert_multiclass` | `N4_a1_l1_meanmax_residual.yaml`       | meanmax    | true     | resnet                     |
+| N5  | `20260531_001117_lmgat_codebert_multiclass` | `N5_a1_l1_gnn_plus.yaml`               | meanmax    | true     | gnn_plus                   |
+| N6  | `20260531_033903_lmgat_codebert_multiclass` | `N6_a1_l1_gnn_plus_graphnorm.yaml`     | meanmax    | true     | gnn_plus + GraphNorm       |
+| N7  | `20260531_042425_lmgat_codebert_multiclass` | `N7_a1_l1_gnn_plus_elu.yaml`           | meanmax    | true     | gnn_plus + ELU             |
+| N8  | `20260531_064326_lmgat_codebert_multiclass` | `N8_a1_l1_gnn_plus_graphnorm_elu.yaml` | meanmax    | true     | gnn_plus + GraphNorm + ELU |
 
 ## Classification
 
-| ID  | Val F1    | Test F1 | Test Acc  | F1-w      | AUC-ROC   | Conf. | Epochs |
-| --- | --------- | ------- | --------- | --------- | --------- | ----- | ------ |
-| N1  | 0.490     | 0.433   | 0.469     | 0.466     | 0.843     | 0.583 | 63     |
-| N2  | 0.486     | 0.457   | 0.490     | 0.487     | 0.856     | 0.267 | 76     |
-| N3  | 0.392     | 0.420   | 0.445     | 0.447     | 0.831     | 0.489 | 99     |
-| N4  | 0.523     | 0.472   | 0.501     | 0.499     | 0.884     | 0.145 | 92     |
-| N5  | 0.525     | 0.468   | 0.491     | 0.498     | 0.891     | 0.421 | 63     |
-| N6  | **0.531** | 0.447   | 0.509     | 0.509     | **0.903** | 0.471 | 55     |
-| N7  | 0.505     | 0.450   | **0.510** | **0.511** | 0.902     | 0.482 | 55     |
+| ID  | Val F1    | Test F1   | Test Acc  | F1-w      | AUC-ROC   | Conf. | Epochs |
+| --- | --------- | --------- | --------- | --------- | --------- | ----- | ------ |
+| N1  | 0.490     | 0.433     | 0.469     | 0.466     | 0.843     | 0.583 | 63     |
+| N2  | 0.486     | 0.457     | 0.490     | 0.487     | 0.856     | 0.267 | 76     |
+| N3  | 0.392     | 0.420     | 0.445     | 0.447     | 0.831     | 0.489 | 99     |
+| N4  | 0.523     | 0.472     | 0.501     | 0.499     | 0.884     | 0.145 | 92     |
+| N5  | 0.525     | 0.468     | 0.491     | 0.498     | 0.891     | 0.421 | 63     |
+| N6  | **0.531** | 0.447     | 0.509     | 0.509     | **0.903** | 0.471 | 55     |
+| N7  | 0.505     | 0.450     | **0.510** | **0.511** | 0.902     | 0.482 | 55     |
+| N8  | 0.492     | **0.469** | 0.493     | 0.489     | 0.893     | 0.524 | 44     |
 
 ## Statement-Level Localization
 
@@ -577,6 +579,7 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N5  | 0.697     | 0.835     | 0.969     | 0.257     | 0.478      | 0.032         |
 | N6  | 0.654     | 0.829     | 0.965     | 0.248     | 0.480      | 0.029         |
 | N7  | **0.474** | **0.918** | **0.985** | **0.274** | **0.485**  | **0.023**     |
+| N8  | 0.543     | 0.861     | 0.974     | 0.262     | 0.480      | 0.029         |
 
 ---
 
@@ -626,3 +629,4 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N5 a1+l1 gnn_plus     | RTX A4500       | 3.7M   | 47s        | 0.83            | 11.0 GB   |
 | N6 N5+GraphNorm       | RTX A4500       | 3.7M   | 49s        | 0.75            | 9.5 GB    |
 | N7 N5+ELU             | RTX A4500       | 3.7M   | 47s        | 0.72            | 9.3 GB    |
+| N8 N5+GraphNorm+ELU   | RTX A4500       | 3.7M   | 50s        | 0.61            | 10.7 GB   |
