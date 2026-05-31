@@ -443,6 +443,21 @@ class ThinFuncHead(nn.Module):
         return self.net(x.float())
 
 
+class LinearFuncHead(nn.Module):
+    """GNN+ L=1 head: Dropout → Linear(in_dim, num_classes).
+    Matches mlp_graph head from official GNN+ 2025 code (Luo et al.)."""
+
+    def __init__(self, in_dim: int, num_classes: int, dropout: float = 0.0):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(in_dim, num_classes),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x.float())
+
+
 # ── MTL heads ─────────────────────────────────────────────────────────────────
 
 class MTLHeads(nn.Module):

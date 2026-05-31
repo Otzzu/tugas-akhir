@@ -15,7 +15,7 @@ from torch_geometric.nn.aggr import AttentionalAggregation
 from torch_geometric.utils import to_dense_batch
 from gnn_vuln.models.base import VulnDetectorBase
 from gnn_vuln.models.encoders import build_gnn_encoder
-from gnn_vuln.models.heads import FuncHead, ThinFuncHead, StmtHead
+from gnn_vuln.models.heads import FuncHead, ThinFuncHead, LinearFuncHead, StmtHead
 from gnn_vuln.models.cross_task import build_cross_task, statement_features, _LineLevelEncoder
 from gnn_vuln.models._lm_utils import scatter_lines_to_tokens, _PERLINE_MAX_LINE
 from gnn_vuln.models.supcon_head import SupConProjector
@@ -72,6 +72,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  gnn_use_ffn=False, gnn_ffn_expansion=2,
                  gnn_use_pe=False, gnn_pe_walk_length=16, gnn_pe_dim=28,
                  gnn_balanced_init=False, gnn_balanced_init_beta=2.0,
+                 func_head_type="fat",
                  matryoshka_dim=None,
                  func_chunk_size=0, func_chunk_stride=0,
                  localization_encoder="gnn", use_flash_attention=False, compile_lm=False,
@@ -156,8 +157,13 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         # Thin head only for in-path MMOE (residual off + mmoe): MMOE's
         # task encoder + shared experts do the adaptation → head can be thin.
         # Attention methods don't carry that adaptation depth → keep fat head.
+        # func_head_type override: "fat" (MLP, default) | "thin" (LN+Linear) | "linear" (GNN+ style).
+        assert func_head_type in ("fat", "thin", "linear"), \
+            f"func_head_type must be fat|thin|linear, got {func_head_type!r}"
         _fused_dim = hidden_dim + self._lm_dim
-        if cross_task_method == "mmoe" and not cross_task_residual:
+        if func_head_type == "linear":
+            self.func_head = LinearFuncHead(_fused_dim, num_classes, dropout=dropout)
+        elif func_head_type == "thin" or (cross_task_method == "mmoe" and not cross_task_residual):
             self.func_head = ThinFuncHead(_fused_dim, num_classes)
         else:
             self.func_head = FuncHead(_fused_dim, hidden_dim, num_classes, dropout)
@@ -299,6 +305,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             gnn_pe_dim=getattr(cfg.model, "gnn_pe_dim", 28),
             gnn_balanced_init=getattr(cfg.model, "gnn_balanced_init", False),
             gnn_balanced_init_beta=getattr(cfg.model, "gnn_balanced_init_beta", 2.0),
+            func_head_type=getattr(cfg.model, "func_head_type", "fat"),
             matryoshka_dim=getattr(cfg.model, "matryoshka_dim", None),
             func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
             func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),

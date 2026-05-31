@@ -544,33 +544,39 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 
 `configs/ablation/gnn_only/` — `live_lm=none` (no LM forward, GNN-only mode). Base = A1 + Phase 3 L1 loss settings (drop focal γ=0, label_smoothing=0.1, cosine, wd=1e-3, patience=15). Varies graph pooling, residual, GNN block order. Purpose: isolate GNN architectural effects without LM noise.
 
-| ID  | Run ID                                      | Config                                 | graph_pool | use_skip | block_style                |
-| --- | ------------------------------------------- | -------------------------------------- | ---------- | -------- | -------------------------- |
-| N1  | `20260530_194019_lmgat_codebert_multiclass` | `N1_a1_l1.yaml`                        | mean       | false    | resnet                     |
-| N2  | `20260530_203000_lmgat_codebert_multiclass` | `N2_a1_l1_meanmax.yaml`                | meanmax    | false    | resnet                     |
-| N3  | `20260530_213022_lmgat_codebert_multiclass` | `N3_a1_l1_cnn.yaml`                    | cnn        | false    | resnet                     |
-| N4  | `20260530_225801_lmgat_codebert_multiclass` | `N4_a1_l1_meanmax_residual.yaml`       | meanmax    | true     | resnet                     |
-| N5  | `20260531_001117_lmgat_codebert_multiclass` | `N5_a1_l1_gnn_plus.yaml`               | meanmax    | true     | gnn_plus                   |
-| N6  | `20260531_033903_lmgat_codebert_multiclass` | `N6_a1_l1_gnn_plus_graphnorm.yaml`     | meanmax    | true     | gnn_plus + GraphNorm       |
-| N7  | `20260531_042425_lmgat_codebert_multiclass` | `N7_a1_l1_gnn_plus_elu.yaml`           | meanmax    | true     | gnn_plus + ELU             |
-| N8  | `20260531_064326_lmgat_codebert_multiclass` | `N8_a1_l1_gnn_plus_graphnorm_elu.yaml` | meanmax    | true     | gnn_plus + GraphNorm + ELU |
-| N9  | `20260531_081742_lmgat_codebert_multiclass` | `N9_a1_l1_gnn_plus_elu_ffn.yaml`       | meanmax    | true     | gnn_plus + ELU + FFN       |
+| ID  | Run ID                                      | Config                                 | graph_pool | use_skip | block_style                       |
+| --- | ------------------------------------------- | -------------------------------------- | ---------- | -------- | --------------------------------- |
+| N1  | `20260530_194019_lmgat_codebert_multiclass` | `N1_a1_l1.yaml`                        | mean       | false    | resnet                            |
+| N2  | `20260530_203000_lmgat_codebert_multiclass` | `N2_a1_l1_meanmax.yaml`                | meanmax    | false    | resnet                            |
+| N3  | `20260530_213022_lmgat_codebert_multiclass` | `N3_a1_l1_cnn.yaml`                    | cnn        | false    | resnet                            |
+| N4  | `20260530_225801_lmgat_codebert_multiclass` | `N4_a1_l1_meanmax_residual.yaml`       | meanmax    | true     | resnet                            |
+| N5  | `20260531_001117_lmgat_codebert_multiclass` | `N5_a1_l1_gnn_plus.yaml`               | meanmax    | true     | gnn_plus                          |
+| N6  | `20260531_033903_lmgat_codebert_multiclass` | `N6_a1_l1_gnn_plus_graphnorm.yaml`     | meanmax    | true     | gnn_plus + GraphNorm              |
+| N7  | `20260531_042425_lmgat_codebert_multiclass` | `N7_a1_l1_gnn_plus_elu.yaml`           | meanmax    | true     | gnn_plus + ELU                    |
+| N8  | `20260531_064326_lmgat_codebert_multiclass` | `N8_a1_l1_gnn_plus_graphnorm_elu.yaml` | meanmax    | true     | gnn_plus + GraphNorm + ELU        |
+| N9  | `20260531_081742_lmgat_codebert_multiclass` | `N9_a1_l1_gnn_plus_elu_ffn.yaml`       | meanmax    | true     | gnn_plus + ELU + FFN              |
 | N10 | `20260531_110214_lmgat_codebert_multiclass` | `N10_a1_l1_gnn_plus_elu_ffn_pe.yaml`   | meanmax    | true     | gnn_plus + ELU + FFN + RWSE-32 PE |
+| N11 | `20260531_142518_lmgat_codebert_multiclass` | `N11_a1_l1_gnn_plus_elu_dim512.yaml`   | meanmax    | true     | gnn_plus + ELU + hidden_dim=512   |
+| N12 | `20260531_154612_lmgat_codebert_multiclass` | `N12_a1_l1_gnn_plus_elu_dim768.yaml`   | meanmax    | true     | gnn_plus + ELU + hidden_dim=768   |
+| N13 | `20260531_144339_lmgat_codebert_multiclass` | `N13_a1_l1_gnn_plus_elu_balo.yaml`     | meanmax    | true     | gnn_plus + ELU + BalO init        |
 
 ## Classification
 
-| ID  | Val F1    | Test F1   | Test Acc  | F1-w      | AUC-ROC   | Conf. | Epochs |
-| --- | --------- | --------- | --------- | --------- | --------- | ----- | ------ |
-| N1  | 0.490     | 0.433     | 0.469     | 0.466     | 0.843     | 0.583 | 63     |
-| N2  | 0.486     | 0.457     | 0.490     | 0.487     | 0.856     | 0.267 | 76     |
-| N3  | 0.392     | 0.420     | 0.445     | 0.447     | 0.831     | 0.489 | 99     |
-| N4  | 0.523     | 0.472     | 0.501     | 0.499     | 0.884     | 0.145 | 92     |
-| N5  | 0.525     | 0.468     | 0.491     | 0.498     | 0.891     | 0.421 | 63     |
-| N6  | **0.531** | 0.447     | 0.509     | 0.509     | **0.903** | 0.471 | 55     |
-| N7  | 0.505     | 0.450     | **0.510** | **0.511** | 0.902     | 0.482 | 55     |
-| N8  | 0.492     | **0.469** | 0.493     | 0.489     | 0.893     | 0.524 | 44     |
-| N9  | 0.479     | 0.391     | 0.445     | 0.454     | 0.863     | 0.368 | 72     |
-| N10 | 0.465     | 0.391     | 0.465     | 0.463     | 0.872     | 0.409 | 59     |
+| ID  | Val F1    | Test F1   | Test Acc  | F1-w      | AUC-ROC   | Conf.     | Epochs |
+| --- | --------- | --------- | --------- | --------- | --------- | --------- | ------ |
+| N1  | 0.490     | 0.433     | 0.469     | 0.466     | 0.843     | 0.583     | 63     |
+| N2  | 0.486     | 0.457     | 0.490     | 0.487     | 0.856     | 0.267     | 76     |
+| N3  | 0.392     | 0.420     | 0.445     | 0.447     | 0.831     | 0.489     | 99     |
+| N4  | 0.523     | 0.472     | 0.501     | 0.499     | 0.884     | 0.145     | 92     |
+| N5  | 0.525     | 0.468     | 0.491     | 0.498     | 0.891     | 0.421     | 63     |
+| N6  | **0.531** | 0.447     | 0.509     | 0.509     | **0.903** | 0.471     | 55     |
+| N7  | 0.505     | 0.450     | **0.510** | **0.511** | 0.902     | 0.482     | 55     |
+| N8  | 0.492     | **0.469** | 0.493     | 0.489     | 0.893     | 0.524     | 44     |
+| N9  | 0.479     | 0.391     | 0.445     | 0.454     | 0.863     | 0.368     | 72     |
+| N10 | 0.465     | 0.391     | 0.465     | 0.463     | 0.872     | 0.409     | 59     |
+| N11 | 0.508     | **0.480** | 0.491     | 0.494     | 0.892     | 0.514     | 36     |
+| N12 | 0.494     | 0.440     | 0.500     | 0.500     | 0.899     | 0.507     | 49     |
+| N13 | 0.509     | 0.471     | 0.502     | 0.497     | **0.901** | **0.532** | 44     |
 
 ## Statement-Level Localization
 
@@ -586,6 +592,9 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N8  | 0.543     | 0.861     | 0.974     | 0.262     | 0.480      | 0.029         |
 | N9  | **0.372** | **0.930** | **0.985** | 0.255     | 0.468      | 0.027         |
 | N10 | 0.515     | 0.890     | 0.981     | 0.243     | 0.451      | 0.030         |
+| N11 | 0.695     | 0.864     | 0.974     | 0.245     | 0.457      | 0.031         |
+| N12 | 0.401     | 0.906     | 0.984     | 0.264     | 0.467      | 0.025         |
+| N13 | 0.539     | 0.889     | 0.978     | 0.263     | 0.481      | 0.028         |
 
 ---
 
@@ -638,3 +647,6 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N8 N5+GraphNorm+ELU   | RTX A4500       | 3.7M   | 50s        | 0.61            | 10.7 GB   |
 | N9 N7+FFN             | RTX A4500       | 4.8M   | 50s        | 1.01            | 10.3 GB   |
 | N10 N9+RWSE-32 PE     | RTX A4500       | 4.9M   | 52s        | 0.85            | 12.4 GB   |
+| N11 N7+dim512         | RTX A6000       | 10.7M  | 95s        | 0.95            | 31.2 GB   |
+| N12 N7+dim768         | RTX A6000       | 21.0M  | 118s       | 1.61            | 29.8 GB   |
+| N13 N7+BalO init      | RTX A5000       | 3.7M   | 57s        | 0.70            | 10.5 GB   |
