@@ -321,24 +321,24 @@ localization=both, concat fusion — isolating only the hidden_dim change.
 - **G1** = F1 baseline (`20260516_125619`): hidden_dim=256, fused=1024, GNN 25% / LM 75%
 - **G2** = `G2_dim768_equal.yaml`: hidden_dim=768, fused=1536, GNN 50% / LM 50%
 
-| ID | Run ID | Config | hidden_dim | fused_dim | GNN% | LM% | Epochs |
-|---|---|---|---|---|---|---|---|
-| G1 | `20260516_125619_lmgat_codebert_multiclass` | — (= Phase 4 meanmax / F1) | 256 | 1024 | 25% | 75% | 48 |
-| G2 | `20260520_132730_lmgat_codebert_multiclass` | `G2_dim768_equal.yaml` | 768 | 1536 | 50% | 50% | 34 |
+| ID  | Run ID                                      | Config                     | hidden_dim | fused_dim | GNN% | LM% | Epochs |
+| --- | ------------------------------------------- | -------------------------- | ---------- | --------- | ---- | --- | ------ |
+| G1  | `20260516_125619_lmgat_codebert_multiclass` | — (= Phase 4 meanmax / F1) | 256        | 1024      | 25%  | 75% | 48     |
+| G2  | `20260520_132730_lmgat_codebert_multiclass` | `G2_dim768_equal.yaml`     | 768        | 1536      | 50%  | 50% | 34     |
 
 ## Classification
 
-| ID | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | Epochs |
-|---|---|---|---|---|---|---|
-| G1 | 0.517 | 0.538 | 0.539 | 0.911 | 0.502 | 48 |
-| G2 | **0.529** | **0.582** | **0.579** | **0.914** | 0.569 | 34 |
+| ID  | Test F1   | Test Acc  | F1-w      | AUC-ROC   | Conf. | Epochs |
+| --- | --------- | --------- | --------- | --------- | ----- | ------ |
+| G1  | 0.517     | 0.538     | 0.539     | 0.911     | 0.502 | 48     |
+| G2  | **0.529** | **0.582** | **0.579** | **0.914** | 0.569 | 34     |
 
 ## Statement-Level Localization
 
-| ID | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
-|---|---|---|---|---|---|---|
-| G1 | **0.644** | **0.900** | **0.982** | **0.269** | **0.487** | **0.025** |
-| G2 | 1.410 | 0.747 | 0.962 | 0.186 | 0.427 | 0.056 |
+| ID  | IFA ↓     | Top-1 ↑   | Top-5 ↑   | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| --- | --------- | --------- | --------- | --------- | ---------- | ------------- |
+| G1  | **0.644** | **0.900** | **0.982** | **0.269** | **0.487**  | **0.025**     |
+| G2  | 1.410     | 0.747     | 0.962     | 0.186     | 0.427      | 0.056         |
 
 G2 beats G1 on all classification metrics (+1.2pp F1, +4.4pp Acc, +0.003 AUC) but localization collapses (IFA 0.644→1.410, Top-1 0.900→0.747) — ~32% of MegaVul functions exceed 1024 tokens and G2 truncates them, degrading per-node signal. Also 2.5× slower and +3 GB VRAM.
 
@@ -357,42 +357,42 @@ H2 and H3 results are from reruns with fixed `lm_full_windowed` (mean-pool CLS a
 and ml5120 dataset on RTX 5090. Earlier H2/H3 runs with ml1024 never activated sliding window
 (fast path always triggered when func_max_length=max_length=1024).
 
-| ID | Config | chunk | stride | max_len | Max windows | Run ID | Epochs |
-|---|---|---|---|---|---|---|---|
-| H1 | — (= G2) | — | — | 1024 | 1 | `20260520_132730` | 34 |
-| H2 | `H2_unixcoder_sliding_chunk1024_stride512.yaml` | 1024 | 512 | 5120 | 9 | `20260525_104032` | 30 |
-| H3 | `H3_unixcoder_sliding_chunk1024_stride1024.yaml` | 1024 | 1024 | 5120 | 5 | `20260525_125031` | 31 |
-| H4 | `H4_unixcoder_sliding_chunk1024_stride1024_winattn.yaml` | 1024 | 1024 | 5120 | 5+attn | `20260527_121315` | 22 |
-| H5 | `H5_unixcoder_sliding_chunk1024_stride512_winattn.yaml` | 1024 | 512 | 5120 | 9+attn | `20260528_062323` | 34 |
-| H6 | `H6_unixcoder_sliding_chunk1024_stride1024_winattn_hidden.yaml` | 1024 | 1024 | 5120 | 5+attn+hidden | `20260528_085945` | 31 |
-| H7 | `H7_unixcoder_sliding_chunk1024_stride512_winattn_centerw.yaml` | 1024 | 512 | 5120 | 9+attn+cw | `20260528_063142` | 34 |
-| H8 | `H8_unixcoder_sliding_chunk1024_stride512_winattn_crosswin.yaml` | 1024 | 512 | 5120 | 9+attn+crosswin | `20260528_094016` | 41 |
+| ID  | Config                                                           | chunk | stride | max_len | Max windows     | Run ID            | Epochs |
+| --- | ---------------------------------------------------------------- | ----- | ------ | ------- | --------------- | ----------------- | ------ |
+| H1  | — (= G2)                                                         | —     | —      | 1024    | 1               | `20260520_132730` | 34     |
+| H2  | `H2_unixcoder_sliding_chunk1024_stride512.yaml`                  | 1024  | 512    | 5120    | 9               | `20260525_104032` | 30     |
+| H3  | `H3_unixcoder_sliding_chunk1024_stride1024.yaml`                 | 1024  | 1024   | 5120    | 5               | `20260525_125031` | 31     |
+| H4  | `H4_unixcoder_sliding_chunk1024_stride1024_winattn.yaml`         | 1024  | 1024   | 5120    | 5+attn          | `20260527_121315` | 22     |
+| H5  | `H5_unixcoder_sliding_chunk1024_stride512_winattn.yaml`          | 1024  | 512    | 5120    | 9+attn          | `20260528_062323` | 34     |
+| H6  | `H6_unixcoder_sliding_chunk1024_stride1024_winattn_hidden.yaml`  | 1024  | 1024   | 5120    | 5+attn+hidden   | `20260528_085945` | 31     |
+| H7  | `H7_unixcoder_sliding_chunk1024_stride512_winattn_centerw.yaml`  | 1024  | 512    | 5120    | 9+attn+cw       | `20260528_063142` | 34     |
+| H8  | `H8_unixcoder_sliding_chunk1024_stride512_winattn_crosswin.yaml` | 1024  | 512    | 5120    | 9+attn+crosswin | `20260528_094016` | 41     |
 
 ## Classification
 
-| ID | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | Epochs |
-|---|---|---|---|---|---|---|
-| H1 (= G2) | 0.529 | 0.582 | 0.579 | 0.914 | 0.569 | 34 |
-| H2 | 0.459 | 0.508 | 0.507 | 0.890 | 0.588 | 30 |
-| H3 | 0.528 | 0.529 | 0.533 | 0.895 | 0.587 | 31 |
-| H4 | 0.520 | 0.563 | 0.560 | **0.927** | 0.695 | 22 |
-| H5 | 0.443 | 0.522 | 0.522 | 0.885 | 0.589 | 34 |
-| H6 | 0.513 | 0.532 | 0.533 | 0.903 | 0.607 | 31 |
-| H7 | 0.485 | 0.524 | 0.525 | 0.896 | 0.618 | 34 |
-| H8 | 0.520 | 0.536 | 0.538 | 0.898 | 0.584 | 41 |
+| ID        | Test F1 | Test Acc | F1-w  | AUC-ROC   | Conf. | Epochs |
+| --------- | ------- | -------- | ----- | --------- | ----- | ------ |
+| H1 (= G2) | 0.529   | 0.582    | 0.579 | 0.914     | 0.569 | 34     |
+| H2        | 0.459   | 0.508    | 0.507 | 0.890     | 0.588 | 30     |
+| H3        | 0.528   | 0.529    | 0.533 | 0.895     | 0.587 | 31     |
+| H4        | 0.520   | 0.563    | 0.560 | **0.927** | 0.695 | 22     |
+| H5        | 0.443   | 0.522    | 0.522 | 0.885     | 0.589 | 34     |
+| H6        | 0.513   | 0.532    | 0.533 | 0.903     | 0.607 | 31     |
+| H7        | 0.485   | 0.524    | 0.525 | 0.896     | 0.618 | 34     |
+| H8        | 0.520   | 0.536    | 0.538 | 0.898     | 0.584 | 41     |
 
 ## Statement-Level Localization
 
-| ID | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
-|---|---|---|---|---|---|---|
-| H1 (= G2) | 1.410 | 0.747 | 0.962 | 0.186 | 0.427 | 0.056 |
-| H2 | 1.025 | 0.876 | 0.971 | 0.193 | 0.395 | 0.052 |
-| H3 | 1.047 | 0.873 | **0.978** | **0.221** | 0.442 | **0.041** |
-| H4 | 1.063 | 0.855 | 0.971 | 0.187 | 0.430 | 0.054 |
-| H5 | 1.220 | 0.827 | 0.969 | 0.206 | 0.424 | 0.047 |
-| H6 | **1.034** | 0.823 | 0.969 | 0.204 | **0.445** | 0.048 |
-| H7 | 2.804 | 0.669 | 0.846 | 0.143 | 0.410 | 0.076 |
-| H8 | 1.069 | **0.912** | 0.977 | 0.167 | 0.400 | 0.068 |
+| ID        | IFA ↓     | Top-1 ↑   | Top-5 ↑   | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| --------- | --------- | --------- | --------- | --------- | ---------- | ------------- |
+| H1 (= G2) | 1.410     | 0.747     | 0.962     | 0.186     | 0.427      | 0.056         |
+| H2        | 1.025     | 0.876     | 0.971     | 0.193     | 0.395      | 0.052         |
+| H3        | 1.047     | 0.873     | **0.978** | **0.221** | 0.442      | **0.041**     |
+| H4        | 1.063     | 0.855     | 0.971     | 0.187     | 0.430      | 0.054         |
+| H5        | 1.220     | 0.827     | 0.969     | 0.206     | 0.424      | 0.047         |
+| H6        | **1.034** | 0.823     | 0.969     | 0.204     | **0.445**  | 0.048         |
+| H7        | 2.804     | 0.669     | 0.846     | 0.143     | 0.410      | 0.076         |
+| H8        | 1.069     | **0.912** | 0.977     | 0.167     | 0.400      | 0.068         |
 
 Both H2 and H3 use ml5120 dataset with fixed `lm_full_windowed` (mean-pool CLS across windows),
 so sliding window is genuinely active for functions exceeding 1024 tokens (~32% of MegaVul vuln functions).
@@ -432,32 +432,32 @@ Localization = per-line encoder output scattered back to token positions.
 - **I3** = live_lm=line, freeze_func_lm=false, no precompute
   - Per-line LM forward each batch; LM weights updated jointly with line_encoder
 
-| ID | Run ID | Config | live_lm | freeze_func_lm | precompute | Line ctx | Epochs |
-|---|---|---|---|---|---|---|---|
-| I1 | `20260520_132730` (= H1/G2) | — | func | No | — | — | 34 |
-| I2 | `20260527_093837_lmgat_codebert_multiclass` | `I2_line_encoder.yaml` | line | Yes | Yes | — | 23† |
-| I3 | `20260527_102049_lmgat_codebert_multiclass` | `I3_line_encoder_live.yaml` | line | No | No | — | 27† |
-| I4 | `20260525_141857_lmgat_codebert_multiclass` | `I4_line_ctx5.yaml` | line | Yes | Yes | ±5 | 52 |
+| ID  | Run ID                                      | Config                      | live_lm | freeze_func_lm | precompute | Line ctx | Epochs |
+| --- | ------------------------------------------- | --------------------------- | ------- | -------------- | ---------- | -------- | ------ |
+| I1  | `20260520_132730` (= H1/G2)                 | —                           | func    | No             | —          | —        | 34     |
+| I2  | `20260527_093837_lmgat_codebert_multiclass` | `I2_line_encoder.yaml`      | line    | Yes            | Yes        | —        | 23†    |
+| I3  | `20260527_102049_lmgat_codebert_multiclass` | `I3_line_encoder_live.yaml` | line    | No             | No         | —        | 27†    |
+| I4  | `20260525_141857_lmgat_codebert_multiclass` | `I4_line_ctx5.yaml`         | line    | Yes            | Yes        | ±5       | 52     |
 
 ## Classification
 
 † = classification collapsed (predicts majority class only; metrics not comparable).
 
-| ID | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | Epochs |
-|---|---|---|---|---|---|---|
-| I1 (= H1/G2) | **0.529** | **0.582** | **0.579** | **0.914** | 0.569 | 34 |
-| I2† | 0.156† | 0.328† | 0.285† | 0.832† | 0.260† | 23 |
-| I3† | 0.012† | 0.149† | 0.040† | 0.766† | 0.567† | 27 |
-| I4 | 0.375 | 0.414 | 0.410 | 0.877 | 0.381 | 52 |
+| ID           | Test F1   | Test Acc  | F1-w      | AUC-ROC   | Conf.  | Epochs |
+| ------------ | --------- | --------- | --------- | --------- | ------ | ------ |
+| I1 (= H1/G2) | **0.529** | **0.582** | **0.579** | **0.914** | 0.569  | 34     |
+| I2†          | 0.156†    | 0.328†    | 0.285†    | 0.832†    | 0.260† | 23     |
+| I3†          | 0.012†    | 0.149†    | 0.040†    | 0.766†    | 0.567† | 27     |
+| I4           | 0.375     | 0.414     | 0.410     | 0.877     | 0.381  | 52     |
 
 ## Statement-Level Localization
 
-| ID | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
-|---|---|---|---|---|---|---|
-| I1 (= H1/G2) | 1.410 | 0.747 | 0.962 | 0.186 | 0.427 | 0.056 |
-| I2† | 1.438 | 0.713 | 0.940 | 0.237 | **0.506** | 0.037 |
-| I3† | **1.201** | **0.896** | **0.978** | 0.165 | 0.400 | 0.066 |
-| I4 | 3.009 | 0.609 | 0.857 | 0.179 | 0.443 | 0.059 |
+| ID           | IFA ↓     | Top-1 ↑   | Top-5 ↑   | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| ------------ | --------- | --------- | --------- | --------- | ---------- | ------------- |
+| I1 (= H1/G2) | 1.410     | 0.747     | 0.962     | 0.186     | 0.427      | 0.056         |
+| I2†          | 1.438     | 0.713     | 0.940     | 0.237     | **0.506**  | 0.037         |
+| I3†          | **1.201** | **0.896** | **0.978** | 0.165     | 0.400      | 0.066         |
+| I4           | 3.009     | 0.609     | 0.857     | 0.179     | 0.443      | 0.059         |
 
 **I2 (frozen LM + line encoder)** — classification severely degraded (F1 0.156): precomputed fixed CLS can't adapt to 26-class CWE task; best val F1 0.149 at ep 23. Localization survives (R@20% 0.506, best in Phase 9).
 
@@ -478,24 +478,24 @@ encoder-only LMs with longer native context. All configs use `live_lm=func, free
 - **J1** = H1 = G2 baseline (func_lm=UniXcoder, 1024-token, 1024-chunk sliding)
 - **J3** = func_lm=ModernBERT-base (8192-token native RoPE, alternating local-global attention)
 
-| ID | Run ID | Config | func_lm | func_max_length | Epochs |
-|---|---|---|---|---|---|
-| J1 | `20260520_132730` (= H1/G2) | — | UniXcoder | 1024 | 34 |
-| J3 | `20260528_045419_lmgat_codebert_multiclass` | `J3_modernbert_base.yaml` | ModernBERT-base | 5120 | 55 |
+| ID  | Run ID                                      | Config                    | func_lm         | func_max_length | Epochs |
+| --- | ------------------------------------------- | ------------------------- | --------------- | --------------- | ------ |
+| J1  | `20260520_132730` (= H1/G2)                 | —                         | UniXcoder       | 1024            | 34     |
+| J3  | `20260528_045419_lmgat_codebert_multiclass` | `J3_modernbert_base.yaml` | ModernBERT-base | 5120            | 55     |
 
 ## Classification
 
-| ID | Val F1 | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | Epochs |
-|---|---|---|---|---|---|---|---|
-| J1 (= H1/G2) | — | **0.529** | **0.582** | **0.579** | **0.914** | **0.569** | 34 |
-| J3 | 0.386 | 0.378 | 0.426 | 0.422 | 0.847 | 0.397 | 55 |
+| ID           | Val F1 | Test F1   | Test Acc  | F1-w      | AUC-ROC   | Conf.     | Epochs |
+| ------------ | ------ | --------- | --------- | --------- | --------- | --------- | ------ |
+| J1 (= H1/G2) | —      | **0.529** | **0.582** | **0.579** | **0.914** | **0.569** | 34     |
+| J3           | 0.386  | 0.378     | 0.426     | 0.422     | 0.847     | 0.397     | 55     |
 
 ## Statement-Level Localization
 
-| ID | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
-|---|---|---|---|---|---|---|
-| J1 (= H1/G2) | 1.410 | 0.747 | 0.962 | 0.186 | **0.427** | 0.056 |
-| J3 | **0.950** | **0.814** | **0.978** | **0.209** | 0.422 | **0.046** |
+| ID           | IFA ↓     | Top-1 ↑   | Top-5 ↑   | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| ------------ | --------- | --------- | --------- | --------- | ---------- | ------------- |
+| J1 (= H1/G2) | 1.410     | 0.747     | 0.962     | 0.186     | **0.427**  | 0.056         |
+| J3           | **0.950** | **0.814** | **0.978** | **0.209** | 0.422      | **0.046**     |
 
 **J3 (ModernBERT-base, 5120-token native)** — localization improves (IFA 0.950 vs 1.410, −33%; Top-1 0.814 vs 0.747) but classification collapses (F1 0.378, −0.151; AUC 0.847 vs 0.914). Alternating local/global attention fails to produce function-level CWE semantics that UniXcoder's full bidirectional attention computes in a single pass.
 
@@ -511,71 +511,110 @@ All K-configs use `supcon_use_distance_matrix=true`, `cwe_dist_matrix=data/cwe/c
 L_self = NT-Xent self-supervised collapse prevention (two dropout views of same function embedding).
 Loss: `L = L_CE + supcon_weight·L_SupCon(matrix) + supcon_self_weight·L_self`.
 
-| ID | Run ID | Config | supcon_weight | weight_fn | L_self weight | Epochs |
-|---|---|---|---|---|---|---|
-| K1 | `20260527_121315` (= H4) | — | 0 | — | 0 | 22 |
-| K2 | `20260528_142050_lmgat_codebert_multiclass` | `K2_unixcoder_winattn_supcon_w02.yaml` | 0.2 | linear | 0.2 | 33 |
-| K5 | `20260528_160806_lmgat_codebert_multiclass` | `K5_supcon_group.yaml` | 0.2 | group (intragroup_only) | 0.2 | 30 |
-| K6 | `20260528_175315_lmgat_codebert_multiclass` | `K6_unixcoder_winattn_supcon_balanced.yaml` | 0.2 | linear (balanced sampler 8cls×4) | 0.2 | 32 |
+| ID  | Run ID                                      | Config                                      | supcon_weight | weight_fn                        | L_self weight | Epochs |
+| --- | ------------------------------------------- | ------------------------------------------- | ------------- | -------------------------------- | ------------- | ------ |
+| K1  | `20260527_121315` (= H4)                    | —                                           | 0             | —                                | 0             | 22     |
+| K2  | `20260528_142050_lmgat_codebert_multiclass` | `K2_unixcoder_winattn_supcon_w02.yaml`      | 0.2           | linear                           | 0.2           | 33     |
+| K5  | `20260528_160806_lmgat_codebert_multiclass` | `K5_supcon_group.yaml`                      | 0.2           | group (intragroup_only)          | 0.2           | 30     |
+| K6  | `20260528_175315_lmgat_codebert_multiclass` | `K6_unixcoder_winattn_supcon_balanced.yaml` | 0.2           | linear (balanced sampler 8cls×4) | 0.2           | 32     |
 
 ## Classification
 
-| ID | Val F1 | Test F1 | Test Acc | F1-w | AUC-ROC | Conf. | Epochs |
-|---|---|---|---|---|---|---|---|
-| K1 (= H4) | 0.573 | 0.520 | 0.563 | 0.560 | 0.927 | 0.695 | 22 |
-| K2 | 0.502 | 0.461 | 0.527 | 0.527 | 0.874 | 0.607 | 33 |
-| K5 | 0.521 | 0.484 | 0.550 | 0.551 | 0.897 | 0.608 | 30 |
-| K6 | 0.513 | 0.500 | 0.503 | 0.504 | 0.892 | 0.579 | 32 |
+| ID        | Val F1 | Test F1 | Test Acc | F1-w  | AUC-ROC | Conf. | Epochs |
+| --------- | ------ | ------- | -------- | ----- | ------- | ----- | ------ |
+| K1 (= H4) | 0.573  | 0.520   | 0.563    | 0.560 | 0.927   | 0.695 | 22     |
+| K2        | 0.502  | 0.461   | 0.527    | 0.527 | 0.874   | 0.607 | 33     |
+| K5        | 0.521  | 0.484   | 0.550    | 0.551 | 0.897   | 0.608 | 30     |
+| K6        | 0.513  | 0.500   | 0.503    | 0.504 | 0.892   | 0.579 | 32     |
 
 ## Statement-Level Localization
 
-| ID | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
-|---|---|---|---|---|---|---|
-| K1 (= H4) | 1.063 | 0.855 | 0.971 | 0.187 | 0.430 | 0.054 |
-| K2 | 12.167 | 0.253 | 0.526 | 0.055 | 0.207 | 0.194 |
-| K5 | 12.934 | 0.264 | 0.540 | 0.061 | 0.200 | 0.200 |
-| K6 | 12.935 | 0.235 | 0.512 | 0.048 | 0.196 | 0.203 |
+| ID        | IFA ↓  | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| --------- | ------ | ------- | ------- | --------- | ---------- | ------------- |
+| K1 (= H4) | 1.063  | 0.855   | 0.971   | 0.187     | 0.430      | 0.054         |
+| K2        | 12.167 | 0.253   | 0.526   | 0.055     | 0.207      | 0.194         |
+| K5        | 12.934 | 0.264   | 0.540   | 0.061     | 0.200      | 0.200         |
+| K6        | 12.935 | 0.235   | 0.512   | 0.048     | 0.196      | 0.203         |
 
 K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses both classification (F1 0.461, −0.059 vs K1) and localization (IFA 12.167, Top-1 0.253). SupCon loss at w=0.2 appears to overwhelm the classification signal with 26-class CWE embedding geometry constraints.
 
 ---
 
+# GNN-only Ablation (N series)
+
+`configs/ablation/gnn_only/` — `live_lm=none` (no LM forward, GNN-only mode). Base = A1 + Phase 3 L1 loss settings (drop focal γ=0, label_smoothing=0.1, cosine, wd=1e-3, patience=15). Varies graph pooling, residual, GNN block order. Purpose: isolate GNN architectural effects without LM noise.
+
+| ID  | Run ID                                      | Config                           | graph_pool | use_skip | block_style |
+| --- | ------------------------------------------- | -------------------------------- | ---------- | -------- | ----------- |
+| N1  | `20260530_194019_lmgat_codebert_multiclass` | `N1_a1_l1.yaml`                  | mean       | false    | resnet      |
+| N2  | `20260530_203000_lmgat_codebert_multiclass` | `N2_a1_l1_meanmax.yaml`          | meanmax    | false    | resnet      |
+| N3  | `20260530_213022_lmgat_codebert_multiclass` | `N3_a1_l1_cnn.yaml`              | cnn        | false    | resnet      |
+| N4  | `20260530_225801_lmgat_codebert_multiclass` | `N4_a1_l1_meanmax_residual.yaml` | meanmax    | true     | resnet      |
+| N5  | `20260531_001117_lmgat_codebert_multiclass` | `N5_a1_l1_gnn_plus.yaml`         | meanmax    | true     | gnn_plus    |
+
+## Classification
+
+| ID  | Val F1 | Test F1 | Test Acc | F1-w  | AUC-ROC | Conf. | Epochs |
+| --- | ------ | ------- | -------- | ----- | ------- | ----- | ------ |
+| N1  | 0.490  | 0.433   | 0.469    | 0.466 | 0.843   | 0.583 | 63     |
+| N2  | 0.486  | 0.457   | 0.490    | 0.487 | 0.856   | 0.267 | 76     |
+| N3  | 0.392  | 0.420   | 0.445    | 0.447 | 0.831   | 0.489 | 99     |
+| N4  | 0.523  | 0.472   | 0.501    | 0.499 | 0.884   | 0.145 | 92     |
+| N5  | 0.525  | 0.468   | 0.491    | 0.498 | 0.891   | 0.421 | 63     |
+
+## Statement-Level Localization
+
+| ID  | IFA ↓     | Top-1 ↑ | Top-5 ↑   | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| --- | --------- | ------- | --------- | --------- | ---------- | ------------- |
+| N1  | 1.199     | 0.845   | 0.955     | 0.227     | 0.410      | 0.037         |
+| N2  | 1.312     | 0.799   | 0.934     | 0.232     | 0.430      | 0.034         |
+| N3  | 1.618     | 0.807   | 0.933     | 0.222     | 0.430      | 0.039         |
+| N4  | 1.672     | 0.714   | 0.931     | 0.242     | 0.449      | 0.033         |
+| N5  | **0.697** | 0.835   | **0.969** | **0.257** | **0.478**  | **0.032**     |
+
+---
+
 # Training Efficiency
 
-| Run                   | GPU         | Params | Epoch Time | Total Time (hr) | VRAM Peak |
-| --------------------- | ----------- | ------ | ---------- | --------------- | --------- |
-| A1                    | RTX 5070 Ti | 3.5M   | 48s        | 0.73            | 4.2 GB    |
-| A2                    | RTX 5070 Ti | 129.6M | 216s       | 3.24            | 4.2 GB    |
-| A3                    | RTX 5070 Ti | 129.6M | 175s       | 3.70            | 6.0 GB    |
-| A4                    | RTX 5070 Ti | 129.6M | 176s       | 3.62            | 4.8 GB    |
-| A4-L1                 | RTX 5070 Ti | 129.6M | 161s       | 1.39            | 6.9 GB    |
-| A4-L2                 | RTX 5070 Ti | 129.6M | 162s       | 1.93            | 7.7 GB    |
-| A4-L2-fixed           | RTX 5070 Ti | 129.6M | 162s       | 3.37            | 7.7 GB    |
-| fusion gated          | RTX 5070 Ti | 129.6M | 163s       | 1.72            | 7.8 GB    |
-| fusion weighted α=0.3 | RTX 5070 Ti | 129.6M | 162s       | 1.53            | 7.3 GB    |
-| fusion weighted α=0.5 | RTX 5070 Ti | 129.6M | 162s       | 1.75            | 7.4 GB    |
-| fusion weighted α=0.7 | RTX 5070 Ti | 129.6M | 162s       | 1.44            | 7.1 GB    |
-| pool attention        | RTX 5070 Ti | 129.6M | 162s       | 2.25            | 7.4 GB    |
-| pool meanmax          | RTX 5070 Ti | 129.6M | 162s       | 2.16            | 7.2 GB    |
-| B2 cross_attn         | RTX 5070 Ti | 129.6M | 169s       | 2.72            | 7.1 GB    |
-| B3 self_attn          | RTX 5070 Ti | 129.6M | 245s       | 4.29            | 7.3 GB    |
-| B4 mmoe               | RTX 5070 Ti | 129.6M | 165s       | 1.83            | 7.9 GB    |
-| F4 both=CT5+          | RTX 5070 Ti | 137.0M | 323s       | 5.94            | 9.1 GB    |
-| F5 CT5+ raw           | RTX 5070 Ti | 138.2M | 457s       | 6.86            | 8.4 GB    |
-| F6 CT5+ norm          | RTX 5070 Ti | 138.0M | 460s       | 4.35            | 8.7 GB    |
-| F7 both normed        | RTX 5070 Ti | 138.0M | 460s       | 8.96            | 8.9 GB    |
-| G2 dim=768            | RTX 5070 Ti | 146.9M | 409s       | 3.87            | 10.2 GB   |
-| H2 sliding stride512  | RTX 5090    | 146.9M | 250s       | 2.09            | 18.6 GB   |
-| H3 sliding stride1024 | RTX 5090    | 146.9M | 150s       | 1.30            | 17.1 GB   |
-| H4 winattn stride1024 | RTX 5090    | 146.9M | 211s       | 1.29            | 18.0 GB   |
-| H5 winattn stride512  | RTX PRO 6000 Bk | 146.9M | 265s   | 2.51            | 19.9 GB   |
-| H6 winattn hidden     | RTX PRO 6000 Bk | 146.9M | 162s   | 1.40            | 17.1 GB   |
-| H7 centerweight s512  | RTX 5090    | 146.9M | 328s       | 3.10            | 19.8 GB   |
-| H8 crosswin s512      | RTX PRO 6000 Bk | 149.3M | 332s   | 3.78            | 24.2 GB   |
-| I2 line frozen        | RTX 5090    | 161.7M | 95s        | 0.61            | 18.3 GB   |
-| I3 line live          | RTX 5090    | 161.7M | 205s       | 1.66            | 20.1 GB   |
-| I4 line ctx±5 frozen  | RTX 5090    | 161.7M | 84s        | 1.22            | 17.4 GB   |
-| J3 ModernBERT         | RTX 6000 Bk | 170.0M | 74s        | 1.14            | 21.3 GB   |
-| K2 supcon w0.2        | RTX 5090    | 147.3M | 190s       | 1.75            | 19.7 GB   |
-| K5 supcon group       | RTX 5090    | 147.3M | 190s       | 1.59            | 17.5 GB   |
-| K6 supcon balanced    | RTX 5090    | 147.3M | 188s       | 1.68            | 17.6 GB   |
+| Run                   | GPU             | Params | Epoch Time | Total Time (hr) | VRAM Peak |
+| --------------------- | --------------- | ------ | ---------- | --------------- | --------- |
+| A1                    | RTX 5070 Ti     | 3.5M   | 48s        | 0.73            | 4.2 GB    |
+| A2                    | RTX 5070 Ti     | 129.6M | 216s       | 3.24            | 4.2 GB    |
+| A3                    | RTX 5070 Ti     | 129.6M | 175s       | 3.70            | 6.0 GB    |
+| A4                    | RTX 5070 Ti     | 129.6M | 176s       | 3.62            | 4.8 GB    |
+| A4-L1                 | RTX 5070 Ti     | 129.6M | 161s       | 1.39            | 6.9 GB    |
+| A4-L2                 | RTX 5070 Ti     | 129.6M | 162s       | 1.93            | 7.7 GB    |
+| A4-L2-fixed           | RTX 5070 Ti     | 129.6M | 162s       | 3.37            | 7.7 GB    |
+| fusion gated          | RTX 5070 Ti     | 129.6M | 163s       | 1.72            | 7.8 GB    |
+| fusion weighted α=0.3 | RTX 5070 Ti     | 129.6M | 162s       | 1.53            | 7.3 GB    |
+| fusion weighted α=0.5 | RTX 5070 Ti     | 129.6M | 162s       | 1.75            | 7.4 GB    |
+| fusion weighted α=0.7 | RTX 5070 Ti     | 129.6M | 162s       | 1.44            | 7.1 GB    |
+| pool attention        | RTX 5070 Ti     | 129.6M | 162s       | 2.25            | 7.4 GB    |
+| pool meanmax          | RTX 5070 Ti     | 129.6M | 162s       | 2.16            | 7.2 GB    |
+| B2 cross_attn         | RTX 5070 Ti     | 129.6M | 169s       | 2.72            | 7.1 GB    |
+| B3 self_attn          | RTX 5070 Ti     | 129.6M | 245s       | 4.29            | 7.3 GB    |
+| B4 mmoe               | RTX 5070 Ti     | 129.6M | 165s       | 1.83            | 7.9 GB    |
+| F4 both=CT5+          | RTX 5070 Ti     | 137.0M | 323s       | 5.94            | 9.1 GB    |
+| F5 CT5+ raw           | RTX 5070 Ti     | 138.2M | 457s       | 6.86            | 8.4 GB    |
+| F6 CT5+ norm          | RTX 5070 Ti     | 138.0M | 460s       | 4.35            | 8.7 GB    |
+| F7 both normed        | RTX 5070 Ti     | 138.0M | 460s       | 8.96            | 8.9 GB    |
+| G2 dim=768            | RTX 5070 Ti     | 146.9M | 409s       | 3.87            | 10.2 GB   |
+| H2 sliding stride512  | RTX 5090        | 146.9M | 250s       | 2.09            | 18.6 GB   |
+| H3 sliding stride1024 | RTX 5090        | 146.9M | 150s       | 1.30            | 17.1 GB   |
+| H4 winattn stride1024 | RTX 5090        | 146.9M | 211s       | 1.29            | 18.0 GB   |
+| H5 winattn stride512  | RTX PRO 6000 Bk | 146.9M | 265s       | 2.51            | 19.9 GB   |
+| H6 winattn hidden     | RTX PRO 6000 Bk | 146.9M | 162s       | 1.40            | 17.1 GB   |
+| H7 centerweight s512  | RTX 5090        | 146.9M | 328s       | 3.10            | 19.8 GB   |
+| H8 crosswin s512      | RTX PRO 6000 Bk | 149.3M | 332s       | 3.78            | 24.2 GB   |
+| I2 line frozen        | RTX 5090        | 161.7M | 95s        | 0.61            | 18.3 GB   |
+| I3 line live          | RTX 5090        | 161.7M | 205s       | 1.66            | 20.1 GB   |
+| I4 line ctx±5 frozen  | RTX 5090        | 161.7M | 84s        | 1.22            | 17.4 GB   |
+| J3 ModernBERT         | RTX 6000 Bk     | 170.0M | 74s        | 1.14            | 21.3 GB   |
+| K2 supcon w0.2        | RTX 5090        | 147.3M | 190s       | 1.75            | 19.7 GB   |
+| K5 supcon group       | RTX 5090        | 147.3M | 190s       | 1.59            | 17.5 GB   |
+| K6 supcon balanced    | RTX 5090        | 147.3M | 188s       | 1.68            | 17.6 GB   |
+| N1 a1+l1 mean         | RTX A4500       | 3.5M   | 47s        | 0.82            | 11.0 GB   |
+| N2 a1+l1 meanmax      | RTX A4500       | 3.5M   | 47s        | 1.00            | 9.2 GB    |
+| N3 a1+l1 cnn          | RTX A4500       | 4.7M   | 53s        | 1.45            | 9.1 GB    |
+| N4 a1+l1 meanmax+skip | RTX A4500       | 3.7M   | 47s        | 1.21            | 9.6 GB    |
+| N5 a1+l1 gnn_plus     | RTX A4500       | 3.7M   | 47s        | 0.83            | 11.0 GB   |
