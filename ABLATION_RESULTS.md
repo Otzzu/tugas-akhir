@@ -555,6 +555,7 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N7  | `20260531_042425_lmgat_codebert_multiclass` | `N7_a1_l1_gnn_plus_elu.yaml`           | meanmax    | true     | gnn_plus + ELU             |
 | N8  | `20260531_064326_lmgat_codebert_multiclass` | `N8_a1_l1_gnn_plus_graphnorm_elu.yaml` | meanmax    | true     | gnn_plus + GraphNorm + ELU |
 | N9  | `20260531_081742_lmgat_codebert_multiclass` | `N9_a1_l1_gnn_plus_elu_ffn.yaml`       | meanmax    | true     | gnn_plus + ELU + FFN       |
+| N10 | `20260531_110214_lmgat_codebert_multiclass` | `N10_a1_l1_gnn_plus_elu_ffn_pe.yaml`   | meanmax    | true     | gnn_plus + ELU + FFN + RWSE-32 PE |
 
 ## Classification
 
@@ -569,6 +570,7 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N7  | 0.505     | 0.450     | **0.510** | **0.511** | 0.902     | 0.482 | 55     |
 | N8  | 0.492     | **0.469** | 0.493     | 0.489     | 0.893     | 0.524 | 44     |
 | N9  | 0.479     | 0.391     | 0.445     | 0.454     | 0.863     | 0.368 | 72     |
+| N10 | 0.465     | 0.391     | 0.465     | 0.463     | 0.872     | 0.409 | 59     |
 
 ## Statement-Level Localization
 
@@ -583,6 +585,7 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N7  | 0.474     | 0.918     | **0.985** | **0.274** | **0.485**  | **0.023**     |
 | N8  | 0.543     | 0.861     | 0.974     | 0.262     | 0.480      | 0.029         |
 | N9  | **0.372** | **0.930** | **0.985** | 0.255     | 0.468      | 0.027         |
+| N10 | 0.515     | 0.890     | 0.981     | 0.243     | 0.451      | 0.030         |
 
 ---
 
@@ -634,3 +637,4 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N7 N5+ELU             | RTX A4500       | 3.7M   | 47s        | 0.72            | 9.3 GB    |
 | N8 N5+GraphNorm+ELU   | RTX A4500       | 3.7M   | 50s        | 0.61            | 10.7 GB   |
 | N9 N7+FFN             | RTX A4500       | 4.8M   | 50s        | 1.01            | 10.3 GB   |
+| N10 N9+RWSE-32 PE     | RTX A4500       | 4.9M   | 52s        | 0.85            | 12.4 GB   |
