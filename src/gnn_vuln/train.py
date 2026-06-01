@@ -157,6 +157,23 @@ class TrainingSession:
         total_steps = len(train_loader) * cfg.train.epochs
         optimizer, scheduler, step_per_batch = build_optimizer_and_scheduler(model, cfg, total_steps)
 
+        # MTL balance method (Kendall uncertainty / PCGrad). Default "fixed" uses
+        # mil_weight/rank_loss_weight from config; kendall learns weights via
+        # uncertainty params; pcgrad projects conflicting per-task gradients.
+        loss_balance_method = getattr(cfg.train, "loss_balance_method", "fixed")
+        uncertainty_weights = None
+        if loss_balance_method == "kendall":
+            from gnn_vuln.training.mtl_balance import UncertaintyWeights
+            # Task list covers all losses that may be present; UncertaintyWeights
+            # silently skips tasks not in raw_losses dict for a given batch.
+            task_names = ["cls", "group", "binary", "mil", "rank"]
+            uncertainty_weights = UncertaintyWeights(task_names).to(device)
+            # Add learnable log_sigma² params to optimizer (use same LR as model).
+            optimizer.add_param_group({"params": list(uncertainty_weights.parameters())})
+            logger.info(f"Kendall uncertainty weighting enabled — tasks: {task_names}")
+        elif loss_balance_method == "pcgrad":
+            logger.info("PCGrad gradient surgery enabled — AMP-compatible via scaler.scale() per task")
+
         # ULMFiT gradual unfreezing (optional). When schedule is non-empty,
         # all LM layers are frozen up-front and progressively unfrozen by epoch.
         unfreezer = None
@@ -212,6 +229,8 @@ class TrainingSession:
             livable_focal_gamma=getattr(cfg.train, "focal_loss_gamma", 2.0),
             livable_label_smoothing=getattr(cfg.train, "label_smoothing", 0.1),
             pgd=pgd, pgd_tokenizer=pgd_tokenizer,
+            loss_balance_method=loss_balance_method,
+            uncertainty_weights=uncertainty_weights,
         )
         trainer.set_grad_clip(self._grad_clip)
 

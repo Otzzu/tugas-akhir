@@ -1,0 +1,82 @@
+# Local GNN-only N28 — N15 + PCGrad gradient surgery (Yu NeurIPS 2020).
+# Base: N15 (current SOTA — Test F1 0.523, IFA 0.299).
+# Varies: loss_balance_method "fixed" → "pcgrad".
+# Algorithm 1 (paper):
+#   1. Compute per-task gradients g_i for each loss L_i
+#   2. For each task i, iterate other tasks j in random order:
+#      if dot(g_i, g_j) < 0:  # conflicting
+#        g_i = g_i - (dot(g_i, g_j) / ||g_j||²) g_j
+#   3. Δθ = Σ g_i^PC
+# Removes conflicting components before applying gradients → both tasks improve.
+# Reference: arxiv:2001.06782, github.com/tianheyu927/PCGrad.
+# Cost: per-task autograd.grad call (1× per task per batch). ~2-3× backward time.
+# No additional hyperparameters; weights mil_weight/rank_loss_weight unused
+# when pcgrad active (treats each loss equally before projection).
+#
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/gnn_only/N28_a1_l1_gnn_plus_elu_ffn_linhead_pcgrad.yaml
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  graph_pool: meanmax
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  func_head_type: linear
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: false
+  use_flash_attention: false
+  grad_accum_steps: 2
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 0
+  prefetch_factor: 2
+  loss_balance_method: pcgrad

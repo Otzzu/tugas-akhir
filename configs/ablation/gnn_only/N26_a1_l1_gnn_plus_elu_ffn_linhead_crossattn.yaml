@@ -1,0 +1,82 @@
+# Local GNN-only N26 — N15 + cross-task attention (GNN-only variant).
+# Base: N15 (current SOTA — Test F1 0.523, IFA 0.299).
+# Varies: cross_task_method "none" → "cross_attention". Requires code changes:
+#   1. Removed assertion blocking live_lm=none + cross_task != none.
+#   2. Forward path: when live_lm=none + cross_task != none, call cross_task with
+#      lm_hidden=None, func_token_lines=None. CrossTaskAttn already gates LM via
+#      kv_tok=None when mode='gnn', so no LM features touched.
+# Cross-task attention adds:
+#   - loc direction: each statement queries graph's nodes → per-statement cond.
+#   - cls direction: fused vector queries statements → per-graph refinement.
+#   - Zero-init residual gates (gate_cls/gate_loc start at 0) — module starts as no-op.
+# Phase 5 (LM-active) confirmed E1 cross_attention beat baseline F1 (0.530 vs 0.519).
+# Test: does cross-task help on GNN-only path too?
+#
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/gnn_only/N26_a1_l1_gnn_plus_elu_ffn_linhead_crossattn.yaml
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  graph_pool: meanmax
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  func_head_type: linear
+  cross_task_method: cross_attention
+  cross_task_residual: true
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: false
+  use_flash_attention: false
+  grad_accum_steps: 2
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 0
+  prefetch_factor: 2

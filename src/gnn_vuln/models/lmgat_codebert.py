@@ -98,14 +98,11 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             f"live_lm must be one of {_VALID_LIVE_LM}, got {live_lm!r}"
         self._live_lm = live_lm
         # When no live LM, localization must be gnn-only (lm/both need LM hidden).
+        # Cross-task methods with mode='gnn' work without LM (lm_hidden path gated by kv_tok).
         if live_lm == "none":
             assert localization_encoder == "gnn", (
                 f"live_lm='none' requires localization_encoder='gnn', "
                 f"got {localization_encoder!r}. Live LM hidden states are unavailable."
-            )
-            assert cross_task_method == "none", (
-                f"live_lm='none' requires cross_task_method='none', "
-                f"got {cross_task_method!r}. Cross-task methods need LM features."
             )
             self._lm_dim = 0
         else:
@@ -225,12 +222,26 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         h_loc = F.normalize(h, dim=-1) if self._normalize_gnn_output else h
         # ── LM branch ─────────────────────────────────────────────────────────
         if self._live_lm == "none":
-            # GNN-only: fused = h_graph. Skip all LM forwards, stmt head GNN-only.
-            logit = self.func_head(h_graph)
-            stmt_scores = (
-                self.stmt_head.score(h_loc, batch, node_line)
-                if node_line is not None else None
+            # GNN-only: fused = h_graph. Skip all LM forwards.
+            ct = self._cross_task_method
+            if ct == "none" or node_line is None:
+                logit = self.func_head(h_graph)
+                stmt_scores = (
+                    self.stmt_head.score(h_loc, batch, node_line)
+                    if node_line is not None else None
+                )
+                return logit, stmt_scores
+            # Cross-task with GNN-only path. statement_features + cross_task with
+            # mode='gnn' work without LM (kv_tok=None, lm_hidden=None skipped).
+            loc_feats, stmt_graph, _ = statement_features(
+                h_loc, batch, node_line, None, None, self._loc_enc,
             )
+            fused_mod, stmt_cond = self.cross_task(
+                h_graph, loc_feats.detach(), stmt_graph, h_loc, batch, B,
+                None, None,
+            )
+            logit = self.func_head(fused_mod)
+            stmt_scores = self.stmt_head.score(h_loc, batch, node_line, cond=stmt_cond)
             return logit, stmt_scores
 
         if self._live_lm == "line":

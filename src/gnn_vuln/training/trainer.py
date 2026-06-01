@@ -111,12 +111,17 @@ class Trainer:
         livable_label_smoothing: float = 0.1,
         pgd=None,             # EmbeddingPGD | None
         pgd_tokenizer=None,   # HF tokenizer for func-LM
+        loss_balance_method: str = "fixed",   # "fixed" | "kendall" | "pcgrad"
+        uncertainty_weights: nn.Module | None = None,
     ):
         self.model              = model
         self.optimizer          = optimizer
         self.scheduler          = scheduler
         self.step_per_batch     = step_per_batch
         self.device             = device
+        self.loss_balance_method = loss_balance_method
+        self.uncertainty_weights = uncertainty_weights
+        self._raw_losses: dict[str, torch.Tensor] = {}
         self.mil_k              = mil_k
         self.mil_weight         = mil_weight
         self.rank_loss_weight   = rank_loss_weight
@@ -195,9 +200,14 @@ class Trainer:
             logit_func, stmt_scores = out
             logit_group = logit_binary = z_combined = None
 
-        # Primary loss
+        # Compute raw (unweighted) per-task losses → stored in self._raw_losses for
+        # MTL balance methods (kendall/pcgrad). Combined into total `loss` below.
+        raw: dict[str, torch.Tensor] = {}
+        use_balance = self.loss_balance_method in ("kendall", "pcgrad")
+
+        # Primary classification loss (CE / focal / livable)
         if self.use_livable_real:
-            loss = livable_loss(
+            cls_loss = livable_loss(
                 logit_func, batch.y,
                 epoch=self._current_epoch,
                 total_epochs=self._total_epochs,
@@ -206,33 +216,40 @@ class Trainer:
                 weight=class_weight,
             )
         elif self.focal_gamma > 0.0:
-            loss = focal_loss(logit_func, batch.y, gamma=self.focal_gamma,
-                              weight=class_weight, label_smoothing=self.label_smoothing)
+            cls_loss = focal_loss(logit_func, batch.y, gamma=self.focal_gamma,
+                                  weight=class_weight, label_smoothing=self.label_smoothing)
         else:
-            loss = F.cross_entropy(logit_func, batch.y, weight=class_weight,
-                                   label_smoothing=self.label_smoothing)
+            cls_loss = F.cross_entropy(logit_func, batch.y, weight=class_weight,
+                                       label_smoothing=self.label_smoothing)
+        raw["cls"] = cls_loss
+        loss = cls_loss
 
         # MTL auxiliary losses
         if logit_group is not None and self.group_loss_weight > 0.0:
             group_labels = getattr(batch, "group_id", None)
             if group_labels is not None:
-                loss = loss + self.group_loss_weight * F.cross_entropy(logit_group, group_labels)
+                g_loss = F.cross_entropy(logit_group, group_labels)
+                raw["group"] = g_loss
+                if not use_balance:
+                    loss = loss + self.group_loss_weight * g_loss
 
         if logit_binary is not None and self.binary_loss_weight > 0.0:
             binary_labels = (batch.y > 0).long()
-            loss = loss + self.binary_loss_weight * F.cross_entropy(logit_binary, binary_labels)
+            b_loss = F.cross_entropy(logit_binary, binary_labels)
+            raw["binary"] = b_loss
+            if not use_balance:
+                loss = loss + self.binary_loss_weight * b_loss
 
         # MIL localisation loss
         if stmt_scores is not None and self.mil_weight > 0.0:
             is_mc_stmt = len(stmt_scores) > 0 and stmt_scores[0].dim() == 2
             if is_mc_stmt:
-                loss = loss + self.mil_weight * mil_loss_multiclass(
-                    stmt_scores, batch.y, self.mil_k
-                )
+                m_loss = mil_loss_multiclass(stmt_scores, batch.y, self.mil_k)
             else:
-                loss = loss + self.mil_weight * mil_loss(
-                    stmt_scores, batch.y, self.mil_k
-                )
+                m_loss = mil_loss(stmt_scores, batch.y, self.mil_k)
+            raw["mil"] = m_loss
+            if not use_balance:
+                loss = loss + self.mil_weight * m_loss
 
         # Ranking loss (binary stmt heads only)
         if (
@@ -246,7 +263,17 @@ class Trainer:
                 rl = ranking_loss(
                     stmt_scores, batch.batch, node_line, flaw_mask, batch.y
                 )
-                loss = loss + self.rank_loss_weight * rl
+                raw["rank"] = rl
+                if not use_balance:
+                    loss = loss + self.rank_loss_weight * rl
+
+        # MTL balance: combine raw losses via learned uncertainty (kendall) or
+        # leave for PCGrad to split per-task gradients (pcgrad uses raw dict directly).
+        if self.loss_balance_method == "kendall" and self.uncertainty_weights is not None:
+            loss = self.uncertainty_weights(raw)
+        # pcgrad case: total `loss` = cls only (computed above before raw additions);
+        # train_epoch handles per-task backward + projection separately using self._raw_losses.
+        self._raw_losses = raw
 
         # Hierarchical SupCon — matrix distance only (no group requirement).
         # group_ids falls back to batch.y: each class = its own group, so
@@ -333,7 +360,36 @@ class Trainer:
             # Scale loss so gradient magnitude is independent of accum_steps
             loss = loss / accum
 
-            if self.use_amp and self.scaler is not None:
+            if self.loss_balance_method == "pcgrad" and len(self._raw_losses) >= 2:
+                # PCGrad: project conflicting per-task gradients on shared params.
+                # AMP-compatible: scale each task loss via scaler.scale() before
+                # autograd.grad(). Projection is scale-invariant — dot/norm_sq ratio
+                # is unchanged when all gradients are multiplied by the same S —
+                # so projected grads are correctly scaled. scaler.unscale_() + step()
+                # handle the rest identically to the normal AMP path.
+                from gnn_vuln.training.mtl_balance import pcgrad_project
+                shared_params = [p for p in self.model.parameters() if p.requires_grad]
+                use_scaler = self.use_amp and self.scaler is not None
+                losses_for_pcgrad = {
+                    name: (self.scaler.scale(l / accum) if use_scaler else l / accum)
+                    for name, l in self._raw_losses.items()
+                }
+                projected = pcgrad_project(losses_for_pcgrad, shared_params)
+                for p, g in zip(shared_params, projected):
+                    p.grad = (p.grad + g) if p.grad is not None else g
+                if should_step:
+                    if use_scaler:
+                        if hasattr(self, "_grad_clip") and self._grad_clip > 0.0:
+                            self.scaler.unscale_(self.optimizer)
+                            nn.utils.clip_grad_norm_(self.model.parameters(), self._grad_clip)
+                        self.scaler.step(self.optimizer)
+                        self.scaler.update()
+                    else:
+                        if hasattr(self, "_grad_clip") and self._grad_clip > 0.0:
+                            nn.utils.clip_grad_norm_(self.model.parameters(), self._grad_clip)
+                        self.optimizer.step()
+                    self.optimizer.zero_grad()
+            elif self.use_amp and self.scaler is not None:
                 self.scaler.scale(loss).backward()
                 if should_step:
                     if hasattr(self, "_grad_clip") and self._grad_clip > 0.0:
