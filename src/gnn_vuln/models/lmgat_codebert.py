@@ -139,9 +139,9 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             use_pe=gnn_use_pe, pe_walk_length=gnn_pe_walk_length, pe_dim=gnn_pe_dim,
             balanced_init=gnn_balanced_init, balanced_init_beta=gnn_balanced_init_beta,
         )
-        # Graph-level pooling: mean | meanmax | attention | dualflow | cnn
-        assert graph_pool in ("mean", "meanmax", "attention", "dualflow", "cnn"), \
-            f"graph_pool must be mean|meanmax|attention|dualflow|cnn, got {graph_pool!r}"
+        # Graph-level pooling: mean | max | add | meanmax | meanmaxadd | attention | dualflow | cnn
+        assert graph_pool in ("mean", "max", "add", "meanmax", "meanmaxadd", "attention", "dualflow", "cnn"), \
+            f"graph_pool must be mean|max|add|meanmax|meanmaxadd|attention|dualflow|cnn, got {graph_pool!r}"
         self._graph_pool = graph_pool
         self.attn_pool = (
             AttentionalAggregation(gate_nn=nn.Linear(hidden_dim, 1))
@@ -160,7 +160,10 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         # func_head_type override: "fat" (MLP, default) | "thin" (LN+Linear) | "linear" (GNN+ style).
         assert func_head_type in ("fat", "thin", "linear"), \
             f"func_head_type must be fat|thin|linear, got {func_head_type!r}"
-        _fused_dim = hidden_dim + self._lm_dim
+        # Pool output dim: meanmaxadd concats mean+max+add → 3× hidden_dim.
+        # Others keep hidden_dim (mean / meanmax score-level / attention / dualflow / cnn).
+        self._pool_out_dim = 3 * hidden_dim if graph_pool == "meanmaxadd" else hidden_dim
+        _fused_dim = self._pool_out_dim + self._lm_dim
         if func_head_type == "linear":
             self.func_head = LinearFuncHead(_fused_dim, num_classes, dropout=dropout)
         elif func_head_type == "thin" or (cross_task_method == "mmoe" and not cross_task_residual):
@@ -195,6 +198,16 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             h_graph = self.attn_pool(h, batch)
         elif self._graph_pool == "meanmax":
             h_graph = 0.8 * global_max_pool(h, batch) + 0.6 * global_mean_pool(h, batch)
+        elif self._graph_pool == "meanmaxadd":
+            h_graph = torch.cat([
+                global_mean_pool(h, batch),
+                global_max_pool(h, batch),
+                global_add_pool(h, batch),
+            ], dim=-1)
+        elif self._graph_pool == "max":
+            h_graph = global_max_pool(h, batch)
+        elif self._graph_pool == "add":
+            h_graph = global_add_pool(h, batch)
         elif self._graph_pool == "dualflow":
             # focal: per-node suspicion-weighted pool + context: mean pool
             s = torch.sigmoid(self.node_susp(h))                      # [N, 1]
