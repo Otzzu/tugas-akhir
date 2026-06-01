@@ -118,6 +118,21 @@ class TrainingSession:
 
         model = build_model(cfg, in_channels, self._active_heads).to(device)
 
+        # LSUV init (Mishkin & Matas ICLR 2016) — applied to GNN encoder only.
+        # Runs orthonormal init + per-layer variance normalization using first batch.
+        if getattr(cfg.model, "gnn_lsuv_init", False) and hasattr(model, "encoder"):
+            from gnn_vuln.models.encoders import apply_lsuv_encoder
+            try:
+                first_batch = next(iter(train_loader)).to(device)
+                tol = getattr(cfg.model, "gnn_lsuv_tol", 0.1)
+                max_trials = getattr(cfg.model, "gnn_lsuv_max_trials", 10)
+                final_vars = apply_lsuv_encoder(model.encoder, first_batch,
+                                                tol=tol, max_trials=max_trials)
+                logger.info(f"LSUV init done — final variances: "
+                            f"{ {k: round(v, 3) for k, v in final_vars.items()} }")
+            except Exception as e:
+                logger.warning(f"LSUV init failed, falling back to default init: {e}")
+
         # Vectorized StmtHead: scatter-based pooling, no Python inner loop
         if getattr(cfg.train, "stmt_head_vectorized", False):
             from gnn_vuln.models.heads import StmtHead

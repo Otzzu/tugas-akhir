@@ -95,6 +95,127 @@ def apply_balanced_init(layers, beta: float = 2.0) -> None:
             norms = W.norm(dim=1, keepdim=True).clamp(min=1e-6)
             W.copy_(W / norms * (beta ** 0.5))
 
+@torch.no_grad()
+def apply_g_init(layers, d_i: float = 2.0) -> None:
+    """G-Init (Kelesis et al. 2024, Applied Intelligence) — generalizes Kaiming to GNNs.
+
+    Paper formula (Section 3, eq for sigma):
+      sigma = sqrt(2 * d_i / n_l)
+      W ~ N(0, sigma^2)
+
+    Where:
+      d_i = fixed hyperparameter (default 2.0 — paper uses 2.0 for most datasets,
+            1.6 for ogbn-arxiv). NOT computed from real graph degrees.
+      n_l = layer dimensionality (paper assumes square W of size n_l x n_l for GCN).
+            For non-square GAT linear layers, we use fan_in (PyTorch convention).
+
+    Paper SCOPE:
+      - Applies ONLY to weight matrices W (linear projections).
+      - NOT to bias, NOT to attention vectors. Paper tested on GCN only.
+      - For GAT we apply to lin_l, lin_r, lin_edge (the W-equivalents).
+      - Attention vectors a_l, a_r keep default PyG Xavier init.
+
+    Effect: Kaiming with sqrt(2) larger std (sqrt(4/n_l) vs sqrt(2/n_l)).
+    Larger maximum singular values → resists oversmoothing at depth.
+    Reference: arxiv:2410.23830.
+    """
+    if not layers:
+        return
+    # Apply only to weight matrices W (per paper).
+    # Skip attention vectors — paper does not extend G-Init to them.
+    for conv in layers:
+        for lin_name in ("lin", "lin_l", "lin_r", "lin_src", "lin_dst", "lin_edge"):
+            if hasattr(conv, lin_name):
+                lin = getattr(conv, lin_name)
+                if lin is not None and hasattr(lin, "weight") and lin.weight is not None:
+                    fan_in = lin.weight.size(-1)
+                    sigma = (2.0 * d_i / fan_in) ** 0.5
+                    nn.init.normal_(lin.weight, mean=0.0, std=sigma)
+                    # Paper: only W initialized. Leave bias default (zero/whatever PyG sets).
+
+
+@torch.no_grad()
+def apply_lsuv_encoder(encoder, sample_batch, tol: float = 0.1,
+                       max_trials: int = 10, verbose: bool = False) -> dict:
+    """LSUV (Mishkin & Matas, ICLR 2016, arxiv:1511.06422) — Algorithm 1.
+
+    Two steps:
+      1. Pre-init: orthonormal init for all nn.Linear weights in encoder.
+      2. Sequential variance normalization. For each Linear layer L:
+         while |Var(out_L) - 1.0| >= tol and trials < max_trials:
+             forward pass with sample batch
+             measure Var(out_L)
+             W_L = W_L / sqrt(Var(out_L))
+
+    Args:
+      encoder: GATEncoder (or any nn.Module exposing forward(x, edge_index, edge_attr=, batch=, rwse=))
+      sample_batch: a PyG Batch with .x, .edge_index, .edge_attr, .batch (and .rwse if PE)
+      tol: variance tolerance, paper says 0.01-0.1 works in broad range
+      max_trials: cap on rescale iterations per layer
+
+    Returns:
+      dict {layer_name: final_variance} for logging.
+    """
+    # Step 1: orthonormal init for all Linear layers in encoder (paper: "Pre-initialize
+    # network with orthonormal matrices as in Saxe et al. (2014)"). PyTorch's orthogonal_
+    # handles both square and rectangular weights via QR/SVD.
+    for m in encoder.modules():
+        if isinstance(m, nn.Linear) and m.weight is not None:
+            nn.init.orthogonal_(m.weight)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+
+    # Collect target Linear layers in encoder
+    linear_modules = [(n, m) for n, m in encoder.named_modules() if isinstance(m, nn.Linear)]
+    if not linear_modules:
+        return {}
+
+    # Setup forward hooks to capture per-layer outputs
+    activations = {}
+    hooks = []
+    for name, layer in linear_modules:
+        def make_hook(lname):
+            def hook(mod, inp, out):
+                # out may be tuple from PyG layers; take tensor
+                t = out if isinstance(out, torch.Tensor) else out[0]
+                activations[lname] = t.detach()
+            return hook
+        h = layer.register_forward_hook(make_hook(name))
+        hooks.append(h)
+
+    # Build forward args from sample batch
+    x = sample_batch.x
+    edge_index = sample_batch.edge_index
+    edge_attr = getattr(sample_batch, "edge_attr", None)
+    b = getattr(sample_batch, "batch", None)
+    rwse = getattr(sample_batch, "rwse", None) if getattr(encoder, "use_pe", False) else None
+
+    encoder.eval()
+    final_vars = {}
+    try:
+        # Step 2: per-layer variance scaling (sequential in forward order)
+        for name, layer in linear_modules:
+            for _trial in range(max_trials):
+                activations.clear()
+                _ = encoder(x, edge_index, edge_attr, batch=b, rwse=rwse)
+                if name not in activations:
+                    break
+                var = activations[name].var().item()
+                if not (var > 0):
+                    break
+                if abs(var - 1.0) < tol:
+                    final_vars[name] = var
+                    break
+                layer.weight.data.div_((var ** 0.5))
+                final_vars[name] = var
+    finally:
+        for h in hooks:
+            h.remove()
+        encoder.train()
+
+    return final_vars
+
+
 # CPG edge types: AST, CFG, CDG, DDG, PDG, CALL, REACHING_DEF
 NUM_EDGE_TYPES = 7
 
@@ -151,6 +272,8 @@ class GATEncoder(nn.Module):
         pe_dim: int = 28,
         balanced_init: bool = False,
         balanced_init_beta: float = 2.0,
+        g_init: bool = False,
+        g_init_d: float = 2.0,
     ):
         super().__init__()
         assert block_style in ("resnet", "gnn_plus"), \
@@ -201,6 +324,10 @@ class GATEncoder(nn.Module):
         # Zeros attention vectors + orthogonal init + sqrt(beta) first-layer row scaling.
         if balanced_init:
             apply_balanced_init(self.convs, beta=balanced_init_beta)
+        # Apply G-Init (Kelesis 2024) — Kaiming-generalized variance with d_i factor.
+        # Mutually exclusive with BalO (last one wins if both set).
+        if g_init:
+            apply_g_init(self.convs, d_i=g_init_d)
 
         # Per-layer FFN block (GNN+ 2025 — matches official github.com/LUOyk1999/GNNPlus _ff_block).
         # Block: BN(norm1) → [Linear → Act → Drop → Linear → Drop] → +residual → BN(norm2)
@@ -476,6 +603,8 @@ def build_gnn_encoder(
     pe_dim: int = 28,
     balanced_init: bool = False,
     balanced_init_beta: float = 2.0,
+    g_init: bool = False,
+    g_init_d: float = 2.0,
 ) -> nn.Module:
     """Build a GNN encoder by name. All encoders share forward(x, edge_index, edge_attr).
 
@@ -494,7 +623,8 @@ def build_gnn_encoder(
                           block_style=block_style, norm_type=norm_type, activation=activation,
                           use_ffn=use_ffn, ffn_expansion=ffn_expansion,
                           use_pe=use_pe, pe_walk_length=pe_walk_length, pe_dim=pe_dim,
-                          balanced_init=balanced_init, balanced_init_beta=balanced_init_beta)
+                          balanced_init=balanced_init, balanced_init_beta=balanced_init_beta,
+                          g_init=g_init, g_init_d=g_init_d)
     if m == "gcn":
         return GCNEncoder(in_channels, hidden_dim, num_layers, dropout,
                           add_self_loops, use_skip)
