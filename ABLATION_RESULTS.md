@@ -561,6 +561,10 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N13 | `20260531_144339_lmgat_codebert_multiclass` | `N13_a1_l1_gnn_plus_elu_balo.yaml`     | meanmax    | true     | gnn_plus + ELU + BalO init        |
 | N14 | `20260531_212716_lmgat_codebert_multiclass` | `N14_a1_l1_gnn_plus_elu_dim512_balo.yaml` | meanmax | true     | N11 dim=512 + N13 BalO            |
 | N15 | `20260531_204352_lmgat_codebert_multiclass` | `N15_a1_l1_gnn_plus_elu_ffn_linhead.yaml` | meanmax | true     | N9 FFN + linear func head (GNN+)  |
+| N16 | `20260601_055452_lmgat_codebert_multiclass` | `N16_a1_l1_gnn_plus_elu_ffn_linhead_balo.yaml` | meanmax | true | N15 + BalO init                   |
+| N17 | `20260601_065912_lmgat_codebert_multiclass` | `N17_a1_l1_gnn_plus_elu_ffn_meanpool.yaml`    | mean    | true | N15 + mean pool                   |
+| N18 | `20260601_055453_lmgat_codebert_multiclass` | `N18_a1_l1_gnn_plus_elu_ffn_addpool.yaml`     | add     | true | N15 + add pool                    |
+| N19 | `20260601_075846_lmgat_codebert_multiclass` | `N19_a1_l1_gnn_plus_elu_ffn_maxpool.yaml`     | max     | true | N15 + max pool                    |
 
 ## Classification
 
@@ -581,6 +585,10 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N13 | 0.509     | 0.471     | 0.502     | 0.497     | 0.901     | 0.532     | 44     |
 | N14 | 0.521     | 0.470     | 0.493     | 0.483     | 0.901     | 0.430     | 64     |
 | N15 | 0.500     | **0.523** | 0.487     | 0.483     | 0.879     | 0.337     | 78     |
+| N16 | 0.514     | 0.504     | 0.481     | 0.480     | 0.889     | 0.334     | 77     |
+| N17 | 0.453     | 0.400     | 0.447     | 0.447     | 0.871     | 0.425     | 80     |
+| N18 | 0.328     | 0.270     | 0.328     | 0.307     | 0.852     | 0.260     | 74     |
+| N19 | 0.474     | 0.484     | 0.489     | 0.488     | 0.896     | 0.292     | 61     |
 
 ## Statement-Level Localization
 
@@ -600,7 +608,11 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N12 | 0.401     | 0.906     | 0.984     | 0.264     | 0.467      | 0.025         |
 | N13 | 0.539     | 0.889     | 0.978     | 0.263     | 0.481      | 0.028         |
 | N14 | 0.606     | 0.874     | 0.978     | 0.263     | **0.491**  | 0.027         |
-| N15 | **0.299** | **0.940** | **0.988** | 0.271     | 0.475      | 0.024         |
+| N15 | 0.299     | **0.940** | **0.988** | 0.271     | 0.475      | 0.024         |
+| N16 | 0.385     | 0.911     | 0.981     | 0.240     | 0.451      | 0.036         |
+| N17 | **0.220** | 0.928     | **0.988** | 0.257     | 0.464      | 0.029         |
+| N18 | 0.485     | 0.895     | 0.978     | **0.285** | 0.488      | **0.023**     |
+| N19 | 0.435     | 0.895     | 0.980     | 0.238     | 0.458      | 0.034         |
 
 ---
 
@@ -658,3 +670,7 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N13 N7+BalO init      | RTX A5000       | 3.7M   | 57s        | 0.70            | 10.5 GB   |
 | N14 N11+BalO          | RTX A6000       | 10.7M  | 87s        | 1.55            | 17.5 GB   |
 | N15 N9+linear head    | RTX A4500       | 4.7M   | 54s        | 1.17            | 8.8 GB    |
+| N16 N15+BalO          | RTX A4500       | 4.7M   | 50s        | 1.07            | 12.4 GB   |
+| N17 N15+mean pool     | RTX A4500       | 4.7M   | 50s        | 1.10            | 10.2 GB   |
+| N18 N15+add pool      | RTX 4060 Ti     | 4.7M   | 100s       | 2.05            | 10.8 GB   |
+| N19 N15+max pool      | RTX 4060 Ti     | 4.7M   | 98s        | 1.67            | 9.8 GB    |
