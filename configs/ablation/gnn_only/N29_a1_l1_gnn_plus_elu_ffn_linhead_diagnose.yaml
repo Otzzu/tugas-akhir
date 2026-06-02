@@ -77,7 +77,7 @@ train:
   save_last_every: 10
   compile_model: false
   stmt_head_vectorized: true
-  num_workers: 4
-  prefetch_factor: 4
+  num_workers: 0
+  prefetch_factor: 2
   mtl_diagnose: true
   mtl_diagnose_every: 10
