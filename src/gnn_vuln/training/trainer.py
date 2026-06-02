@@ -386,23 +386,41 @@ class Trainer:
             # Scale loss so gradient magnitude is independent of accum_steps
             loss = loss / accum
 
-            if self.loss_balance_method == "pcgrad" and len(self._raw_losses) >= 2:
+            if self.loss_balance_method in ("pcgrad", "pcgrad_encoder") and len(self._raw_losses) >= 2:
                 # PCGrad: project conflicting per-task gradients on shared params.
                 # AMP-compatible: scale each task loss via scaler.scale() before
                 # autograd.grad(). Projection is scale-invariant — dot/norm_sq ratio
                 # is unchanged when all gradients are multiplied by the same S —
                 # so projected grads are correctly scaled. scaler.unscale_() + step()
                 # handle the rest identically to the normal AMP path.
+                #
+                # "pcgrad"         — project ALL shared params (original; heads get
+                #                    cross-task projection noise — no conflict there).
+                # "pcgrad_encoder" — project ONLY encoder params (N28b fix). Heads get
+                #                    standard per-task grads (each head serves 1 task,
+                #                    no conflict). Only the shared encoder is de-conflicted.
                 from gnn_vuln.training.mtl_balance import pcgrad_project
-                shared_params = [p for p in self.model.parameters() if p.requires_grad]
                 use_scaler = self.use_amp and self.scaler is not None
                 losses_for_pcgrad = {
                     name: (self.scaler.scale(l / accum) if use_scaler else l / accum)
                     for name, l in self._raw_losses.items()
                 }
-                projected = pcgrad_project(losses_for_pcgrad, shared_params)
-                for p, g in zip(shared_params, projected):
-                    p.grad = (p.grad + g) if p.grad is not None else g
+                if self.loss_balance_method == "pcgrad_encoder" and hasattr(self.model, "encoder"):
+                    # 1. Per-task grads on ENCODER only (retain graph for backward below).
+                    enc_params = [p for p in self.model.encoder.parameters() if p.requires_grad]
+                    projected = pcgrad_project(losses_for_pcgrad, enc_params, retain_graph=True)
+                    # 2. Standard backward of summed loss → correct grads for heads + all.
+                    summed = sum(losses_for_pcgrad.values())
+                    summed.backward()
+                    # 3. Overwrite encoder grads with PCGrad-projected version.
+                    for p, g in zip(enc_params, projected):
+                        p.grad = g
+                else:
+                    # Original: project all shared params, assign directly.
+                    shared_params = [p for p in self.model.parameters() if p.requires_grad]
+                    projected = pcgrad_project(losses_for_pcgrad, shared_params)
+                    for p, g in zip(shared_params, projected):
+                        p.grad = (p.grad + g) if p.grad is not None else g
                 if should_step:
                     if use_scaler:
                         if hasattr(self, "_grad_clip") and self._grad_clip > 0.0:

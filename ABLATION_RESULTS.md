@@ -575,10 +575,10 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N27 | `20260601_225416_lmgat_codebert_multiclass` | `N27_a1_l1_gnn_plus_elu_ffn_linhead_kendall.yaml`   | meanmax    | true     | N15 + Kendall uncertainty MTL      |
 | N28 | `20260601_232916_lmgat_codebert_multiclass` | `N28_a1_l1_gnn_plus_elu_ffn_linhead_pcgrad.yaml`    | meanmax    | true     | N15 + PCGrad (Yu 2020)             |
 | N29 | `20260602_133832_lmgat_codebert_multiclass` | `N29_a1_l1_gnn_plus_elu_ffn_linhead_diagnose.yaml`  | meanmax    | true     | N15 + MTL diagnostics (num_workers=0 rerun) |
-| N30 | `20260602_062700_lmgat_codebert_multiclass` | `N30_a1_l1_gnn_plus_elu_ffn_linhead_dualflow.yaml`  | dualflow   | true     | N15 + dualflow pool                |
-| N31 | `20260602_065634_lmgat_codebert_multiclass` | `N31_a1_l1_gnn_plus_elu_ffn_linhead_heads2.yaml`    | meanmax    | true     | N15 + heads=2                      |
-| N32 | `20260602_083556_lmgat_codebert_multiclass` | `N32_a1_l1_gnn_plus_elu_ffn_linhead_heads8.yaml`    | meanmax    | true     | N15 + heads=8 (GATv2 default)      |
-| N33 | `20260602_104925_lmgat_codebert_multiclass` | `N33_a1_l1_gnn_plus_elu_ffn_linhead_heads16.yaml`   | meanmax    | true     | N15 + heads=16                     |
+| N30 | `20260602_153635_lmgat_codebert_multiclass` | `N30_a1_l1_gnn_plus_elu_ffn_linhead_dualflow.yaml`  | dualflow   | true     | N15 + dualflow pool (num_workers=0 rerun)      |
+| N31 | `20260602_160417_lmgat_codebert_multiclass` | `N31_a1_l1_gnn_plus_elu_ffn_linhead_heads2.yaml`    | meanmax    | true     | N15 + heads=2 (num_workers=0 rerun)            |
+| N32 | `20260602_155136_lmgat_codebert_multiclass` | `N32_a1_l1_gnn_plus_elu_ffn_linhead_heads8.yaml`    | meanmax    | true     | N15 + heads=8 GATv2 default (num_workers=0 rerun) |
+| N33 | `20260602_170600_lmgat_codebert_multiclass` | `N33_a1_l1_gnn_plus_elu_ffn_linhead_heads16.yaml`   | meanmax    | true     | N15 + heads=16 (num_workers=0 rerun)           |
 
 ## Classification
 
@@ -607,7 +607,7 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N17 | 0.453     | 0.400     | 0.447     | 0.447     | 0.408     | 0.470     | 0.468     | 0.452     | 0.871     | 0.425     | 80     |
 | N18 | 0.328     | 0.270     | 0.328     | 0.307     | 0.272     | 0.446     | 0.346     | 0.319     | 0.852     | 0.260     | 74     |
 | N19 | 0.474     | 0.484     | 0.489     | 0.488     | 0.495     | 0.484     | 0.507     | 0.489     | 0.896     | 0.292     | 61     |
-| N20 | 0.506     | 0.448     | 0.485     | 0.483     | 0.551     | 0.501     | 0.498     | 0.489     | 0.896     | 0.356     | 58     |
+| N20 | 0.506     | 0.448     | 0.485     | 0.483     | **0.551** | 0.501     | 0.498     | 0.489     | 0.896     | 0.356     | 58     |
 | N21 | 0.493     | 0.445     | 0.467     | 0.458     | 0.502     | 0.482     | 0.491     | 0.473     | 0.891     | 0.336     | 60     |
 | N22 | 0.493     | 0.451     | 0.491     | 0.486     | 0.515     | 0.470     | 0.499     | 0.494     | 0.891     | 0.373     | 63     |
 | N23 | 0.480     | 0.439     | 0.449     | 0.446     | 0.478     | 0.483     | 0.479     | 0.469     | 0.892     | 0.344     | 67     |
@@ -617,10 +617,10 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N27 | 0.255     | 0.249     | 0.401     | 0.376     | 0.261     | 0.241     | 0.364     | 0.377     | 0.865     | 0.217     | 42     |
 | N28 | 0.483     | 0.449     | 0.475     | 0.471     | 0.467     | 0.445     | 0.486     | 0.466     | 0.886     | 0.392     | 57     |
 | N29 | 0.519     | 0.514     | 0.481     | 0.480     | 0.528     | 0.525     | 0.493     | 0.479     | 0.891     | 0.323     | 86     |
-| N30 | 0.460     | 0.428     | 0.450     | 0.451     | 0.477     | 0.472     | 0.467     | 0.459     | 0.879     | 0.467     | 38     |
-| N31 | 0.461     | 0.441     | 0.461     | 0.456     | **0.558** | 0.439     | 0.503     | 0.473     | 0.887     | 0.364     | 44     |
-| N32 | 0.489     | 0.445     | 0.460     | 0.457     | 0.439     | 0.523     | 0.471     | 0.463     | 0.895     | 0.323     | 63     |
-| N33 | 0.482     | 0.457     | 0.483     | 0.486     | 0.421     | 0.490     | 0.491     | 0.472     | 0.902     | 0.301     | 77     |
+| N30 | 0.465     | 0.412     | 0.446     | 0.440     | 0.453     | 0.455     | 0.461     | 0.443     | 0.872     | 0.496     | 32     |
+| N31 | 0.497     | 0.443     | 0.491     | 0.487     | 0.454     | 0.402     | 0.494     | 0.472     | 0.886     | 0.344     | 75     |
+| N32 | 0.470     | 0.426     | 0.442     | 0.442     | 0.409     | 0.450     | 0.478     | 0.459     | 0.889     | 0.298     | 53     |
+| N33 | 0.471     | 0.433     | 0.456     | 0.456     | 0.411     | 0.496     | 0.481     | 0.471     | 0.889     | 0.314     | 55     |
 
 ## Statement-Level Localization
 
@@ -650,15 +650,15 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N22 | 0.423     | 0.871     | 0.980     | 0.198     | 0.413      | 0.053         |
 | N23 | 0.351     | 0.936     | 0.987     | 0.261     | 0.447      | 0.027         |
 | N24 | 0.369     | 0.921     | 0.982     | 0.227     | 0.423      | 0.040         |
-| N25 | 0.322     | 0.950     | 0.985     | 0.242     | 0.444      | 0.031         |
+| N25 | 0.322     | **0.950** | 0.985     | 0.242     | 0.444      | 0.031         |
 | N26 | 0.370     | 0.928     | 0.984     | 0.252     | 0.439      | 0.029         |
 | N27 | 0.602     | 0.865     | 0.966     | 0.253     | **0.491**  | 0.031         |
 | N28 | 0.613     | 0.884     | 0.977     | 0.238     | 0.449      | 0.034         |
 | N29 | 0.271     | 0.934     | 0.987     | 0.262     | 0.449      | 0.027         |
-| N30 | 0.313     | **0.963** | 0.987     | 0.264     | 0.464      | 0.025         |
-| N31 | 0.362     | 0.937     | 0.987     | 0.240     | 0.420      | 0.028         |
-| N32 | 0.495     | 0.877     | 0.977     | 0.237     | 0.443      | 0.035         |
-| N33 | 0.493     | 0.911     | 0.984     | 0.253     | 0.443      | 0.027         |
+| N30 | 0.375     | 0.940     | 0.984     | 0.225     | 0.423      | 0.038         |
+| N31 | 0.529     | 0.889     | 0.977     | 0.231     | 0.455      | 0.039         |
+| N32 | 0.508     | 0.915     | 0.984     | 0.246     | 0.458      | 0.032         |
+| N33 | 0.490     | 0.924     | 0.982     | 0.260     | 0.456      | 0.026         |
 
 ---
 
@@ -730,7 +730,7 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N27 N15+Kendall MTL   | RTX A4500       | 4.7M   | 49s        | 0.58            | 9.5 GB    |
 | N28 N15+PCGrad        | RTX A4500       | 4.7M   | 98s        | 1.56            | 9.1 GB    |
 | N29 N15+MTL diag (w0) | RTX A4500       | 4.7M   | 58s        | 1.38            | 11.2 GB   |
-| N30 N15+dualflow      | RTX A4500       | 4.7M   | 46s        | 0.48            | 11.0 GB   |
-| N31 N15+heads=2       | RTX A4500       | 3.0M   | 28s        | 0.35            | 5.4 GB    |
-| N32 N15+heads=8       | RTX A6000       | 8.2M   | 69s        | 1.21            | 21.2 GB   |
-| N33 N15+heads=16      | RTX A6000       | 15.0M  | 124s       | 2.65            | 24.0 GB   |
+| N30 N15+dualflow (w0) | RTX A4500       | 4.7M   | 51s        | 0.45            | 10.9 GB   |
+| N31 N15+heads=2 (w0)  | RTX A4500       | 3.0M   | 34s        | 0.71            | 5.3 GB    |
+| N32 N15+heads=8 (w0)  | RTX A6000       | 8.2M   | 83s        | 1.23            | 22.1 GB   |
+| N33 N15+heads=16 (w0) | RTX A6000       | 15.0M  | 131s       | 2.00            | 26.3 GB   |
