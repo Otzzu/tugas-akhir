@@ -574,7 +574,7 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N26 | `20260601_220205_lmgat_codebert_multiclass` | `N26_a1_l1_gnn_plus_elu_ffn_linhead_crossattn.yaml` | meanmax    | true     | N15 + cross-task attention         |
 | N27 | `20260601_225416_lmgat_codebert_multiclass` | `N27_a1_l1_gnn_plus_elu_ffn_linhead_kendall.yaml`   | meanmax    | true     | N15 + Kendall uncertainty MTL      |
 | N28 | `20260601_232916_lmgat_codebert_multiclass` | `N28_a1_l1_gnn_plus_elu_ffn_linhead_pcgrad.yaml`    | meanmax    | true     | N15 + PCGrad (Yu 2020)             |
-| N29 | `20260602_052841_lmgat_codebert_multiclass` | `N29_a1_l1_gnn_plus_elu_ffn_linhead_diagnose.yaml`  | meanmax    | true     | N15 + MTL diagnostics (no surgery) |
+| N29 | `20260602_133832_lmgat_codebert_multiclass` | `N29_a1_l1_gnn_plus_elu_ffn_linhead_diagnose.yaml`  | meanmax    | true     | N15 + MTL diagnostics (num_workers=0 rerun) |
 | N30 | `20260602_062700_lmgat_codebert_multiclass` | `N30_a1_l1_gnn_plus_elu_ffn_linhead_dualflow.yaml`  | dualflow   | true     | N15 + dualflow pool                |
 | N31 | `20260602_065634_lmgat_codebert_multiclass` | `N31_a1_l1_gnn_plus_elu_ffn_linhead_heads2.yaml`    | meanmax    | true     | N15 + heads=2                      |
 | N32 | `20260602_083556_lmgat_codebert_multiclass` | `N32_a1_l1_gnn_plus_elu_ffn_linhead_heads8.yaml`    | meanmax    | true     | N15 + heads=8 (GATv2 default)      |
@@ -616,7 +616,7 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N26 | 0.475     | 0.429     | 0.487     | 0.481     | 0.510     | 0.486     | 0.491     | 0.472     | 0.893     | 0.374     | 55     |
 | N27 | 0.255     | 0.249     | 0.401     | 0.376     | 0.261     | 0.241     | 0.364     | 0.377     | 0.865     | 0.217     | 42     |
 | N28 | 0.483     | 0.449     | 0.475     | 0.471     | 0.467     | 0.445     | 0.486     | 0.466     | 0.886     | 0.392     | 57     |
-| N29 | 0.494     | 0.454     | 0.457     | 0.450     | 0.448     | 0.449     | 0.479     | 0.465     | 0.890     | 0.379     | 66     |
+| N29 | 0.519     | 0.514     | 0.481     | 0.480     | 0.528     | 0.525     | 0.493     | 0.479     | 0.891     | 0.323     | 86     |
 | N30 | 0.460     | 0.428     | 0.450     | 0.451     | 0.477     | 0.472     | 0.467     | 0.459     | 0.879     | 0.467     | 38     |
 | N31 | 0.461     | 0.441     | 0.461     | 0.456     | **0.558** | 0.439     | 0.503     | 0.473     | 0.887     | 0.364     | 44     |
 | N32 | 0.489     | 0.445     | 0.460     | 0.457     | 0.439     | 0.523     | 0.471     | 0.463     | 0.895     | 0.323     | 63     |
@@ -654,7 +654,7 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N26 | 0.370     | 0.928     | 0.984     | 0.252     | 0.439      | 0.029         |
 | N27 | 0.602     | 0.865     | 0.966     | 0.253     | **0.491**  | 0.031         |
 | N28 | 0.613     | 0.884     | 0.977     | 0.238     | 0.449      | 0.034         |
-| N29 | 0.448     | 0.895     | 0.982     | 0.239     | 0.441      | 0.033         |
+| N29 | 0.271     | 0.934     | 0.987     | 0.262     | 0.449      | 0.027         |
 | N30 | 0.313     | **0.963** | 0.987     | 0.264     | 0.464      | 0.025         |
 | N31 | 0.362     | 0.937     | 0.987     | 0.240     | 0.420      | 0.028         |
 | N32 | 0.495     | 0.877     | 0.977     | 0.237     | 0.443      | 0.035         |
@@ -729,7 +729,7 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N26 N15+cross-attn    | RTX A4500       | 5.6M   | 56s        | 0.86            | 9.8 GB    |
 | N27 N15+Kendall MTL   | RTX A4500       | 4.7M   | 49s        | 0.58            | 9.5 GB    |
 | N28 N15+PCGrad        | RTX A4500       | 4.7M   | 98s        | 1.56            | 9.1 GB    |
-| N29 N15+MTL diagnose  | RTX A4500       | 4.7M   | 53s        | 0.96            | 10.3 GB   |
+| N29 N15+MTL diag (w0) | RTX A4500       | 4.7M   | 58s        | 1.38            | 11.2 GB   |
 | N30 N15+dualflow      | RTX A4500       | 4.7M   | 46s        | 0.48            | 11.0 GB   |
 | N31 N15+heads=2       | RTX A4500       | 3.0M   | 28s        | 0.35            | 5.4 GB    |
 | N32 N15+heads=8       | RTX A6000       | 8.2M   | 69s        | 1.21            | 21.2 GB   |
