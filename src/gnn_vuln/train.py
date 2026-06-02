@@ -231,6 +231,8 @@ class TrainingSession:
             pgd=pgd, pgd_tokenizer=pgd_tokenizer,
             loss_balance_method=loss_balance_method,
             uncertainty_weights=uncertainty_weights,
+            mtl_diagnose=getattr(cfg.train, "mtl_diagnose", False),
+            mtl_diagnose_every=getattr(cfg.train, "mtl_diagnose_every", 10),
         )
         trainer.set_grad_clip(self._grad_clip)
 
@@ -524,14 +526,19 @@ class TrainingSession:
             epoch_peak_vram = 0.0
             if torch.cuda.is_available():
                 epoch_peak_vram = round(torch.cuda.max_memory_allocated() / 1024**3, 3)
-            epoch_log.append({
+            epoch_entry = {
                 "epoch": epoch, "train_loss": round(train_loss, 6),
                 "val_loss": round(val_loss, 6), "val_acc": round(val_acc, 6),
                 "val_f1": round(val_f1, 6), "val_f1w": round(val_f1w, 6),
                 "val_prec": round(val_prec, 6), "val_rec": round(val_rec, 6),
                 "lr": lr_now, "epoch_time_s": round(epoch_time, 1),
                 "peak_vram_gb": epoch_peak_vram, "best": improved,
-            })
+            }
+            # MTL diagnostics — flatten trainer.last_diag into epoch row
+            if getattr(trainer, "last_diag", None):
+                for k, v in trainer.last_diag.items():
+                    epoch_entry[f"diag_{k.replace('/', '_')}"] = round(v, 6)
+            epoch_log.append(epoch_entry)
             if improved:
                 best_val_f1 = val_f1; best_val_loss = val_loss; patience_counter = 0
                 cm.save_best(trainer.model, epoch=epoch, val_loss=val_loss,
@@ -584,6 +591,26 @@ class TrainingSession:
             peak_vram_gb     = round(torch.cuda.max_memory_allocated() / 1024**3, 3)
             peak_reserved_gb = round(torch.cuda.max_memory_reserved()  / 1024**3, 3)
             gpu_name         = torch.cuda.get_device_name(0)
+        # Aggregate MTL diagnostics across all epochs (mean of per-epoch means)
+        mtl_summary = {}
+        diag_keys = [k for k in (epoch_log[0].keys() if epoch_log else []) if k.startswith("diag_")]
+        if diag_keys:
+            for k in diag_keys:
+                vals = [r.get(k, 0.0) for r in epoch_log if k in r]
+                if vals:
+                    mtl_summary[f"{k}_mean"]   = round(sum(vals) / len(vals), 6)
+                    mtl_summary[f"{k}_max"]    = round(max(vals), 6)
+                    mtl_summary[f"{k}_min"]    = round(min(vals), 6)
+                    # Verdict on whether MTL methods worth trying:
+                    # conflict_pct keys → if > 0.20 average, PCGrad likely helps
+                    if k.startswith("diag_conflict_"):
+                        mtl_summary[f"{k}_verdict"] = (
+                            "severe" if mtl_summary[f"{k}_mean"] > 0.30 else
+                            "moderate" if mtl_summary[f"{k}_mean"] > 0.15 else
+                            "mild" if mtl_summary[f"{k}_mean"] > 0.05 else
+                            "none"
+                        )
+
         summary_path = res_dir / "training_summary.json"
         with open(summary_path, "w") as f:
             _json.dump({
@@ -611,6 +638,7 @@ class TrainingSession:
                 "gpu":                 gpu_name,
                 "peak_vram_gb":        peak_vram_gb,
                 "peak_reserved_gb":    peak_reserved_gb,
+                **({"mtl_diagnostics": mtl_summary} if mtl_summary else {}),
             }, f, indent=2)
         logger.info(f"training_summary.json → {summary_path}")
 

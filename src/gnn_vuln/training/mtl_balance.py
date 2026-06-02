@@ -2,12 +2,14 @@
 
 - UncertaintyWeights — Kendall, Gal & Cipolla CVPR 2018 (arxiv:1705.07115)
 - pcgrad_project    — Yu et al. NeurIPS 2020 (arxiv:2001.06782)
+- diagnose_mtl      — measures gradient conflict, loss imbalance, norm imbalance
 """
 
 from __future__ import annotations
 import random
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class UncertaintyWeights(nn.Module):
@@ -131,3 +133,62 @@ def pcgrad_project(
         for k, g in enumerate(pc_grads[name]):
             result[k] = result[k] + g
     return result
+
+
+def diagnose_mtl(
+    losses: dict[str, torch.Tensor],
+    params: list[nn.Parameter],
+    *,
+    retain_graph: bool = False,
+) -> dict[str, float]:
+    """Diagnose MTL gradient/loss properties — NO surgery.
+
+    Computes per-task gradients (autograd.grad), then for each task and each
+    pair of tasks returns:
+      - loss/<name>    : raw scalar loss value
+      - gnorm/<name>   : ||∇ task loss|| on shared params (flat L2 norm)
+      - cos/<a>_<b>    : cosine similarity between gradients of tasks a and b
+      - conflict/<a>_<b>: 1.0 if cos < 0 else 0.0 (binary conflict indicator)
+
+    Per PCGrad paper (Yu 2020):
+      - High % cos < 0 across batches → PCGrad likely helps
+      - High loss/grad-norm ratio → Kendall uncertainty likely helps
+
+    Returns flat dict suitable for CSV logging.
+    """
+    names = list(losses.keys())
+    if len(names) == 0:
+        return {}
+
+    # Compute per-task gradients (similar to pcgrad_project step 1)
+    grads: dict[str, list[torch.Tensor]] = {}
+    for i, name in enumerate(names):
+        need_retain = retain_graph or (i < len(names) - 1)
+        g = torch.autograd.grad(
+            losses[name], params, retain_graph=need_retain, allow_unused=True,
+        )
+        grads[name] = [
+            gi if gi is not None else torch.zeros_like(p)
+            for gi, p in zip(g, params)
+        ]
+
+    out: dict[str, float] = {}
+    # Per-task scalars
+    for name in names:
+        out[f"loss/{name}"] = float(losses[name].detach().item())
+        # ||g||² = sum of element-wise squared, then sqrt
+        norm_sq = sum((g * g).sum() for g in grads[name])
+        out[f"gnorm/{name}"] = float(norm_sq.sqrt().item())
+
+    # Pairwise cosine sim (only upper triangle)
+    flats: dict[str, torch.Tensor] = {
+        name: torch.cat([g.flatten() for g in grads[name]])
+        for name in names
+    }
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            cs = F.cosine_similarity(flats[a].unsqueeze(0), flats[b].unsqueeze(0), dim=1)
+            cs_val = float(cs.item())
+            out[f"cos/{a}_{b}"] = cs_val
+            out[f"conflict/{a}_{b}"] = 1.0 if cs_val < 0 else 0.0
+    return out

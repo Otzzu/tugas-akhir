@@ -113,6 +113,8 @@ class Trainer:
         pgd_tokenizer=None,   # HF tokenizer for func-LM
         loss_balance_method: str = "fixed",   # "fixed" | "kendall" | "pcgrad"
         uncertainty_weights: nn.Module | None = None,
+        mtl_diagnose: bool = False,            # if True, log per-task gradient/loss diagnostics
+        mtl_diagnose_every: int = 10,          # sample 1/N batches
     ):
         self.model              = model
         self.optimizer          = optimizer
@@ -122,6 +124,11 @@ class Trainer:
         self.loss_balance_method = loss_balance_method
         self.uncertainty_weights = uncertainty_weights
         self._raw_losses: dict[str, torch.Tensor] = {}
+        # MTL diagnostic state — populated by train_epoch when mtl_diagnose=True
+        self.mtl_diagnose = mtl_diagnose
+        self.mtl_diagnose_every = max(1, mtl_diagnose_every)
+        self._diag_buffer: list[dict[str, float]] = []   # samples this epoch
+        self.last_diag: dict[str, float] = {}            # epoch-mean diagnostics
         self.mil_k              = mil_k
         self.mil_weight         = mil_weight
         self.rank_loss_weight   = rank_loss_weight
@@ -322,6 +329,9 @@ class Trainer:
         self._total_epochs  = total_epochs
         accum = self.grad_accum_steps
         self.optimizer.zero_grad()
+        # Reset per-epoch diagnostic buffer
+        if self.mtl_diagnose:
+            self._diag_buffer = []
 
         # Accumulate loss on GPU — avoids per-batch .item() sync which stalls
         # training waiting for GPU. One sync at end of epoch + throttled tqdm.
@@ -356,6 +366,22 @@ class Trainer:
                     forward_fn=lambda: self._forward(_batch, _cw)[1],
                 )
                 loss = loss + loss_adv
+
+            # MTL diagnostic — sample 1/N batches, compute per-task gradient
+            # cosine/conflict/norm. NO surgery, NO change to optimization.
+            # Logged each epoch into trainer.last_diag (mean across samples).
+            # Runs before loss /= accum so raw losses are unscaled.
+            if (
+                self.mtl_diagnose
+                and len(self._raw_losses) >= 2
+                and (step % self.mtl_diagnose_every == 0)
+            ):
+                from gnn_vuln.training.mtl_balance import diagnose_mtl
+                _shared = [p for p in self.model.parameters() if p.requires_grad]
+                # Need retain_graph=True because main backward happens below
+                self._diag_buffer.append(
+                    diagnose_mtl(self._raw_losses, _shared, retain_graph=True)
+                )
 
             # Scale loss so gradient magnitude is independent of accum_steps
             loss = loss / accum
@@ -417,6 +443,18 @@ class Trainer:
             # Only sync for tqdm display every refresh_every steps
             if (step % refresh_every == 0) or is_last:
                 pbar.set_postfix(loss=f"{(loss_sum / n_graphs).item():.4f}")
+
+        # Aggregate MTL diagnostic samples → mean per metric for this epoch
+        if self.mtl_diagnose and self._diag_buffer:
+            keys = set()
+            for d in self._diag_buffer:
+                keys.update(d.keys())
+            self.last_diag = {
+                k: sum(d.get(k, 0.0) for d in self._diag_buffer) / max(1, len(self._diag_buffer))
+                for k in keys
+            }
+        else:
+            self.last_diag = {}
 
         # Single sync at epoch end
         return (loss_sum.item() / n_graphs) if n_graphs > 0 else 0.0
