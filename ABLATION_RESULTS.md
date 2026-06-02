@@ -544,69 +544,83 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 
 `configs/ablation/gnn_only/` — `live_lm=none` (no LM forward, GNN-only mode). Base = A1 + Phase 3 L1 loss settings (drop focal γ=0, label_smoothing=0.1, cosine, wd=1e-3, patience=15). Varies graph pooling, residual, GNN block order. Purpose: isolate GNN architectural effects without LM noise.
 
-| ID  | Run ID                                      | Config                                              | graph_pool | use_skip | block_style                       |
-| --- | ------------------------------------------- | --------------------------------------------------- | ---------- | -------- | --------------------------------- |
-| N1  | `20260530_194019_lmgat_codebert_multiclass` | `N1_a1_l1.yaml`                                     | mean       | false    | resnet                            |
-| N2  | `20260530_203000_lmgat_codebert_multiclass` | `N2_a1_l1_meanmax.yaml`                             | meanmax    | false    | resnet                            |
-| N3  | `20260530_213022_lmgat_codebert_multiclass` | `N3_a1_l1_cnn.yaml`                                 | cnn        | false    | resnet                            |
-| N4  | `20260530_225801_lmgat_codebert_multiclass` | `N4_a1_l1_meanmax_residual.yaml`                    | meanmax    | true     | resnet                            |
-| N5  | `20260531_001117_lmgat_codebert_multiclass` | `N5_a1_l1_gnn_plus.yaml`                            | meanmax    | true     | gnn_plus                          |
-| N6  | `20260531_033903_lmgat_codebert_multiclass` | `N6_a1_l1_gnn_plus_graphnorm.yaml`                  | meanmax    | true     | gnn_plus + GraphNorm              |
-| N7  | `20260531_042425_lmgat_codebert_multiclass` | `N7_a1_l1_gnn_plus_elu.yaml`                        | meanmax    | true     | gnn_plus + ELU                    |
-| N8  | `20260531_064326_lmgat_codebert_multiclass` | `N8_a1_l1_gnn_plus_graphnorm_elu.yaml`              | meanmax    | true     | gnn_plus + GraphNorm + ELU        |
-| N9  | `20260531_081742_lmgat_codebert_multiclass` | `N9_a1_l1_gnn_plus_elu_ffn.yaml`                    | meanmax    | true     | gnn_plus + ELU + FFN              |
-| N10 | `20260531_110214_lmgat_codebert_multiclass` | `N10_a1_l1_gnn_plus_elu_ffn_pe.yaml`                | meanmax    | true     | gnn_plus + ELU + FFN + RWSE-32 PE |
-| N11 | `20260531_142518_lmgat_codebert_multiclass` | `N11_a1_l1_gnn_plus_elu_dim512.yaml`                | meanmax    | true     | gnn_plus + ELU + hidden_dim=512   |
-| N12 | `20260531_154612_lmgat_codebert_multiclass` | `N12_a1_l1_gnn_plus_elu_dim768.yaml`                | meanmax    | true     | gnn_plus + ELU + hidden_dim=768   |
-| N13 | `20260531_144339_lmgat_codebert_multiclass` | `N13_a1_l1_gnn_plus_elu_balo.yaml`                  | meanmax    | true     | gnn_plus + ELU + BalO init        |
-| N14 | `20260531_212716_lmgat_codebert_multiclass` | `N14_a1_l1_gnn_plus_elu_dim512_balo.yaml`           | meanmax    | true     | N11 dim=512 + N13 BalO            |
-| N15 | `20260531_204352_lmgat_codebert_multiclass` | `N15_a1_l1_gnn_plus_elu_ffn_linhead.yaml`           | meanmax    | true     | N9 FFN + linear func head (GNN+)  |
-| N16 | `20260601_055452_lmgat_codebert_multiclass` | `N16_a1_l1_gnn_plus_elu_ffn_linhead_balo.yaml`      | meanmax    | true     | N15 + BalO init                   |
-| N17 | `20260601_065912_lmgat_codebert_multiclass` | `N17_a1_l1_gnn_plus_elu_ffn_meanpool.yaml`          | mean       | true     | N15 + mean pool                   |
-| N18 | `20260601_055453_lmgat_codebert_multiclass` | `N18_a1_l1_gnn_plus_elu_ffn_addpool.yaml`           | add        | true     | N15 + add pool                    |
-| N19 | `20260601_075846_lmgat_codebert_multiclass` | `N19_a1_l1_gnn_plus_elu_ffn_maxpool.yaml`           | max        | true     | N15 + max pool                    |
-| N20 | `20260601_110545_lmgat_codebert_multiclass` | `N20_a1_l1_gnn_plus_elu_ffn_linhead_ginit.yaml`     | meanmax    | true     | N15 + G-Init (Kelesis 2024)       |
-| N21 | `20260601_115551_lmgat_codebert_multiclass` | `N21_a1_l1_gnn_plus_elu_ffn_linhead_lsuv.yaml`      | meanmax    | true     | N15 + LSUV init (Mishkin 2016)    |
-| N22 | `20260601_144252_lmgat_codebert_multiclass` | `N22_a1_l1_gnn_plus_elu_ffn_linhead_L3.yaml`        | meanmax    | true     | N15 + num_layers=3 (depth-1)      |
-| N23 | `20260601_153557_lmgat_codebert_multiclass` | `N23_a1_l1_gnn_plus_elu_ffn_linhead_L5.yaml`        | meanmax    | true     | N15 + num_layers=5 (depth+1)      |
-| N24 | `20260601_165353_lmgat_codebert_multiclass` | `N24_a1_l1_gnn_plus_elu_ffn_linhead_L6.yaml`        | meanmax    | true     | N15 + num_layers=6 (depth+2)      |
-| N25 | `20260601_210541_lmgat_codebert_multiclass` | `N25_a1_l1_gnn_plus_elu_ffn_linhead_attnpool.yaml`  | attention  | true     | N15 + attention pool              |
-| N26 | `20260601_220205_lmgat_codebert_multiclass` | `N26_a1_l1_gnn_plus_elu_ffn_linhead_crossattn.yaml` | meanmax    | true     | N15 + cross-task attention        |
-| N27 | `20260601_225416_lmgat_codebert_multiclass` | `N27_a1_l1_gnn_plus_elu_ffn_linhead_kendall.yaml`   | meanmax    | true     | N15 + Kendall uncertainty MTL     |
-| N28 | `20260601_232916_lmgat_codebert_multiclass` | `N28_a1_l1_gnn_plus_elu_ffn_linhead_pcgrad.yaml`    | meanmax    | true     | N15 + PCGrad (Yu 2020)            |
+| ID  | Run ID                                      | Config                                              | graph_pool | use_skip | block_style                        |
+| --- | ------------------------------------------- | --------------------------------------------------- | ---------- | -------- | ---------------------------------- |
+| N1  | `20260530_194019_lmgat_codebert_multiclass` | `N1_a1_l1.yaml`                                     | mean       | false    | resnet                             |
+| N2  | `20260530_203000_lmgat_codebert_multiclass` | `N2_a1_l1_meanmax.yaml`                             | meanmax    | false    | resnet                             |
+| N3  | `20260530_213022_lmgat_codebert_multiclass` | `N3_a1_l1_cnn.yaml`                                 | cnn        | false    | resnet                             |
+| N4  | `20260530_225801_lmgat_codebert_multiclass` | `N4_a1_l1_meanmax_residual.yaml`                    | meanmax    | true     | resnet                             |
+| N5  | `20260531_001117_lmgat_codebert_multiclass` | `N5_a1_l1_gnn_plus.yaml`                            | meanmax    | true     | gnn_plus                           |
+| N6  | `20260531_033903_lmgat_codebert_multiclass` | `N6_a1_l1_gnn_plus_graphnorm.yaml`                  | meanmax    | true     | gnn_plus + GraphNorm               |
+| N7  | `20260531_042425_lmgat_codebert_multiclass` | `N7_a1_l1_gnn_plus_elu.yaml`                        | meanmax    | true     | gnn_plus + ELU                     |
+| N8  | `20260531_064326_lmgat_codebert_multiclass` | `N8_a1_l1_gnn_plus_graphnorm_elu.yaml`              | meanmax    | true     | gnn_plus + GraphNorm + ELU         |
+| N9  | `20260531_081742_lmgat_codebert_multiclass` | `N9_a1_l1_gnn_plus_elu_ffn.yaml`                    | meanmax    | true     | gnn_plus + ELU + FFN               |
+| N10 | `20260531_110214_lmgat_codebert_multiclass` | `N10_a1_l1_gnn_plus_elu_ffn_pe.yaml`                | meanmax    | true     | gnn_plus + ELU + FFN + RWSE-32 PE  |
+| N11 | `20260531_142518_lmgat_codebert_multiclass` | `N11_a1_l1_gnn_plus_elu_dim512.yaml`                | meanmax    | true     | gnn_plus + ELU + hidden_dim=512    |
+| N12 | `20260531_154612_lmgat_codebert_multiclass` | `N12_a1_l1_gnn_plus_elu_dim768.yaml`                | meanmax    | true     | gnn_plus + ELU + hidden_dim=768    |
+| N13 | `20260531_144339_lmgat_codebert_multiclass` | `N13_a1_l1_gnn_plus_elu_balo.yaml`                  | meanmax    | true     | gnn_plus + ELU + BalO init         |
+| N14 | `20260531_212716_lmgat_codebert_multiclass` | `N14_a1_l1_gnn_plus_elu_dim512_balo.yaml`           | meanmax    | true     | N11 dim=512 + N13 BalO             |
+| N15 | `20260531_204352_lmgat_codebert_multiclass` | `N15_a1_l1_gnn_plus_elu_ffn_linhead.yaml`           | meanmax    | true     | N9 FFN + linear func head (GNN+)   |
+| N16 | `20260601_055452_lmgat_codebert_multiclass` | `N16_a1_l1_gnn_plus_elu_ffn_linhead_balo.yaml`      | meanmax    | true     | N15 + BalO init                    |
+| N17 | `20260601_065912_lmgat_codebert_multiclass` | `N17_a1_l1_gnn_plus_elu_ffn_meanpool.yaml`          | mean       | true     | N15 + mean pool                    |
+| N18 | `20260601_055453_lmgat_codebert_multiclass` | `N18_a1_l1_gnn_plus_elu_ffn_addpool.yaml`           | add        | true     | N15 + add pool                     |
+| N19 | `20260601_075846_lmgat_codebert_multiclass` | `N19_a1_l1_gnn_plus_elu_ffn_maxpool.yaml`           | max        | true     | N15 + max pool                     |
+| N20 | `20260601_110545_lmgat_codebert_multiclass` | `N20_a1_l1_gnn_plus_elu_ffn_linhead_ginit.yaml`     | meanmax    | true     | N15 + G-Init (Kelesis 2024)        |
+| N21 | `20260601_115551_lmgat_codebert_multiclass` | `N21_a1_l1_gnn_plus_elu_ffn_linhead_lsuv.yaml`      | meanmax    | true     | N15 + LSUV init (Mishkin 2016)     |
+| N22 | `20260601_144252_lmgat_codebert_multiclass` | `N22_a1_l1_gnn_plus_elu_ffn_linhead_L3.yaml`        | meanmax    | true     | N15 + num_layers=3 (depth-1)       |
+| N23 | `20260601_153557_lmgat_codebert_multiclass` | `N23_a1_l1_gnn_plus_elu_ffn_linhead_L5.yaml`        | meanmax    | true     | N15 + num_layers=5 (depth+1)       |
+| N24 | `20260601_165353_lmgat_codebert_multiclass` | `N24_a1_l1_gnn_plus_elu_ffn_linhead_L6.yaml`        | meanmax    | true     | N15 + num_layers=6 (depth+2)       |
+| N25 | `20260601_210541_lmgat_codebert_multiclass` | `N25_a1_l1_gnn_plus_elu_ffn_linhead_attnpool.yaml`  | attention  | true     | N15 + attention pool               |
+| N26 | `20260601_220205_lmgat_codebert_multiclass` | `N26_a1_l1_gnn_plus_elu_ffn_linhead_crossattn.yaml` | meanmax    | true     | N15 + cross-task attention         |
+| N27 | `20260601_225416_lmgat_codebert_multiclass` | `N27_a1_l1_gnn_plus_elu_ffn_linhead_kendall.yaml`   | meanmax    | true     | N15 + Kendall uncertainty MTL      |
+| N28 | `20260601_232916_lmgat_codebert_multiclass` | `N28_a1_l1_gnn_plus_elu_ffn_linhead_pcgrad.yaml`    | meanmax    | true     | N15 + PCGrad (Yu 2020)             |
+| N29 | `20260602_052841_lmgat_codebert_multiclass` | `N29_a1_l1_gnn_plus_elu_ffn_linhead_diagnose.yaml`  | meanmax    | true     | N15 + MTL diagnostics (no surgery) |
+| N30 | `20260602_062700_lmgat_codebert_multiclass` | `N30_a1_l1_gnn_plus_elu_ffn_linhead_dualflow.yaml`  | dualflow   | true     | N15 + dualflow pool                |
+| N31 | `20260602_065634_lmgat_codebert_multiclass` | `N31_a1_l1_gnn_plus_elu_ffn_linhead_heads2.yaml`    | meanmax    | true     | N15 + heads=2                      |
+| N32 | `20260602_083556_lmgat_codebert_multiclass` | `N32_a1_l1_gnn_plus_elu_ffn_linhead_heads8.yaml`    | meanmax    | true     | N15 + heads=8 (GATv2 default)      |
+| N33 | `20260602_104925_lmgat_codebert_multiclass` | `N33_a1_l1_gnn_plus_elu_ffn_linhead_heads16.yaml`   | meanmax    | true     | N15 + heads=16                     |
 
 ## Classification
 
-| ID  | Val F1    | Test F1   | Test Acc  | F1-w      | AUC-ROC   | Conf.     | Epochs |
-| --- | --------- | --------- | --------- | --------- | --------- | --------- | ------ |
-| N1  | 0.490     | 0.433     | 0.469     | 0.466     | 0.843     | **0.583** | 63     |
-| N2  | 0.486     | 0.457     | 0.490     | 0.487     | 0.856     | 0.267     | 76     |
-| N3  | 0.392     | 0.420     | 0.445     | 0.447     | 0.831     | 0.489     | 99     |
-| N4  | 0.523     | 0.472     | 0.501     | 0.499     | 0.884     | 0.145     | 92     |
-| N5  | 0.525     | 0.468     | 0.491     | 0.498     | 0.891     | 0.421     | 63     |
-| N6  | **0.531** | 0.447     | 0.509     | 0.509     | **0.903** | 0.471     | 55     |
-| N7  | 0.505     | 0.450     | **0.510** | **0.511** | 0.902     | 0.482     | 55     |
-| N8  | 0.492     | 0.469     | 0.493     | 0.489     | 0.893     | 0.524     | 44     |
-| N9  | 0.479     | 0.391     | 0.445     | 0.454     | 0.863     | 0.368     | 72     |
-| N10 | 0.465     | 0.391     | 0.465     | 0.463     | 0.872     | 0.409     | 59     |
-| N11 | 0.508     | 0.480     | 0.491     | 0.494     | 0.892     | 0.514     | 36     |
-| N12 | 0.494     | 0.440     | 0.500     | 0.500     | 0.899     | 0.507     | 49     |
-| N13 | 0.509     | 0.471     | 0.502     | 0.497     | 0.901     | 0.532     | 44     |
-| N14 | 0.521     | 0.470     | 0.493     | 0.483     | 0.901     | 0.430     | 64     |
-| N15 | 0.500     | **0.523** | 0.487     | 0.483     | 0.879     | 0.337     | 78     |
-| N16 | 0.514     | 0.504     | 0.481     | 0.480     | 0.889     | 0.334     | 77     |
-| N17 | 0.453     | 0.400     | 0.447     | 0.447     | 0.871     | 0.425     | 80     |
-| N18 | 0.328     | 0.270     | 0.328     | 0.307     | 0.852     | 0.260     | 74     |
-| N19 | 0.474     | 0.484     | 0.489     | 0.488     | 0.896     | 0.292     | 61     |
-| N20 | 0.506     | 0.448     | 0.485     | 0.483     | 0.896     | 0.356     | 58     |
-| N21 | 0.493     | 0.445     | 0.467     | 0.458     | 0.891     | 0.336     | 60     |
-| N22 | 0.493     | 0.451     | 0.491     | 0.486     | 0.891     | 0.373     | 63     |
-| N23 | 0.480     | 0.439     | 0.449     | 0.446     | 0.892     | 0.344     | 67     |
-| N24 | 0.469     | 0.472     | 0.473     | 0.469     | 0.883     | 0.344     | 69     |
-| N25 | 0.474     | 0.405     | 0.443     | 0.443     | 0.889     | 0.428     | 67     |
-| N26 | 0.475     | 0.429     | 0.487     | 0.481     | 0.893     | 0.374     | 55     |
-| N27 | 0.255     | 0.249     | 0.401     | 0.376     | 0.865     | 0.217     | 42     |
-| N28 | 0.483     | 0.449     | 0.475     | 0.471     | 0.886     | 0.392     | 57     |
+Macro = unweighted mean across 26 classes (each CWE = equal weight).
+Weighted = mean weighted by class support (frequent CWEs dominate).
+For vuln detection: **macro recall** is primary — measures how well we catch each CWE type.
+
+| ID  | Val F1    | Test F1   | Test Acc  | F1-w      | Prec      | Rec       | Prec-w    | Rec-w     | AUC-ROC   | Conf.     | Epochs |
+| --- | --------- | --------- | --------- | --------- | --------- | --------- | --------- | --------- | --------- | --------- | ------ |
+| N1  | 0.490     | 0.433     | 0.469     | 0.466     | 0.395     | 0.459     | 0.458     | 0.461     | 0.843     | **0.583** | 63     |
+| N2  | 0.486     | 0.457     | 0.490     | 0.487     | 0.500     | 0.476     | 0.511     | 0.498     | 0.856     | 0.267     | 76     |
+| N3  | 0.392     | 0.420     | 0.445     | 0.447     | 0.413     | 0.462     | 0.467     | 0.455     | 0.831     | 0.489     | 99     |
+| N4  | 0.523     | 0.472     | 0.501     | 0.499     | 0.477     | 0.477     | 0.512     | 0.503     | 0.884     | 0.145     | 92     |
+| N5  | 0.525     | 0.468     | 0.491     | 0.498     | 0.469     | 0.515     | 0.515     | 0.475     | 0.891     | 0.421     | 63     |
+| N6  | **0.531** | 0.447     | 0.509     | 0.509     | 0.433     | 0.500     | 0.535     | 0.500     | **0.903** | 0.471     | 55     |
+| N7  | 0.505     | 0.450     | **0.510** | **0.511** | 0.505     | 0.473     | **0.543** | **0.527** | 0.902     | 0.482     | 55     |
+| N8  | 0.492     | 0.469     | 0.493     | 0.489     | 0.444     | 0.484     | 0.526     | 0.501     | 0.893     | 0.524     | 44     |
+| N9  | 0.479     | 0.391     | 0.445     | 0.454     | 0.404     | 0.405     | 0.478     | 0.437     | 0.863     | 0.368     | 72     |
+| N10 | 0.465     | 0.391     | 0.465     | 0.463     | 0.419     | 0.458     | 0.493     | 0.471     | 0.872     | 0.409     | 59     |
+| N11 | 0.508     | 0.480     | 0.491     | 0.494     | 0.502     | 0.481     | 0.510     | 0.500     | 0.892     | 0.514     | 36     |
+| N12 | 0.494     | 0.440     | 0.500     | 0.500     | 0.427     | 0.471     | 0.511     | 0.501     | 0.899     | 0.507     | 49     |
+| N13 | 0.509     | 0.471     | 0.502     | 0.497     | 0.477     | 0.447     | **0.543** | 0.495     | 0.901     | 0.532     | 44     |
+| N14 | 0.521     | 0.470     | 0.493     | 0.483     | 0.460     | 0.507     | 0.522     | 0.490     | 0.901     | 0.430     | 64     |
+| N15 | 0.500     | **0.523** | 0.487     | 0.483     | 0.462     | 0.510     | 0.489     | 0.482     | 0.879     | 0.337     | 78     |
+| N16 | 0.514     | 0.504     | 0.481     | 0.480     | 0.521     | **0.551** | 0.489     | 0.484     | 0.889     | 0.334     | 77     |
+| N17 | 0.453     | 0.400     | 0.447     | 0.447     | 0.408     | 0.470     | 0.468     | 0.452     | 0.871     | 0.425     | 80     |
+| N18 | 0.328     | 0.270     | 0.328     | 0.307     | 0.272     | 0.446     | 0.346     | 0.319     | 0.852     | 0.260     | 74     |
+| N19 | 0.474     | 0.484     | 0.489     | 0.488     | 0.495     | 0.484     | 0.507     | 0.489     | 0.896     | 0.292     | 61     |
+| N20 | 0.506     | 0.448     | 0.485     | 0.483     | 0.551     | 0.501     | 0.498     | 0.489     | 0.896     | 0.356     | 58     |
+| N21 | 0.493     | 0.445     | 0.467     | 0.458     | 0.502     | 0.482     | 0.491     | 0.473     | 0.891     | 0.336     | 60     |
+| N22 | 0.493     | 0.451     | 0.491     | 0.486     | 0.515     | 0.470     | 0.499     | 0.494     | 0.891     | 0.373     | 63     |
+| N23 | 0.480     | 0.439     | 0.449     | 0.446     | 0.478     | 0.483     | 0.479     | 0.469     | 0.892     | 0.344     | 67     |
+| N24 | 0.469     | 0.472     | 0.473     | 0.469     | 0.517     | 0.486     | 0.477     | 0.467     | 0.883     | 0.344     | 69     |
+| N25 | 0.474     | 0.405     | 0.443     | 0.443     | 0.417     | 0.447     | 0.476     | 0.469     | 0.889     | 0.428     | 67     |
+| N26 | 0.475     | 0.429     | 0.487     | 0.481     | 0.510     | 0.486     | 0.491     | 0.472     | 0.893     | 0.374     | 55     |
+| N27 | 0.255     | 0.249     | 0.401     | 0.376     | 0.261     | 0.241     | 0.364     | 0.377     | 0.865     | 0.217     | 42     |
+| N28 | 0.483     | 0.449     | 0.475     | 0.471     | 0.467     | 0.445     | 0.486     | 0.466     | 0.886     | 0.392     | 57     |
+| N29 | 0.494     | 0.454     | 0.457     | 0.450     | 0.448     | 0.449     | 0.479     | 0.465     | 0.890     | 0.379     | 66     |
+| N30 | 0.460     | 0.428     | 0.450     | 0.451     | 0.477     | 0.472     | 0.467     | 0.459     | 0.879     | 0.467     | 38     |
+| N31 | 0.461     | 0.441     | 0.461     | 0.456     | **0.558** | 0.439     | 0.503     | 0.473     | 0.887     | 0.364     | 44     |
+| N32 | 0.489     | 0.445     | 0.460     | 0.457     | 0.439     | 0.523     | 0.471     | 0.463     | 0.895     | 0.323     | 63     |
+| N33 | 0.482     | 0.457     | 0.483     | 0.486     | 0.421     | 0.490     | 0.491     | 0.472     | 0.902     | 0.301     | 77     |
 
 ## Statement-Level Localization
 
@@ -636,10 +650,15 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N22 | 0.423     | 0.871     | 0.980     | 0.198     | 0.413      | 0.053         |
 | N23 | 0.351     | 0.936     | 0.987     | 0.261     | 0.447      | 0.027         |
 | N24 | 0.369     | 0.921     | 0.982     | 0.227     | 0.423      | 0.040         |
-| N25 | 0.322     | **0.950** | 0.985     | 0.242     | 0.444      | 0.031         |
+| N25 | 0.322     | 0.950     | 0.985     | 0.242     | 0.444      | 0.031         |
 | N26 | 0.370     | 0.928     | 0.984     | 0.252     | 0.439      | 0.029         |
 | N27 | 0.602     | 0.865     | 0.966     | 0.253     | **0.491**  | 0.031         |
 | N28 | 0.613     | 0.884     | 0.977     | 0.238     | 0.449      | 0.034         |
+| N29 | 0.448     | 0.895     | 0.982     | 0.239     | 0.441      | 0.033         |
+| N30 | 0.313     | **0.963** | 0.987     | 0.264     | 0.464      | 0.025         |
+| N31 | 0.362     | 0.937     | 0.987     | 0.240     | 0.420      | 0.028         |
+| N32 | 0.495     | 0.877     | 0.977     | 0.237     | 0.443      | 0.035         |
+| N33 | 0.493     | 0.911     | 0.984     | 0.253     | 0.443      | 0.027         |
 
 ---
 
@@ -710,3 +729,8 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N26 N15+cross-attn    | RTX A4500       | 5.6M   | 56s        | 0.86            | 9.8 GB    |
 | N27 N15+Kendall MTL   | RTX A4500       | 4.7M   | 49s        | 0.58            | 9.5 GB    |
 | N28 N15+PCGrad        | RTX A4500       | 4.7M   | 98s        | 1.56            | 9.1 GB    |
+| N29 N15+MTL diagnose  | RTX A4500       | 4.7M   | 53s        | 0.96            | 10.3 GB   |
+| N30 N15+dualflow      | RTX A4500       | 4.7M   | 46s        | 0.48            | 11.0 GB   |
+| N31 N15+heads=2       | RTX A4500       | 3.0M   | 28s        | 0.35            | 5.4 GB    |
+| N32 N15+heads=8       | RTX A6000       | 8.2M   | 69s        | 1.21            | 21.2 GB   |
+| N33 N15+heads=16      | RTX A6000       | 15.0M  | 124s       | 2.65            | 24.0 GB   |
