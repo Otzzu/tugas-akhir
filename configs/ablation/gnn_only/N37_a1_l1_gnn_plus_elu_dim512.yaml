@@ -1,0 +1,75 @@
+# Local GNN-only N37 — N15 + hidden_dim 512 (the missing combo).
+# Base: N15 (current SOTA — Test F1 0.523, IFA 0.299, dim=256, linear head).
+# Varies: hidden_dim 256 → 512.
+# Motivation: N11 (dim=512 + FAT head) → F1 0.480. N15 (dim=256 + LINEAR head) → 0.523.
+#   The dim=512 + LINEAR head combination was NEVER tested. Linear head fixed N9's
+#   overfit; might also rescue dim=512's overfit (N11/N12). Could break 0.55+.
+# IFA expected 0.4-0.7 (< 1, acceptable under F1-focus relaxed constraint).
+# Dim ablation on N15 recipe: N15=256 / N37=512.
+#
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/gnn_only/N37_a1_l1_gnn_plus_elu_dim512.yaml
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  graph_pool: meanmax
+  hidden_dim: 512
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  func_head_type: linear
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: false
+  use_flash_attention: false
+  grad_accum_steps: 2
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 0
+  prefetch_factor: 2
