@@ -39,12 +39,36 @@ else
     echo "    rclone already installed, skipping"
 fi
 
-PIP="pip"
-UVP="pip install --no-cache-dir"
-PYBIN="python"
+# Auto-detect python binary — some images (runpod/pytorch:1.0.2) ship python3
+# without a `python` symlink. Prefer `python`, fall back to `python3`.
+if command -v python &>/dev/null; then
+    PYBIN="python"
+elif command -v python3 &>/dev/null; then
+    PYBIN="python3"
+else
+    echo "ERROR: neither python nor python3 found in PATH"
+    exit 1
+fi
+# pip: prefer `pip`, else `pip3`, else module form `<pybin> -m pip`.
+if command -v pip &>/dev/null; then
+    PIP="pip"
+elif command -v pip3 &>/dev/null; then
+    PIP="pip3"
+else
+    PIP="$PYBIN -m pip"
+fi
+UVP="$PIP install --no-cache-dir"
+echo "    Using PYBIN=$PYBIN  PIP=$PIP"
+
+# Create `python` symlink if missing — train_cloud.sh + other scripts call bare
+# `python`. Some images (runpod/pytorch:1.0.2) ship only python3.
+if ! command -v python &>/dev/null && command -v python3 &>/dev/null; then
+    ln -sf "$(command -v python3)" /usr/local/bin/python
+    echo "    Created python -> python3 symlink at /usr/local/bin/python"
+fi
 
 echo "=== [1/6] Removing conflicting packages ==="
-pip uninstall -y torch torchvision torchaudio torch-scatter torch-sparse 2>/dev/null || true
+$PIP uninstall -y torch torchvision torchaudio torch-scatter torch-sparse 2>/dev/null || true
 
 echo "=== [2/6] Detecting CUDA version and installing PyTorch ==="
 # Detect CUDA version from nvcc (major.minor)
