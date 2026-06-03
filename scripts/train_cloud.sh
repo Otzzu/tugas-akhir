@@ -276,7 +276,10 @@ run_train() {
     local extra_args=""
     $FLAG_RESUME && extra_args="--resume"
     info "Training: $config${extra_args:+ ($extra_args)}"
+    # expandable_segments reduces fragmentation OOM. torch 2.8 renamed the env var
+    # PYTORCH_CUDA_ALLOC_CONF → PYTORCH_ALLOC_CONF; set BOTH so it applies on any version.
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+    PYTORCH_ALLOC_CONF=expandable_segments:True \
     PYTHONPATH=src python -m gnn_vuln.train --config "$config" $extra_args
     success "Training done: $config"
 }
