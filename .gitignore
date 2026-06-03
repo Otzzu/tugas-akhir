@@ -70,3 +70,5 @@ secret.txt
 
 .kiro/
 src/GNNPlus/
+src/Graph-Mixture-of-Experts/
+src/mixture-of-experts/

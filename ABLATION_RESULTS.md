@@ -579,6 +579,9 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N31 | `20260602_160417_lmgat_codebert_multiclass` | `N31_a1_l1_gnn_plus_elu_ffn_linhead_heads2.yaml`    | meanmax    | true     | N15 + heads=2 (num_workers=0 rerun)            |
 | N32 | `20260602_155136_lmgat_codebert_multiclass` | `N32_a1_l1_gnn_plus_elu_ffn_linhead_heads8.yaml`    | meanmax    | true     | N15 + heads=8 GATv2 default (num_workers=0 rerun) |
 | N33 | `20260602_170600_lmgat_codebert_multiclass` | `N33_a1_l1_gnn_plus_elu_ffn_linhead_heads16.yaml`   | meanmax    | true     | N15 + heads=16 (num_workers=0 rerun)           |
+| N34 | `20260603_121533_lmgat_codebert_multiclass` | `N34_a1_l1_gnn_plus_elu_ffn_linhead_norank.yaml`    | meanmax    | true     | N15 + rank_loss_weight=0 (drop rank)           |
+| N35 | `20260603_124325_lmgat_codebert_multiclass` | `N35_a1_l1_gnn_plus_elu_ffn_linhead_rank01.yaml`    | meanmax    | true     | N15 + rank_loss_weight=0.1 (halve rank)        |
+| N36 | `20260603_131456_lmgat_codebert_multiclass` | `N36_a1_l1_gnn_plus_elu_ffn_linhead_pcgrad_enc.yaml`| meanmax    | true     | N15 + PCGrad encoder-only (N28b fix)           |
 
 ## Classification
 
@@ -621,6 +624,9 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N31 | 0.497     | 0.443     | 0.491     | 0.487     | 0.454     | 0.402     | 0.494     | 0.472     | 0.886     | 0.344     | 75     |
 | N32 | 0.470     | 0.426     | 0.442     | 0.442     | 0.409     | 0.450     | 0.478     | 0.459     | 0.889     | 0.298     | 53     |
 | N33 | 0.471     | 0.433     | 0.456     | 0.456     | 0.411     | 0.496     | 0.481     | 0.471     | 0.889     | 0.314     | 55     |
+| N34 | 0.470     | 0.413     | 0.445     | 0.444     | 0.462     | 0.434     | 0.479     | 0.443     | 0.889     | 0.371     | 49     |
+| N35 | 0.489     | 0.457     | 0.471     | 0.460     | 0.525     | 0.469     | 0.506     | 0.470     | 0.888     | 0.405     | 53     |
+| N36 | 0.469     | 0.410     | 0.425     | 0.426     | 0.350     | 0.472     | 0.441     | 0.415     | 0.889     | 0.241     | 82     |
 
 ## Statement-Level Localization
 
@@ -659,6 +665,9 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N31 | 0.529     | 0.889     | 0.977     | 0.231     | 0.455      | 0.039         |
 | N32 | 0.508     | 0.915     | 0.984     | 0.246     | 0.458      | 0.032         |
 | N33 | 0.490     | 0.924     | 0.982     | 0.260     | 0.456      | 0.026         |
+| N34 | 9.826     | 0.269     | 0.593     | 0.076     | 0.224      | 0.175         |
+| N35 | 0.581     | 0.852     | 0.974     | 0.200     | 0.438      | 0.050         |
+| N36 | 0.423     | 0.909     | 0.981     | 0.256     | 0.466      | 0.029         |
 
 ---
 
@@ -734,3 +743,6 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N31 N15+heads=2 (w0)  | RTX A4500       | 3.0M   | 34s        | 0.71            | 5.3 GB    |
 | N32 N15+heads=8 (w0)  | RTX A6000       | 8.2M   | 83s        | 1.23            | 22.1 GB   |
 | N33 N15+heads=16 (w0) | RTX A6000       | 15.0M  | 131s       | 2.00            | 26.3 GB   |
+| N34 N15+rank=0        | RTX 5070 Ti     | 4.7M   | 33s        | 0.46            | 10.4 GB   |
+| N35 N15+rank=0.1      | RTX 5070 Ti     | 4.7M   | 35s        | 0.52            | 11.5 GB   |
+| N36 N15+PCGrad enc    | RTX 5070 Ti     | 4.7M   | 77s        | 1.76            | 10.3 GB   |

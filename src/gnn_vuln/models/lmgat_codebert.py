@@ -73,6 +73,9 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  gnn_use_pe=False, gnn_pe_walk_length=16, gnn_pe_dim=28,
                  gnn_balanced_init=False, gnn_balanced_init_beta=2.0,
                  gnn_g_init=False, gnn_g_init_d=2.0,
+                 gnn_moe_ffn=False, gnn_gmoe=False,
+                 gnn_moe_experts=8, gnn_moe_experts_1hop=4,
+                 gnn_moe_k=2, gnn_moe_coef=1e-2,
                  func_head_type="fat",
                  matryoshka_dim=None,
                  func_chunk_size=0, func_chunk_stride=0,
@@ -137,6 +140,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             use_pe=gnn_use_pe, pe_walk_length=gnn_pe_walk_length, pe_dim=gnn_pe_dim,
             balanced_init=gnn_balanced_init, balanced_init_beta=gnn_balanced_init_beta,
             g_init=gnn_g_init, g_init_d=gnn_g_init_d,
+            moe_ffn=gnn_moe_ffn, gmoe=gnn_gmoe, moe_experts=gnn_moe_experts,
+            moe_experts_1hop=gnn_moe_experts_1hop, moe_k=gnn_moe_k, moe_coef=gnn_moe_coef,
         )
         # Graph-level pooling: mean | max | add | meanmax | meanmaxadd | attention | dualflow | cnn
         assert graph_pool in ("mean", "max", "add", "meanmax", "meanmaxadd", "attention", "dualflow", "cnn"), \
@@ -193,6 +198,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                 func_line_cls=None, func_line_ids=None, func_line_cls_batch=None,
                 rwse=None):
         h = self.encoder(x, edge_index, edge_attr, batch=batch, rwse=rwse)
+        # MoE load-balance aux loss (0 if no MoE). Read by trainer, added to total.
+        self.moe_aux_loss = getattr(self.encoder, "_moe_aux_loss", None)
         if self._graph_pool == "attention":
             h_graph = self.attn_pool(h, batch)
         elif self._graph_pool == "meanmax":
@@ -333,6 +340,12 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             gnn_balanced_init_beta=getattr(cfg.model, "gnn_balanced_init_beta", 2.0),
             gnn_g_init=getattr(cfg.model, "gnn_g_init", False),
             gnn_g_init_d=getattr(cfg.model, "gnn_g_init_d", 2.0),
+            gnn_moe_ffn=getattr(cfg.model, "gnn_moe_ffn", False),
+            gnn_gmoe=getattr(cfg.model, "gnn_gmoe", False),
+            gnn_moe_experts=getattr(cfg.model, "gnn_moe_experts", 8),
+            gnn_moe_experts_1hop=getattr(cfg.model, "gnn_moe_experts_1hop", 4),
+            gnn_moe_k=getattr(cfg.model, "gnn_moe_k", 2),
+            gnn_moe_coef=getattr(cfg.model, "gnn_moe_coef", 1e-2),
             func_head_type=getattr(cfg.model, "func_head_type", "fat"),
             matryoshka_dim=getattr(cfg.model, "matryoshka_dim", None),
             func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),

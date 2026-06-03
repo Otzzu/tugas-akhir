@@ -282,6 +282,12 @@ class Trainer:
         # train_epoch handles per-task backward + projection separately using self._raw_losses.
         self._raw_losses = raw
 
+        # MoE load-balance aux loss (Shazeer 2017 / GMoE). Added directly to total
+        # loss for all balance methods — it regularizes routing, not a task loss.
+        moe_aux = getattr(self.model, "moe_aux_loss", None)
+        if moe_aux is not None and torch.is_tensor(moe_aux) and moe_aux.requires_grad:
+            loss = loss + moe_aux
+
         # Hierarchical SupCon — matrix distance only (no group requirement).
         # group_ids falls back to batch.y: each class = its own group, so
         # same_group is never True for different-class pairs → matrix handles

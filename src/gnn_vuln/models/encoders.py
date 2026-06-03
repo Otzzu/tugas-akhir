@@ -216,6 +216,182 @@ def apply_lsuv_encoder(encoder, sample_batch, tol: float = 0.1,
     return final_vars
 
 
+# ── Mixture-of-Experts helpers (Shazeer 2017 / GMoE Wang NeurIPS 2023) ─────────
+
+def _cv_squared(x: torch.Tensor) -> torch.Tensor:
+    """Squared coefficient of variation = var/mean². Load-balance loss term —
+    pushes expert usage toward uniform. 0 for single expert. (Shazeer 2017)."""
+    eps = 1e-10
+    if x.numel() <= 1:
+        return torch.zeros((), device=x.device, dtype=x.dtype)
+    return x.float().var() / (x.float().mean() ** 2 + eps)
+
+
+def _prob_in_top_k(clean_values, noisy_values, noise_std, noisy_top_values, k):
+    """Differentiable P(expert in top-k) under the gating noise (Shazeer 2017,
+    moe.py:_prob_in_top_k). Lets the `load` term backprop into gate params.
+    noisy_top_values: top-(k+1) noisy logits [N, k+1]."""
+    device = clean_values.device
+    batch = clean_values.size(0)
+    m = noisy_top_values.size(1)
+    top_flat = noisy_top_values.flatten()
+    thresh_pos_if_in = torch.arange(batch, device=device) * m + k
+    thresh_if_in = torch.gather(top_flat, 0, thresh_pos_if_in).unsqueeze(1)
+    is_in = noisy_values > thresh_if_in
+    thresh_pos_if_out = thresh_pos_if_in - 1
+    thresh_if_out = torch.gather(top_flat, 0, thresh_pos_if_out).unsqueeze(1)
+    normal = torch.distributions.Normal(
+        torch.zeros((), device=device), torch.ones((), device=device))
+    prob_if_in = normal.cdf((clean_values - thresh_if_in) / noise_std)
+    prob_if_out = normal.cdf((clean_values - thresh_if_out) / noise_std)
+    return torch.where(is_in, prob_if_in, prob_if_out)
+
+
+def _noisy_top_k_gating(x, w_gate, w_noise, k, training, softplus, noise_eps=1e-2):
+    """Noisy top-k gating (Shazeer 2017, moe.py:noisy_top_k_gating). Per-node gate.
+
+    Returns (gates [N, n_experts], load [n_experts]).
+      gates — sparse: top-k softmax, rest 0.
+      load  — differentiable expected #tokens per expert (prob_in_top_k) during
+              noisy training; else hard count (gates>0).sum(0).
+    importance = gates.sum(0) computed by caller. Both feed load-balance loss.
+    """
+    n_experts = w_gate.size(1)
+    clean_logits = x @ w_gate
+    if training:
+        raw_noise = x @ w_noise
+        noise_std = softplus(raw_noise) + noise_eps
+        noisy_logits = clean_logits + torch.randn_like(clean_logits) * noise_std
+        logits = noisy_logits
+    else:
+        logits = clean_logits
+    top_logits, top_idx = logits.topk(min(k + 1, n_experts), dim=1)
+    top_k_logits = top_logits[:, :k]
+    top_k_idx = top_idx[:, :k]
+    top_k_gates = torch.softmax(top_k_logits, dim=1)
+    gates = torch.zeros_like(logits).scatter(1, top_k_idx, top_k_gates)
+    if training and k < n_experts:
+        load = _prob_in_top_k(clean_logits, noisy_logits, noise_std, top_logits, k).sum(0)
+    else:
+        load = (gates > 0).sum(0).float()
+    return gates, load
+
+
+class NodeMoEFFN(nn.Module):
+    """Switch-style per-node MoE FFN (Fedus 2021 / Shazeer 2017), drop-in for the
+    GNN+ FFN sub-block. N expert FFNs; each node routed to top-k via noisy gate.
+    Dense compute (all experts run), sparse gating (non-top-k weight = 0).
+
+    Expert FFN matches GNN+ _ff_block inner: Linear(D→eD) → Act → Drop → Linear(eD→D).
+    Returns (out [N, D], load_balance_loss scalar).
+    """
+
+    def __init__(self, hidden_dim, ffn_expansion, num_experts, k, dropout,
+                 act_fn, coef=1e-2):
+        super().__init__()
+        self.num_experts = num_experts
+        self.k = min(k, num_experts)
+        self.dropout = dropout
+        self.act_fn = act_fn
+        self.coef = coef
+        eD = hidden_dim * ffn_expansion
+        self.experts = nn.ModuleList([
+            nn.ModuleList([nn.Linear(hidden_dim, eD), nn.Linear(eD, hidden_dim)])
+            for _ in range(num_experts)
+        ])
+        self.w_gate = nn.Parameter(torch.zeros(hidden_dim, num_experts))
+        self.w_noise = nn.Parameter(torch.zeros(hidden_dim, num_experts))
+        self.softplus = nn.Softplus()
+
+    def forward(self, x):
+        gates, load = _noisy_top_k_gating(x, self.w_gate, self.w_noise, self.k,
+                                          self.training, self.softplus)
+        importance = gates.sum(0)
+        lb_loss = (_cv_squared(importance) + _cv_squared(load)) * self.coef
+        outs = []
+        for w1, w2 in self.experts:
+            h = self.act_fn(w1(x))
+            h = F.dropout(h, p=self.dropout, training=self.training)
+            h = w2(h)
+            outs.append(h)
+        stacked = torch.stack(outs, dim=1)                  # [N, n_experts, D]
+        out = (gates.unsqueeze(-1) * stacked).sum(dim=1)    # weighted sum
+        return out, lb_loss
+
+
+def _two_hop_edge_index(edge_index, num_nodes):
+    """Compute 2-hop edge_index via sparse A@A (GMoE Wang 2023). Removes self-loops
+    and 1-hop edges so hop-2 experts see only genuinely distant neighbors.
+    Returns edge_index_2hop [2, E2] (no edge_attr — hop-2 GAT runs edge-attr-free)."""
+    device = edge_index.device
+    val = torch.ones(edge_index.size(1), device=device)
+    A = torch.sparse_coo_tensor(edge_index, val, (num_nodes, num_nodes)).coalesce()
+    A2 = torch.sparse.mm(A, A).coalesce()
+    idx2 = A2.indices()
+    # Remove self-loops
+    mask = idx2[0] != idx2[1]
+    idx2 = idx2[:, mask]
+    # Remove pairs already connected at 1-hop (build set of 1-hop keys)
+    one_hop_keys = edge_index[0] * num_nodes + edge_index[1]
+    two_hop_keys = idx2[0] * num_nodes + idx2[1]
+    is_one_hop = torch.isin(two_hop_keys, one_hop_keys)
+    return idx2[:, ~is_one_hop]
+
+
+class GMoEConv(nn.Module):
+    """Graph Mixture-of-Experts conv (Wang et al. NeurIPS 2023, arxiv:2304.02806).
+
+    N GATv2 experts: first `num_experts_1hop` aggregate 1-hop neighbors, the rest
+    aggregate 2-hop neighbors. Per-node noisy top-k gate selects experts → each
+    node adaptively picks its receptive field. Dense compute, sparse gates.
+
+    Hop-2 experts run edge-attr-free (2-hop edges have no single CPG edge type).
+    Returns (out [N, D], load_balance_loss).
+    """
+
+    def __init__(self, in_dim, out_dim, num_heads, num_experts, num_experts_1hop,
+                 k, dropout, edge_dim, add_self_loops, fill_value, coef=1e-2):
+        super().__init__()
+        self.num_experts = num_experts
+        self.num_experts_1hop = num_experts_1hop
+        self.k = min(k, num_experts)
+        self.coef = coef
+        self.experts = nn.ModuleList()
+        for i in range(num_experts):
+            # 1-hop experts use edge features; 2-hop experts edge-attr-free.
+            ed = edge_dim if i < num_experts_1hop else None
+            self.experts.append(GATv2Conv(
+                in_dim, out_dim, heads=num_heads, concat=False, dropout=dropout,
+                edge_dim=ed, add_self_loops=add_self_loops, fill_value=fill_value,
+            ))
+        self.bns = nn.ModuleList([nn.BatchNorm1d(out_dim) for _ in range(num_experts)])
+        self.w_gate = nn.Parameter(torch.zeros(in_dim, num_experts))
+        self.w_noise = nn.Parameter(torch.zeros(in_dim, num_experts))
+        self.softplus = nn.Softplus()
+
+    def forward(self, x, edge_index, edge_attr, edge_index_2hop):
+        gates, load = _noisy_top_k_gating(x, self.w_gate, self.w_noise, self.k,
+                                          self.training, self.softplus)
+        importance = gates.sum(0)
+        lb_loss = (_cv_squared(importance) + _cv_squared(load)) * self.coef
+        outs = []
+        for i, (expert, bn) in enumerate(zip(self.experts, self.bns)):
+            if i < self.num_experts_1hop:
+                h = expert(x, edge_index, edge_attr=edge_attr)
+            else:
+                h = expert(x, edge_index_2hop)
+            outs.append(bn(h))
+        stacked = torch.stack(outs, dim=1)                  # [N, n_experts, D]
+        # Weighted SUM per GMoE paper eq 2 (σ(Σ_o G_o·E_o)) + Shazeer 2017 + Switch.
+        # gates are top-k softmax (sum to 1) → convex combination of selected experts.
+        # NOTE: GMoE reference CODE uses .mean(dim=1) (÷num_experts) — an impl quirk
+        # present since its first commit, contradicting its own paper eq 2 and the
+        # davidmrau base it cites. Post-BN the two are equivalent (1/n scale cancels),
+        # so we use .sum to match the published equation + standard MoE.
+        out = (gates.unsqueeze(-1) * stacked).sum(dim=1)
+        return out, lb_loss
+
+
 # CPG edge types: AST, CFG, CDG, DDG, PDG, CALL, REACHING_DEF
 NUM_EDGE_TYPES = 7
 
@@ -274,6 +450,12 @@ class GATEncoder(nn.Module):
         balanced_init_beta: float = 2.0,
         g_init: bool = False,
         g_init_d: float = 2.0,
+        moe_ffn: bool = False,
+        gmoe: bool = False,
+        moe_experts: int = 8,
+        moe_experts_1hop: int = 4,
+        moe_k: int = 2,
+        moe_coef: float = 1e-2,
     ):
         super().__init__()
         assert block_style in ("resnet", "gnn_plus"), \
@@ -285,6 +467,12 @@ class GATEncoder(nn.Module):
         self.act_fn = _activation(activation)
         self._needs_batch = (norm_type == "graph")
         self.use_ffn = use_ffn
+        # MoE flags. moe_ffn = Switch-style FFN experts (replaces FFN sub-block).
+        # gmoe = Graph-MoE hop experts (replaces main conv). aux load-balance loss
+        # accumulated in self._moe_aux_loss each forward, read by the model+trainer.
+        self.moe_ffn = moe_ffn
+        self.gmoe = gmoe
+        self._moe_aux_loss = torch.zeros(())
         self.use_pe = use_pe
         self.pe_walk_length = pe_walk_length
 
@@ -299,23 +487,33 @@ class GATEncoder(nn.Module):
 
         self.convs = nn.ModuleList()
         self.bns = nn.ModuleList()
-        self.convs.append(
-            GATv2Conv(
-                in_channels_eff, hidden_dim, heads=num_heads, concat=False,
-                dropout=dropout, edge_dim=edge_dim,
-                add_self_loops=add_self_loops, fill_value=fill_value,
-            )
-        )
-        self.bns.append(_build_norm(norm_type, hidden_dim))
-        for _ in range(num_layers - 1):
+        if gmoe:
+            # Graph-MoE: each layer = GMoEConv (hop-1 + hop-2 GATv2 experts, per-node gate).
+            for li in range(num_layers):
+                in_d = in_channels_eff if li == 0 else hidden_dim
+                self.convs.append(GMoEConv(
+                    in_d, hidden_dim, num_heads, moe_experts, moe_experts_1hop,
+                    moe_k, dropout, edge_dim, add_self_loops, fill_value, coef=moe_coef,
+                ))
+                self.bns.append(_build_norm(norm_type, hidden_dim))
+        else:
             self.convs.append(
                 GATv2Conv(
-                    hidden_dim, hidden_dim, heads=num_heads, concat=False,
+                    in_channels_eff, hidden_dim, heads=num_heads, concat=False,
                     dropout=dropout, edge_dim=edge_dim,
                     add_self_loops=add_self_loops, fill_value=fill_value,
                 )
             )
             self.bns.append(_build_norm(norm_type, hidden_dim))
+            for _ in range(num_layers - 1):
+                self.convs.append(
+                    GATv2Conv(
+                        hidden_dim, hidden_dim, heads=num_heads, concat=False,
+                        dropout=dropout, edge_dim=edge_dim,
+                        add_self_loops=add_self_loops, fill_value=fill_value,
+                    )
+                )
+                self.bns.append(_build_norm(norm_type, hidden_dim))
 
         if use_skip:
             self.res_projs = _build_res_projs(in_channels_eff, hidden_dim, num_layers)
@@ -334,10 +532,18 @@ class GATEncoder(nn.Module):
         # 2x expansion (W1: D→2D, W2: 2D→D). Three BNs total per layer when FFN is on.
         if use_ffn:
             ffn_dim = hidden_dim * ffn_expansion
-            self.ffn_w1 = nn.ModuleList([nn.Linear(hidden_dim, ffn_dim) for _ in range(num_layers)])
-            self.ffn_w2 = nn.ModuleList([nn.Linear(ffn_dim, hidden_dim) for _ in range(num_layers)])
             self.ffn_norm1 = nn.ModuleList([_build_norm(norm_type, hidden_dim) for _ in range(num_layers)])
             self.ffn_norm2 = nn.ModuleList([_build_norm(norm_type, hidden_dim) for _ in range(num_layers)])
+            if moe_ffn:
+                # Switch-style per-node FFN experts replace the dense FFN.
+                self.moe_ffn_layers = nn.ModuleList([
+                    NodeMoEFFN(hidden_dim, ffn_expansion, moe_experts, moe_k,
+                               dropout, self.act_fn, coef=moe_coef)
+                    for _ in range(num_layers)
+                ])
+            else:
+                self.ffn_w1 = nn.ModuleList([nn.Linear(hidden_dim, ffn_dim) for _ in range(num_layers)])
+                self.ffn_w2 = nn.ModuleList([nn.Linear(ffn_dim, hidden_dim) for _ in range(num_layers)])
 
     def forward(
         self,
@@ -354,9 +560,19 @@ class GATEncoder(nn.Module):
             pe = self.pe_raw_norm(rwse)
             pe = self.pe_encoder(pe)
             x = torch.cat([x, pe], dim=-1)
+        # Reset per-forward MoE aux loss accumulator.
+        aux = torch.zeros((), device=x.device)
+        # GMoE needs 2-hop edges (computed once per forward, shared across layers).
+        edge_index_2hop = None
+        if self.gmoe:
+            edge_index_2hop = _two_hop_edge_index(edge_index, x.size(0))
         for i, (conv, bn) in enumerate(zip(self.convs, self.bns)):
             residual = self.res_projs[i](x) if self.use_skip else None
-            x = conv(x, edge_index, edge_attr=edge_attr)
+            if self.gmoe:
+                x, lb = conv(x, edge_index, edge_attr, edge_index_2hop)
+                aux = aux + lb
+            else:
+                x = conv(x, edge_index, edge_attr=edge_attr)
             x = bn(x, batch) if self._needs_batch else bn(x)
             if self.block_style == "gnn_plus":
                 x = self.act_fn(x)
@@ -368,14 +584,22 @@ class GATEncoder(nn.Module):
                 x = F.dropout(x, p=self.dropout, training=self.training)
             # FFN sub-block (GNN+ 2025, matches official _ff_block exactly):
             # x → BN(norm1) → [Linear1 → Act → Drop → Linear2 → Drop] → +x → BN(norm2)
+            # MoE-FFN variant: per-node expert FFNs replace the dense FFN.
             if self.use_ffn:
                 x = self.ffn_norm1[i](x, batch) if self._needs_batch else self.ffn_norm1[i](x)
-                ff = self.act_fn(self.ffn_w1[i](x))
-                ff = F.dropout(ff, p=self.dropout, training=self.training)
-                ff = self.ffn_w2[i](ff)
-                ff = F.dropout(ff, p=self.dropout, training=self.training)
+                if self.moe_ffn:
+                    ff, lb = self.moe_ffn_layers[i](x)
+                    aux = aux + lb
+                else:
+                    ff = self.act_fn(self.ffn_w1[i](x))
+                    ff = F.dropout(ff, p=self.dropout, training=self.training)
+                    ff = self.ffn_w2[i](ff)
+                    ff = F.dropout(ff, p=self.dropout, training=self.training)
                 x = x + ff
                 x = self.ffn_norm2[i](x, batch) if self._needs_batch else self.ffn_norm2[i](x)
+        # Average aux load-balance loss over layers (reference conv.py:359 /= num_layer).
+        n_layers = len(self.convs)
+        self._moe_aux_loss = aux / n_layers if n_layers > 0 else aux
         return x
 
 
@@ -605,6 +829,12 @@ def build_gnn_encoder(
     balanced_init_beta: float = 2.0,
     g_init: bool = False,
     g_init_d: float = 2.0,
+    moe_ffn: bool = False,
+    gmoe: bool = False,
+    moe_experts: int = 8,
+    moe_experts_1hop: int = 4,
+    moe_k: int = 2,
+    moe_coef: float = 1e-2,
 ) -> nn.Module:
     """Build a GNN encoder by name. All encoders share forward(x, edge_index, edge_attr).
 
@@ -624,7 +854,9 @@ def build_gnn_encoder(
                           use_ffn=use_ffn, ffn_expansion=ffn_expansion,
                           use_pe=use_pe, pe_walk_length=pe_walk_length, pe_dim=pe_dim,
                           balanced_init=balanced_init, balanced_init_beta=balanced_init_beta,
-                          g_init=g_init, g_init_d=g_init_d)
+                          g_init=g_init, g_init_d=g_init_d,
+                          moe_ffn=moe_ffn, gmoe=gmoe, moe_experts=moe_experts,
+                          moe_experts_1hop=moe_experts_1hop, moe_k=moe_k, moe_coef=moe_coef)
     if m == "gcn":
         return GCNEncoder(in_channels, hidden_dim, num_layers, dropout,
                           add_self_loops, use_skip)
