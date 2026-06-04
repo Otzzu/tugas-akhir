@@ -1,0 +1,86 @@
+# Local GNN-only N41 — N15 + Edge-type MoE (relation-routed experts).
+# Base: N15 (current SOTA — Test F1 0.523, IFA 0.299).
+# Varies: gnn_edge_moe true. Each GNN layer = EdgeTypeMoEConv: 5 GATv2 experts, one
+#   per CPG relation family (syntax / control / dataflow / call / misc). Per-node
+#   noisy top-k gate routes each node to the relations relevant to its vulnerability.
+# = GMoE per-node gating (Wang NeurIPS 2023) + RGCN/HGT relation-specific experts.
+#
+# Why this replaces N40 (hop-GMoE, infeasible):
+#   - Hop-GMoE built 2-hop edges via A@A → exploded on dense CPGs (mean 334 nodes) → OOM @48GB.
+#   - Edge-type MoE PARTITIONS the existing edges by type → Σ expert edges = total
+#     edges (no growth, no 2-hop) → memory ≈ single GATv2 → fits 24GB at batch 32.
+# Semantically: taint-sink node routes to dataflow expert, branch node to control,
+#   etc. — mirrors how analysts reason over CPG relations.
+# edge_attr layout: first 30 dims = edge-type one-hot (EDGE_TYPES order), dim 30 =
+#   has_var. Type idx = argmax(edge_attr[:, :30]); mapped to 5 groups by _CPG_EDGE_GROUP_MAP.
+# Load-balance aux loss (Shazeer 2017 cv²) added to total loss.
+#
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/gnn_only/N41_a1_l1_gnn_plus_elu_edgemoe.yaml
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  graph_pool: meanmax
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  gnn_edge_moe: true
+  gnn_moe_k: 2
+  gnn_moe_coef: 0.01
+  func_head_type: linear
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: false
+  use_flash_attention: false
+  grad_accum_steps: 2
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 0
+  prefetch_factor: 2

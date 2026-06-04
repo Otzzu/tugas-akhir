@@ -407,6 +407,88 @@ class GMoEConv(nn.Module):
         return out, lb_loss
 
 
+# Maps each of the 30 CPG edge-type indices (gnn_vuln.data.cpg.constants.EDGE_TYPES
+# order) to one of 5 semantic super-relation groups. Used by EdgeTypeMoEConv so each
+# expert aggregates one family of CPG relations.
+#   0 = syntax     (AST, CONTAINS, REF, CONDITION, *_BODY, FOR_*, EVAL_TYPE, CATCH/TRY)
+#   1 = control    (CFG, CDG, DOMINATE, POST_DOMINATE)
+#   2 = dataflow   (REACHING_DEF/DDG, ARGUMENT, PARAMETER_LINK)
+#   3 = call       (CALL, RECEIVER, IS_CALL_FOR_IMPORT)
+#   4 = misc/type  (ALIAS_OF, BINDS, CAPTURE, IMPORTS, INHERITS_FROM, SOURCE_FILE, TAGGED_BY)
+# Index order matches EDGE_TYPES: ALIAS_OF, ARGUMENT, AST, BINDS, CALL, CAPTURE,
+# CATCH_BODY, CDG, CFG, CONDITION, CONTAINS, DOMINATE, EVAL_TYPE, FALSE_BODY,
+# FINALLY_BODY, FOR_BODY, FOR_INIT, FOR_UPDATE, IMPORTS, INHERITS_FROM,
+# IS_CALL_FOR_IMPORT, PARAMETER_LINK, POST_DOMINATE, REACHING_DEF, RECEIVER, REF,
+# SOURCE_FILE, TAGGED_BY, TRUE_BODY, TRY_BODY.
+_CPG_EDGE_GROUP_MAP = [
+    4, 2, 0, 4, 3, 4, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 4, 4,
+    3, 2, 1, 2, 3, 0, 4, 4, 0, 0,
+]
+NUM_EDGE_GROUPS = 5
+
+
+class EdgeTypeMoEConv(nn.Module):
+    """Edge-type Mixture-of-Experts conv — GMoE per-node gating (Wang 2023) over
+    RGCN/HGT-style relation-specific experts.
+
+    Instead of hop-based experts (which explode via A@A on dense CPGs), each expert
+    aggregates ONE family of CPG edge types (syntax / control / dataflow / call /
+    misc). Edges are PARTITIONED by type → Σ expert edges = total edges (no growth,
+    no 2-hop). Memory ≈ a single GATv2. Per-node noisy top-k gate lets each node
+    route to the relations relevant to its vulnerability (e.g. taint-sink → dataflow,
+    branch → control).
+
+    edge_attr layout (gnn_vuln.data.cpg.features._edge_attr): first 30 dims = edge-type
+    one-hot, dim 30 = has_var flag → type index = edge_attr[:, :30].argmax(1).
+
+    Returns (out [N, D], load_balance_loss).
+    """
+
+    def __init__(self, in_dim, out_dim, num_heads, k, dropout, edge_dim,
+                 add_self_loops, fill_value, num_groups=NUM_EDGE_GROUPS, coef=1e-2):
+        super().__init__()
+        self.num_experts = num_groups
+        self.k = min(k, num_groups)
+        self.coef = coef
+        # One GATv2 expert per relation group; each uses the (subset's) edge features.
+        self.experts = nn.ModuleList([
+            GATv2Conv(in_dim, out_dim, heads=num_heads, concat=False, dropout=dropout,
+                      edge_dim=edge_dim, add_self_loops=add_self_loops, fill_value=fill_value)
+            for _ in range(num_groups)
+        ])
+        self.bns = nn.ModuleList([nn.BatchNorm1d(out_dim) for _ in range(num_groups)])
+        self.w_gate = nn.Parameter(torch.zeros(in_dim, num_groups))
+        self.w_noise = nn.Parameter(torch.zeros(in_dim, num_groups))
+        self.softplus = nn.Softplus()
+        # group_map [30] long buffer (idx → group). Moves with .to(device).
+        self.register_buffer("group_map", torch.tensor(_CPG_EDGE_GROUP_MAP, dtype=torch.long))
+
+    def forward(self, x, edge_index, edge_attr):
+        N = x.size(0)
+        gates, load = _noisy_top_k_gating(x, self.w_gate, self.w_noise, self.k,
+                                          self.training, self.softplus)
+        importance = gates.sum(0)
+        lb_loss = (_cv_squared(importance) + _cv_squared(load)) * self.coef
+        # Edge type idx → group id (per edge).
+        etype = edge_attr[:, :len(_CPG_EDGE_GROUP_MAP)].argmax(dim=1)   # [E]
+        egroup = self.group_map[etype]                                  # [E] in 0..num_groups-1
+        outs = []
+        for g, (expert, bn) in enumerate(zip(self.experts, self.bns)):
+            emask = egroup == g
+            if emask.any():
+                ei_g = edge_index[:, emask]
+                ea_g = edge_attr[emask]
+                h = expert(x, ei_g, edge_attr=ea_g)
+                h = bn(h)
+            else:
+                # No edges of this relation in the batch → expert contributes zeros.
+                h = x.new_zeros(N, bn.num_features)
+            outs.append(h)
+        stacked = torch.stack(outs, dim=1)                              # [N, num_groups, D]
+        out = (gates.unsqueeze(-1) * stacked).sum(dim=1)                # weighted sum (Shazeer/GMoE eq2)
+        return out, lb_loss
+
+
 # CPG edge types: AST, CFG, CDG, DDG, PDG, CALL, REACHING_DEF
 NUM_EDGE_TYPES = 7
 
@@ -467,6 +549,7 @@ class GATEncoder(nn.Module):
         g_init_d: float = 2.0,
         moe_ffn: bool = False,
         gmoe: bool = False,
+        edge_moe: bool = False,
         moe_experts: int = 8,
         moe_experts_1hop: int = 4,
         moe_k: int = 2,
@@ -487,6 +570,7 @@ class GATEncoder(nn.Module):
         # accumulated in self._moe_aux_loss each forward, read by the model+trainer.
         self.moe_ffn = moe_ffn
         self.gmoe = gmoe
+        self.edge_moe = edge_moe
         self._moe_aux_loss = torch.zeros(())
         self.use_pe = use_pe
         self.pe_walk_length = pe_walk_length
@@ -509,6 +593,16 @@ class GATEncoder(nn.Module):
                 self.convs.append(GMoEConv(
                     in_d, hidden_dim, num_heads, moe_experts, moe_experts_1hop,
                     moe_k, dropout, edge_dim, add_self_loops, fill_value, coef=moe_coef,
+                ))
+                self.bns.append(_build_norm(norm_type, hidden_dim))
+        elif edge_moe:
+            # Edge-type MoE: each layer = EdgeTypeMoEConv (5 relation-group GATv2 experts,
+            # per-node gate). Edges partitioned by CPG type → no 2-hop explosion.
+            for li in range(num_layers):
+                in_d = in_channels_eff if li == 0 else hidden_dim
+                self.convs.append(EdgeTypeMoEConv(
+                    in_d, hidden_dim, num_heads, moe_k, dropout, edge_dim,
+                    add_self_loops, fill_value, coef=moe_coef,
                 ))
                 self.bns.append(_build_norm(norm_type, hidden_dim))
         else:
@@ -585,6 +679,9 @@ class GATEncoder(nn.Module):
             residual = self.res_projs[i](x) if self.use_skip else None
             if self.gmoe:
                 x, lb = conv(x, edge_index, edge_attr, edge_index_2hop)
+                aux = aux + lb
+            elif self.edge_moe:
+                x, lb = conv(x, edge_index, edge_attr)
                 aux = aux + lb
             else:
                 x = conv(x, edge_index, edge_attr=edge_attr)
@@ -846,6 +943,7 @@ def build_gnn_encoder(
     g_init_d: float = 2.0,
     moe_ffn: bool = False,
     gmoe: bool = False,
+    edge_moe: bool = False,
     moe_experts: int = 8,
     moe_experts_1hop: int = 4,
     moe_k: int = 2,
@@ -870,7 +968,7 @@ def build_gnn_encoder(
                           use_pe=use_pe, pe_walk_length=pe_walk_length, pe_dim=pe_dim,
                           balanced_init=balanced_init, balanced_init_beta=balanced_init_beta,
                           g_init=g_init, g_init_d=g_init_d,
-                          moe_ffn=moe_ffn, gmoe=gmoe, moe_experts=moe_experts,
+                          moe_ffn=moe_ffn, gmoe=gmoe, edge_moe=edge_moe, moe_experts=moe_experts,
                           moe_experts_1hop=moe_experts_1hop, moe_k=moe_k, moe_coef=moe_coef)
     if m == "gcn":
         return GCNEncoder(in_channels, hidden_dim, num_layers, dropout,
