@@ -536,6 +536,113 @@ def _make_conv(conv_type, in_dim, out_dim, num_heads, dropout, edge_dim,
     raise ValueError(f"conv_type must be gat|gatedgcn|gine|gcn, got {conv_type!r}")
 
 
+# ── Faithful GNN+ GatedGCN (Luo ICML 2025 / Bresson & Laurent 2017) ───────────
+# Ported 1:1 from github.com/LUOyk1999/GNNPlus GatedGCNLayer: 5 linears A-E,
+# maintained+updated edge state e, normalized soft-gating, edge BN/residual, and
+# self-contained block (BN→act→drop→residual + FFN) INSIDE the layer.
+
+from torch_geometric.nn.conv import MessagePassing as _MP
+from torch_geometric.utils import scatter as _pyg_scatter
+
+
+class GatedGCNLayer(_MP):
+    """GNN+ GatedGCN layer (faithful). Maintains node x AND edge e across layers.
+    forward(x, e, edge_index) → (x, e). Self-contained: BN, act, dropout, residual,
+    and FFN all internal (matches reference gatedgcn_layer.py exactly)."""
+
+    def __init__(self, in_dim, out_dim, dropout, residual=True, ffn=True, act="relu"):
+        super().__init__()
+        a = _activation(act)
+        self.A = nn.Linear(in_dim, out_dim, bias=True)
+        self.B = nn.Linear(in_dim, out_dim, bias=True)
+        self.C = nn.Linear(in_dim, out_dim, bias=True)
+        self.D = nn.Linear(in_dim, out_dim, bias=True)
+        self.E = nn.Linear(in_dim, out_dim, bias=True)
+        self.act_fn_x = a
+        self.act_fn_e = a
+        self.dropout = dropout
+        self.residual = residual
+        self.ffn = ffn
+        self.bn_node_x = nn.BatchNorm1d(out_dim)
+        self.bn_edge_e = nn.BatchNorm1d(out_dim)
+        self._e = None
+        if ffn:
+            self.norm1_local = nn.BatchNorm1d(out_dim)
+            self.ff_linear1 = nn.Linear(out_dim, out_dim * 2)
+            self.ff_linear2 = nn.Linear(out_dim * 2, out_dim)
+            self.act_fn_ff = a
+            self.norm2 = nn.BatchNorm1d(out_dim)
+            self.ff_dropout1 = nn.Dropout(dropout)
+            self.ff_dropout2 = nn.Dropout(dropout)
+
+    def _ff_block(self, x):
+        x = self.ff_dropout1(self.act_fn_ff(self.ff_linear1(x)))
+        return self.ff_dropout2(self.ff_linear2(x))
+
+    def forward(self, x, e, edge_index):
+        x_in, e_in = x, e
+        Ax, Bx, Dx, Ex = self.A(x), self.B(x), self.D(x), self.E(x)
+        Ce = self.C(e)
+        x, e = self.propagate(edge_index, Bx=Bx, Dx=Dx, Ex=Ex, Ce=Ce, Ax=Ax)
+        x = self.bn_node_x(x); e = self.bn_edge_e(e)
+        x = self.act_fn_x(x);  e = self.act_fn_e(e)
+        x = F.dropout(x, self.dropout, training=self.training)
+        e = F.dropout(e, self.dropout, training=self.training)
+        if self.residual:
+            x = x_in + x; e = e_in + e
+        if self.ffn:
+            x = self.norm1_local(x)
+            x = x + self._ff_block(x)
+            x = self.norm2(x)
+        return x, e
+
+    def message(self, Dx_i, Ex_j, Ce):
+        e_ij = Dx_i + Ex_j + Ce
+        self._e = e_ij
+        return torch.sigmoid(e_ij)
+
+    def aggregate(self, sigma_ij, index, Bx_j, Bx):
+        dim_size = Bx.shape[0]
+        num = _pyg_scatter(sigma_ij * Bx_j, index, 0, dim_size, reduce="sum")
+        den = _pyg_scatter(sigma_ij, index, 0, dim_size, reduce="sum")
+        return num / (den + 1e-6)
+
+    def update(self, aggr_out, Ax):
+        x = Ax + aggr_out
+        e_out = self._e
+        self._e = None
+        return x, e_out
+
+
+class GatedGCNEncoder(nn.Module):
+    """Stack of faithful GNN+ GatedGCN layers. Projects node + edge features to
+    hidden once (GNNPreMP-style), then L self-contained GatedGCN layers maintaining
+    (x, e). Returns final node embedding. Matches GNN+ CustomGNN(gatedgcn) recipe."""
+
+    def __init__(self, in_channels, hidden_dim, num_layers, dropout, edge_dim,
+                 residual=True, ffn=True, act="relu"):
+        super().__init__()
+        self.node_pre = nn.Linear(in_channels, hidden_dim)
+        self.edge_pre = nn.Linear(edge_dim, hidden_dim)
+        self.layers = nn.ModuleList([
+            GatedGCNLayer(hidden_dim, hidden_dim, dropout, residual=residual,
+                          ffn=ffn, act=act)
+            for _ in range(num_layers)
+        ])
+        # No MoE here; expose attribute for the model's aux-loss read (always 0).
+        self.use_pe = False
+        self._moe_aux_loss = torch.zeros(())
+
+    def forward(self, x, edge_index, edge_attr=None, batch=None, rwse=None):
+        x = self.node_pre(x)
+        e = self.edge_pre(edge_attr) if edge_attr is not None else \
+            x.new_zeros(edge_index.size(1), x.size(1))
+        for layer in self.layers:
+            x, e = layer(x, e, edge_index)
+        self._moe_aux_loss = torch.zeros((), device=x.device)
+        return x
+
+
 # ── GAT Encoder ───────────────────────────────────────────────────────────────
 
 class GATEncoder(nn.Module):
@@ -988,9 +1095,7 @@ def build_gnn_encoder(
     block_style: "resnet" (legacy) or "gnn_plus" (Luo 2025) — currently only GAT supports.
     """
     m = gnn_model.lower()
-    # gat / gatedgcn / gine / gcn → GNN+ GATEncoder wrapper with conv_type (same
-    # recipe: block_style, FFN, norm, activation, skip) → fair backbone comparison.
-    if m in ("gat", "gatedgcn", "gine", "gcn"):
+    if m == "gat":
         return GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout,
                           edge_dim, add_self_loops, use_skip,
                           block_style=block_style, norm_type=norm_type, activation=activation,
@@ -999,8 +1104,11 @@ def build_gnn_encoder(
                           balanced_init=balanced_init, balanced_init_beta=balanced_init_beta,
                           g_init=g_init, g_init_d=g_init_d,
                           moe_ffn=moe_ffn, gmoe=gmoe, edge_moe=edge_moe, moe_experts=moe_experts,
-                          moe_experts_1hop=moe_experts_1hop, moe_k=moe_k, moe_coef=moe_coef,
-                          conv_type=m)
+                          moe_experts_1hop=moe_experts_1hop, moe_k=moe_k, moe_coef=moe_coef)
+    if m == "gatedgcn":
+        # Faithful GNN+ GatedGCN (ported 1:1 from GNNPlus GatedGCNLayer).
+        return GatedGCNEncoder(in_channels, hidden_dim, num_layers, dropout, edge_dim,
+                               residual=use_skip, ffn=use_ffn, act=activation)
     if m == "gin":
         return GINEncoder(in_channels, hidden_dim, num_layers, dropout,
                           edge_dim, use_skip)
