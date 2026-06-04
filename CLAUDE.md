@@ -1,5 +1,12 @@
 # CLAUDE.md — Project Instructions
 
+## Git Commit Style
+
+Keep commit messages short. One line subject only. Punctuation limited to comma and dot. No colons, slashes, semicolons, parentheses, or other symbols. Never add a Co-Authored-By trailer. Commit only when the user asks.
+
+Good: `feat add N42 N43 rank weight, N44 supcon group`
+Bad: `feat: N42/N43 rank ablation; N44 (supcon group) + code`
+
 ## Python Environment
 
 This project uses **uv** for dependency management. A virtual environment is already created at `.venv/`.

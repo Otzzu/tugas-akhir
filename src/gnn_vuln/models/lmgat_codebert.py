@@ -238,6 +238,12 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                     self.stmt_head.score(h_loc, batch, node_line)
                     if node_line is not None else None
                 )
+                # SupCon projection on the graph embedding (GNN-only fused = h_graph).
+                # Enables hierarchical/group SupCon without any LM branch.
+                if self.supcon_head is not None:
+                    self._fused_for_supcon = h_graph
+                    proj_z = self.supcon_head(h_graph)
+                    return logit, stmt_scores, proj_z
                 return logit, stmt_scores
             # Cross-task with GNN-only path. statement_features + cross_task with
             # mode='gnn' work without LM (kv_tok=None, lm_hidden=None skipped).
