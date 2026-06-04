@@ -319,23 +319,38 @@ class NodeMoEFFN(nn.Module):
         return out, lb_loss
 
 
-def _two_hop_edge_index(edge_index, num_nodes):
+def _two_hop_edge_index(edge_index, num_nodes, cap_factor=4):
     """Compute 2-hop edge_index via sparse A@A (GMoE Wang 2023). Removes self-loops
     and 1-hop edges so hop-2 experts see only genuinely distant neighbors.
+
+    GMoE was tuned on small sparse molecule graphs (~25 nodes). CPG graphs (mean
+    334 nodes, dense) explode the 2-hop set (~N·deg²) → OOM even at 48GB. We CAP
+    the 2-hop edges to cap_factor × (#1-hop edges), keeping the highest A@A values
+    (= most length-2 paths between i,j → strongest 2-hop connections). Deterministic,
+    bounds memory regardless of graph density.
+
     Returns edge_index_2hop [2, E2] (no edge_attr — hop-2 GAT runs edge-attr-free)."""
     device = edge_index.device
-    val = torch.ones(edge_index.size(1), device=device)
+    E1 = edge_index.size(1)
+    val = torch.ones(E1, device=device)
     A = torch.sparse_coo_tensor(edge_index, val, (num_nodes, num_nodes)).coalesce()
     A2 = torch.sparse.mm(A, A).coalesce()
     idx2 = A2.indices()
+    vals2 = A2.values()
     # Remove self-loops
     mask = idx2[0] != idx2[1]
-    idx2 = idx2[:, mask]
-    # Remove pairs already connected at 1-hop (build set of 1-hop keys)
+    idx2, vals2 = idx2[:, mask], vals2[mask]
+    # Remove pairs already connected at 1-hop
     one_hop_keys = edge_index[0] * num_nodes + edge_index[1]
     two_hop_keys = idx2[0] * num_nodes + idx2[1]
-    is_one_hop = torch.isin(two_hop_keys, one_hop_keys)
-    return idx2[:, ~is_one_hop]
+    keep = ~torch.isin(two_hop_keys, one_hop_keys)
+    idx2, vals2 = idx2[:, keep], vals2[keep]
+    # Cap: keep top (cap_factor × E1) edges by A@A path-count → bounds memory.
+    max_e2 = cap_factor * E1
+    if idx2.size(1) > max_e2:
+        topk_idx = torch.topk(vals2, max_e2, sorted=False).indices
+        idx2 = idx2[:, topk_idx]
+    return idx2
 
 
 class GMoEConv(nn.Module):
