@@ -2,10 +2,11 @@
 
 ## Git Commit Style
 
-Keep commit messages short. One line subject only. Punctuation limited to comma and dot. No colons, slashes, semicolons, parentheses, or other symbols. Never add a Co-Authored-By trailer. Commit only when the user asks.
+Always keep the conventional-commit type prefix (`feat:`, `fix:`, `docs:`, `refactor:`, etc.) — the colon after the type is required and allowed. Keep the description short, one line. In the description use only comma and dot — no slashes, semicolons, parentheses, or extra colons. Never add a Co-Authored-By trailer. Commit only when the user asks.
 
-Good: `feat add N42 N43 rank weight, N44 supcon group`
-Bad: `feat: N42/N43 rank ablation; N44 (supcon group) + code`
+Good: `feat: add N42 N43 rank weight, N44 supcon group`
+Bad: `feat: N42/N43 rank ablation; N44 (supcon group) + code` (slashes, semicolon, parens)
+Bad: `add N42 N43 rank weight` (missing type prefix)
 
 ## Python Environment
 
