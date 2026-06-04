@@ -5,7 +5,9 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GATv2Conv, GCNConv, GINEConv, GatedGraphConv, RGCNConv
+from torch_geometric.nn import (
+    GATv2Conv, GCNConv, GINEConv, GatedGraphConv, RGCNConv, ResGatedGraphConv,
+)
 from torch_geometric.nn.norm import GraphNorm
 from torch_geometric.utils import degree, to_torch_csr_tensor
 
@@ -506,6 +508,34 @@ def _build_res_projs(
     return projs
 
 
+# ── Conv factory — lets the GNN+ recipe wrap any classic backbone ──────────────
+# GNN+ (Luo ICML 2025) tested GCN / GIN / GatedGCN. We add them as drop-in convs so
+# the SAME recipe (block_style, FFN, norm, ELU, skip) wraps each → fair vs GATv2.
+_EDGE_AWARE_CONVS = {"gat", "gatedgcn", "gine"}   # take edge_attr; "gcn" is edge-agnostic
+
+
+def _make_conv(conv_type, in_dim, out_dim, num_heads, dropout, edge_dim,
+               add_self_loops, fill_value):
+    """Build one message-passing layer of the given type, edge-feature aware where
+    supported. All output out_dim (heads concat=False for GAT)."""
+    if conv_type == "gat":
+        return GATv2Conv(in_dim, out_dim, heads=num_heads, concat=False,
+                         dropout=dropout, edge_dim=edge_dim,
+                         add_self_loops=add_self_loops, fill_value=fill_value)
+    if conv_type == "gatedgcn":
+        # ResGatedGraphConv (Bresson & Laurent 2017) — edge-gated message passing,
+        # GNN+'s overall-best backbone. Uses edge features via edge_dim.
+        return ResGatedGraphConv(in_dim, out_dim, edge_dim=edge_dim)
+    if conv_type == "gine":
+        # GINE (Hu 2020) — GIN with edge features. MLP update per GIN.
+        mlp = nn.Sequential(nn.Linear(in_dim, out_dim), nn.ReLU(), nn.Linear(out_dim, out_dim))
+        return GINEConv(mlp, edge_dim=edge_dim)
+    if conv_type == "gcn":
+        # Edge-agnostic (ignores CPG edge types).
+        return GCNConv(in_dim, out_dim, add_self_loops=add_self_loops)
+    raise ValueError(f"conv_type must be gat|gatedgcn|gine|gcn, got {conv_type!r}")
+
+
 # ── GAT Encoder ───────────────────────────────────────────────────────────────
 
 class GATEncoder(nn.Module):
@@ -554,10 +584,13 @@ class GATEncoder(nn.Module):
         moe_experts_1hop: int = 4,
         moe_k: int = 2,
         moe_coef: float = 1e-2,
+        conv_type: str = "gat",
     ):
         super().__init__()
         assert block_style in ("resnet", "gnn_plus"), \
             f"block_style must be 'resnet' or 'gnn_plus', got {block_style!r}"
+        self.conv_type = conv_type
+        self._edge_aware = conv_type in _EDGE_AWARE_CONVS
         self.dropout = dropout
         self.use_skip = use_skip
         self.block_style = block_style
@@ -606,22 +639,15 @@ class GATEncoder(nn.Module):
                 ))
                 self.bns.append(_build_norm(norm_type, hidden_dim))
         else:
-            self.convs.append(
-                GATv2Conv(
-                    in_channels_eff, hidden_dim, heads=num_heads, concat=False,
-                    dropout=dropout, edge_dim=edge_dim,
-                    add_self_loops=add_self_loops, fill_value=fill_value,
-                )
-            )
+            # conv_type selects backbone (gat default; gcn/gatedgcn/gine for GNN+ parity).
+            self.convs.append(_make_conv(
+                conv_type, in_channels_eff, hidden_dim, num_heads, dropout,
+                edge_dim, add_self_loops, fill_value))
             self.bns.append(_build_norm(norm_type, hidden_dim))
             for _ in range(num_layers - 1):
-                self.convs.append(
-                    GATv2Conv(
-                        hidden_dim, hidden_dim, heads=num_heads, concat=False,
-                        dropout=dropout, edge_dim=edge_dim,
-                        add_self_loops=add_self_loops, fill_value=fill_value,
-                    )
-                )
+                self.convs.append(_make_conv(
+                    conv_type, hidden_dim, hidden_dim, num_heads, dropout,
+                    edge_dim, add_self_loops, fill_value))
                 self.bns.append(_build_norm(norm_type, hidden_dim))
 
         if use_skip:
@@ -683,8 +709,10 @@ class GATEncoder(nn.Module):
             elif self.edge_moe:
                 x, lb = conv(x, edge_index, edge_attr)
                 aux = aux + lb
-            else:
+            elif self._edge_aware:
                 x = conv(x, edge_index, edge_attr=edge_attr)
+            else:
+                x = conv(x, edge_index)   # GCN: edge-agnostic
             x = bn(x, batch) if self._needs_batch else bn(x)
             if self.block_style == "gnn_plus":
                 x = self.act_fn(x)
@@ -960,7 +988,9 @@ def build_gnn_encoder(
     block_style: "resnet" (legacy) or "gnn_plus" (Luo 2025) — currently only GAT supports.
     """
     m = gnn_model.lower()
-    if m == "gat":
+    # gat / gatedgcn / gine / gcn → GNN+ GATEncoder wrapper with conv_type (same
+    # recipe: block_style, FFN, norm, activation, skip) → fair backbone comparison.
+    if m in ("gat", "gatedgcn", "gine", "gcn"):
         return GATEncoder(in_channels, hidden_dim, num_layers, num_heads, dropout,
                           edge_dim, add_self_loops, use_skip,
                           block_style=block_style, norm_type=norm_type, activation=activation,
@@ -969,10 +999,8 @@ def build_gnn_encoder(
                           balanced_init=balanced_init, balanced_init_beta=balanced_init_beta,
                           g_init=g_init, g_init_d=g_init_d,
                           moe_ffn=moe_ffn, gmoe=gmoe, edge_moe=edge_moe, moe_experts=moe_experts,
-                          moe_experts_1hop=moe_experts_1hop, moe_k=moe_k, moe_coef=moe_coef)
-    if m == "gcn":
-        return GCNEncoder(in_channels, hidden_dim, num_layers, dropout,
-                          add_self_loops, use_skip)
+                          moe_experts_1hop=moe_experts_1hop, moe_k=moe_k, moe_coef=moe_coef,
+                          conv_type=m)
     if m == "gin":
         return GINEncoder(in_channels, hidden_dim, num_layers, dropout,
                           edge_dim, use_skip)
