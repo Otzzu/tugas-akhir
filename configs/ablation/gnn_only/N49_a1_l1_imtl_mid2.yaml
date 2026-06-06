@@ -1,19 +1,14 @@
-# Local GNN-only N45b — N15 + MTL group head (LINEAR heads, fair vs N15).
-# Thin Dropout+Linear heads for all (matches N15 LinearFuncHead depth).
-# 26-class tail few-shot (14 of 26 classes <=20 test samples) — groups are
-# well-populated (14 of 15 have 100+). Report group-F1 primary, CWE-F1 best-effort.
-# L = CE_cwe + 0.3 CE_group. cwe_head conditioned on softmax group_probs.
-# Base: N9 (N7 + FFN — current best loc, IFA 0.372, but worst cls F1 0.391).
-# Varies: func_head_type "fat" (FuncHead: Linear→ReLU→Drop→Linear, 2-layer MLP)
-#         → "linear" (LinearFuncHead: single Linear). Matches GNN+ 2025 paper:
-#         GNN already does heavy lifting (FFN inside each block), classifier
-#         should be thin to avoid overfitting on hidden dim.
-# Hypothesis: N9's bad cls (0.391) caused by 2-layer MLP overfitting on small
-# fused_dim (256). Linear head = fewer params, better regularization, faster.
-# Expect: cls F1 ≥ 0.450 (recover to N7 level), loc stays strong (≤ 0.4 IFA).
+# Local GNN-only N49 — N15 + Intermediate-layer MTL (Sogaard & Goldberg ACL 2016).
+# group_head taps L2 pool (2-hop, coarser) → group gradient stops at layer 2.
+# cwe_head taps L4 pool (4-hop, global) conditioned on group_probs.
+# Architectural gradient separation: group and CWE gradients do not compete at h_graph.
+# imtl_mid_layer=1 (0-indexed): after 2nd GATv2 layer = 2-hop receptive field.
+# group_loss_weight=0.3 matches N46 for fair comparison.
+# Hypothesis: gradient separation via intermediate layer unlocks MTL in GNN-only mode.
+# Expect: F1 > N46 (0.435); if >= N15 (0.523) confirms gradient conflict was root cause.
 #
 # Run (cloud, Linux):
-#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/gnn_only/N15_a1_l1_gnn_plus_elu_ffn_linhead.yaml
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/gnn_only/N49_a1_l1_imtl_mid2.yaml
 
 data:
   source: megavul
@@ -51,12 +46,11 @@ model:
   gnn_activation: elu
   gnn_use_ffn: true
   gnn_ffn_expansion: 2
-  func_head_type: mtl
+  func_head_type: imtl
+  imtl_mid_layer: 1
   num_groups: 16
   group_loss_weight: 0.3
   binary_loss_weight: 0.0
-  mtl_use_group_cond: true
-  mtl_use_linear_heads: true
 
 train:
   seed: 42

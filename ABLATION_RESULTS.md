@@ -582,6 +582,17 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N34 | `20260603_121533_lmgat_codebert_multiclass` | `N34_a1_l1_gnn_plus_elu_ffn_linhead_norank.yaml`    | meanmax    | true     | N15 + rank_loss_weight=0 (drop rank)           |
 | N35 | `20260603_124325_lmgat_codebert_multiclass` | `N35_a1_l1_gnn_plus_elu_ffn_linhead_rank01.yaml`    | meanmax    | true     | N15 + rank_loss_weight=0.1 (halve rank)        |
 | N36 | `20260603_131456_lmgat_codebert_multiclass` | `N36_a1_l1_gnn_plus_elu_ffn_linhead_pcgrad_enc.yaml`| meanmax    | true     | N15 + PCGrad encoder-only (N28b fix)           |
+| N37 | `20260603_184356_lmgat_codebert_multiclass` | `N37_a1_l1_gnn_plus_elu_dim512.yaml`                | meanmax    | true     | N15 + hidden_dim=512 (linear head)             |
+| N38 | `20260603_200317_lmgat_codebert_multiclass` | `N38_a1_l1_gnn_plus_elu_ffn4.yaml`                  | meanmax    | true     | N15 + ffn_expansion=4                          |
+| N39 | `20260603_205416_lmgat_codebert_multiclass` | `N39_a1_l1_gnn_plus_elu_moeffn.yaml`                | meanmax    | true     | N15 + MoE-FFN (Switch, 8 experts)              |
+| N40 | _(not run — infeasible)_                    | `N40_a1_l1_gnn_plus_elu_gmoe.yaml`                  | meanmax    | true     | N15 + GMoE hop experts (OOM @48GB, 2-hop A@A explodes on CPG) |
+| N41 | `20260604_143602_lmgat_codebert_multiclass` | `N41_a1_l1_gnn_plus_elu_edgemoe.yaml`               | meanmax    | true     | N15 + edge-type MoE (5 CPG relation experts)   |
+| N42 | `20260605_042703_lmgat_codebert_multiclass` | `N42_a1_l1_rank03.yaml`                             | meanmax    | true     | N15 + rank_loss_weight=0.3                      |
+| N43 | `20260605_053417_lmgat_codebert_multiclass` | `N43_a1_l1_rank04.yaml`                             | meanmax    | true     | N15 + rank_loss_weight=0.4                      |
+| N44 | `20260605_042224_lmgat_codebert_multiclass` | `N44_a1_l1_supcon_group.yaml`                       | meanmax    | true     | N15 + SupCon group intragroup batch=64         |
+| N47 | `20260604_183502_lmgat_codebert_multiclass` | `N47_a1_l1_gatedgcn.yaml`                           | meanmax    | true     | N15 backbone gat to GatedGCN faithful GNN+     |
+| N45 | `20260606_091533_lmgat_codebert_multiclass` | `N45_a1_l1_mtl_group.yaml`                          | meanmax    | true     | N15 + MTL hierarchical group head, group loss 0.3 |
+| N46 | `20260606_131451_lmgat_codebert_multiclass` | `N46_a1_l1_mtl_group_linear.yaml`                   | meanmax    | true     | N15 + MTL group head linear thin (fair depth vs N15) |
 
 ## Classification
 
@@ -627,6 +638,16 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N34 | 0.470     | 0.413     | 0.445     | 0.444     | 0.462     | 0.434     | 0.479     | 0.443     | 0.889     | 0.371     | 49     |
 | N35 | 0.489     | 0.457     | 0.471     | 0.460     | 0.525     | 0.469     | 0.506     | 0.470     | 0.888     | 0.405     | 53     |
 | N36 | 0.469     | 0.410     | 0.425     | 0.426     | 0.350     | 0.472     | 0.441     | 0.415     | 0.889     | 0.241     | 82     |
+| N37 | 0.468     | 0.441     | 0.470     | 0.470     | 0.540     | 0.509     | 0.520     | 0.475     | 0.895     | 0.322     | 55     |
+| N38 | 0.488     | 0.478     | 0.482     | 0.481     | 0.532     | 0.463     | 0.518     | 0.492     | 0.891     | 0.321     | 66     |
+| N39 | 0.476     | 0.461     | 0.478     | 0.472     | 0.546     | 0.525     | 0.492     | 0.475     | 0.897     | 0.383     | 55     |
+| N41 | 0.465     | 0.472     | 0.485     | 0.481     | 0.498     | 0.524     | 0.504     | 0.499     | 0.894     | 0.361     | 60     |
+| N42 | 0.506     | 0.468     | 0.484     | 0.480     | 0.491     | 0.466     | 0.504     | 0.500     | 0.897     | 0.344     | 77     |
+| N43 | 0.502     | 0.435     | 0.459     | 0.458     | 0.469     | 0.427     | 0.489     | 0.477     | 0.889     | 0.371     | 72     |
+| N44 | 0.472     | 0.422     | 0.457     | 0.456     | 0.501     | 0.389     | 0.491     | 0.430     | 0.892     | 0.399     | 49     |
+| N47 | 0.475     | 0.438     | 0.474     | 0.470     | 0.440     | 0.461     | 0.488     | 0.473     | 0.898     | 0.345     | 51     |
+| N45 | 0.455     | 0.418     | 0.471     | 0.471     | 0.416     | 0.438     | 0.492     | 0.473     | 0.874     | 0.368     | 76     |
+| N46 | 0.462     | 0.435     | 0.470     | 0.464     | 0.484     | 0.460     | 0.493     | 0.469     | 0.873     | 0.378     | 55     |
 
 ## Statement-Level Localization
 
@@ -638,7 +659,7 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N4  | 1.672     | 0.714     | 0.931     | 0.242     | 0.449      | 0.033         |
 | N5  | 0.697     | 0.835     | 0.969     | 0.257     | 0.478      | 0.032         |
 | N6  | 0.654     | 0.829     | 0.965     | 0.248     | 0.480      | 0.029         |
-| N7  | 0.474     | 0.918     | 0.985     | **0.274** | 0.485      | **0.023**     |
+| N7  | 0.474     | 0.918     | 0.985     | 0.274     | 0.485      | 0.023         |
 | N8  | 0.543     | 0.861     | 0.974     | 0.262     | 0.480      | 0.029         |
 | N9  | 0.372     | 0.930     | 0.985     | 0.255     | 0.468      | 0.027         |
 | N10 | 0.515     | 0.890     | 0.981     | 0.243     | 0.451      | 0.030         |
@@ -649,7 +670,7 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N15 | 0.299     | 0.940     | **0.988** | 0.271     | 0.475      | 0.024         |
 | N16 | 0.385     | 0.911     | 0.981     | 0.240     | 0.451      | 0.036         |
 | N17 | **0.220** | 0.928     | **0.988** | 0.257     | 0.464      | 0.029         |
-| N18 | 0.485     | 0.895     | 0.978     | **0.285** | 0.488      | **0.023**     |
+| N18 | 0.485     | 0.895     | 0.978     | **0.285** | 0.488      | 0.023         |
 | N19 | 0.435     | 0.895     | 0.980     | 0.238     | 0.458      | 0.034         |
 | N20 | 0.351     | 0.941     | **0.988** | 0.248     | 0.440      | 0.029         |
 | N21 | 0.524     | 0.883     | 0.980     | 0.214     | 0.437      | 0.043         |
@@ -668,6 +689,16 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N34 | 9.826     | 0.269     | 0.593     | 0.076     | 0.224      | 0.175         |
 | N35 | 0.581     | 0.852     | 0.974     | 0.200     | 0.438      | 0.050         |
 | N36 | 0.423     | 0.909     | 0.981     | 0.256     | 0.466      | 0.029         |
+| N37 | 0.334     | 0.941     | 0.984     | 0.248     | 0.459      | 0.028         |
+| N38 | 0.457     | 0.899     | 0.981     | 0.241     | 0.441      | 0.033         |
+| N39 | 0.353     | 0.924     | 0.985     | 0.256     | 0.474      | 0.029         |
+| N41 | 0.338     | 0.893     | 0.984     | 0.279     | 0.457      | **0.021**     |
+| N42 | 0.343     | 0.941     | 0.985     | 0.264     | 0.460      | 0.026         |
+| N43 | 0.372     | 0.939     | 0.984     | 0.257     | 0.477      | 0.028         |
+| N44 | 12.423    | 0.206     | 0.554     | 0.041     | 0.213      | 0.190         |
+| N47 | 0.502     | 0.922     | 0.980     | 0.240     | 0.439      | 0.034         |
+| N45 | 0.498     | 0.889     | 0.980     | 0.199     | 0.419      | 0.050         |
+| N46 | 0.356     | 0.934     | 0.982     | 0.257     | 0.450      | 0.027         |
 
 ---
 
@@ -746,3 +777,13 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N34 N15+rank=0        | RTX 5070 Ti     | 4.7M   | 33s        | 0.46            | 10.4 GB   |
 | N35 N15+rank=0.1      | RTX 5070 Ti     | 4.7M   | 35s        | 0.52            | 11.5 GB   |
 | N36 N15+PCGrad enc    | RTX 5070 Ti     | 4.7M   | 77s        | 1.76            | 10.3 GB   |
+| N37 N15+dim512        | RTX A5000       | 14.7M  | 86s        | 1.31            | 13.7 GB   |
+| N38 N15+ffn4          | RTX A5000       | 5.8M   | 46s        | 0.84            | 9.7 GB    |
+| N39 N15+MoE-FFN       | RTX A5000       | 12.1M  | 63s        | 0.97            | 12.0 GB   |
+| N41 N15+edge-MoE      | RTX 3090        | 18.5M  | 109s       | 1.82            | 9.9 GB    |
+| N42 N15+rank0.3       | RTX A4500       | 4.7M   | 52s        | 1.11            | 12.4 GB   |
+| N43 N15+rank0.4       | RTX A4500       | 4.7M   | 52s        | 1.03            | 10.3 GB   |
+| N44 N15+supcon group  | RTX PRO 5000 Bk | 4.8M   | 49s        | 0.67            | 17.3 GB   |
+| N47 N15 GatedGCN      | RTX 3090        | 2.6M   | 26s        | 0.37            | 4.6 GB    |
+| N45 N15+MTL group     | RTX A4500       | 4.9M   | 55s        | 1.16            | 9.6 GB    |
+| N46 N15+MTL linear    | RTX A4000       | 4.7M   | 87s        | 1.34            | 9.7 GB    |

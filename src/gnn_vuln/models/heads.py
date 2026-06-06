@@ -462,10 +462,10 @@ class LinearFuncHead(nn.Module):
 
 class MTLHeads(nn.Module):
     """
-    Three-head MTL output block for lmgat_codebert_mtl and lmgat_hcdfgat:
-      binary_head  → [B, 2]
-      group_head   → [B, num_groups]
-      cwe_head     → [B, num_classes]  (conditioned on group_probs when use_group_cond=True)
+    Three-head MTL output block (fat) for lmgat_codebert_mtl and lmgat_hcdfgat:
+      binary_head  → [B, 2]       Linear→ReLU→Drop→Linear
+      group_head   → [B, G]       Linear→ReLU→Drop→Linear
+      cwe_head     → [B, C]       Linear(2×hidden)→ReLU→Drop→Linear, conditioned on group_probs
 
     use_group_cond: feed softmax(group_logits).detach() into cwe_head input.
     """
@@ -478,44 +478,31 @@ class MTLHeads(nn.Module):
         num_groups: int,
         dropout: float,
         use_group_cond: bool = True,
-        use_linear_heads: bool = False,
     ):
         super().__init__()
         self.num_groups = num_groups
         self.use_group_cond = use_group_cond
 
-        if use_linear_heads:
-            # GNN+-style thin heads: Dropout → Linear (matches LinearFuncHead).
-            # Isolates the effect of group conditioning from head depth.
-            self.binary_head = nn.Sequential(nn.Dropout(dropout), nn.Linear(fused_dim, 2))
-            self.group_head  = nn.Sequential(nn.Dropout(dropout), nn.Linear(fused_dim, num_groups))
-            cwe_in_dim = fused_dim + (num_groups if use_group_cond else 0)
-            self.cwe_head = nn.Sequential(nn.Dropout(dropout), nn.Linear(cwe_in_dim, num_classes))
-        else:
-            self.binary_head = nn.Sequential(
-                nn.Linear(fused_dim, hidden_dim // 2),
-                nn.ReLU(),
-                nn.Dropout(dropout),
-                nn.Linear(hidden_dim // 2, 2),
-            )
-            self.group_head = nn.Sequential(
-                nn.Linear(fused_dim, hidden_dim // 2),
-                nn.ReLU(),
-                nn.Dropout(dropout),
-                nn.Linear(hidden_dim // 2, num_groups),
-            )
-            # CWE head input: fused + group_probs (detached)
-            self.cwe_head = nn.Sequential(
-                nn.Linear(fused_dim + num_groups, hidden_dim * 2),
-                nn.ReLU(),
-                nn.Dropout(dropout),
-                nn.Linear(hidden_dim * 2, num_classes),
-            )
+        self.binary_head = nn.Sequential(
+            nn.Linear(fused_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim // 2, 2),
+        )
+        self.group_head = nn.Sequential(
+            nn.Linear(fused_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim // 2, num_groups),
+        )
+        self.cwe_head = nn.Sequential(
+            nn.Linear(fused_dim + num_groups, hidden_dim * 2),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim * 2, num_classes),
+        )
 
-    def forward(
-        self,
-        z: torch.Tensor,  # [B, fused_dim]
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, z: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Returns (logit_cwe [B,C], logit_group [B,G], logit_binary [B,2])."""
         z = z.float()
         logit_binary = self.binary_head(z)
@@ -529,4 +516,78 @@ class MTLHeads(nn.Module):
         cwe_in    = torch.cat([z, group_probs], dim=-1)
         logit_cwe = self.cwe_head(cwe_in)
 
+        return logit_cwe, logit_group, logit_binary
+
+
+class LinearMTLHeads(nn.Module):
+    """
+    Three-head MTL output block (thin/GNN+-style) matching LinearFuncHead depth:
+      binary_head  → [B, 2]   Dropout → Linear
+      group_head   → [B, G]   Dropout → Linear
+      cwe_head     → [B, C]   Dropout → Linear(fused+G, C)  conditioned on group_probs
+
+    Isolates group-conditioning effect from head depth vs MTLHeads (fat).
+    Used by N46: fair comparison against N15 LinearFuncHead.
+    """
+
+    def __init__(
+        self,
+        fused_dim: int,
+        num_classes: int,
+        num_groups: int,
+        dropout: float,
+        use_group_cond: bool = True,
+    ):
+        super().__init__()
+        self.num_groups = num_groups
+        self.use_group_cond = use_group_cond
+
+        self.binary_head = nn.Sequential(nn.Dropout(dropout), nn.Linear(fused_dim, 2))
+        self.group_head  = nn.Sequential(nn.Dropout(dropout), nn.Linear(fused_dim, num_groups))
+        cwe_in_dim = fused_dim + (num_groups if use_group_cond else 0)
+        self.cwe_head = nn.Sequential(nn.Dropout(dropout), nn.Linear(cwe_in_dim, num_classes))
+
+    def forward(self, z: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Returns (logit_cwe [B,C], logit_group [B,G], logit_binary [B,2])."""
+        z = z.float()
+        logit_binary = self.binary_head(z)
+        logit_group  = self.group_head(z)
+
+        if self.use_group_cond:
+            cwe_in = torch.cat([z, F.softmax(logit_group.detach(), dim=-1)], dim=-1)
+        else:
+            cwe_in = z
+
+        logit_cwe = self.cwe_head(cwe_in)
+
+        return logit_cwe, logit_group, logit_binary
+
+
+class IntermediateMTLHeads(nn.Module):
+    """Intermediate-layer MTL: group head taps mid-layer pool, CWE taps final pool.
+
+    Architectural gradient separation without func_lm:
+      group gradient flows only into layers 1..mid_layer (2-hop locality).
+      CWE gradient flows through all 4 layers (4-hop global context).
+    Justified by Sogaard & Goldberg ACL 2016, Hashimoto et al. EMNLP 2017.
+
+    forward(h_mid, h_final) different signature from flat MTL heads.
+    """
+
+    def __init__(self, graph_dim: int, num_classes: int, num_groups: int, dropout: float):
+        super().__init__()
+        self.num_groups = num_groups
+        self.group_head = nn.Sequential(nn.Dropout(dropout), nn.Linear(graph_dim, num_groups))
+        self.cwe_head = nn.Sequential(nn.Dropout(dropout), nn.Linear(graph_dim + num_groups, num_classes))
+        self.binary_head = nn.Sequential(nn.Dropout(dropout), nn.Linear(graph_dim, 2))
+
+    def forward(
+        self, h_mid: torch.Tensor, h_final: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Returns (logit_cwe [B,C], logit_group [B,G], logit_binary [B,2])."""
+        logit_group = self.group_head(h_mid.float())
+        group_probs = F.softmax(logit_group.detach(), dim=-1)
+        cwe_in = torch.cat([h_final.float(), group_probs], dim=-1)
+        logit_cwe = self.cwe_head(cwe_in)
+        logit_binary = self.binary_head(h_final.float())
         return logit_cwe, logit_group, logit_binary

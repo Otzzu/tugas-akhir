@@ -1,7 +1,9 @@
-# Local GNN-only N47 — N15 + gatedgcn backbone (GatedGCN (ResGatedGraphConv, GNN+ champion)).
-# Base: N15 (current SOTA). Varies: gnn_model gat -> gatedgcn, SAME GNN+ recipe
-# (gnn_plus block + FFN + ELU + linear head + L4) for fair backbone comparison.
-# GNN+ paper (Luo ICML 2025) tests GCN/GIN/GatedGCN; GatedGCN best overall.
+# Local GNN-only N47 — N15 + GatedGCN backbone (faithful GNN+ GatedGCNLayer).
+# Base: N15. Varies: gnn_model gat to gatedgcn. Same recipe family but GatedGCN is
+# the self-contained GNN+ layer (5 linears A-E, evolving edge state, normalized
+# soft-gate, internal BN act drop residual + FFN) ported 1:1 from GNNPlus repo —
+# NOT PyG ResGatedGraphConv. gnn_activation elu kept for fair vs N15.
+# GNN+ paper (Luo ICML 2025) tests GCN GIN GatedGCN. GatedGCN best overall there.
 # Base: N9 (N7 + FFN — current best loc, IFA 0.372, but worst cls F1 0.391).
 # Varies: func_head_type "fat" (FuncHead: Linear→ReLU→Drop→Linear, 2-layer MLP)
 #         → "linear" (LinearFuncHead: single Linear). Matches GNN+ 2025 paper:

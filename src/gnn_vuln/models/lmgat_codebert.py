@@ -78,6 +78,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  gnn_moe_k=2, gnn_moe_coef=1e-2,
                  func_head_type="fat",
                  num_groups=16, mtl_use_group_cond=True, mtl_use_linear_heads=False,
+                 imtl_mid_layer=1,
                  matryoshka_dim=None,
                  func_chunk_size=0, func_chunk_stride=0,
                  localization_encoder="gnn", use_flash_attention=False, compile_lm=False,
@@ -145,9 +146,9 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             moe_experts=gnn_moe_experts, moe_experts_1hop=gnn_moe_experts_1hop,
             moe_k=gnn_moe_k, moe_coef=gnn_moe_coef,
         )
-        # Graph-level pooling: mean | max | add | meanmax | meanmaxadd | attention | dualflow | cnn
-        assert graph_pool in ("mean", "max", "add", "meanmax", "meanmaxadd", "attention", "dualflow", "cnn"), \
-            f"graph_pool must be mean|max|add|meanmax|meanmaxadd|attention|dualflow|cnn, got {graph_pool!r}"
+        # Graph-level pooling: mean | max | add | meanmax | meanmaxadd | attention | dualflow | cnn | jknet
+        assert graph_pool in ("mean", "max", "add", "meanmax", "meanmaxadd", "attention", "dualflow", "cnn", "jknet"), \
+            f"graph_pool must be mean|max|add|meanmax|meanmaxadd|attention|dualflow|cnn|jknet, got {graph_pool!r}"
         self._graph_pool = graph_pool
         self.attn_pool = (
             AttentionalAggregation(gate_nn=nn.Linear(hidden_dim, 1))
@@ -165,20 +166,35 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         # Attention methods don't carry that adaptation depth → keep fat head.
         # func_head_type override: "fat" (MLP) | "thin" (LN+Linear) | "linear" (GNN+ style)
         # | "mtl" (hierarchical: group_head + group-conditioned cwe_head + binary_head).
-        assert func_head_type in ("fat", "thin", "linear", "mtl"), \
-            f"func_head_type must be fat|thin|linear|mtl, got {func_head_type!r}"
+        assert func_head_type in ("fat", "thin", "linear", "mtl", "imtl"), \
+            f"func_head_type must be fat|thin|linear|mtl|imtl, got {func_head_type!r}"
         # Pool output dim: meanmaxadd concats mean+max+add → 3× hidden_dim.
+        # jknet concats L layer node hiddens then pools → num_layers × hidden_dim.
         # Others keep hidden_dim (mean / meanmax score-level / attention / dualflow / cnn).
-        self._pool_out_dim = 3 * hidden_dim if graph_pool == "meanmaxadd" else hidden_dim
+        if graph_pool == "meanmaxadd":
+            self._pool_out_dim = 3 * hidden_dim
+        elif graph_pool == "jknet":
+            self._pool_out_dim = num_layers * hidden_dim
+        else:
+            self._pool_out_dim = hidden_dim
         _fused_dim = self._pool_out_dim + self._lm_dim
         self._mtl = func_head_type == "mtl"
-        if func_head_type == "mtl":
+        self._imtl = func_head_type == "imtl"
+        self._imtl_mid_layer = imtl_mid_layer
+        if func_head_type == "imtl":
+            from gnn_vuln.models.heads import IntermediateMTLHeads
+            self.func_head = IntermediateMTLHeads(hidden_dim, num_classes, num_groups, dropout)
+        elif func_head_type == "mtl":
             # Hierarchical group→CWE: cwe_head conditioned on softmax(group_logits).
             # Sidesteps 26-class tail few-shot — groups are well-populated.
-            from gnn_vuln.models.heads import MTLHeads
-            self.func_head = MTLHeads(_fused_dim, hidden_dim, num_classes, num_groups,
-                                      dropout, use_group_cond=mtl_use_group_cond,
-                                      use_linear_heads=mtl_use_linear_heads)
+            if mtl_use_linear_heads:
+                from gnn_vuln.models.heads import LinearMTLHeads
+                self.func_head = LinearMTLHeads(_fused_dim, num_classes, num_groups,
+                                                dropout, use_group_cond=mtl_use_group_cond)
+            else:
+                from gnn_vuln.models.heads import MTLHeads
+                self.func_head = MTLHeads(_fused_dim, hidden_dim, num_classes, num_groups,
+                                          dropout, use_group_cond=mtl_use_group_cond)
         elif func_head_type == "linear":
             self.func_head = LinearFuncHead(_fused_dim, num_classes, dropout=dropout)
         elif func_head_type == "thin" or (cross_task_method == "mmoe" and not cross_task_residual):
@@ -233,11 +249,24 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         elif self._graph_pool == "cnn":
             B_hint = int(batch.max().item()) + 1 if batch.numel() > 0 else 1
             h_graph = self.cnn_pool(h, batch, B_hint)
+        elif self._graph_pool == "jknet":
+            # JK-Net: concat node hiddens from all layers → [N, L*hidden_dim], then meanmax pool.
+            layer_hiddens = getattr(self.encoder, "_layer_hiddens", [])
+            h_jk = torch.cat(layer_hiddens, dim=-1) if layer_hiddens else h
+            h_graph = 0.8 * global_max_pool(h_jk, batch) + 0.6 * global_mean_pool(h_jk, batch)
         else:
             h_graph = global_mean_pool(h, batch)
         B = h_graph.size(0)
         # Per-node GNN features for localization (optionally unit-normed, symmetric to F6 per_token norm).
         h_loc = F.normalize(h, dim=-1) if self._normalize_gnn_output else h
+        # Intermediate-MTL: pool the mid-layer node hiddens for group head.
+        # Group gradient only flows through layers 0..mid_layer; CWE gradient through all.
+        h_mid_graph = None
+        if self._imtl:
+            _layers = getattr(self.encoder, "_layer_hiddens", [])
+            _mid_idx = self._imtl_mid_layer
+            _h_mid = _layers[_mid_idx] if _mid_idx < len(_layers) else h
+            h_mid_graph = 0.8 * global_max_pool(_h_mid, batch) + 0.6 * global_mean_pool(_h_mid, batch)
         # ── LM branch ─────────────────────────────────────────────────────────
         if self._live_lm == "none":
             # GNN-only: fused = h_graph. Skip all LM forwards.
@@ -252,6 +281,9 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                 # adds group/binary CE via group_loss_weight/binary_loss_weight.
                 if self._mtl:
                     logit_cwe, logit_group, logit_binary = self.func_head(h_graph)
+                    return logit_cwe, logit_group, logit_binary, stmt_scores
+                if self._imtl:
+                    logit_cwe, logit_group, logit_binary = self.func_head(h_mid_graph, h_graph)
                     return logit_cwe, logit_group, logit_binary, stmt_scores
                 logit = self.func_head(h_graph)
                 # SupCon projection on the graph embedding (GNN-only fused = h_graph).
@@ -373,6 +405,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             num_groups=getattr(cfg.model, "num_groups", 16),
             mtl_use_group_cond=getattr(cfg.model, "mtl_use_group_cond", True),
             mtl_use_linear_heads=getattr(cfg.model, "mtl_use_linear_heads", False),
+            imtl_mid_layer=getattr(cfg.model, "imtl_mid_layer", 1),
             matryoshka_dim=getattr(cfg.model, "matryoshka_dim", None),
             func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
             func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),

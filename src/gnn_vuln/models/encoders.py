@@ -714,6 +714,7 @@ class GATEncoder(nn.Module):
         self._moe_aux_loss = torch.zeros(())
         self.use_pe = use_pe
         self.pe_walk_length = pe_walk_length
+        self._layer_hiddens: list[torch.Tensor] = []  # populated each forward, used by jknet/imtl
 
         # PE encoder (GNN+ 2025 RWSE): random walk PE → BN → Linear → dim_pe.
         # Concatenated to node features before first conv. Increases in_channels by pe_dim.
@@ -804,6 +805,7 @@ class GATEncoder(nn.Module):
             x = torch.cat([x, pe], dim=-1)
         # Reset per-forward MoE aux loss accumulator.
         aux = torch.zeros((), device=x.device)
+        self._layer_hiddens = []
         # GMoE needs 2-hop edges (computed once per forward, shared across layers).
         edge_index_2hop = None
         if self.gmoe:
@@ -844,6 +846,7 @@ class GATEncoder(nn.Module):
                     ff = F.dropout(ff, p=self.dropout, training=self.training)
                 x = x + ff
                 x = self.ffn_norm2[i](x, batch) if self._needs_batch else self.ffn_norm2[i](x)
+            self._layer_hiddens.append(x)
         # Average aux load-balance loss over layers (reference conv.py:359 /= num_layer).
         n_layers = len(self.convs)
         self._moe_aux_loss = aux / n_layers if n_layers > 0 else aux
