@@ -478,30 +478,39 @@ class MTLHeads(nn.Module):
         num_groups: int,
         dropout: float,
         use_group_cond: bool = True,
+        use_linear_heads: bool = False,
     ):
         super().__init__()
         self.num_groups = num_groups
         self.use_group_cond = use_group_cond
 
-        self.binary_head = nn.Sequential(
-            nn.Linear(fused_dim, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, 2),
-        )
-        self.group_head = nn.Sequential(
-            nn.Linear(fused_dim, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, num_groups),
-        )
-        # CWE head input: fused + group_probs (detached)
-        self.cwe_head = nn.Sequential(
-            nn.Linear(fused_dim + num_groups, hidden_dim * 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim * 2, num_classes),
-        )
+        if use_linear_heads:
+            # GNN+-style thin heads: Dropout → Linear (matches LinearFuncHead).
+            # Isolates the effect of group conditioning from head depth.
+            self.binary_head = nn.Sequential(nn.Dropout(dropout), nn.Linear(fused_dim, 2))
+            self.group_head  = nn.Sequential(nn.Dropout(dropout), nn.Linear(fused_dim, num_groups))
+            cwe_in_dim = fused_dim + (num_groups if use_group_cond else 0)
+            self.cwe_head = nn.Sequential(nn.Dropout(dropout), nn.Linear(cwe_in_dim, num_classes))
+        else:
+            self.binary_head = nn.Sequential(
+                nn.Linear(fused_dim, hidden_dim // 2),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim // 2, 2),
+            )
+            self.group_head = nn.Sequential(
+                nn.Linear(fused_dim, hidden_dim // 2),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim // 2, num_groups),
+            )
+            # CWE head input: fused + group_probs (detached)
+            self.cwe_head = nn.Sequential(
+                nn.Linear(fused_dim + num_groups, hidden_dim * 2),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim * 2, num_classes),
+            )
 
     def forward(
         self,

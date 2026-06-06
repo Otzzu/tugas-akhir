@@ -77,7 +77,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  gnn_moe_experts=8, gnn_moe_experts_1hop=4,
                  gnn_moe_k=2, gnn_moe_coef=1e-2,
                  func_head_type="fat",
-                 num_groups=16, mtl_use_group_cond=True,
+                 num_groups=16, mtl_use_group_cond=True, mtl_use_linear_heads=False,
                  matryoshka_dim=None,
                  func_chunk_size=0, func_chunk_stride=0,
                  localization_encoder="gnn", use_flash_attention=False, compile_lm=False,
@@ -177,7 +177,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             # Sidesteps 26-class tail few-shot — groups are well-populated.
             from gnn_vuln.models.heads import MTLHeads
             self.func_head = MTLHeads(_fused_dim, hidden_dim, num_classes, num_groups,
-                                      dropout, use_group_cond=mtl_use_group_cond)
+                                      dropout, use_group_cond=mtl_use_group_cond,
+                                      use_linear_heads=mtl_use_linear_heads)
         elif func_head_type == "linear":
             self.func_head = LinearFuncHead(_fused_dim, num_classes, dropout=dropout)
         elif func_head_type == "thin" or (cross_task_method == "mmoe" and not cross_task_residual):
@@ -371,6 +372,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             func_head_type=getattr(cfg.model, "func_head_type", "fat"),
             num_groups=getattr(cfg.model, "num_groups", 16),
             mtl_use_group_cond=getattr(cfg.model, "mtl_use_group_cond", True),
+            mtl_use_linear_heads=getattr(cfg.model, "mtl_use_linear_heads", False),
             matryoshka_dim=getattr(cfg.model, "matryoshka_dim", None),
             func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
             func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),
