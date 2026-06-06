@@ -118,3 +118,44 @@ uv run train --config configs/lmgcn/multiclass.yaml
 uv run train --config configs/lmgat/binary.yaml
 uv run train --config configs/lmgat/multiclass.yaml
 ```
+
+## Cloud Training
+
+When asked for commands to run training in the cloud, **always give both**:
+1. The direct `PYTHONPATH=src python -m gnn_vuln.train` command (for reference)
+2. The `train_cloud.sh` command (for actual cloud use)
+
+`scripts/train_cloud.sh` handles: rclone setup, dataset download from Drive, train, evaluate, zip+upload results, optional .pt cleanup.
+
+**Flags:**
+- `--init` — fresh server, runs `setup_cloud.sh` + installs `rclone.conf`
+- `--skip` — server already configured, skip all setup
+- `--resume` — continue from `last_{arch}.pt`
+- `--clean-every N` — delete dataset .pt after every Nth run (use N=total_runs to clean after last)
+
+Each `--config` must be paired with a `--dataset` (same position).
+
+**Dataset name** = zip/tar filename on `gdrive-mesach:tugas-akhir/` WITHOUT extension.
+Find from a recent `training_summary.json` → `dataset_pt` field, strip `_meta.pt` suffix.
+Current megavul multiclass dataset: `lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42`
+Storage mode: **lazy** (graphs stored as individual files, not a single .pt).
+Note: configs use CRLF on Windows — the script's storage-marker grep may show a cosmetic warning (`No inmemory-marked tar found`) due to CRLF, but the fallback finds the correct `_lazy_` tar and downloads fine.
+
+```bash
+# Single run (server already set up)
+./scripts/train_cloud.sh --skip \
+  --config configs/ablation/gnn_only/N48_a1_l1_jknet.yaml \
+  --dataset lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42
+
+# Multiple runs, same dataset, clean after last
+./scripts/train_cloud.sh --skip --clean-every 2 \
+  --config configs/ablation/gnn_only/N48_a1_l1_jknet.yaml \
+  --dataset lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42 \
+  --config configs/ablation/gnn_only/N49_a1_l1_imtl_mid2.yaml \
+  --dataset lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42
+
+# Fresh server
+./scripts/train_cloud.sh --init \
+  --config <config.yaml> \
+  --dataset <dataset_name>
+```

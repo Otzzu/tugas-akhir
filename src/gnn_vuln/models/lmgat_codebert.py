@@ -166,8 +166,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         # Attention methods don't carry that adaptation depth → keep fat head.
         # func_head_type override: "fat" (MLP) | "thin" (LN+Linear) | "linear" (GNN+ style)
         # | "mtl" (hierarchical: group_head + group-conditioned cwe_head + binary_head).
-        assert func_head_type in ("fat", "thin", "linear", "mtl", "imtl"), \
-            f"func_head_type must be fat|thin|linear|mtl|imtl, got {func_head_type!r}"
+        assert func_head_type in ("fat", "thin", "linear", "mtl", "imtl", "imtl_cwe"), \
+            f"func_head_type must be fat|thin|linear|mtl|imtl|imtl_cwe, got {func_head_type!r}"
         # Pool output dim: meanmaxadd concats mean+max+add → 3× hidden_dim.
         # jknet concats L layer node hiddens then pools → num_layers × hidden_dim.
         # Others keep hidden_dim (mean / meanmax score-level / attention / dualflow / cnn).
@@ -180,6 +180,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         _fused_dim = self._pool_out_dim + self._lm_dim
         self._mtl = func_head_type == "mtl"
         self._imtl = func_head_type == "imtl"
+        self._imtl_cwe = func_head_type == "imtl_cwe"
         self._imtl_mid_layer = imtl_mid_layer
         if func_head_type == "imtl":
             from gnn_vuln.models.heads import IntermediateMTLHeads
@@ -195,7 +196,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                 from gnn_vuln.models.heads import MTLHeads
                 self.func_head = MTLHeads(_fused_dim, hidden_dim, num_classes, num_groups,
                                           dropout, use_group_cond=mtl_use_group_cond)
-        elif func_head_type == "linear":
+        elif func_head_type in ("linear", "imtl_cwe"):
             self.func_head = LinearFuncHead(_fused_dim, num_classes, dropout=dropout)
         elif func_head_type == "thin" or (cross_task_method == "mmoe" and not cross_task_residual):
             self.func_head = ThinFuncHead(_fused_dim, num_classes)
@@ -262,7 +263,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         # Intermediate-MTL: pool the mid-layer node hiddens for group head.
         # Group gradient only flows through layers 0..mid_layer; CWE gradient through all.
         h_mid_graph = None
-        if self._imtl:
+        if self._imtl or self._imtl_cwe:
             _layers = getattr(self.encoder, "_layer_hiddens", [])
             _mid_idx = self._imtl_mid_layer
             _h_mid = _layers[_mid_idx] if _mid_idx < len(_layers) else h
@@ -285,6 +286,9 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                 if self._imtl:
                     logit_cwe, logit_group, logit_binary = self.func_head(h_mid_graph, h_graph)
                     return logit_cwe, logit_group, logit_binary, stmt_scores
+                if self._imtl_cwe:
+                    logit = self.func_head(h_mid_graph)
+                    return logit, stmt_scores
                 logit = self.func_head(h_graph)
                 # SupCon projection on the graph embedding (GNN-only fused = h_graph).
                 if self.supcon_head is not None:
