@@ -77,6 +77,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  gnn_moe_experts=8, gnn_moe_experts_1hop=4,
                  gnn_moe_k=2, gnn_moe_coef=1e-2,
                  func_head_type="fat",
+                 num_groups=16, mtl_use_group_cond=True,
                  matryoshka_dim=None,
                  func_chunk_size=0, func_chunk_stride=0,
                  localization_encoder="gnn", use_flash_attention=False, compile_lm=False,
@@ -162,14 +163,22 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         # Thin head only for in-path MMOE (residual off + mmoe): MMOE's
         # task encoder + shared experts do the adaptation → head can be thin.
         # Attention methods don't carry that adaptation depth → keep fat head.
-        # func_head_type override: "fat" (MLP, default) | "thin" (LN+Linear) | "linear" (GNN+ style).
-        assert func_head_type in ("fat", "thin", "linear"), \
-            f"func_head_type must be fat|thin|linear, got {func_head_type!r}"
+        # func_head_type override: "fat" (MLP) | "thin" (LN+Linear) | "linear" (GNN+ style)
+        # | "mtl" (hierarchical: group_head + group-conditioned cwe_head + binary_head).
+        assert func_head_type in ("fat", "thin", "linear", "mtl"), \
+            f"func_head_type must be fat|thin|linear|mtl, got {func_head_type!r}"
         # Pool output dim: meanmaxadd concats mean+max+add → 3× hidden_dim.
         # Others keep hidden_dim (mean / meanmax score-level / attention / dualflow / cnn).
         self._pool_out_dim = 3 * hidden_dim if graph_pool == "meanmaxadd" else hidden_dim
         _fused_dim = self._pool_out_dim + self._lm_dim
-        if func_head_type == "linear":
+        self._mtl = func_head_type == "mtl"
+        if func_head_type == "mtl":
+            # Hierarchical group→CWE: cwe_head conditioned on softmax(group_logits).
+            # Sidesteps 26-class tail few-shot — groups are well-populated.
+            from gnn_vuln.models.heads import MTLHeads
+            self.func_head = MTLHeads(_fused_dim, hidden_dim, num_classes, num_groups,
+                                      dropout, use_group_cond=mtl_use_group_cond)
+        elif func_head_type == "linear":
             self.func_head = LinearFuncHead(_fused_dim, num_classes, dropout=dropout)
         elif func_head_type == "thin" or (cross_task_method == "mmoe" and not cross_task_residual):
             self.func_head = ThinFuncHead(_fused_dim, num_classes)
@@ -233,13 +242,18 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             # GNN-only: fused = h_graph. Skip all LM forwards.
             ct = self._cross_task_method
             if ct == "none" or node_line is None:
-                logit = self.func_head(h_graph)
                 stmt_scores = (
                     self.stmt_head.score(h_loc, batch, node_line)
                     if node_line is not None else None
                 )
+                # MTL hierarchical head: group_head + group-conditioned cwe_head +
+                # binary_head. Returns (cwe, group, binary, stmt) 4-tuple — trainer
+                # adds group/binary CE via group_loss_weight/binary_loss_weight.
+                if self._mtl:
+                    logit_cwe, logit_group, logit_binary = self.func_head(h_graph)
+                    return logit_cwe, logit_group, logit_binary, stmt_scores
+                logit = self.func_head(h_graph)
                 # SupCon projection on the graph embedding (GNN-only fused = h_graph).
-                # Enables hierarchical/group SupCon without any LM branch.
                 if self.supcon_head is not None:
                     self._fused_for_supcon = h_graph
                     proj_z = self.supcon_head(h_graph)
@@ -355,6 +369,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             gnn_moe_k=getattr(cfg.model, "gnn_moe_k", 2),
             gnn_moe_coef=getattr(cfg.model, "gnn_moe_coef", 1e-2),
             func_head_type=getattr(cfg.model, "func_head_type", "fat"),
+            num_groups=getattr(cfg.model, "num_groups", 16),
+            mtl_use_group_cond=getattr(cfg.model, "mtl_use_group_cond", True),
             matryoshka_dim=getattr(cfg.model, "matryoshka_dim", None),
             func_chunk_size=getattr(cfg.model, "func_chunk_size", 0),
             func_chunk_stride=getattr(cfg.model, "func_chunk_stride", 0),
