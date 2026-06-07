@@ -257,6 +257,17 @@ class TrainConfig:
     edat_epsilon: float = 0.02   # L∞ perturbation bound on embedding table
     edat_alpha:   float = 1e-2   # FGSM step size per ascent step
     edat_steps:   int   = 3      # number of FGSM-sign ascent steps K
+    # ── Decoupled cRT (Classifier Re-training, Kang et al. 2020, ICLR) ─────────
+    # Stage 2 of decoupling for long-tail: load a frozen backbone checkpoint,
+    # freeze everything except func_head, re-init the classifier, and re-train it
+    # alone with class-balanced sampling. Backbone (incl. BatchNorm running stats)
+    # is kept in eval() so representations stay fixed. "" disables (normal run).
+    crt_init_checkpoint: str = ""
+    crt_reinit_head: bool = True   # randomly re-initialize func_head (paper: re-init W,b)
+    # Class-balanced sampler for cRT (Eq. 1, q=0): p_j = 1/C then uniform instance.
+    # Independent of supcon_balanced_sampling (that forces N distinct classes per
+    # batch for positive pairs — different goal). Replaces shuffle when true.
+    class_balanced_sampling: bool = False
 
 
 @dataclass

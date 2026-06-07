@@ -14,6 +14,10 @@
 #   --clean-every N Delete dataset .pt cache after every Nth run (0 = never, default: 0)
 #                   Use N=total_runs to clean only after last run (safe for shared datasets).
 #                   Clean happens inside background upload after rclone finishes.
+#   --backbone ID   Download a trained backbone checkpoint before the run loop (cRT).
+#                   ID = model_id whose <ID>_checkpoints.zip sits on gdrive checkpoints/.
+#                   Unzips to checkpoints/<ID>/best_*.pt so a cRT config can load it
+#                   via crt_init_checkpoint. Repeatable. Not cleaned by --clean-every.
 #   (default: auto-detect — runs setup only if uv/torch missing or rclone.conf absent)
 #
 # Usage:
@@ -48,6 +52,7 @@ error()   { echo -e "${RED}[ERR]${NC}  $*" >&2; }
 # ─── Argument parsing ─────────────────────────────────────────────────────────
 CONFIG_LIST=()
 DATASET_LIST=()
+BACKBONE_LIST=()   # --backbone <model_id>: backbone checkpoint(s) to fetch before training (cRT)
 FLAG_INIT=false    # --init: force run setup_cloud.sh + rclone setup regardless of state
 FLAG_SKIP=false    # --skip: skip setup_cloud.sh + rclone setup entirely
 FLAG_RESUME=false  # --resume: pass --resume to train.py (continues from last_{arch}.pt)
@@ -57,6 +62,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --config)        CONFIG_LIST+=("$2");  shift 2 ;;
         --dataset)       DATASET_LIST+=("$2"); shift 2 ;;
+        --backbone)      BACKBONE_LIST+=("$2"); shift 2 ;;
         --init)          FLAG_INIT=true;        shift ;;
         --skip)          FLAG_SKIP=true;        shift ;;
         --resume)        FLAG_RESUME=true;      shift ;;
@@ -270,6 +276,36 @@ download_dataset() {
     exit 1
 }
 
+# ─── 3b. Backbone checkpoint download (cRT) ──────────────────────────────────
+# Fetches a trained backbone's checkpoint zip so a cRT config can load it via
+# crt_init_checkpoint: checkpoints/<model_id>/best_*.pt. The zip on Drive holds
+# the inner path checkpoints/<model_id>/..., so it unzips straight to repo root.
+download_backbone() {
+    local model_id="$1"
+    local dest="${CHECKPOINTS_DIR}/${model_id}"
+
+    if compgen -G "${dest}/best_*.pt" > /dev/null 2>&1; then
+        success "Backbone already present: $model_id"
+        return 0
+    fi
+
+    local remote_zip="${GDRIVE_REMOTE}/checkpoints/${model_id}_checkpoints.zip"
+    if ! rclone lsf "$remote_zip" &>/dev/null 2>&1; then
+        error "Backbone checkpoint not found on gdrive: ${model_id}_checkpoints.zip"
+        exit 1
+    fi
+    info "Downloading backbone: $model_id"
+    local local_zip="${model_id}_checkpoints.zip"
+    rclone copy "$remote_zip" . --progress
+    unzip -o "$local_zip" -d .
+    rm -f "$local_zip"
+    if ! compgen -G "${dest}/best_*.pt" > /dev/null 2>&1; then
+        error "Backbone unzip did not produce ${dest}/best_*.pt"
+        exit 1
+    fi
+    success "Backbone ready: $model_id"
+}
+
 # ─── 4. Train ────────────────────────────────────────────────────────────────
 run_train() {
     local config="$1"
@@ -390,6 +426,11 @@ upload_run() {
 # ─── Main ─────────────────────────────────────────────────────────────────────
 check_rclone
 check_setup
+
+# Fetch any backbone checkpoints needed by cRT configs (before the run loop).
+for bb in "${BACKBONE_LIST[@]:-}"; do
+    [[ -n "$bb" ]] && download_backbone "$bb"
+done
 
 RUN_COUNT=0
 

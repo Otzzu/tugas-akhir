@@ -1,0 +1,103 @@
+# Local GNN-only N53 — cRT (Classifier Re-training) on top of N48.
+# Decoupled long-tail recipe, Kang et al. 2020 (ICLR) "Decoupling Representation
+# and Classifier for Long-Tailed Recognition", stage 2.
+#
+# N48 (JK-Net, current best F1 macro 0.525) is the frozen backbone. cRT loads
+# its weights, FREEZES everything except func_head, randomly re-initializes the
+# linear classifier, and re-trains ONLY that head with CLASS-BALANCED sampling
+# (Eq.1, q=0: pick class uniformly then instance uniformly). The backbone is
+# kept in eval() so BatchNorm running stats + dropout stay fixed — "keeping the
+# representations fixed" per the paper.
+#
+# Why this and not N52: N52 (structural graph aug) tried to fix the tail by
+# multiplying training views — failed (F1 0.494 < N48 0.525). cRT attacks a
+# different axis: the classifier decision boundary, not the representation.
+# Paper's finding: instance-balanced sampling already learns the best backbone
+# (= N48), so don't touch it — only re-balance the head.
+#
+# Faithfulness notes:
+#   - func_head is LinearFuncHead = Dropout -> Linear(1024, 26) = the paper's
+#     g(z) = Wz + b linear classifier. reset_parameters() re-inits W,b.
+#   - Pure cross-entropy: mil/rank/group/binary loss weights = 0, class weights
+#     OFF, label_smoothing 0.0. The class balancing comes from the SAMPLER, not
+#     loss reweighting (orthogonal to the focal+livable+static_cw stack).
+#   - Short schedule: paper re-trains the classifier for ~10 epochs; 30 + early
+#     stop (patience 10) gives the tiny head room without over-training.
+#
+# Requires the N48 backbone checkpoint at crt_init_checkpoint below. On cloud,
+# download + unzip it first:
+#   rclone copy gdrive-mesach:tugas-akhir/checkpoints/20260606_163818_lmgat_codebert_multiclass_checkpoints.zip .
+#   unzip 20260606_163818_lmgat_codebert_multiclass_checkpoints.zip
+#
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/gnn_only/N53_a1_l1_crt_n48.yaml
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  graph_pool: jknet
+  hidden_dim: 256
+  num_layers: 4
+  # 0.0 (vs N48's 0.3): cRT classifier must be the paper's strictly-linear
+  # g(z)=Wz+b. dropout only feeds func_head's input Dropout here — the frozen
+  # encoder is in eval() so its dropout is inactive regardless, and dropout has
+  # no params so the N48 state_dict still loads cleanly.
+  dropout: 0.0
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.0
+  mil_k: 3
+  rank_loss_weight: 0.0
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  func_head_type: linear
+
+train:
+  seed: 42
+  epochs: 30
+  batch_size: 32
+  lr: 0.001
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 10
+  early_stop_metric: f1
+  use_class_weights: false
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: false
+  livable_loss: false
+  label_smoothing: 0.0
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: false
+  use_flash_attention: false
+  grad_accum_steps: 2
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 0
+  prefetch_factor: 2
+  crt_init_checkpoint: checkpoints/20260606_163818_lmgat_codebert_multiclass/best_lmgat_codebert.pt
+  crt_reinit_head: true
+  class_balanced_sampling: true

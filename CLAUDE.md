@@ -132,6 +132,7 @@ When asked for commands to run training in the cloud, **always give both**:
 - `--skip` — server already configured, skip all setup
 - `--resume` — continue from `last_{arch}.pt`
 - `--clean-every N` — delete dataset .pt after every Nth run (use N=total_runs to clean after last)
+- `--backbone ID` — download a trained backbone checkpoint before the run loop (for cRT). `ID` = the model_id whose `<ID>_checkpoints.zip` is on Drive `checkpoints/`. Unzips to `checkpoints/<ID>/best_*.pt` so a cRT config loads it via `crt_init_checkpoint`. Repeatable.
 
 Each `--config` must be paired with a `--dataset` (same position).
 
@@ -158,4 +159,10 @@ Note: configs use CRLF on Windows — the script's storage-marker grep may show 
 ./scripts/train_cloud.sh --init \
   --config <config.yaml> \
   --dataset <dataset_name>
+
+# cRT run (N53) — needs N48 backbone checkpoint first
+./scripts/train_cloud.sh --skip \
+  --backbone 20260606_163818_lmgat_codebert_multiclass \
+  --config configs/ablation/gnn_only/N53_a1_l1_crt_n48.yaml \
+  --dataset lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42
 ```

@@ -151,6 +151,14 @@ class Trainer:
         self.pgd_tokenizer      = pgd_tokenizer
         self._current_epoch     = 1
         self._total_epochs      = 100
+        # cRT: when set, only this module trains; the rest of the model is kept
+        # in eval() during train_epoch so backbone BatchNorm running stats and
+        # dropout stay fixed (decoupled stage-2 keeps representations frozen).
+        self._crt_train_module: nn.Module | None = None
+
+    def set_crt_mode(self, train_module: nn.Module) -> None:
+        """Enable cRT: keep backbone in eval, train only ``train_module`` (func_head)."""
+        self._crt_train_module = train_module
 
     # ── Forward ──────────────────────────────────────────────────────────────
 
@@ -331,6 +339,12 @@ class Trainer:
         class_weight: torch.Tensor | None = None,
     ) -> float:
         self.model.train()
+        # cRT: freeze the backbone in eval() (BN running stats + dropout fixed);
+        # only func_head trains. Root model.training=False also disables the
+        # forward-pass graph augmentation block.
+        if self._crt_train_module is not None:
+            self.model.eval()
+            self._crt_train_module.train()
         self._current_epoch = epoch
         self._total_epochs  = total_epochs
         accum = self.grad_accum_steps

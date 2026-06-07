@@ -118,6 +118,11 @@ class TrainingSession:
 
         model = build_model(cfg, in_channels, self._active_heads).to(device)
 
+        # cRT (decoupled stage 2): load frozen backbone, re-init + unfreeze only
+        # func_head. Must run before the optimizer is built so it sees the frozen
+        # requires_grad flags. Returns the trainable head (or None when disabled).
+        crt_module = self._setup_crt(model)
+
         # LSUV init (Mishkin & Matas ICLR 2016) — applied to GNN encoder only.
         # Runs orthonormal init + per-layer variance normalization using first batch.
         if getattr(cfg.model, "gnn_lsuv_init", False) and hasattr(model, "encoder"):
@@ -235,6 +240,8 @@ class TrainingSession:
             mtl_diagnose_every=getattr(cfg.train, "mtl_diagnose_every", 10),
         )
         trainer.set_grad_clip(self._grad_clip)
+        if crt_module is not None:
+            trainer.set_crt_mode(crt_module)
 
         run_id, run_dir = self._setup_run_dir()
         if config_path and Path(config_path).exists():
@@ -295,6 +302,47 @@ class TrainingSession:
         )
         return fn.to(self.device)
 
+    def _setup_crt(self, model):
+        """Decoupled cRT (Kang et al. 2020, ICLR) stage-2 setup.
+
+        Loads a frozen backbone checkpoint, optionally re-initializes the
+        classifier head, then freezes every parameter except ``func_head``.
+        Returns the trainable head module (so the trainer can keep the backbone
+        in eval()), or None when cRT is disabled.
+        """
+        cfg = self.cfg
+        ckpt = getattr(cfg.train, "crt_init_checkpoint", "") or ""
+        if not ckpt:
+            return None
+        from gnn_vuln.utils import load_checkpoint
+        p = Path(ckpt)
+        if not p.exists():
+            raise FileNotFoundError(f"crt_init_checkpoint not found: {p}")
+        load_checkpoint(model, p, device=str(self.device))
+        logger.info(f"cRT: loaded frozen backbone ← {p}")
+
+        if getattr(cfg.train, "crt_reinit_head", True):
+            n_reinit = 0
+            for m in model.func_head.modules():
+                if hasattr(m, "reset_parameters"):
+                    m.reset_parameters()
+                    n_reinit += 1
+            logger.info(f"cRT: re-initialized func_head ({n_reinit} layer(s) reset)")
+
+        n_train = n_frozen = 0
+        for name, prm in model.named_parameters():
+            if name.startswith("func_head."):
+                prm.requires_grad = True
+                n_train += prm.numel()
+            else:
+                prm.requires_grad = False
+                n_frozen += prm.numel()
+        logger.info(
+            f"cRT: trainable={n_train:,} (func_head) | frozen={n_frozen:,} (backbone) | "
+            f"class_balanced_sampling={getattr(cfg.train, 'class_balanced_sampling', False)}"
+        )
+        return model.func_head
+
     def _setup_dataset(self):
         cfg = self.cfg
         pretrained_lm   = getattr(cfg.model, "pretrained_lm", "microsoft/codebert-base")
@@ -306,6 +354,7 @@ class TrainingSession:
         use_official    = bool(source_val and source_test)
         _use_balanced   = self._use_supcon and getattr(cfg.train, "supcon_balanced_sampling", False)
         _classes_per_batch = getattr(cfg.train, "supcon_classes_per_batch", 8)
+        _use_cb_sampling = getattr(cfg.train, "class_balanced_sampling", False)
 
         kwargs = dict(
             root=str(cfg.data.processed_dir.parent), max_nodes=cfg.data.max_nodes,
@@ -387,6 +436,12 @@ class TrainingSession:
                 _bs = SupConBalancedSampler(_all_labels, bs, _classes_per_batch, seed=_seed)
                 logger.info(f"SupConBalancedSampler: {_bs.classes_per_batch} classes × {_bs.samples_per_class} samples/class per batch")
                 train_dl = DataLoader(dataset, batch_sampler=_bs, **dl_kw)
+            elif _use_cb_sampling:
+                from gnn_vuln.training.sampler import class_balanced_sampler
+                _cb_labels = dataset.get_all_labels().tolist()
+                _cb = class_balanced_sampler(_cb_labels, seed=_seed)
+                logger.info(f"class_balanced_sampler (cRT): {len(set(_cb_labels))} classes | {len(_cb_labels)} draws/epoch")
+                train_dl = DataLoader(dataset, batch_size=bs, sampler=_cb, **dl_kw)
             else:
                 train_dl = DataLoader(dataset, batch_size=bs, shuffle=True, **dl_kw)
             loaders = (
@@ -405,6 +460,13 @@ class TrainingSession:
                 _bs = SupConBalancedSampler(_train_labels, bs, _classes_per_batch, seed=_seed)
                 logger.info(f"SupConBalancedSampler: {_bs.classes_per_batch} classes × {_bs.samples_per_class} samples/class per batch")
                 train_dl = DataLoader(dataset[train_idx], batch_sampler=_bs, **dl_kw)
+            elif _use_cb_sampling:
+                from gnn_vuln.training.sampler import class_balanced_sampler
+                _all_labels = dataset.get_all_labels()
+                _cb_labels = _all_labels[torch.tensor(train_idx, dtype=torch.long)].tolist()
+                _cb = class_balanced_sampler(_cb_labels, seed=_seed)
+                logger.info(f"class_balanced_sampler (cRT): {len(set(_cb_labels))} classes | {len(_cb_labels)} draws/epoch")
+                train_dl = DataLoader(dataset[train_idx], batch_size=bs, sampler=_cb, **dl_kw)
             else:
                 train_dl = DataLoader(dataset[train_idx], batch_size=bs, shuffle=True, **dl_kw)
             loaders = (

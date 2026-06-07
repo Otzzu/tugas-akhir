@@ -127,8 +127,12 @@ def build_optimizer_and_scheduler(
                 f"linear warmup {warmup_steps}/{total_steps} steps"
             )
     else:
+        # Only optimize params with requires_grad=True. Identical to
+        # model.parameters() for full-training runs (everything trainable);
+        # for cRT it restricts the optimizer to the unfrozen func_head.
+        trainable = [p for p in model.parameters() if p.requires_grad]
         optimizer = torch.optim.Adam(
-            model.parameters(),
+            trainable,
             lr=cfg.train.lr,
             weight_decay=cfg.train.weight_decay,
         )
