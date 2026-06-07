@@ -1,0 +1,87 @@
+# Local GNN-only N55 — N48 + Balanced-Mixup / Remix (Chou et al. 2020).
+# Independent N48-based long-tail variant (NOT stacked on cRT). Full training from
+# scratch on the N48 recipe; the ONLY change vs N48 is adding manifold mixup on the
+# pooled graph embedding h_graph with imbalance-aware (Remix) label mixing.
+#
+# Mixup: h~ = lam*h_i + (1-lam)*h_j on h_graph, lam ~ Beta(0.2, 0.2) (canonical mixup
+# alpha — U-shaped, mostly near-pure samples with occasional strong mixes). Loss is a
+# two-target CE; Remix reassigns the full label to the MINORITY class of each mixed
+# pair when one class is >= kappa(3) times rarer and lam is extreme (tau guard 0.5),
+# so tail classes keep their label signal instead of being diluted by head classes.
+# Only the classification head input is mixed — localization (stmt_head) is untouched.
+#
+# Why: cRT (N53) proved the tail bottleneck is the classifier/decision-boundary, not
+# representation diversity (N52 graph-aug failed). Balanced-Mixup attacks the boundary
+# from the feature side — synthesises head/tail interpolations with tail-biased labels.
+# Compared head-to-head against N48 (0.525), N52 (0.494), N53 cRT (0.538).
+#
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/gnn_only/N55_a1_l1_balanced_mixup.yaml
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  graph_pool: jknet
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  func_head_type: linear
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: false
+  use_flash_attention: false
+  grad_accum_steps: 2
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 0
+  prefetch_factor: 2
+  mixup_alpha: 0.2
+  mixup_remix: true
+  mixup_remix_kappa: 3.0
+  mixup_remix_tau: 0.5

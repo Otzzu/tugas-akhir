@@ -243,6 +243,28 @@ class TrainingSession:
         if crt_module is not None:
             trainer.set_crt_mode(crt_module)
 
+        # Balanced-Mixup / Remix: pass per-class train counts for imbalance-aware
+        # label mixing. The model does the feature mix (mixup_alpha); the trainer
+        # builds the two-target loss.
+        if getattr(cfg.train, "mixup_alpha", 0.0) > 0.0:
+            _counts = train_counts
+            if _counts is None:
+                _all_y = dataset.get_all_labels()
+                _tl = _all_y[torch.tensor(train_idx, dtype=torch.long)]
+                _counts = torch.bincount(_tl, minlength=cfg.model.num_classes).float()
+            trainer.set_mixup(
+                remix=getattr(cfg.train, "mixup_remix", True),
+                kappa=getattr(cfg.train, "mixup_remix_kappa", 3.0),
+                tau=getattr(cfg.train, "mixup_remix_tau", 0.5),
+                counts=_counts.to(device),
+            )
+            logger.info(
+                f"Balanced-Mixup enabled: alpha={cfg.train.mixup_alpha} | "
+                f"remix={getattr(cfg.train, 'mixup_remix', True)} | "
+                f"kappa={getattr(cfg.train, 'mixup_remix_kappa', 3.0)} | "
+                f"tau={getattr(cfg.train, 'mixup_remix_tau', 0.5)}"
+            )
+
         run_id, run_dir = self._setup_run_dir()
         if config_path and Path(config_path).exists():
             shutil.copy(config_path, run_dir / "config.yaml")

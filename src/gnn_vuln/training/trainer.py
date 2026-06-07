@@ -155,10 +155,43 @@ class Trainer:
         # in eval() during train_epoch so backbone BatchNorm running stats and
         # dropout stay fixed (decoupled stage-2 keeps representations frozen).
         self._crt_train_module: nn.Module | None = None
+        # Balanced-Mixup / Remix: when class_counts is set, the classification loss
+        # becomes a two-target mix using the model's per-batch mixup perm + lam.
+        self.mixup_remix: bool = True
+        self.mixup_remix_kappa: float = 3.0
+        self.mixup_remix_tau: float = 0.5
+        self.class_counts: torch.Tensor | None = None
 
     def set_crt_mode(self, train_module: nn.Module) -> None:
         """Enable cRT: keep backbone in eval, train only ``train_module`` (func_head)."""
         self._crt_train_module = train_module
+
+    def set_mixup(self, remix: bool, kappa: float, tau: float, counts: torch.Tensor) -> None:
+        """Enable Balanced-Mixup loss. ``counts`` = per-class train sample counts
+        (on the compute device) used for the Remix imbalance-aware label mixing."""
+        self.mixup_remix = remix
+        self.mixup_remix_kappa = kappa
+        self.mixup_remix_tau = tau
+        self.class_counts = counts
+
+    def _remix_lambda_y(self, y_i: torch.Tensor, y_j: torch.Tensor, lam: float) -> torch.Tensor:
+        """Per-sample label-mix weight on y_i (Chou et al. 2020, Remix). Vanilla mixup
+        uses lam for every sample; Remix reassigns the full label to the MINORITY class
+        of each pair when one class is >= kappa times rarer and the feature ratio is
+        extreme enough (guarded by tau)."""
+        lam_y = torch.full_like(y_i, float(lam), dtype=torch.float)
+        if self.class_counts is None or not self.mixup_remix:
+            return lam_y
+        n_i = self.class_counts[y_i].float()
+        n_j = self.class_counts[y_j].float()
+        kappa, tau = self.mixup_remix_kappa, self.mixup_remix_tau
+        # i is the majority (n_i >> n_j) and the feature mix isn't i-dominated → label to minority j
+        to_j = (n_i / n_j >= kappa) & (lam < tau)
+        # j is the majority → label to minority i
+        to_i = (n_j / n_i >= kappa) & ((1.0 - lam) < tau)
+        lam_y = torch.where(to_j, torch.zeros_like(lam_y), lam_y)
+        lam_y = torch.where(to_i, torch.ones_like(lam_y), lam_y)
+        return lam_y
 
     # ── Forward ──────────────────────────────────────────────────────────────
 
@@ -221,7 +254,21 @@ class Trainer:
         use_balance = self.loss_balance_method in ("kendall", "pcgrad")
 
         # Primary classification loss (CE / focal / livable)
-        if self.use_livable_real:
+        _mixup_perm = getattr(self.model, "_mixup_perm", None)
+        if _mixup_perm is not None and self.model.training:
+            # Balanced-Mixup: logit comes from mixed features → two-target CE with
+            # Remix imbalance-aware per-sample label weight. Uses plain CE branches
+            # (focal/livable not combined with mixup).
+            lam = self.model._mixup_lam
+            y_i = batch.y
+            y_j = batch.y[_mixup_perm]
+            lam_y = self._remix_lambda_y(y_i, y_j, lam)
+            ce_i = F.cross_entropy(logit_func, y_i, weight=class_weight,
+                                   label_smoothing=self.label_smoothing, reduction="none")
+            ce_j = F.cross_entropy(logit_func, y_j, weight=class_weight,
+                                   label_smoothing=self.label_smoothing, reduction="none")
+            cls_loss = (lam_y * ce_i + (1.0 - lam_y) * ce_j).mean()
+        elif self.use_livable_real:
             cls_loss = livable_loss(
                 logit_func, batch.y,
                 epoch=self._current_epoch,

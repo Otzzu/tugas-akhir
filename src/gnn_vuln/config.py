@@ -268,6 +268,15 @@ class TrainConfig:
     # Independent of supcon_balanced_sampling (that forces N distinct classes per
     # batch for positive pairs — different goal). Replaces shuffle when true.
     class_balanced_sampling: bool = False
+    # ── Balanced-Mixup / Remix (Chou et al. 2020) for long-tail ───────────────
+    # Manifold mixup on the pooled graph embedding (h_graph): h~ = lam*h_i + (1-lam)*h_j,
+    # lam ~ Beta(alpha, alpha). Remix decouples the LABEL mix ratio from the feature
+    # ratio so the minority class in each pair keeps more label weight (kappa, tau).
+    # 0.0 = disabled. Full-training-time method (not a frozen-head retrain).
+    mixup_alpha: float = 0.0       # Beta(alpha, alpha); 0 disables mixup
+    mixup_remix: bool = True       # True = Remix imbalance-aware label mixing; False = vanilla
+    mixup_remix_kappa: float = 3.0 # n_i/n_j ratio threshold to reassign label to minority
+    mixup_remix_tau: float = 0.5   # feature-ratio guard so reassignment only when lam extreme
 
 
 @dataclass

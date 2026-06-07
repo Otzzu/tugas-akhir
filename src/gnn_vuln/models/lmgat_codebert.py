@@ -98,9 +98,16 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  cross_window_attn=False,
                  supcon_proj_dim=0,
                  supcon_proj_hidden=256,
-                 supcon_proj_dropout=0.1):
+                 supcon_proj_dropout=0.1,
+                 mixup_alpha=0.0):
         super().__init__()
         self._normalize_gnn_output = normalize_gnn_output
+        # Balanced-Mixup / Remix (Chou et al. 2020): manifold mixup on the pooled
+        # graph embedding h_graph. Training-time only. The trainer reads _mixup_perm
+        # and _mixup_lam to build the (imbalance-aware) two-target classification loss.
+        self._mixup_alpha = float(mixup_alpha)
+        self._mixup_perm: torch.Tensor | None = None
+        self._mixup_lam: float | None = None
         # Structural graph augmentation (training-time only, resampled every forward pass).
         # drop_edge  — DropEdge (Rong et al. 2020): Bernoulli edge mask, M ~ Bern(1-p),
         #              edge_attr re-indexed in sync. Unbiased: E[neighbor aggregation] unchanged.
@@ -234,6 +241,21 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         )
         self._fused_for_supcon: torch.Tensor | None = None
 
+    def _maybe_mixup(self, h_graph: torch.Tensor) -> torch.Tensor:
+        """Manifold mixup on the pooled graph embedding (Balanced-Mixup / Remix).
+        Training-time only: h~ = lam*h + (1-lam)*h[perm], lam ~ Beta(a,a). Stores
+        perm + lam so the trainer can build the (imbalance-aware) two-target loss.
+        Returns h_graph unchanged (and clears state) when disabled / eval."""
+        if not (self.training and self._mixup_alpha > 0.0):
+            self._mixup_perm = None
+            self._mixup_lam = None
+            return h_graph
+        lam = float(torch.distributions.Beta(self._mixup_alpha, self._mixup_alpha).sample())
+        perm = torch.randperm(h_graph.size(0), device=h_graph.device)
+        self._mixup_perm = perm
+        self._mixup_lam = lam
+        return lam * h_graph + (1.0 - lam) * h_graph[perm]
+
     def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
                 func_input_ids=None, func_attention_mask=None,
                 func_token_lines=None,
@@ -318,7 +340,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                 if self._imtl_cwe:
                     logit = self.func_head(h_mid_graph)
                     return logit, stmt_scores
-                logit = self.func_head(h_graph)
+                h_cls = self._maybe_mixup(h_graph)
+                logit = self.func_head(h_cls)
                 # SupCon projection on the graph embedding (GNN-only fused = h_graph).
                 if self.supcon_head is not None:
                     self._fused_for_supcon = h_graph
@@ -472,4 +495,5 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             supcon_proj_dim=getattr(cfg.model, "supcon_proj_dim", 0),
             supcon_proj_hidden=getattr(cfg.model, "supcon_proj_hidden", 256),
             supcon_proj_dropout=getattr(cfg.model, "supcon_proj_dropout", 0.1),
+            mixup_alpha=getattr(cfg.train, "mixup_alpha", 0.0),
         )
