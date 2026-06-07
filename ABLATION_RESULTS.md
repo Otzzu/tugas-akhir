@@ -598,6 +598,7 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N50 | `20260606_201553_lmgat_codebert_multiclass` | `N50_a1_l1_imtl_cwe_l3.yaml`                        | meanmax    | true     | N15 + CWE head at L3 pool. localization at L4       |
 | N51 | `20260606_214055_lmgat_codebert_multiclass` | `N51_a1_l1_imtl_cwe_l2.yaml`                        | meanmax    | true     | N15 + CWE head at L2 pool. localization at L4       |
 | N52 | `20260607_084632_lmgat_codebert_multiclass` | `N52_a1_l1_graph_aug.yaml`                          | jknet      | true     | N48 + structural graph aug (DropEdge 0.1, NodeDrop 0.05, FeatureMask 0.1) |
+| N53 | `20260607_151540_lmgat_codebert_multiclass` | `N53_a1_l1_crt_n48.yaml`                            | jknet      | true     | cRT on N48 (Kang 2020). freeze backbone, reinit+retrain linear head, class-balanced sampler |
 
 ## Classification
 
@@ -658,6 +659,7 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N50 | 0.505     | 0.432     | 0.484     | 0.481     | **0.557** | 0.493     | 0.517     | 0.483     | 0.895     | 0.360     | 65     |
 | N51 | 0.494     | 0.503     | 0.484     | 0.477     | 0.517     | 0.450     | 0.499     | 0.481     | 0.896     | 0.380     | 41     |
 | N52 | 0.514     | 0.494     | 0.512     | 0.511     | 0.511     | 0.496     | 0.518     | 0.512     | 0.905     | 0.488     | 44     |
+| N53 | 0.511     | **0.538** | 0.528     | 0.527     | 0.529     | **0.570** | 0.533     | 0.528     | **0.912** | **0.663** | 21     |
 
 ## Statement-Level Localization
 
@@ -714,6 +716,7 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N50 | 0.354     | 0.886     | 0.985     | 0.219     | 0.430      | 0.042         |
 | N51 | 0.442     | 0.886     | 0.975     | 0.212     | 0.426      | 0.045         |
 | N52 | 0.476     | 0.933     | 0.982     | 0.266     | 0.477      | 0.026         |
+| N53 | 0.310     | 0.944     | 0.985     | 0.256     | 0.439      | 0.028         |
 
 ---
 
@@ -807,3 +810,4 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N50 N15+imtl_cwe l3   | RTX A4000       | 4.7M   | 78s        | 1.41            | 9.8 GB    |
 | N51 N15+imtl_cwe l2   | RTX A4000       | 4.7M   | 77s        | 0.87            | 9.7 GB    |
 | N52 N48+graph aug     | RTX A4000       | 4.7M   | 74s        | 0.91            | 9.1 GB    |
+| N53 N48+cRT           | RTX A4000       | 4.7M   | 57s        | 0.33            | 3.1 GB    |

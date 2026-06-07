@@ -1,0 +1,88 @@
+# Local GNN-only N54 — cRT on N48, WITH classifier dropout (N53 variant).
+# Identical to N53 (cRT, Kang et al. 2020) except the re-trained linear head
+# keeps dropout=0.3 (N48's original head dropout) instead of 0.0.
+#
+# Why: N53 (dropout=0.0) is the paper-faithful strictly-linear cRT and already
+# beat N48 (F1 macro 0.538 vs 0.525). N54 is the deliberate DEVIATION — adds
+# mild input dropout to the linear probe as extra regularization, testing
+# whether it helps the val/test gap / tail generalization at the cost of strict
+# paper-faithfulness. Pure A/B vs N53: only model.dropout differs (0.3 vs 0.0).
+#
+# dropout=0.3 here only feeds func_head's input Dropout — the frozen encoder is
+# in eval() so its dropout is inactive regardless, and dropout has no params so
+# the N48 state_dict still loads cleanly (same as N53).
+#
+# Requires the N48 backbone checkpoint (same as N53). On cloud:
+#   rclone copy gdrive-mesach:tugas-akhir/checkpoints/20260606_163818_lmgat_codebert_multiclass_checkpoints.zip .
+#   unzip 20260606_163818_lmgat_codebert_multiclass_checkpoints.zip
+#
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/gnn_only/N54_a1_l1_crt_n48_dropout.yaml
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  graph_pool: jknet
+  hidden_dim: 256
+  num_layers: 4
+  # 0.3 (vs N53's 0.0): keep N48's head dropout on the re-trained linear classifier.
+  # Deviation from the strictly-linear paper cRT — extra regularization on the probe.
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.0
+  mil_k: 3
+  rank_loss_weight: 0.0
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  func_head_type: linear
+
+train:
+  seed: 42
+  epochs: 30
+  batch_size: 32
+  lr: 0.001
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 10
+  early_stop_metric: f1
+  use_class_weights: false
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: false
+  livable_loss: false
+  label_smoothing: 0.0
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: false
+  use_flash_attention: false
+  grad_accum_steps: 2
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 0
+  prefetch_factor: 2
+  crt_init_checkpoint: checkpoints/20260606_163818_lmgat_codebert_multiclass/best_lmgat_codebert.pt
+  crt_reinit_head: true
+  class_balanced_sampling: true
