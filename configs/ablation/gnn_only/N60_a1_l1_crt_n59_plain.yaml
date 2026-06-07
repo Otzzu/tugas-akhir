@@ -1,0 +1,81 @@
+# Local GNN-only N60 — cRT (plain CE) on the N59 plain-CE backbone.
+# Fully paper-pure two-stage decoupling (Kang 2020):
+#   Stage 1 = N59  : instance-balanced sampling + plain CE backbone
+#   Stage 2 = N60  : class-balanced sampling + plain CE classifier re-train (cRT)
+# Same cRT mechanics as N53, but the frozen backbone is N59 (plain CE) instead of N48
+# (class-weighted). Tests whether a paper-pure plain-CE backbone gives cRT a better
+# starting representation than N48's reweighted one. Compare N60 vs N53.
+#
+# DEPENDENCY: N59 must run first and produce a checkpoint. Update crt_init_checkpoint
+# below to N59's run id, and on cloud pass --backbone <N59_run_id>.
+#   crt_init_checkpoint: checkpoints/<N59_RUN_ID>/best_lmgat_codebert.pt
+#
+# Run (cloud, Linux), after filling the N59 run id:
+#   ./scripts/train_cloud.sh --skip --backbone <N59_RUN_ID> \
+#     --config configs/ablation/gnn_only/N60_a1_l1_crt_n59_plain.yaml --dataset <ds>
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  graph_pool: jknet
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.0
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.0
+  mil_k: 3
+  rank_loss_weight: 0.0
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  func_head_type: linear
+
+train:
+  seed: 42
+  epochs: 30
+  batch_size: 32
+  lr: 0.001
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 10
+  early_stop_metric: f1
+  use_class_weights: false
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: false
+  livable_loss: false
+  label_smoothing: 0.0
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: false
+  use_flash_attention: false
+  grad_accum_steps: 2
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 0
+  prefetch_factor: 2
+  crt_init_checkpoint: checkpoints/__FILL_N59_RUN_ID__/best_lmgat_codebert.pt
+  crt_reinit_head: true
+  class_balanced_sampling: true

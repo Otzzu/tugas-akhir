@@ -64,6 +64,7 @@ Split out of `ABLATION_RESULTS.md` to keep the main ablation clean. All runs her
 | N54 | `20260607_170046_lmgat_codebert_multiclass` | `N54_a1_l1_crt_n48_dropout.yaml`                    | jknet      | true     | N53 cRT but head dropout 0.3 not 0.0. A/B on classifier dropout |
 | N56 | `20260608_004912_lmgat_codebert_multiclass` | `N56_a1_l1_tau_norm.yaml`                           | jknet      | true     | tau-norm on N48 (Kang 2020). post-hoc weight-norm rebalance, zero training. best tau=0 |
 | N57 | `20260608_011545_lmgat_codebert_multiclass` | `N57_a1_l1_tailcalib.yaml`                          | jknet      | true     | TailCalibX on N48. synth tail feats from borrowed head cov, retrain head. 25020 synth |
+| N55 | `20260607_181127_lmgat_codebert_multiclass` | `N55_a1_l1_balanced_mixup.yaml`                     | jknet      | true     | N48 + Balanced-Mixup Remix on h_graph, alpha 0.2, full training |
 
 ## Classification
 
@@ -128,6 +129,7 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N54 | 0.520     | 0.479     | 0.503     | 0.499     | 0.462     | 0.529     | 0.519     | 0.503     | 0.912     | 0.517     | 13     |
 | N56 | 0.532     | 0.521     | 0.504     | 0.503     | 0.546     | 0.533     | 0.520     | 0.504     | 0.908     | 0.457     | 0      |
 | N57 | 0.498     | 0.523     | 0.506     | 0.506     | 0.503     | 0.573     | 0.518     | 0.506     | 0.914     | 0.468     | 0      |
+| N55 | 0.523     | 0.491     | 0.473     | 0.470     | 0.499     | 0.507     | 0.489     | 0.473     | 0.901     | 0.445     | 40     |
 
 ## Statement-Level Localization
 
@@ -188,6 +190,7 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N54 | 0.310     | 0.944     | 0.985     | 0.256     | 0.439      | 0.028         |
 | N56 | 0.310     | 0.944     | 0.985     | 0.256     | 0.439      | 0.028         |
 | N57 | 0.310     | 0.944     | 0.985     | 0.256     | 0.439      | 0.028         |
+| N55 | 0.324     | 0.934     | 0.985     | 0.266     | 0.467      | 0.026         |
 
 # Training Efficiency
 
@@ -248,3 +251,4 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N54 N48+cRT+dropout   | RTX A4000       | 4.7M   | 53s        | 0.19            | 3.8 GB    |
 | N56 N48+tau-norm      | post-hoc        | 4.7M   | 0s         | 0.00            | -         |
 | N57 N48+tailcalib     | post-hoc        | 4.7M   | 0s         | 0.00            | -         |
+| N55 N48+bal-mixup     | RTX A4000       | 4.7M   | 83s        | 0.92            | 9.6 GB    |

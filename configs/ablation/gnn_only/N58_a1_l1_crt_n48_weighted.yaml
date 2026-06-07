@@ -1,0 +1,93 @@
+# Local GNN-only N58 — cRT on N48 keeping N48's loss (class weights + label smoothing).
+# Variant of N53 (cRT, Kang 2020). N53 used the paper-pure bare CE; N58 instead keeps
+# N48's full loss (epoch-adaptive class weights + label_smoothing 0.1) and changes ONLY
+# the loader to class-balanced. Tests the paper's claim directly: does dropping loss
+# reweighting in the cRT stage actually matter, or does keeping it help on our data.
+#
+# A/B vs N53: identical cRT mechanics (freeze N48 backbone, re-init linear head, class-
+# balanced sampler, dropout 0.0). The ONLY differences are the three loss flags:
+#   use_class_weights      false -> true
+#   epoch_adaptive_weights false -> true
+#   label_smoothing        0.0   -> 0.1
+#
+# Caveat (paper warns about this): class-balanced SAMPLER + class WEIGHTS double-correct
+# imbalance — the sampler already oversamples tail, the weights up-weight tail loss too,
+# so the tail may get over-corrected at the head's expense. Kang 2020 argues sampling
+# alone (bare CE) is enough. N58 measures whether that holds here. Expect <= N53 (0.538)
+# if the double-correction hurts, > if our tail needs the extra push.
+#
+# mil/rank stay 0: stmt_head is frozen in cRT, so localization losses produce no gradient
+# to the trainable func_head regardless of weight — kept off to avoid wasted compute.
+#
+# Requires the N48 backbone checkpoint (same as N53). On cloud:
+#   ./scripts/train_cloud.sh --skip --backbone 20260606_163818_lmgat_codebert_multiclass \
+#     --config configs/ablation/gnn_only/N58_a1_l1_crt_n48_weighted.yaml --dataset <ds>
+#
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/gnn_only/N58_a1_l1_crt_n48_weighted.yaml
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  graph_pool: jknet
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.0
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.0
+  mil_k: 3
+  rank_loss_weight: 0.0
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  func_head_type: linear
+
+train:
+  seed: 42
+  epochs: 30
+  batch_size: 32
+  lr: 0.001
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 10
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: false
+  use_flash_attention: false
+  grad_accum_steps: 2
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 0
+  prefetch_factor: 2
+  crt_init_checkpoint: checkpoints/20260606_163818_lmgat_codebert_multiclass/best_lmgat_codebert.pt
+  crt_reinit_head: true
+  class_balanced_sampling: true
