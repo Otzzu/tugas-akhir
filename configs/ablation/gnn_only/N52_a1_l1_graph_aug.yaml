@@ -1,0 +1,98 @@
+# Local GNN-only N52 — N48 (JK-Net, current best F1 macro 0.525) + structural graph
+# augmentation to fight the 26-class long-tail (test support 1-159/class).
+#
+# Three techniques stacked, each independently gated, all training-time only,
+# resampled fresh every forward pass (Bernoulli mask — stricter than DropEdge's
+# "once per epoch", still strictly unbiased per Rong et al. 2020):
+#   - graph_aug_drop_edge=0.1    DropEdge (Rong et al. 2020, ICLR): M ~ Bern(1-p) over
+#                                adjacency, edge_attr re-indexed in sync. Their paper
+#                                uses sampling-percent 0.05-0.5 for 8-16 layer GCNs;
+#                                0.1 is the conservative end for our 4-layer GATv2.
+#   - graph_aug_drop_node=0.05   NodeDropping (graph aug survey): dropped nodes lose
+#                                incident edges AND have features zeroed (no pooling
+#                                leak). Lower rate than edge-drop — removing a whole
+#                                node is more destructive than removing one edge.
+#   - graph_aug_mask_feature=0.1 FeatureMasking, mode=col (GraphCL-style — masks
+#                                whole feature channels across all nodes).
+#
+# Rationale: directly multiplies effective training views per sparse tail-class
+# sample without modeling its distribution (G-Mixup needs graphon density, GraphSMOTE
+# needs a trained edge generator — both infeasible at support 1-13). DropEdge is
+# proven "unbiased": does not change E[neighbor aggregation].
+#
+# Hypothesis: regularizes against overfitting on tail classes -> F1 macro >= N48 (0.525),
+# possibly improved tail-class recall (classes 21/23/24 currently F1=0 in N48).
+# Risk: GATv2 attention already implicitly down-weights noisy edges — augmentation on
+# top may just add noise without the under-parameterized regularization benefit deep
+# GCNs get from it.
+#
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/gnn_only/N52_a1_l1_graph_aug.yaml
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  graph_pool: jknet
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  func_head_type: linear
+  graph_aug_drop_edge: 0.1
+  graph_aug_drop_node: 0.05
+  graph_aug_mask_feature: 0.1
+  graph_aug_mask_mode: col
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: false
+  use_flash_attention: false
+  grad_accum_steps: 2
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 0
+  prefetch_factor: 2

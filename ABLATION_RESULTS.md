@@ -595,6 +595,8 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | N46 | `20260606_131451_lmgat_codebert_multiclass` | `N46_a1_l1_mtl_group_linear.yaml`                   | meanmax    | true     | N15 + MTL group head linear thin (fair depth vs N15) |
 | N48 | `20260606_163818_lmgat_codebert_multiclass` | `N48_a1_l1_jknet.yaml`                              | jknet      | true     | N15 + JK-Net pool concat all 4 layers to 1024D      |
 | N49 | `20260606_173908_lmgat_codebert_multiclass` | `N49_a1_l1_imtl_mid2.yaml`                          | meanmax    | true     | N15 + intermediate MTL group at L2. CWE at L4       |
+| N50 | `20260606_201553_lmgat_codebert_multiclass` | `N50_a1_l1_imtl_cwe_l3.yaml`                        | meanmax    | true     | N15 + CWE head at L3 pool. localization at L4       |
+| N51 | `20260606_214055_lmgat_codebert_multiclass` | `N51_a1_l1_imtl_cwe_l2.yaml`                        | meanmax    | true     | N15 + CWE head at L2 pool. localization at L4       |
 
 ## Classification
 
@@ -623,7 +625,7 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N17 | 0.453     | 0.400     | 0.447     | 0.447     | 0.408     | 0.470     | 0.468     | 0.452     | 0.871     | 0.425     | 80     |
 | N18 | 0.328     | 0.270     | 0.328     | 0.307     | 0.272     | 0.446     | 0.346     | 0.319     | 0.852     | 0.260     | 74     |
 | N19 | 0.474     | 0.484     | 0.489     | 0.488     | 0.495     | 0.484     | 0.507     | 0.489     | 0.896     | 0.292     | 61     |
-| N20 | 0.506     | 0.448     | 0.485     | 0.483     | **0.551** | 0.501     | 0.498     | 0.489     | 0.896     | 0.356     | 58     |
+| N20 | 0.506     | 0.448     | 0.485     | 0.483     | 0.551     | 0.501     | 0.498     | 0.489     | 0.896     | 0.356     | 58     |
 | N21 | 0.493     | 0.445     | 0.467     | 0.458     | 0.502     | 0.482     | 0.491     | 0.473     | 0.891     | 0.336     | 60     |
 | N22 | 0.493     | 0.451     | 0.491     | 0.486     | 0.515     | 0.470     | 0.499     | 0.494     | 0.891     | 0.373     | 63     |
 | N23 | 0.480     | 0.439     | 0.449     | 0.446     | 0.478     | 0.483     | 0.479     | 0.469     | 0.892     | 0.344     | 67     |
@@ -652,6 +654,8 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N46 | 0.462     | 0.435     | 0.470     | 0.464     | 0.484     | 0.460     | 0.493     | 0.469     | 0.873     | 0.378     | 55     |
 | N48 | **0.535** | **0.525** | 0.507     | 0.507     | 0.489     | 0.509     | 0.532     | 0.524     | **0.908** | 0.462     | 40     |
 | N49 | 0.483     | 0.443     | 0.473     | 0.464     | 0.475     | 0.449     | 0.490     | 0.472     | 0.889     | 0.353     | 66     |
+| N50 | 0.505     | 0.432     | 0.484     | 0.481     | **0.557** | 0.493     | 0.517     | 0.483     | 0.895     | 0.360     | 65     |
+| N51 | 0.494     | 0.503     | 0.484     | 0.477     | 0.517     | 0.450     | 0.499     | 0.481     | 0.896     | 0.380     | 41     |
 
 ## Statement-Level Localization
 
@@ -705,6 +709,8 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N46 | 0.356     | 0.934     | 0.982     | 0.257     | 0.450      | 0.027         |
 | N48 | 0.310     | 0.944     | 0.985     | 0.256     | 0.439      | 0.028         |
 | N49 | 0.429     | 0.903     | 0.982     | 0.216     | 0.431      | 0.042         |
+| N50 | 0.354     | 0.886     | 0.985     | 0.219     | 0.430      | 0.042         |
+| N51 | 0.442     | 0.886     | 0.975     | 0.212     | 0.426      | 0.045         |
 
 ---
 
@@ -795,3 +801,5 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N46 N15+MTL linear    | RTX A4000       | 4.7M   | 87s        | 1.34            | 9.7 GB    |
 | N48 N15+JK-Net pool   | RTX A5000       | 4.7M   | 89s        | 1.0             | 9.6 GB    |
 | N49 N15+imtl mid2     | RTX A5000       | 4.7M   | 85s        | 1.57            | 9.5 GB    |
+| N50 N15+imtl_cwe l3   | RTX A4000       | 4.7M   | 78s        | 1.41            | 9.8 GB    |
+| N51 N15+imtl_cwe l2   | RTX A4000       | 4.7M   | 77s        | 0.87            | 9.7 GB    |

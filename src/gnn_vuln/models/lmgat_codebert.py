@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import global_mean_pool, global_max_pool, global_add_pool
 from torch_geometric.nn.aggr import AttentionalAggregation
-from torch_geometric.utils import to_dense_batch
+from torch_geometric.utils import to_dense_batch, dropout_edge, dropout_node, mask_feature
 from gnn_vuln.models.base import VulnDetectorBase
 from gnn_vuln.models.encoders import build_gnn_encoder
 from gnn_vuln.models.heads import FuncHead, ThinFuncHead, LinearFuncHead, StmtHead
@@ -90,6 +90,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  gnn_model="gat", num_relations=7, num_bases=None,
                  codet5p_raw_encoder=False, codet5p_normalize_per_token=False,
                  normalize_gnn_output=False, freeze_func_lm=False,
+                 graph_aug_drop_edge=0.0, graph_aug_drop_node=0.0,
+                 graph_aug_mask_feature=0.0, graph_aug_mask_mode="col",
                  window_attn_pool=False,
                  window_attn_hidden=False,
                  window_center_weight=False,
@@ -99,6 +101,18 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  supcon_proj_dropout=0.1):
         super().__init__()
         self._normalize_gnn_output = normalize_gnn_output
+        # Structural graph augmentation (training-time only, resampled every forward pass).
+        # drop_edge  — DropEdge (Rong et al. 2020): Bernoulli edge mask, M ~ Bern(1-p),
+        #              edge_attr re-indexed in sync. Unbiased: E[neighbor aggregation] unchanged.
+        # drop_node  — NodeDropping (graph aug survey): Bernoulli node mask; dropped nodes
+        #              both lose their incident edges (via dropout_node's subgraph) AND have
+        #              their feature rows zeroed, so they cannot leak into pooling.
+        # mask_feature — FeatureMasking (graph aug survey): Bernoulli mask over feature
+        #              columns ("col", masks whole channels — GraphCL-style) or entries ("all").
+        self._aug_drop_edge = float(graph_aug_drop_edge)
+        self._aug_drop_node = float(graph_aug_drop_node)
+        self._aug_mask_feature = float(graph_aug_mask_feature)
+        self._aug_mask_mode = graph_aug_mask_mode
         assert live_lm in _VALID_LIVE_LM, \
             f"live_lm must be one of {_VALID_LIVE_LM}, got {live_lm!r}"
         self._live_lm = live_lm
@@ -225,6 +239,21 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                 func_token_lines=None,
                 func_line_cls=None, func_line_ids=None, func_line_cls_batch=None,
                 rwse=None):
+        # Structural graph augmentation — training only, fresh Bernoulli sample per
+        # forward pass (stricter than DropEdge's "once per epoch", strictly unbiased).
+        if self.training:
+            if self._aug_drop_edge > 0.0:
+                edge_index, _edge_mask = dropout_edge(edge_index, p=self._aug_drop_edge, training=True)
+                if edge_attr is not None:
+                    edge_attr = edge_attr[_edge_mask]
+            if self._aug_drop_node > 0.0:
+                edge_index, _edge_mask, _node_mask = dropout_node(
+                    edge_index, p=self._aug_drop_node, num_nodes=x.size(0), training=True)
+                if edge_attr is not None:
+                    edge_attr = edge_attr[_edge_mask]
+                x = x * _node_mask.unsqueeze(-1).to(x.dtype)
+            if self._aug_mask_feature > 0.0:
+                x, _ = mask_feature(x, p=self._aug_mask_feature, mode=self._aug_mask_mode, training=True)
         h = self.encoder(x, edge_index, edge_attr, batch=batch, rwse=rwse)
         # MoE load-balance aux loss (0 if no MoE). Read by trainer, added to total.
         self.moe_aux_loss = getattr(self.encoder, "_moe_aux_loss", None)
@@ -432,6 +461,10 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             codet5p_normalize_per_token=getattr(cfg.model, "codet5p_normalize_per_token", False),
             normalize_gnn_output=getattr(cfg.model, "normalize_gnn_output", False),
             freeze_func_lm=getattr(cfg.model, "freeze_func_lm", False),
+            graph_aug_drop_edge=getattr(cfg.model, "graph_aug_drop_edge", 0.0),
+            graph_aug_drop_node=getattr(cfg.model, "graph_aug_drop_node", 0.0),
+            graph_aug_mask_feature=getattr(cfg.model, "graph_aug_mask_feature", 0.0),
+            graph_aug_mask_mode=getattr(cfg.model, "graph_aug_mask_mode", "col"),
             window_attn_pool=getattr(cfg.model, "window_attn_pool", False),
             window_attn_hidden=getattr(cfg.model, "window_attn_hidden", False),
             window_center_weight=getattr(cfg.model, "window_center_weight", False),

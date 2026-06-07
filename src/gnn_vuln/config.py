@@ -179,6 +179,27 @@ class ModelConfig:
     # Apply F.normalize(dim=-1) to GNN h_graph (classification) and per-node h
     # (localization) before concat/stmt_head. Symmetric to codet5p_normalize_per_token.
     normalize_gnn_output: bool = False
+    # ── Structural graph augmentation (training-time, lmgat_codebert GNN-only) ──
+    # Resampled fresh every forward pass (Bernoulli mask, like DropEdge's M ~ Bern(1-p)).
+    # Targets the 26-class long-tail: multiplies effective views per sparse-class sample
+    # without modeling its distribution (ruled out G-Mixup/GraphSMOTE — too few real
+    # samples per tail class to estimate a graphon or train an edge generator).
+    #   graph_aug_drop_edge    — DropEdge (Rong et al. 2020, ICLR): probability of
+    #                            dropping each edge; edge_attr re-indexed in sync.
+    #                            Their reference sampling-percent 0.05-0.5 (deep GCNs);
+    #                            for our 4-layer GATv2 a milder 0.1-0.2 is the sane start.
+    #   graph_aug_drop_node    — NodeDropping (graph aug survey): probability of
+    #                            dropping each node; dropped nodes lose incident edges
+    #                            AND have features zeroed (can't leak into pooling).
+    #   graph_aug_mask_feature — FeatureMasking (graph aug survey): probability of
+    #                            masking each feature column ("col") or entry ("all").
+    #   graph_aug_mask_mode    — "col" (mask whole channels, GraphCL-style) | "all"
+    #                            (mask random entries) | "row" (≈ node feature drop).
+    # 0.0 = disabled (default, matches all prior ablation runs).
+    graph_aug_drop_edge: float = 0.0
+    graph_aug_drop_node: float = 0.0
+    graph_aug_mask_feature: float = 0.0
+    graph_aug_mask_mode: str = "col"
 
 
 @dataclass
