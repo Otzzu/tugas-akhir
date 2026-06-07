@@ -277,6 +277,13 @@ class TrainConfig:
     mixup_remix: bool = True       # True = Remix imbalance-aware label mixing; False = vanilla
     mixup_remix_kappa: float = 3.0 # n_i/n_j ratio threshold to reassign label to minority
     mixup_remix_tau: float = 0.5   # feature-ratio guard so reassignment only when lam extreme
+    # ── Logit Adjustment loss (Menon et al. 2021) for long-tail ───────────────
+    # Train-time logit offset: CE is computed on z_y + tau*log(pi_y), pi = class prior.
+    # Tail classes (small pi -> very negative log pi) get a negative offset, forcing a
+    # larger logit/margin; at inference raw logits are used so the tail is favoured.
+    # Imbalance handler — use INSTEAD of class weights, not on top. 0/false disables.
+    logit_adjustment: bool = False
+    logit_adjustment_tau: float = 1.0
 
 
 @dataclass

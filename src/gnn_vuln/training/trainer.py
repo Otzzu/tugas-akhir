@@ -161,10 +161,19 @@ class Trainer:
         self.mixup_remix_kappa: float = 3.0
         self.mixup_remix_tau: float = 0.5
         self.class_counts: torch.Tensor | None = None
+        # Logit Adjustment (Menon et al. 2021): when set, classification CE is computed
+        # on logit + tau*log_prior (raw logit kept for inference/metrics).
+        self._la_log_prior: torch.Tensor | None = None
+        self._la_tau: float = 1.0
 
     def set_crt_mode(self, train_module: nn.Module) -> None:
         """Enable cRT: keep backbone in eval, train only ``train_module`` (func_head)."""
         self._crt_train_module = train_module
+
+    def set_logit_adjustment(self, log_prior: torch.Tensor, tau: float) -> None:
+        """Enable Logit Adjustment loss. ``log_prior`` = log(class priors) [C] on device."""
+        self._la_log_prior = log_prior
+        self._la_tau = tau
 
     def set_mixup(self, remix: bool, kappa: float, tau: float, counts: torch.Tensor) -> None:
         """Enable Balanced-Mixup loss. ``counts`` = per-class train sample counts
@@ -253,6 +262,12 @@ class Trainer:
         raw: dict[str, torch.Tensor] = {}
         use_balance = self.loss_balance_method in ("kendall", "pcgrad")
 
+        # Logit Adjustment: classification loss is computed on the offset logit
+        # (logit + tau*log_prior); the raw logit_func is kept for metrics/inference.
+        _logit_cls = logit_func
+        if self._la_log_prior is not None:
+            _logit_cls = logit_func + self._la_tau * self._la_log_prior
+
         # Primary classification loss (CE / focal / livable)
         _mixup_perm = getattr(self.model, "_mixup_perm", None)
         if _mixup_perm is not None and self.model.training:
@@ -263,14 +278,14 @@ class Trainer:
             y_i = batch.y
             y_j = batch.y[_mixup_perm]
             lam_y = self._remix_lambda_y(y_i, y_j, lam)
-            ce_i = F.cross_entropy(logit_func, y_i, weight=class_weight,
+            ce_i = F.cross_entropy(_logit_cls, y_i, weight=class_weight,
                                    label_smoothing=self.label_smoothing, reduction="none")
-            ce_j = F.cross_entropy(logit_func, y_j, weight=class_weight,
+            ce_j = F.cross_entropy(_logit_cls, y_j, weight=class_weight,
                                    label_smoothing=self.label_smoothing, reduction="none")
             cls_loss = (lam_y * ce_i + (1.0 - lam_y) * ce_j).mean()
         elif self.use_livable_real:
             cls_loss = livable_loss(
-                logit_func, batch.y,
+                _logit_cls, batch.y,
                 epoch=self._current_epoch,
                 total_epochs=self._total_epochs,
                 focal_gamma=self.livable_focal_gamma,
@@ -278,10 +293,10 @@ class Trainer:
                 weight=class_weight,
             )
         elif self.focal_gamma > 0.0:
-            cls_loss = focal_loss(logit_func, batch.y, gamma=self.focal_gamma,
+            cls_loss = focal_loss(_logit_cls, batch.y, gamma=self.focal_gamma,
                                   weight=class_weight, label_smoothing=self.label_smoothing)
         else:
-            cls_loss = F.cross_entropy(logit_func, batch.y, weight=class_weight,
+            cls_loss = F.cross_entropy(_logit_cls, batch.y, weight=class_weight,
                                        label_smoothing=self.label_smoothing)
         raw["cls"] = cls_loss
         loss = cls_loss

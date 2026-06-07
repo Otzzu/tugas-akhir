@@ -265,6 +265,19 @@ class TrainingSession:
                 f"tau={getattr(cfg.train, 'mixup_remix_tau', 0.5)}"
             )
 
+        # Logit Adjustment loss: pass log(class priors) so CE is offset by tau*log(pi_y).
+        if getattr(cfg.train, "logit_adjustment", False):
+            _la_counts = train_counts
+            if _la_counts is None:
+                _all_y = dataset.get_all_labels()
+                _tl = _all_y[torch.tensor(train_idx, dtype=torch.long)]
+                _la_counts = torch.bincount(_tl, minlength=cfg.model.num_classes).float()
+            _prior = _la_counts / _la_counts.sum()
+            _log_prior = torch.log(_prior.clamp(min=1e-12)).to(device)
+            _la_tau = getattr(cfg.train, "logit_adjustment_tau", 1.0)
+            trainer.set_logit_adjustment(_log_prior, _la_tau)
+            logger.info(f"Logit Adjustment loss enabled: tau={_la_tau}")
+
         run_id, run_dir = self._setup_run_dir()
         if config_path and Path(config_path).exists():
             shutil.copy(config_path, run_dir / "config.yaml")
