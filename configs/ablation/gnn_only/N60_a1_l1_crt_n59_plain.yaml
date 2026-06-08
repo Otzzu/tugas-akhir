@@ -76,6 +76,6 @@ train:
   stmt_head_vectorized: true
   num_workers: 0
   prefetch_factor: 2
-  crt_init_checkpoint: checkpoints/__FILL_N59_RUN_ID__/best_lmgat_codebert.pt
+  crt_init_checkpoint: checkpoints/20260608_033323_lmgat_codebert_multiclass/best_lmgat_codebert.pt
   crt_reinit_head: true
   class_balanced_sampling: true
