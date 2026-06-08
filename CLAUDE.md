@@ -1,5 +1,9 @@
 # CLAUDE.md — Project Instructions
 
+## Code Comments
+
+Keep comments minimal. Match the surrounding code's comment density. No verbose multi-line explanations of a one-line change — one short inline comment max when truly needed.
+
 ## Git Commit Style
 
 Always keep the conventional-commit type prefix (`feat:`, `fix:`, `docs:`, `refactor:`, etc.) — the colon after the type is required and allowed. Keep the description short, one line. In the description use only comma and dot — no slashes, semicolons, parentheses, or extra colons. Never add a Co-Authored-By trailer. Commit only when the user asks.

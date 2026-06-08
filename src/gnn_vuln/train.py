@@ -151,8 +151,8 @@ class TrainingSession:
         # torch.compile — fuses kernels, ~20-50% speedup (PyTorch 2.0+, CUDA only)
         if getattr(cfg.train, "compile_model", False) and device.type == "cuda":
             try:
-                import torch._dynamo
-                torch._dynamo.config.capture_scalar_outputs = True
+                import torch._dynamo as _dynamo  # alias: avoid rebinding local `torch`
+                _dynamo.config.capture_scalar_outputs = True
                 model = torch.compile(model, mode="default", dynamic=True)
                 logger.info("torch.compile enabled (mode=reduce-overhead)")
             except Exception as e:
