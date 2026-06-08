@@ -1,0 +1,77 @@
+# Local GNN-only N64 — cRT with Logit Adjustment head on the N59 plain-CE backbone.
+# Same as N62 (cRT + LA tau=0.3 head) but the frozen backbone is N59 (plain CE) instead
+# of N48. Pairs with N62 to test cRT+LA on both backbones:
+#   N62 = cRT+LA on N48 (class-weighted backbone)
+#   N64 = cRT+LA on N59 (plain-CE backbone)
+#
+# Needs N59 backbone. Cloud:
+#   ./scripts/train_cloud.sh --skip --backbone 20260608_033323_lmgat_codebert_multiclass \
+#     --config configs/ablation/gnn_only/N64_a1_l1_crt_la_head_n59.yaml --dataset <ds>
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  graph_pool: jknet
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.0
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.0
+  mil_k: 3
+  rank_loss_weight: 0.0
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  func_head_type: linear
+
+train:
+  seed: 42
+  epochs: 30
+  batch_size: 32
+  lr: 0.001
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 10
+  early_stop_metric: f1
+  use_class_weights: false
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: false
+  livable_loss: false
+  label_smoothing: 0.0
+  logit_adjustment: true
+  logit_adjustment_tau: 0.3
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: false
+  use_flash_attention: false
+  grad_accum_steps: 2
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 0
+  prefetch_factor: 2
+  crt_init_checkpoint: checkpoints/20260608_033323_lmgat_codebert_multiclass/best_lmgat_codebert.pt
+  crt_reinit_head: true
+  class_balanced_sampling: true

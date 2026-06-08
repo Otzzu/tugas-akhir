@@ -65,6 +65,11 @@ Split out of `ABLATION_RESULTS.md` to keep the main ablation clean. All runs her
 | N56 | `20260608_004912_lmgat_codebert_multiclass` | `N56_a1_l1_tau_norm.yaml`                           | jknet      | true     | tau-norm on N48 (Kang 2020). post-hoc weight-norm rebalance, zero training. best tau=0 |
 | N57 | `20260608_011545_lmgat_codebert_multiclass` | `N57_a1_l1_tailcalib.yaml`                          | jknet      | true     | TailCalibX on N48. synth tail feats from borrowed head cov, retrain head. 25020 synth |
 | N55 | `20260607_181127_lmgat_codebert_multiclass` | `N55_a1_l1_balanced_mixup.yaml`                     | jknet      | true     | N48 + Balanced-Mixup Remix on h_graph, alpha 0.2, full training |
+| N58 | `20260608_032118_lmgat_codebert_multiclass` | `N58_a1_l1_crt_n48_weighted.yaml`                  | jknet      | true     | cRT on N48 keeping N48 loss class weights label smoothing. only loader differs |
+| N59 | `20260608_033323_lmgat_codebert_multiclass` | `N59_a1_l1_jknet_plain_ce.yaml`                    | jknet      | true     | N48 plain CE backbone. drop class weights label smoothing. paper stage 1 |
+| N60 | `20260608_062649_lmgat_codebert_multiclass` | `N60_a1_l1_crt_n59_plain.yaml`                     | jknet      | true     | cRT plain CE on N59 backbone. fully paper-pure two-stage |
+| N61 | `20260608_064712_lmgat_codebert_multiclass` | `N61_a1_l1_logit_adjust.yaml`                      | jknet      | true     | N48 + Logit Adjustment loss Menon 2021 tau 1.0 |
+| N63 | `20260608_221234_lmgat_codebert_multiclass` | `tau_norm.py on N53 ckpt`                          | jknet      | true     | cRT+tau-norm post-hoc on N53 head. best tau 0.9. zero training |
 
 ## Classification
 
@@ -130,6 +135,11 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N56 | 0.532     | 0.521     | 0.504     | 0.503     | 0.546     | 0.533     | 0.520     | 0.504     | 0.908     | 0.457     | 0      |
 | N57 | 0.498     | 0.523     | 0.506     | 0.506     | 0.503     | 0.573     | 0.518     | 0.506     | 0.914     | 0.468     | 0      |
 | N55 | 0.523     | 0.491     | 0.473     | 0.470     | 0.499     | 0.507     | 0.489     | 0.473     | 0.901     | 0.445     | 40     |
+| N58 | 0.492     | 0.493     | 0.497     | 0.496     | 0.472     | 0.570     | 0.514     | 0.497     | 0.911     | 0.412     | 12     |
+| N59 | 0.533     | 0.473     | 0.510     | 0.508     | 0.509     | 0.456     | 0.512     | 0.510     | 0.916     | 0.699     | 100    |
+| N60 | 0.498     | 0.466     | 0.503     | 0.499     | 0.473     | 0.488     | 0.507     | 0.503     | 0.915     | 0.700     | 21     |
+| N61 | 0.480     | 0.371     | 0.297     | 0.392     | 0.467     | 0.369     | 0.676     | 0.297     | 0.908     | 0.353     | 65     |
+| N63 | 0.528     | 0.486     | 0.518     | 0.516     | 0.472     | 0.522     | 0.521     | 0.518     | 0.911     | 0.348     | 0      |
 
 ## Statement-Level Localization
 
@@ -191,6 +201,11 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N56 | 0.310     | 0.944     | 0.985     | 0.256     | 0.439      | 0.028         |
 | N57 | 0.310     | 0.944     | 0.985     | 0.256     | 0.439      | 0.028         |
 | N55 | 0.324     | 0.934     | 0.985     | 0.266     | 0.467      | 0.026         |
+| N58 | 0.310     | 0.944     | 0.985     | 0.256     | 0.439      | 0.028         |
+| N59 | 0.452     | 0.900     | 0.982     | 0.249     | 0.457      | 0.032         |
+| N60 | 0.452     | 0.900     | 0.982     | 0.249     | 0.457      | 0.032         |
+| N61 | 0.469     | 0.895     | 0.981     | 0.247     | 0.439      | 0.031         |
+| N63 | 0.310     | 0.944     | 0.985     | 0.256     | 0.439      | 0.028         |
 
 # Training Efficiency
 
@@ -252,3 +267,8 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N56 N48+tau-norm      | post-hoc        | 4.7M   | 0s         | 0.00            | -         |
 | N57 N48+tailcalib     | post-hoc        | 4.7M   | 0s         | 0.00            | -         |
 | N55 N48+bal-mixup     | RTX A4000       | 4.7M   | 83s        | 0.92            | 9.6 GB    |
+| N58 N48+cRT+weighted  | RTX A4000       | 4.7M   | 57s        | 0.19            | 3.2 GB    |
+| N59 N48 plain CE      | RTX A4000       | 4.7M   | 85s        | 2.35            | 10.4 GB   |
+| N60 cRT on N59        | RTX A4000       | 4.7M   | 56s        | 0.33            | 3.1 GB    |
+| N61 N48+logit-adjust  | RTX A4000       | 4.7M   | 83s        | 1.50            | 9.8 GB    |
+| N63 cRT+tau-norm      | post-hoc        | 4.7M   | 0s         | 0.00            | -         |
