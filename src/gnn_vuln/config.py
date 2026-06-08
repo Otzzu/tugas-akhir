@@ -284,6 +284,15 @@ class TrainConfig:
     # Imbalance handler — use INSTEAD of class weights, not on top. 0/false disables.
     logit_adjustment: bool = False
     logit_adjustment_tau: float = 1.0
+    # ── FLAG adversarial node-feature augmentation (Kong et al. 2020) ──────────
+    # GNN analog of EDAT, matching the reference flag() (src/FLAG attacks.py): perturb
+    # the GNN INPUT node features, delta ~ U(-step_size, step_size), then M unbounded
+    # ascent steps delta += step_size*sign(grad), accumulating param grads (loss/=M)
+    # over the M perturbed forwards, one optimizer step. No epsilon ball / no clamp.
+    # gnn_only compatible. Requires use_amp=false. 0/false disables.
+    use_flag: bool = False
+    flag_step_size: float = 1e-3   # init range AND ascent step (single param, = paper step_size)
+    flag_steps:     int   = 3      # M ascent steps (= grad-accumulation count)
 
 
 @dataclass

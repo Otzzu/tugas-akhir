@@ -278,6 +278,15 @@ class TrainingSession:
             trainer.set_logit_adjustment(_log_prior, _la_tau)
             logger.info(f"Logit Adjustment loss enabled: tau={_la_tau}")
 
+        # FLAG adversarial node-feature training (Kong et al. 2020).
+        if getattr(cfg.train, "use_flag", False):
+            if getattr(cfg.train, "use_amp", False):
+                logger.warning("use_flag=true with use_amp=true — set use_amp=false for FLAG")
+            _flag_ss = getattr(cfg.train, "flag_step_size", 1e-3)
+            _flag_steps = getattr(cfg.train, "flag_steps", 3)
+            trainer.set_flag(_flag_ss, _flag_steps)
+            logger.info(f"FLAG enabled: step_size={_flag_ss} steps={_flag_steps}")
+
         run_id, run_dir = self._setup_run_dir()
         if config_path and Path(config_path).exists():
             shutil.copy(config_path, run_dir / "config.yaml")

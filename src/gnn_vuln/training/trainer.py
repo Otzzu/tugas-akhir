@@ -165,6 +165,10 @@ class Trainer:
         # on logit + tau*log_prior (raw logit kept for inference/metrics).
         self._la_log_prior: torch.Tensor | None = None
         self._la_tau: float = 1.0
+        # FLAG (Kong et al. 2020): adversarial node-feature perturbation training.
+        self._flag_enabled: bool = False
+        self._flag_step_size: float = 1e-3
+        self._flag_steps: int = 3
 
     def set_crt_mode(self, train_module: nn.Module) -> None:
         """Enable cRT: keep backbone in eval, train only ``train_module`` (func_head)."""
@@ -174,6 +178,37 @@ class Trainer:
         """Enable Logit Adjustment loss. ``log_prior`` = log(class priors) [C] on device."""
         self._la_log_prior = log_prior
         self._la_tau = tau
+
+    def set_flag(self, step_size: float, steps: int) -> None:
+        """Enable FLAG adversarial node-feature training (Kong et al. 2020)."""
+        self._flag_enabled = True
+        self._flag_step_size = step_size
+        self._flag_steps = max(1, steps)
+
+    def _flag_step(self, batch, class_weight) -> torch.Tensor:
+        """One FLAG training step (Kong et al. 2020, reference flag()): perturb node
+        features, M unbounded ascent steps (delta += step_size*sign(grad), no clamp),
+        param grads accumulated over the M perturbed forwards (loss/=M), one optimizer
+        step. Returns the (un-normalized) last-step loss."""
+        self.optimizer.zero_grad()
+        x = batch.x
+        m = self._flag_steps
+        ss = self._flag_step_size
+        delta = torch.empty_like(x).uniform_(-ss, ss)
+        delta.requires_grad_(True)
+        last = None
+        for _ in range(m):
+            loss_t = self._forward(batch, class_weight, x_override=x + delta)[1] / m
+            loss_t.backward()                       # accumulates param grad (1/m) + delta.grad
+            last = loss_t
+            with torch.no_grad():
+                delta.data.add_(ss * delta.grad.sign())   # unbounded ascent, no clamp (paper)
+            delta.grad = None
+        if getattr(self, "_grad_clip", 0.0) > 0.0:
+            nn.utils.clip_grad_norm_(self.model.parameters(), self._grad_clip)
+        self.optimizer.step()
+        self.optimizer.zero_grad()
+        return (last * m).detach()
 
     def set_mixup(self, remix: bool, kappa: float, tau: float, counts: torch.Tensor) -> None:
         """Enable Balanced-Mixup loss. ``counts`` = per-class train sample counts
@@ -208,15 +243,19 @@ class Trainer:
         self,
         batch,
         class_weight: torch.Tensor | None = None,
+        x_override: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Single forward pass → (logit_func, total_loss).
+
+        x_override replaces batch.x in the model call (FLAG adversarial node features).
 
         Handles all return-tuple lengths:
           2-tuple (logit, stmt_scores)                                 — standard
           3-tuple (logit, stmt_scores, z)                              — SupCon
           5-tuple (logit_cwe, logit_group, logit_binary, stmt, z)      — MTL+SupCon
         """
+        _x = batch.x if x_override is None else x_override
         node_line  = getattr(batch, "node_line",  None)
         edge_attr  = getattr(batch, "edge_attr",  None)
         # Only pass rwse if model's GNN encoder actually uses PE — avoid PyG batch
@@ -234,7 +273,7 @@ class Trainer:
             func_line_ids   = getattr(batch, "func_line_ids",       None)
             func_line_cls_b = getattr(batch, "func_line_cls_batch", None)
             out = self.model(
-                batch.x, batch.edge_index, batch.batch,
+                _x, batch.edge_index, batch.batch,
                 node_line, edge_attr, func_ids, func_mask, func_tlines,
                 func_line_cls=func_line_cls,
                 func_line_ids=func_line_ids,
@@ -242,7 +281,7 @@ class Trainer:
                 rwse=rwse,
             )
         else:
-            out = self.model(batch.x, batch.edge_index, batch.batch, node_line, edge_attr, rwse=rwse)
+            out = self.model(_x, batch.edge_index, batch.batch, node_line, edge_attr, rwse=rwse)
 
         # Unpack return tuple
         if len(out) == 5:
@@ -429,6 +468,18 @@ class Trainer:
             batch = batch.to(self.device, non_blocking=True)
             is_last = (step == n_steps - 1)
             should_step = ((step + 1) % accum == 0) or is_last
+
+            # FLAG: self-contained M-step adversarial step (own backward + optimizer
+            # step). Bypasses the normal forward/accum/backward path below.
+            if self._flag_enabled:
+                flag_loss = self._flag_step(batch, class_weight)
+                if self.step_per_batch:
+                    self.scheduler.step()
+                loss_sum = loss_sum + flag_loss * batch.num_graphs
+                n_graphs += batch.num_graphs
+                if (step % refresh_every == 0) or is_last:
+                    pbar.set_postfix(loss=f"{(loss_sum / n_graphs).item():.4f}")
+                continue
 
             with autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.use_amp):
                 _, loss = self._forward(batch, class_weight)
