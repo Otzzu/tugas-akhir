@@ -76,3 +76,8 @@ src/CodeGraphSMOTE/
 src/GMixup/
 src/GraphSMOTE/
 src/FLAG/
+src/graph-jepa/
+src/graph-vit-mlpmixer/
+src/llm-jepa/
+src/hypermixing/
+src/pnlp-mixer/
