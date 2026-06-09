@@ -70,6 +70,9 @@ Split out of `ABLATION_RESULTS.md` to keep the main ablation clean. All runs her
 | N60 | `20260608_062649_lmgat_codebert_multiclass` | `N60_a1_l1_crt_n59_plain.yaml`                     | jknet      | true     | cRT plain CE on N59 backbone. fully paper-pure two-stage |
 | N61 | `20260608_064712_lmgat_codebert_multiclass` | `N61_a1_l1_logit_adjust.yaml`                      | jknet      | true     | N48 + Logit Adjustment loss Menon 2021 tau 1.0 |
 | N63 | `20260608_221234_lmgat_codebert_multiclass` | `tau_norm.py on N53 ckpt`                          | jknet      | true     | cRT+tau-norm post-hoc on N53 head. best tau 0.9. zero training |
+| N62 | `20260608_162713_lmgat_codebert_multiclass` | `N62_a1_l1_crt_la_head.yaml`                       | jknet      | true     | cRT on N48 + Logit Adjustment head tau 0.3. balanced sampler + LA |
+| N64 | `20260608_164827_lmgat_codebert_multiclass` | `N64_a1_l1_crt_la_head_n59.yaml`                   | jknet      | true     | cRT on N59 plain-CE backbone + LA head tau 0.3 |
+| N65 | `20260608_170820_lmgat_codebert_multiclass` | `N65_a1_l1_flag.yaml`                              | jknet      | true     | N48 + FLAG adversarial node-feature Kong 2020 step 0.001 M 3 |
 
 ## Classification
 
@@ -140,6 +143,9 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N60 | 0.498     | 0.466     | 0.503     | 0.499     | 0.473     | 0.488     | 0.507     | 0.503     | 0.915     | 0.700     | 21     |
 | N61 | 0.480     | 0.371     | 0.297     | 0.392     | 0.467     | 0.369     | 0.676     | 0.297     | 0.908     | 0.353     | 65     |
 | N63 | 0.528     | 0.486     | 0.518     | 0.516     | 0.472     | 0.522     | 0.521     | 0.518     | 0.911     | 0.348     | 0      |
+| N62 | 0.472     | 0.486     | 0.511     | 0.511     | 0.456     | 0.546     | 0.522     | 0.511     | 0.910     | 0.648     | 22     |
+| N64 | 0.489     | 0.443     | 0.498     | 0.497     | 0.435     | 0.479     | 0.513     | 0.498     | 0.912     | 0.683     | 20     |
+| N65 | 0.529     | 0.487     | 0.503     | 0.499     | 0.504     | 0.505     | 0.516     | 0.503     | 0.902     | 0.440     | 56     |
 
 ## Statement-Level Localization
 
@@ -206,6 +212,9 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N60 | 0.452     | 0.900     | 0.982     | 0.249     | 0.457      | 0.032         |
 | N61 | 0.469     | 0.895     | 0.981     | 0.247     | 0.439      | 0.031         |
 | N63 | 0.310     | 0.944     | 0.985     | 0.256     | 0.439      | 0.028         |
+| N62 | 0.310     | 0.944     | 0.985     | 0.256     | 0.439      | 0.028         |
+| N64 | 0.452     | 0.900     | 0.982     | 0.249     | 0.457      | 0.032         |
+| N65 | 0.435     | 0.914     | 0.985     | 0.274     | 0.479      | 0.023         |
 
 # Training Efficiency
 
@@ -272,3 +281,6 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N60 cRT on N59        | RTX A4000       | 4.7M   | 56s        | 0.33            | 3.1 GB    |
 | N61 N48+logit-adjust  | RTX A4000       | 4.7M   | 83s        | 1.50            | 9.8 GB    |
 | N63 cRT+tau-norm      | post-hoc        | 4.7M   | 0s         | 0.00            | -         |
+| N62 cRT+LA N48        | RTX A4000       | 4.7M   | 56s        | 0.34            | 2.9 GB    |
+| N64 cRT+LA N59        | RTX A4000       | 4.7M   | 58s        | 0.32            | 3.0 GB    |
+| N65 N48+FLAG          | RTX A4000       | 4.7M   | 210s       | 3.26            | 9.2 GB    |
