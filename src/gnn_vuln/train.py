@@ -802,6 +802,13 @@ class TrainingSession:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    # Python 3.14 switched DataLoader workers to 'forkserver' (pickles worker args,
+    # breaks local worker_init_fn/collate_fn). Force 'fork' to match prior behavior.
+    import multiprocessing as _mp
+    try:
+        _mp.set_start_method("fork", force=True)
+    except (RuntimeError, ValueError):
+        pass
     parser = argparse.ArgumentParser(description="Train GNN vulnerability detector")
     parser.add_argument("--config", type=str, default="configs/lmgcn/binary.yaml")
     parser.add_argument("--resume", action="store_true",
