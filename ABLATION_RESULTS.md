@@ -20,6 +20,7 @@ Phase structure:
 - **Phase 9 — Line-Level Encoder**: hierarchical encoding — per-line LM → cross-line transformer; frozen vs live LM
 - **Phase 10 — Language Model (func_lm alternatives)**: encoder-only LMs with longer native context (ModernBERT-base)
 - **Phase 11 — SupCon Loss Ablation**: supervised contrastive loss with CWE hierarchy distance matrix weighting
+- **Phase 12 — ULMFiT Fine-tuning**: discriminative LRs (LLRD) + gradual unfreezing to curb val-loss divergence
 
 ---
 

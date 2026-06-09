@@ -1,14 +1,16 @@
-# ULMFiT M3 — Full ULMFiT (LLRD + gradual unfreezing combined).
+# ULMFiT M2 — Gradual unfreezing only (no LLRD).
 # Base: H4 (best Phase 8).
-# Both M1 and M2 enabled:
-#   lm_llrd_decay = 0.95 — discriminative learning rates per layer.
-#   lm_unfreeze_schedule — progressive unfreezing.
-# Tests the canonical Howard & Ruder 2018 recipe.
+# Varies: lm_unfreeze_schedule —
+#   epoch 1-2: head + GNN only (all LM frozen)
+#   epoch 3-5: top 4 LM layers trainable
+#   epoch 6-9: top 8 LM layers trainable
+#   epoch 10+: all LM layers (including embeddings) trainable
+# Tests whether progressive unfreezing prevents the loss-divergence pattern.
 #
 # Phase placeholder — move to actual phase dir when decided.
 #
 # Run (cloud, Linux):
-#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/ulmfit_drafts/M3_llrd_gradual_combined.yaml
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase12/M2_gradual_unfreeze.yaml
 
 data:
   source: megavul
@@ -55,7 +57,6 @@ train:
   batch_size: 32
   lr: 0.001
   lm_lr: 0.00001
-  lm_llrd_decay: 0.95
   lm_unfreeze_schedule:
     - [1, 0]
     - [3, 4]

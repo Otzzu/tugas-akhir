@@ -1,16 +1,14 @@
-# ULMFiT M2 — Gradual unfreezing only (no LLRD).
-# Base: H4 (best Phase 8).
-# Varies: lm_unfreeze_schedule —
-#   epoch 1-2: head + GNN only (all LM frozen)
-#   epoch 3-5: top 4 LM layers trainable
-#   epoch 6-9: top 8 LM layers trainable
-#   epoch 10+: all LM layers (including embeddings) trainable
-# Tests whether progressive unfreezing prevents the loss-divergence pattern.
+# ULMFiT M1 — LLRD only (no gradual unfreezing).
+# Base: H4 (best Phase 8 — UniXcoder + winattn + sliding 1024×1024 ml5120).
+# Varies: lm_llrd_decay = 0.95 (layer-wise LR decay, conservative).
+# Top LM layer ≈ lm_lr=1e-5. Bottom layer ≈ lm_lr × 0.95^11 ≈ 5.7e-6.
+# Embeddings ≈ lm_lr × 0.95^12 ≈ 5.4e-6.
+# Tests whether discriminative learning rates reduce loss-divergence pattern.
 #
 # Phase placeholder — move to actual phase dir when decided.
 #
 # Run (cloud, Linux):
-#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/ulmfit_drafts/M2_gradual_unfreeze.yaml
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase12/M1_llrd_only.yaml
 
 data:
   source: megavul
@@ -57,11 +55,7 @@ train:
   batch_size: 32
   lr: 0.001
   lm_lr: 0.00001
-  lm_unfreeze_schedule:
-    - [1, 0]
-    - [3, 4]
-    - [6, 8]
-    - [10, "all"]
+  lm_llrd_decay: 0.95
   warmup_ratio: 0.1
   grad_clip: 1.0
   weight_decay: 0.001
