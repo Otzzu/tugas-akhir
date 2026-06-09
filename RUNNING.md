@@ -6,15 +6,16 @@ End-to-end instructions from a clean checkout to trained model and evaluation re
 
 ## Prerequisites
 
-| Tool | Version | Notes |
-|------|---------|-------|
-| [uv](https://docs.astral.sh/uv/) | any | Python/venv manager |
-| Python | 3.11 | uv installs it automatically |
-| [Joern](https://joern.io) | latest | CPG extraction; install at `C:/joern/joern-cli` |
-| JDK | 11+ | JDK 25 at `C:/Program Files/Java/jdk-25.0.3` is auto-detected |
-| GPU (optional) | CUDA 11.8+ | Set `train.device: cuda` in config for ~10× speedup |
+| Tool                             | Version    | Notes                                                         |
+| -------------------------------- | ---------- | ------------------------------------------------------------- |
+| [uv](https://docs.astral.sh/uv/) | any        | Python/venv manager                                           |
+| Python                           | 3.11       | uv installs it automatically                                  |
+| [Joern](https://joern.io)        | latest     | CPG extraction; install at `C:/joern/joern-cli`               |
+| JDK                              | 11+        | JDK 25 at `C:/Program Files/Java/jdk-25.0.3` is auto-detected |
+| GPU (optional)                   | CUDA 11.8+ | Set `train.device: cuda` in config for ~10× speedup           |
 
 Install uv (PowerShell):
+
 ```powershell
 irm https://astral.sh/uv/install.ps1 | iex
 ```
@@ -28,6 +29,7 @@ uv sync
 ```
 
 Smoke check:
+
 ```bash
 uv run python -c "import torch; from torch_geometric.data import Data; print('OK')"
 ```
@@ -43,6 +45,7 @@ uv run python scripts/download_datasets.py
 ```
 
 Expected output structure:
+
 ```
 data/datasets/
   bigvul/train.parquet       # ~183K functions, with CWE labels + flaw lines
@@ -245,19 +248,20 @@ results/
 ```
 
 The epoch log shows:
+
 ```
   Train 001/100: 100%|████| 85/85 [01:58<00:00, loss=2.1234]
 Epoch 001/100 | train=2.3756 | val=2.3960 | acc=0.3046 | conf=0.3340 | lr=1.00e-03 | patience=0/10 | 135s *
 ```
 
-| Field | Meaning |
-|-------|---------|
-| `train` / `val` | loss values |
-| `acc` | validation accuracy |
-| `conf` | mean max-softmax confidence |
-| `lr` | current learning rate (drops when scheduler fires) |
-| `patience` | epochs without improvement / early-stop threshold |
-| `*` | new best model saved this epoch |
+| Field           | Meaning                                            |
+| --------------- | -------------------------------------------------- |
+| `train` / `val` | loss values                                        |
+| `acc`           | validation accuracy                                |
+| `conf`          | mean max-softmax confidence                        |
+| `lr`            | current learning rate (drops when scheduler fires) |
+| `patience`      | epochs without improvement / early-stop threshold  |
+| `*`             | new best model saved this epoch                    |
 
 ### Resume training after interruption
 
@@ -323,16 +327,16 @@ Statement-Level Localization  (functions with flaw GT: 630)
 
 ### Output files in `results/`
 
-| File | Description |
-|------|-------------|
-| `predictions.csv` | y_true, y_pred, confidence, correct, prob\_\<class\> per column |
-| `localization_scores.csv` | func\_idx, y\_true, y\_pred, line\_number, score, is\_flaw\_line |
-| `metrics_summary.json` | all scalar metrics + Recall@LOC curve arrays (NaN → null) |
-| `roc_curve.png` | ROC curve — single for binary, OvR per class for multi-class |
-| `confusion_matrix.png` | confusion matrix with all classes shown |
-| `pr_curve.png` | Precision-Recall curve |
-| `recall_at_loc_curve.png` | Recall@K%LOC curve *(only when flaw-line GT exists)* |
-| `ifa_distribution.png` | IFA distribution histogram *(only when flaw-line GT exists)* |
+| File                      | Description                                                     |
+| ------------------------- | --------------------------------------------------------------- |
+| `predictions.csv`         | y_true, y_pred, confidence, correct, prob\_\<class\> per column |
+| `localization_scores.csv` | func_idx, y_true, y_pred, line_number, score, is_flaw_line      |
+| `metrics_summary.json`    | all scalar metrics + Recall@LOC curve arrays (NaN → null)       |
+| `roc_curve.png`           | ROC curve — single for binary, OvR per class for multi-class    |
+| `confusion_matrix.png`    | confusion matrix with all classes shown                         |
+| `pr_curve.png`            | Precision-Recall curve                                          |
+| `recall_at_loc_curve.png` | Recall@K%LOC curve _(only when flaw-line GT exists)_            |
+| `ifa_distribution.png`    | IFA distribution histogram _(only when flaw-line GT exists)_    |
 
 Localization outputs require non-empty `flaw_lines` in `.meta.json` sidecars.
 
@@ -342,29 +346,29 @@ Localization outputs require non-empty `flaw_lines` in `.meta.json` sidecars.
 
 Configs are organised by model under `configs/<model>/`:
 
-| Config | Mode | `num_classes` | Notes |
-|--------|------|:---:|-------|
-| `configs/lmgcn/binary.yaml` | binary | 2 | LM-GCN: benign vs vulnerable |
-| `configs/lmgcn/multiclass.yaml` | multi-class | 11 | LM-GCN: 10 CWE types + benign |
-| `configs/lmgat/binary.yaml` | binary | 2 | LM-GAT: attention + ranking loss |
-| `configs/lmgat/multiclass.yaml` | multi-class | 11 | LM-GAT: attention + class weights |
+| Config                          | Mode        | `num_classes` | Notes                             |
+| ------------------------------- | ----------- | :-----------: | --------------------------------- |
+| `configs/lmgcn/binary.yaml`     | binary      |       2       | LM-GCN: benign vs vulnerable      |
+| `configs/lmgcn/multiclass.yaml` | multi-class |      11       | LM-GCN: 10 CWE types + benign     |
+| `configs/lmgat/binary.yaml`     | binary      |       2       | LM-GAT: attention + ranking loss  |
+| `configs/lmgat/multiclass.yaml` | multi-class |      11       | LM-GAT: attention + class weights |
 
 Key fields (edit in the YAML, not in code):
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `data.max_nodes` | 500 | graphs larger than this are skipped |
-| `model.hidden_dim` | 256 | GCN hidden dimension |
-| `model.num_layers` | 4 | GCNConv message-passing layers |
-| `model.dropout` | 0.3 | dropout rate |
-| `model.num_classes` | 2 | must match `len(cwe_vocab.json)` in multi-class mode |
-| `model.mil_weight` | 0.5 | statement MIL loss weight λ (0 = disable) |
-| `model.mil_k` | 3 | top-k statements used per function in MIL |
-| `train.epochs` | 100 | max epochs |
-| `train.batch_size` | 32 | reduce if OOM |
-| `train.lr` | 0.001 | Adam learning rate |
-| `train.patience` | 10 | early-stopping patience |
-| `train.device` | cpu | `cpu` or `cuda` |
+| Field               | Default | Description                                          |
+| ------------------- | ------- | ---------------------------------------------------- |
+| `data.max_nodes`    | 500     | graphs larger than this are skipped                  |
+| `model.hidden_dim`  | 256     | GCN hidden dimension                                 |
+| `model.num_layers`  | 4       | GCNConv message-passing layers                       |
+| `model.dropout`     | 0.3     | dropout rate                                         |
+| `model.num_classes` | 2       | must match `len(cwe_vocab.json)` in multi-class mode |
+| `model.mil_weight`  | 0.5     | statement MIL loss weight λ (0 = disable)            |
+| `model.mil_k`       | 3       | top-k statements used per function in MIL            |
+| `train.epochs`      | 100     | max epochs                                           |
+| `train.batch_size`  | 32      | reduce if OOM                                        |
+| `train.lr`          | 0.001   | Adam learning rate                                   |
+| `train.patience`    | 10      | early-stopping patience                              |
+| `train.device`      | cpu     | `cpu` or `cuda`                                      |
 
 ---
 
@@ -379,6 +383,7 @@ Make sure `data.mode` in the config matches what you want: `binary` or `multicla
 
 First run for that mode — preprocessing will start automatically. If the file is missing but
 the directory exists, delete the directory and re-run:
+
 ```bash
 rm -rf data/processed/
 ```

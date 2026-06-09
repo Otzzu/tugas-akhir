@@ -11,11 +11,13 @@ Research notes comparing the user's `HierarchicalSupConLoss` implementation agai
 [Paper](https://arxiv.org/abs/2004.11362)
 
 The foundation. Binary positive/negative decision per pair:
+
 ```
 L_i = -1/|P(i)| · Σ_{p ∈ P(i)} log[ exp(z_i·z_p / τ) / Σ_{a≠i} exp(z_i·z_a / τ) ]
 
 P(i) = {j : y_j == y_i, j ≠ i}   ← binary: same class = positive, else negative
 ```
+
 - All positives weighted equally (1/|P(i)|)
 - No hierarchy, no distance, no weighting
 - Known issue: causes **class collapse** (Islam et al. 2021)
@@ -29,17 +31,20 @@ P(i) = {j : y_j == y_i, j ≠ i}   ← binary: same class = positive, else negat
 **Backbone:** CodeBERT / GraphCodeBERT / CodeGPT (LM only, no GNN).
 
 **Key ideas:**
+
 1. **Label expansion** — each CWE expanded to 5-level MITRE hierarchy tuple (Pillar → Class → Base → Variant → Specific). Example CWE-119: `{664, 118, 119, 119, 119}`.
 2. **Sequential training** — 5 phases × 300 epochs each. Phase k uses level-k labels for SupCon. Weights carry over between phases (curriculum learning: coarse → fine).
 3. **Geometric spread** — adds `µ · L_self` (SimCLR-style self-supervised loss) to prevent class collapse.
 4. **Max-pooling for long input** — split source into 512-token chunks, run LM on each, max-pool the `[CLS]` vectors.
 
 **Loss formula (each phase):**
+
 ```
 L = (1 - λ - µ) · L_CE + λ · L_sup + µ · L_self
 
 λ = 0.3, µ = 0.2, τ = 0.5
 ```
+
 - `L_sup` = unmodified Khosla SupCon (positives = same label at current phase's level)
 - `L_self` = SimCLR (each sample's augmented view = positive, all others = negative)
 - `L_CE` = standard cross-entropy for classification
@@ -62,11 +67,13 @@ L = (1 - λ - µ) · L_CE + λ · L_sup + µ · L_self
 **Backbone:** GraphCodeBERT fine-tuned with LoRA (rank-decomposition adapters, base weights frozen).
 
 **Key ideas:**
+
 1. **Plain Khosla SupCon** — no modification. Positives = same binary label.
 2. **R-Drop** — each input passes through model twice with different dropout masks; KL divergence between outputs is penalized. Prevents train/inference gap and indirectly prevents class collapse.
 3. **LoRA** — parameter-efficient fine-tuning. Only ~0.5% of params trained. 16-93% faster.
 
 **Loss formula:**
+
 ```
 L_Con = λ · L_SCL + (1-λ) · L_NLL          # SCL = Khosla SupCon, NLL = CE
 L_KL  = ½[KL(P¹‖P²) + KL(P²‖P¹)]          # R-Drop
@@ -76,6 +83,7 @@ L     = α · L_KL + L_Con
 ```
 
 **Results (avg across 4 datasets vs GraphCodeBERT):**
+
 - Accuracy +0.88%, Recall +41.51%, F1 +19.28%
 - Training time -16.67% to -93.03% (LoRA)
 
@@ -86,12 +94,14 @@ L     = α · L_KL + L_Con
 **Backbone:** LM (UniXcoder/CodeBERT) + GNN (GATv2 with 7 typed edges over CPG).
 
 **Key ideas:**
+
 1. **Continuous tree-distance weighting** — pre-computed CWE distance matrix gives real-valued weight `w_ij ∈ [0, 1]` per pair. Generalizes Khosla's binary positive/negative.
 2. **Intra-group restriction** — cross-group pairs zeroed even if both CWEs are in matrix (groups sit at different tree depths, making cross-group distances non-comparable).
 3. **Vulnerable-only anchors** — benign samples excluded from anchor set, only serve as negatives.
 4. **Configurable weight function** — `linear: 1-d`, `exp: exp(-k·d)`, `power: (1-d)^p`.
 
 **Loss formula:**
+
 ```
 L_i = -1/Σw_ij · Σ_j w_ij · log[ exp(z_i·z_j / τ) / Σ_{a≠i} exp(z_i·z_a / τ) ]
 
@@ -104,6 +114,7 @@ w_ij = {
 ```
 
 **Integration with model:**
+
 ```
 total = CE(func) + group_w·CE(group) + binary_w·CE(binary)
       + mil_w·MIL(stmt) + rank_w·RankLoss(stmt)
@@ -114,21 +125,21 @@ total = CE(func) + group_w·CE(group) + binary_w·CE(binary)
 
 ## 2. Side-by-Side Comparison Table
 
-| Property | Khosla 2020 | Ji 2024 | Wang 2024 (SCL-CVD) | Ours |
-|----------|-------------|---------|---------------------|------|
-| Task | General | Multiclass CWE | Binary vuln | Multiclass + binary + group MTL |
-| Modifies SupCon formula? | n/a (original) | No | No | **Yes** (continuous weights) |
-| Hierarchy used? | No | Yes (5-level label expansion) | No | Yes (continuous distance matrix) |
-| How hierarchy enters | n/a | Sequential training phases | n/a | Per-pair weight in single phase |
-| Training schedule | Single | Sequential 5×300 epochs | Single | Single |
-| Class-collapse safeguard | None | `µ·L_self` (SimCLR) | R-Drop | **None** |
-| Long-input handling | n/a | Chunk + max-pool | Truncation | Sliding window (separate module) |
-| Backbone | General | LM only | GraphCodeBERT + LoRA | LM + GNN |
-| Anchors include benign? | Yes (all classes) | Yes | Yes | **No** (vulnerable only) |
-| Parameter-efficient FT | n/a | No | Yes (LoRA) | No |
-| Best τ reported | 0.07 (original) | 0.5 | 0.7 | Default 0.07 (not tuned) |
-| Best λ (SupCon weight) | n/a | 0.3 | 0.3 | Configured per run |
-| Joint training? | n/a | Joint within phase, sequential across levels | Joint | Fully joint (all levels + all heads) |
+| Property                 | Khosla 2020       | Ji 2024                                      | Wang 2024 (SCL-CVD)  | Ours                                 |
+| ------------------------ | ----------------- | -------------------------------------------- | -------------------- | ------------------------------------ |
+| Task                     | General           | Multiclass CWE                               | Binary vuln          | Multiclass + binary + group MTL      |
+| Modifies SupCon formula? | n/a (original)    | No                                           | No                   | **Yes** (continuous weights)         |
+| Hierarchy used?          | No                | Yes (5-level label expansion)                | No                   | Yes (continuous distance matrix)     |
+| How hierarchy enters     | n/a               | Sequential training phases                   | n/a                  | Per-pair weight in single phase      |
+| Training schedule        | Single            | Sequential 5×300 epochs                      | Single               | Single                               |
+| Class-collapse safeguard | None              | `µ·L_self` (SimCLR)                          | R-Drop               | **None**                             |
+| Long-input handling      | n/a               | Chunk + max-pool                             | Truncation           | Sliding window (separate module)     |
+| Backbone                 | General           | LM only                                      | GraphCodeBERT + LoRA | LM + GNN                             |
+| Anchors include benign?  | Yes (all classes) | Yes                                          | Yes                  | **No** (vulnerable only)             |
+| Parameter-efficient FT   | n/a               | No                                           | Yes (LoRA)           | No                                   |
+| Best τ reported          | 0.07 (original)   | 0.5                                          | 0.7                  | Default 0.07 (not tuned)             |
+| Best λ (SupCon weight)   | n/a               | 0.3                                          | 0.3                  | Configured per run                   |
+| Joint training?          | n/a               | Joint within phase, sequential across levels | Joint                | Fully joint (all levels + all heads) |
 
 ---
 
@@ -137,6 +148,7 @@ total = CE(func) + group_w·CE(group) + binary_w·CE(binary)
 ### 3.1 Continuous per-pair weighting (unique to us)
 
 Neither paper modifies Khosla's loss formula. We replace the binary positive/negative decision with a real-valued weight from the CWE tree distance matrix. This is a **generalization** of Khosla's SupCon:
+
 - Setting all same-class weights to 1.0 and others to 0.0 recovers Khosla exactly
 - Setting weights to binary per-level recovers Ji's per-phase behavior (conceptually)
 - Our continuous version captures finer distinctions: CWE-119 vs CWE-125 (both buffer, close in tree) gets higher weight than CWE-119 vs CWE-352 (CSRF, far in tree)
@@ -166,31 +178,33 @@ We zero cross-group matrix weights because CWE groups are anchored at different 
 **Why it matters:** Same-CWE pairs have weight 1.0 → gradient pushes all same-CWE samples toward identical embeddings. For rare CWEs (50-100 samples), this can cause full collapse → loss decreases but F1 plateaus or drops (the loss-F1 gap symptom).
 
 **Evidence from papers:**
+
 - Ji 2024 ablation: removing `L_self` drops accuracy by 1.71% (Big-Vul) and 4.3% (PrimeVul)
 - Islam et al. 2021: pure SupCon transfers worse than self-supervised CL due to class collapse
 
 **Recommended fix (ranked by effort):**
 
-| Option | Effort | Mechanism | Expected gain |
-|--------|--------|-----------|---------------|
-| A. Cap same-CWE weight to 0.95 | 1 line | Soft margin prevents perfect collapse | Small but safe |
-| B. R-Drop on classification head | ~20 lines | KL between two dropout passes | Moderate, proven in SCL-CVD |
-| C. Add `µ·L_self` (SimCLR term) | ~30 lines + double forward | Direct anti-collapse pressure | Largest, proven in Ji 2024 |
+| Option                           | Effort                     | Mechanism                             | Expected gain               |
+| -------------------------------- | -------------------------- | ------------------------------------- | --------------------------- |
+| A. Cap same-CWE weight to 0.95   | 1 line                     | Soft margin prevents perfect collapse | Small but safe              |
+| B. R-Drop on classification head | ~20 lines                  | KL between two dropout passes         | Moderate, proven in SCL-CVD |
+| C. Add `µ·L_self` (SimCLR term)  | ~30 lines + double forward | Direct anti-collapse pressure         | Largest, proven in Ji 2024  |
 
 **Recommendation:** Start with Option A (zero risk). If rare-CWE F1 is still poor after phase 1, add Option B (R-Drop). Save Option C for later — it doubles forward compute.
 
 **Implementation sketch for Option B (R-Drop):**
+
 ```python
 # In trainer.py _forward():
 if cfg.model.rdrop_alpha > 0:
     logits_1 = model(batch)  # first forward (dropout mask 1)
     logits_2 = model(batch)  # second forward (dropout mask 2)
-    
+
     p1 = F.softmax(logits_1, dim=-1)
     p2 = F.softmax(logits_2, dim=-1)
     kl_loss = 0.5 * (F.kl_div(p1.log(), p2, reduction='batchmean')
                    + F.kl_div(p2.log(), p1, reduction='batchmean'))
-    
+
     total_loss += cfg.model.rdrop_alpha * kl_loss
 ```
 
@@ -201,6 +215,7 @@ if cfg.model.rdrop_alpha > 0:
 **Why it matters:** Ji avoids this by training coarse levels first (easy, balanced) before fine levels. Our joint approach doesn't have this protection. Early-epoch SupCon gradients on rare CWEs are essentially random noise that can push embeddings in wrong directions.
 
 **Recommended fix:**
+
 ```python
 # In trainer.py, per-epoch:
 if cfg.model.supcon_warmup_epochs > 0:
@@ -210,9 +225,10 @@ else:
 ```
 
 **Config addition:**
+
 ```yaml
 model:
-  supcon_warmup_epochs: 5  # ramp from 0 to full weight over 5 epochs
+  supcon_warmup_epochs: 5 # ramp from 0 to full weight over 5 epochs
 ```
 
 This gives CE 5 epochs to establish a sane embedding geometry before SupCon starts pulling.
@@ -221,7 +237,7 @@ This gives CE 5 epochs to establish a sane embedding geometry before SupCon star
 
 **Problem:** Our default `τ = 0.07`. Both papers report optimal `τ = 0.5–0.7`.
 
-**Why it matters:** Lower τ = sharper similarity distribution. Pairs that are slightly more similar get *much* more gradient; slightly-less-similar pairs get almost nothing. At τ=0.07, only the nearest neighbors in embedding space contribute meaningful gradient. This makes training unstable and sensitive to batch composition.
+**Why it matters:** Lower τ = sharper similarity distribution. Pairs that are slightly more similar get _much_ more gradient; slightly-less-similar pairs get almost nothing. At τ=0.07, only the nearest neighbors in embedding space contribute meaningful gradient. This makes training unstable and sensitive to batch composition.
 
 At τ=0.5–0.7, the distribution is smoother — more pairs contribute gradient, training is more stable, and the model can learn from moderate-similarity pairs (which is exactly what the distance matrix provides).
 
@@ -241,25 +257,28 @@ temperature: float = 0.5  # was 0.07
 Per §2-2.5 of `LOSS_F1_GAP.md`, stacking multiple rebalancing mechanisms causes gradient instability on minority classes. SupCon adds a fourth competing signal. If SupCon is enabled:
 
 **Remove or disable:**
+
 - `focal_loss_gamma` → set to 0.0 (SupCon already handles hard samples via the contrastive denominator)
 - `livable_loss` → set to false (SupCon's per-pair weighting already handles class imbalance via the distance matrix)
 - Keep `use_class_weights: true` for CE only — this is the mildest rebalancing and doesn't conflict
 
 **Rationale from papers:**
+
 - Ji 2024 uses plain CE (no focal, no class weights) alongside SupCon → works fine
 - Wang 2024 uses plain NLL (CE) alongside SupCon → works fine
 - Neither paper stacks focal or adaptive weights with SupCon
 
 **Recommended config when SupCon is active:**
+
 ```yaml
 model:
   use_supcon: true
-  supcon_weight: 0.3          # match Ji/Wang's λ
-  
+  supcon_weight: 0.3 # match Ji/Wang's λ
+
 train:
-  focal_loss_gamma: 0.0       # remove — conflicts with SupCon
-  livable_loss: false          # remove — conflicts with SupCon
-  use_class_weights: true      # keep — mild, doesn't conflict
+  focal_loss_gamma: 0.0 # remove — conflicts with SupCon
+  livable_loss: false # remove — conflicts with SupCon
+  use_class_weights: true # keep — mild, doesn't conflict
 ```
 
 ---
@@ -273,9 +292,10 @@ train:
 **Why:** Prevents class collapse + improves fine-tuning stability. Proven effective in SCL-CVD. Simpler than Ji's `L_self` (no data augmentation needed, just two forward passes).
 
 **Config:**
+
 ```yaml
 model:
-  rdrop_alpha: 1.0  # 0 = disabled, 1-3 = recommended range from SCL-CVD
+  rdrop_alpha: 1.0 # 0 = disabled, 1-3 = recommended range from SCL-CVD
 ```
 
 **Cost:** ~1.5× forward compute (second pass is cheaper — no gradient needed for KL target).
@@ -287,9 +307,10 @@ model:
 **Why:** Approximates Ji's "coarse first" curriculum without the 5-phase complexity. Lets CE establish sane embeddings before SupCon starts pulling.
 
 **Config:**
+
 ```yaml
 model:
-  supcon_warmup_epochs: 5  # 0 = disabled (current behavior)
+  supcon_warmup_epochs: 5 # 0 = disabled (current behavior)
 ```
 
 **Cost:** Zero compute overhead. Just a multiplier change per epoch.
@@ -316,13 +337,13 @@ model:
 
 After phase 1 results are in, test SupCon improvements in this order:
 
-| Step | Change | What it tests | Config |
-|------|--------|---------------|--------|
-| S1 | τ = 0.5 (was 0.07) | Temperature sensitivity | `temperature: 0.5` |
-| S2 | supcon_warmup = 5 | Cold-start protection | `supcon_warmup_epochs: 5` |
-| S3 | Drop focal when SupCon active | Loss stack simplification | `focal_loss_gamma: 0.0` |
-| S4 | R-Drop α = 1.0 | Class-collapse prevention | `rdrop_alpha: 1.0` |
-| S5 | Same-CWE cap = 0.95 | Direct anti-collapse | Code change |
+| Step | Change                        | What it tests             | Config                    |
+| ---- | ----------------------------- | ------------------------- | ------------------------- |
+| S1   | τ = 0.5 (was 0.07)            | Temperature sensitivity   | `temperature: 0.5`        |
+| S2   | supcon_warmup = 5             | Cold-start protection     | `supcon_warmup_epochs: 5` |
+| S3   | Drop focal when SupCon active | Loss stack simplification | `focal_loss_gamma: 0.0`   |
+| S4   | R-Drop α = 1.0                | Class-collapse prevention | `rdrop_alpha: 1.0`        |
+| S5   | Same-CWE cap = 0.95           | Direct anti-collapse      | Code change               |
 
 Each step is independent. Run S1-S3 together as a single "cleaned-up SupCon" config, then add S4 and S5 individually to measure marginal gain.
 
@@ -333,26 +354,31 @@ Each step is independent. Run S1-S3 together as a single "cleaned-up SupCon" con
 ## 8. Summary — Positioning for Thesis
 
 ### What we contribute (novel):
+
 1. **Continuous per-pair weighting** from CWE tree distance — generalizes Khosla's binary SupCon
 2. **Intra-group restriction** — prevents noisy cross-group distances from diluting signal
 3. **Single-phase joint training** with MTL heads — practical for complex multi-objective models
 4. **Vulnerable-only anchors** — correct for multiclass CWE where "benign" is not a coherent class
 
 ### What we adopt from papers:
+
 - SupCon framework (Khosla 2020)
 - Hierarchical CWE structure as prior knowledge (Ji 2024)
 - Joint CE + SupCon training (both papers)
 
 ### What we should add (improvements):
+
 - Class-collapse safeguard: R-Drop (from SCL-CVD) or `L_self` (from Ji)
 - SupCon warm-up: approximation of Ji's curriculum
 - Temperature tuning: τ=0.5 (both papers' optimal range)
 
 ### What we should remove when SupCon is active:
+
 - Focal loss (conflicts — both papers use plain CE with SupCon)
 - LIVABLE adaptive weights (conflicts — SupCon already handles imbalance via weighting)
 
 ### Thesis defense statement:
+
 > "We extend supervised contrastive learning (Khosla 2020) for multiclass CWE vulnerability classification by introducing continuous per-pair weighting derived from the CWE refinement hierarchy. This unifies the binary same-label selection of SCL-CVD (Wang 2024) and the discrete level-by-level scheduling of Ji 2024 into a single differentiable weight function w_ij = f(tree_distance(i, j)), enabling joint optimization with multi-task classification and line-level localization heads in a single training phase."
 
 ---
@@ -363,18 +389,18 @@ Both mechanisms use "two forward passes" but compute fundamentally different los
 
 ### 9.1 Mechanism Comparison
 
-| | L_self (SimCLR / Geometric Spread) | R-Drop (Regularized Dropout) |
-|---|---|---|
-| **Source** | Islam et al. ICCV 2021; used by Ji 2024 | Liang et al. NeurIPS 2021; used by Wang/SCL-CVD 2024 |
-| **Input** | Same sample, two forward passes (different dropout) | Same sample, two forward passes (different dropout) |
-| **Loss space** | Embedding space (z) | Output space (logits/softmax) |
-| **Formula** | `L = -log[exp(z₁·z₂/τ) / Σ exp(z₁·z_k/τ)]` — SimCLR on the two views | `L = ½[KL(P¹‖P²) + KL(P²‖P¹)]` — bidirectional KL on softmax |
-| **What it compares** | The two views against ALL other samples in batch (including same-class) | Only the two views of the SAME sample against each other |
-| **Negatives needed?** | Yes — all other batch samples are negatives | No — self-comparison only |
-| **Anti-collapse mechanism** | **Direct** — same-class samples are negatives → pushed apart | **Indirect** — regularizes weight space → smoother manifold, less prone to collapse |
-| **Competing with SupCon?** | **Yes** — L_self pushes same-class apart, L_sup pulls them together | **No** — R-Drop is orthogonal to SupCon (doesn't affect inter-sample distances) |
-| **Batch-size sensitive?** | Yes — needs enough negatives for meaningful contrastive signal | No — works per-sample |
-| **Compute cost** | 2× forward + contrastive computation over batch | 2× forward + KL computation (cheaper) |
+|                             | L_self (SimCLR / Geometric Spread)                                      | R-Drop (Regularized Dropout)                                                        |
+| --------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| **Source**                  | Islam et al. ICCV 2021; used by Ji 2024                                 | Liang et al. NeurIPS 2021; used by Wang/SCL-CVD 2024                                |
+| **Input**                   | Same sample, two forward passes (different dropout)                     | Same sample, two forward passes (different dropout)                                 |
+| **Loss space**              | Embedding space (z)                                                     | Output space (logits/softmax)                                                       |
+| **Formula**                 | `L = -log[exp(z₁·z₂/τ) / Σ exp(z₁·z_k/τ)]` — SimCLR on the two views    | `L = ½[KL(P¹‖P²) + KL(P²‖P¹)]` — bidirectional KL on softmax                        |
+| **What it compares**        | The two views against ALL other samples in batch (including same-class) | Only the two views of the SAME sample against each other                            |
+| **Negatives needed?**       | Yes — all other batch samples are negatives                             | No — self-comparison only                                                           |
+| **Anti-collapse mechanism** | **Direct** — same-class samples are negatives → pushed apart            | **Indirect** — regularizes weight space → smoother manifold, less prone to collapse |
+| **Competing with SupCon?**  | **Yes** — L_self pushes same-class apart, L_sup pulls them together     | **No** — R-Drop is orthogonal to SupCon (doesn't affect inter-sample distances)     |
+| **Batch-size sensitive?**   | Yes — needs enough negatives for meaningful contrastive signal          | No — works per-sample                                                               |
+| **Compute cost**            | 2× forward + contrastive computation over batch                         | 2× forward + KL computation (cheaper)                                               |
 
 ### 9.2 Literature Evidence
 
@@ -402,20 +428,21 @@ The most recent theoretical work on this topic. Provides guidelines for hyperpar
 
 **Short answer: R-Drop is the safer choice. L_self is the stronger choice.**
 
-| Criterion | Winner | Why |
-|-----------|--------|-----|
-| Anti-collapse strength | **L_self** | Directly pushes same-class apart; R-Drop only indirectly prevents collapse |
-| Ease of implementation | **R-Drop** | No contrastive computation, no batch-size dependency, just KL on outputs |
-| Risk of conflicting with SupCon | **R-Drop** | L_self actively fights SupCon (push apart vs pull together); R-Drop is orthogonal |
-| Hyperparameter sensitivity | **R-Drop** | L_self needs careful µ tuning (too high → destroys clusters); R-Drop α is more forgiving |
-| Proven on code/vuln tasks | **R-Drop** | SCL-CVD 2024 + MCL-VD 2025 both validate on vulnerability detection |
-| Proven for transfer/generalization | **L_self** | Islam 2021 + Chen 2022 show clear transfer gains |
-| Compute overhead | **R-Drop** | Both need 2× forward, but R-Drop's KL is cheaper than L_self's contrastive over batch |
-| Works with small batches? | **R-Drop** | L_self needs enough negatives; R-Drop works per-sample |
+| Criterion                          | Winner     | Why                                                                                      |
+| ---------------------------------- | ---------- | ---------------------------------------------------------------------------------------- |
+| Anti-collapse strength             | **L_self** | Directly pushes same-class apart; R-Drop only indirectly prevents collapse               |
+| Ease of implementation             | **R-Drop** | No contrastive computation, no batch-size dependency, just KL on outputs                 |
+| Risk of conflicting with SupCon    | **R-Drop** | L_self actively fights SupCon (push apart vs pull together); R-Drop is orthogonal        |
+| Hyperparameter sensitivity         | **R-Drop** | L_self needs careful µ tuning (too high → destroys clusters); R-Drop α is more forgiving |
+| Proven on code/vuln tasks          | **R-Drop** | SCL-CVD 2024 + MCL-VD 2025 both validate on vulnerability detection                      |
+| Proven for transfer/generalization | **L_self** | Islam 2021 + Chen 2022 show clear transfer gains                                         |
+| Compute overhead                   | **R-Drop** | Both need 2× forward, but R-Drop's KL is cheaper than L_self's contrastive over batch    |
+| Works with small batches?          | **R-Drop** | L_self needs enough negatives; R-Drop works per-sample                                   |
 
 ### 9.4 Recommendation for Our Architecture
 
 Given our constraints:
+
 - Complex multi-objective loss (CE + group + binary + MIL + ranking + SupCon)
 - Already have competing gradient signals
 - Batch size limited by GPU memory (GNN + LM is memory-heavy)
@@ -424,6 +451,7 @@ Given our constraints:
 **Primary recommendation: R-Drop (α = 1.0–3.0)**
 
 Reasons:
+
 1. **Orthogonal to SupCon** — doesn't create a 7th competing gradient signal. L_self would be the 7th loss term fighting against SupCon.
 2. **Proven in vulnerability detection** — SCL-CVD and MCL-VD both validate it on the same domain.
 3. **Batch-size independent** — our batches are small (16-32) due to GNN memory. L_self needs large batches for good negatives.
@@ -432,6 +460,7 @@ Reasons:
 **Fallback if R-Drop insufficient: Add L_self with µ = 0.05–0.1**
 
 If rare-CWE F1 is still poor after R-Drop, add a small L_self term. Keep µ low (0.05-0.1, not Ji's 0.2) because:
+
 - Ji has only 3 loss terms; you have 6-7. The "budget" for competing signals is smaller.
 - Ji trains 300 epochs per phase; you train ~50-100 total. Less time for the balance to settle.
 
@@ -441,7 +470,7 @@ If rare-CWE F1 is still poor after R-Drop, add a small L_self term. Keep µ low 
 Phase 1 (current): No changes — wait for ablation results
 Phase 2 (if collapse detected):
   Step 1: R-Drop α=1.0 → test
-  Step 2: If insufficient, R-Drop α=3.0 → test  
+  Step 2: If insufficient, R-Drop α=3.0 → test
   Step 3: If still insufficient, add L_self µ=0.05 → test
   Step 4: If still insufficient, L_self µ=0.1 + R-Drop α=1.0 → test (both together)
 ```
@@ -462,15 +491,15 @@ Before implementing any fix, verify the problem exists:
 
 ## 10. References
 
-| Paper | Year | Key contribution relevant to us |
-|-------|------|--------------------------------|
-| [Khosla et al. — Supervised Contrastive Learning](https://arxiv.org/abs/2004.11362) | 2020 | Original SupCon formula |
-| [Ji et al. — Hierarchical CL for CWE Classification (EMNLP)](https://aclanthology.org/2024.emnlp-main.666/) | 2024 | Sequential hierarchy + L_self for class collapse |
-| [Wang et al. — SCL-CVD (Computers & Security)](https://www.sciencedirect.com/science/article/abs/pii/S0167404824002475) | 2024 | R-Drop + LoRA + plain SupCon for binary vuln |
-| [Islam et al. — Broad Study on Transferability with CL (ICCV)](https://openaccess.thecvf.com/content/ICCV2021/html/Islam_A_Broad_Study_on_the_Transferability_of_Visual_Representations_With_ICCV_2021_paper.html) | 2021 | Identified class collapse; geometric spread via SupCon+SelfSupCon |
-| [Chen et al. — Improving Transfer and Robustness of SupCon (ICML)](https://proceedings.mlr.press/v162/chen22d) | 2022 | Spread alone insufficient; need to break permutation invariance |
-| [Liang et al. — R-Drop (NeurIPS)](https://arxiv.org/abs/2106.14448) | 2021 | Regularized dropout via KL divergence; universally effective on 18 datasets |
-| [Hu et al. — LoRA](https://arxiv.org/abs/2106.09685) | 2022 | Low-rank adaptation for efficient fine-tuning |
-| [MCL-VD — Multi-modal CL with LoRA for Vuln Detection (Springer)](https://link.springer.com/article/10.1007/s10515-025-00543-3) | 2025 | Extends SCL-CVD with multi-modal CL; F1 +4.86-17.26% |
-| [arXiv 2503.08203 — Theoretical Framework for Preventing Class Collapse](https://arxiv.org/abs/2503.08203) | 2025 | Guidelines for SupCon+SelfSupCon weight ratio to prevent collapse |
-| [Adapting SupCon to Binary Imbalanced Datasets (arXiv 2503.17024)](https://arxiv.org/abs/2503.17024) | 2025 | SupCon performance degrades with class imbalance; proposes Supervised Minority + Prototypes |
+| Paper                                                                                                                                                                                                              | Year | Key contribution relevant to us                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---- | ------------------------------------------------------------------------------------------- |
+| [Khosla et al. — Supervised Contrastive Learning](https://arxiv.org/abs/2004.11362)                                                                                                                                | 2020 | Original SupCon formula                                                                     |
+| [Ji et al. — Hierarchical CL for CWE Classification (EMNLP)](https://aclanthology.org/2024.emnlp-main.666/)                                                                                                        | 2024 | Sequential hierarchy + L_self for class collapse                                            |
+| [Wang et al. — SCL-CVD (Computers & Security)](https://www.sciencedirect.com/science/article/abs/pii/S0167404824002475)                                                                                            | 2024 | R-Drop + LoRA + plain SupCon for binary vuln                                                |
+| [Islam et al. — Broad Study on Transferability with CL (ICCV)](https://openaccess.thecvf.com/content/ICCV2021/html/Islam_A_Broad_Study_on_the_Transferability_of_Visual_Representations_With_ICCV_2021_paper.html) | 2021 | Identified class collapse; geometric spread via SupCon+SelfSupCon                           |
+| [Chen et al. — Improving Transfer and Robustness of SupCon (ICML)](https://proceedings.mlr.press/v162/chen22d)                                                                                                     | 2022 | Spread alone insufficient; need to break permutation invariance                             |
+| [Liang et al. — R-Drop (NeurIPS)](https://arxiv.org/abs/2106.14448)                                                                                                                                                | 2021 | Regularized dropout via KL divergence; universally effective on 18 datasets                 |
+| [Hu et al. — LoRA](https://arxiv.org/abs/2106.09685)                                                                                                                                                               | 2022 | Low-rank adaptation for efficient fine-tuning                                               |
+| [MCL-VD — Multi-modal CL with LoRA for Vuln Detection (Springer)](https://link.springer.com/article/10.1007/s10515-025-00543-3)                                                                                    | 2025 | Extends SCL-CVD with multi-modal CL; F1 +4.86-17.26%                                        |
+| [arXiv 2503.08203 — Theoretical Framework for Preventing Class Collapse](https://arxiv.org/abs/2503.08203)                                                                                                         | 2025 | Guidelines for SupCon+SelfSupCon weight ratio to prevent collapse                           |
+| [Adapting SupCon to Binary Imbalanced Datasets (arXiv 2503.17024)](https://arxiv.org/abs/2503.17024)                                                                                                               | 2025 | SupCon performance degrades with class imbalance; proposes Supervised Minority + Prototypes |

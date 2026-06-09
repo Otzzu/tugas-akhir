@@ -6,73 +6,73 @@ Split out of `ABLATION_RESULTS.md` to keep the main ablation clean. All runs her
 
 `configs/ablation/gnn_only/` — `live_lm=none` (no LM forward, GNN-only mode). Base = A1 + Phase 3 L1 loss settings (drop focal γ=0, label_smoothing=0.1, cosine, wd=1e-3, patience=15). Varies graph pooling, residual, GNN block order. Purpose: isolate GNN architectural effects without LM noise.
 
-| ID  | Run ID                                      | Config                                              | graph_pool | use_skip | block_style                        |
-| --- | ------------------------------------------- | --------------------------------------------------- | ---------- | -------- | ---------------------------------- |
-| N1  | `20260530_194019_lmgat_codebert_multiclass` | `N1_a1_l1.yaml`                                     | mean       | false    | resnet                             |
-| N2  | `20260530_203000_lmgat_codebert_multiclass` | `N2_a1_l1_meanmax.yaml`                             | meanmax    | false    | resnet                             |
-| N3  | `20260530_213022_lmgat_codebert_multiclass` | `N3_a1_l1_cnn.yaml`                                 | cnn        | false    | resnet                             |
-| N4  | `20260530_225801_lmgat_codebert_multiclass` | `N4_a1_l1_meanmax_residual.yaml`                    | meanmax    | true     | resnet                             |
-| N5  | `20260531_001117_lmgat_codebert_multiclass` | `N5_a1_l1_gnn_plus.yaml`                            | meanmax    | true     | gnn_plus                           |
-| N6  | `20260531_033903_lmgat_codebert_multiclass` | `N6_a1_l1_gnn_plus_graphnorm.yaml`                  | meanmax    | true     | gnn_plus + GraphNorm               |
-| N7  | `20260531_042425_lmgat_codebert_multiclass` | `N7_a1_l1_gnn_plus_elu.yaml`                        | meanmax    | true     | gnn_plus + ELU                     |
-| N8  | `20260531_064326_lmgat_codebert_multiclass` | `N8_a1_l1_gnn_plus_graphnorm_elu.yaml`              | meanmax    | true     | gnn_plus + GraphNorm + ELU         |
-| N9  | `20260531_081742_lmgat_codebert_multiclass` | `N9_a1_l1_gnn_plus_elu_ffn.yaml`                    | meanmax    | true     | gnn_plus + ELU + FFN               |
-| N10 | `20260531_110214_lmgat_codebert_multiclass` | `N10_a1_l1_gnn_plus_elu_ffn_pe.yaml`                | meanmax    | true     | gnn_plus + ELU + FFN + RWSE-32 PE  |
-| N11 | `20260531_142518_lmgat_codebert_multiclass` | `N11_a1_l1_gnn_plus_elu_dim512.yaml`                | meanmax    | true     | gnn_plus + ELU + hidden_dim=512    |
-| N12 | `20260531_154612_lmgat_codebert_multiclass` | `N12_a1_l1_gnn_plus_elu_dim768.yaml`                | meanmax    | true     | gnn_plus + ELU + hidden_dim=768    |
-| N13 | `20260531_144339_lmgat_codebert_multiclass` | `N13_a1_l1_gnn_plus_elu_balo.yaml`                  | meanmax    | true     | gnn_plus + ELU + BalO init         |
-| N14 | `20260531_212716_lmgat_codebert_multiclass` | `N14_a1_l1_gnn_plus_elu_dim512_balo.yaml`           | meanmax    | true     | N11 dim=512 + N13 BalO             |
-| N15 | `20260531_204352_lmgat_codebert_multiclass` | `N15_a1_l1_gnn_plus_elu_ffn_linhead.yaml`           | meanmax    | true     | N9 FFN + linear func head (GNN+)   |
-| N16 | `20260601_055452_lmgat_codebert_multiclass` | `N16_a1_l1_gnn_plus_elu_ffn_linhead_balo.yaml`      | meanmax    | true     | N15 + BalO init                    |
-| N17 | `20260601_065912_lmgat_codebert_multiclass` | `N17_a1_l1_gnn_plus_elu_ffn_meanpool.yaml`          | mean       | true     | N15 + mean pool                    |
-| N18 | `20260601_055453_lmgat_codebert_multiclass` | `N18_a1_l1_gnn_plus_elu_ffn_addpool.yaml`           | add        | true     | N15 + add pool                     |
-| N19 | `20260601_075846_lmgat_codebert_multiclass` | `N19_a1_l1_gnn_plus_elu_ffn_maxpool.yaml`           | max        | true     | N15 + max pool                     |
-| N20 | `20260601_110545_lmgat_codebert_multiclass` | `N20_a1_l1_gnn_plus_elu_ffn_linhead_ginit.yaml`     | meanmax    | true     | N15 + G-Init (Kelesis 2024)        |
-| N21 | `20260601_115551_lmgat_codebert_multiclass` | `N21_a1_l1_gnn_plus_elu_ffn_linhead_lsuv.yaml`      | meanmax    | true     | N15 + LSUV init (Mishkin 2016)     |
-| N22 | `20260601_144252_lmgat_codebert_multiclass` | `N22_a1_l1_gnn_plus_elu_ffn_linhead_L3.yaml`        | meanmax    | true     | N15 + num_layers=3 (depth-1)       |
-| N23 | `20260601_153557_lmgat_codebert_multiclass` | `N23_a1_l1_gnn_plus_elu_ffn_linhead_L5.yaml`        | meanmax    | true     | N15 + num_layers=5 (depth+1)       |
-| N24 | `20260601_165353_lmgat_codebert_multiclass` | `N24_a1_l1_gnn_plus_elu_ffn_linhead_L6.yaml`        | meanmax    | true     | N15 + num_layers=6 (depth+2)       |
-| N25 | `20260601_210541_lmgat_codebert_multiclass` | `N25_a1_l1_gnn_plus_elu_ffn_linhead_attnpool.yaml`  | attention  | true     | N15 + attention pool               |
-| N26 | `20260601_220205_lmgat_codebert_multiclass` | `N26_a1_l1_gnn_plus_elu_ffn_linhead_crossattn.yaml` | meanmax    | true     | N15 + cross-task attention         |
-| N27 | `20260601_225416_lmgat_codebert_multiclass` | `N27_a1_l1_gnn_plus_elu_ffn_linhead_kendall.yaml`   | meanmax    | true     | N15 + Kendall uncertainty MTL      |
-| N28 | `20260601_232916_lmgat_codebert_multiclass` | `N28_a1_l1_gnn_plus_elu_ffn_linhead_pcgrad.yaml`    | meanmax    | true     | N15 + PCGrad (Yu 2020)             |
-| N29 | `20260602_133832_lmgat_codebert_multiclass` | `N29_a1_l1_gnn_plus_elu_ffn_linhead_diagnose.yaml`  | meanmax    | true     | N15 + MTL diagnostics (num_workers=0 rerun) |
-| N30 | `20260602_153635_lmgat_codebert_multiclass` | `N30_a1_l1_gnn_plus_elu_ffn_linhead_dualflow.yaml`  | dualflow   | true     | N15 + dualflow pool (num_workers=0 rerun)      |
-| N31 | `20260602_160417_lmgat_codebert_multiclass` | `N31_a1_l1_gnn_plus_elu_ffn_linhead_heads2.yaml`    | meanmax    | true     | N15 + heads=2 (num_workers=0 rerun)            |
-| N32 | `20260602_155136_lmgat_codebert_multiclass` | `N32_a1_l1_gnn_plus_elu_ffn_linhead_heads8.yaml`    | meanmax    | true     | N15 + heads=8 GATv2 default (num_workers=0 rerun) |
-| N33 | `20260602_170600_lmgat_codebert_multiclass` | `N33_a1_l1_gnn_plus_elu_ffn_linhead_heads16.yaml`   | meanmax    | true     | N15 + heads=16 (num_workers=0 rerun)           |
-| N34 | `20260603_121533_lmgat_codebert_multiclass` | `N34_a1_l1_gnn_plus_elu_ffn_linhead_norank.yaml`    | meanmax    | true     | N15 + rank_loss_weight=0 (drop rank)           |
-| N35 | `20260603_124325_lmgat_codebert_multiclass` | `N35_a1_l1_gnn_plus_elu_ffn_linhead_rank01.yaml`    | meanmax    | true     | N15 + rank_loss_weight=0.1 (halve rank)        |
-| N36 | `20260603_131456_lmgat_codebert_multiclass` | `N36_a1_l1_gnn_plus_elu_ffn_linhead_pcgrad_enc.yaml`| meanmax    | true     | N15 + PCGrad encoder-only (N28b fix)           |
-| N37 | `20260603_184356_lmgat_codebert_multiclass` | `N37_a1_l1_gnn_plus_elu_dim512.yaml`                | meanmax    | true     | N15 + hidden_dim=512 (linear head)             |
-| N38 | `20260603_200317_lmgat_codebert_multiclass` | `N38_a1_l1_gnn_plus_elu_ffn4.yaml`                  | meanmax    | true     | N15 + ffn_expansion=4                          |
-| N39 | `20260603_205416_lmgat_codebert_multiclass` | `N39_a1_l1_gnn_plus_elu_moeffn.yaml`                | meanmax    | true     | N15 + MoE-FFN (Switch, 8 experts)              |
-| N40 | _(not run — infeasible)_                    | `N40_a1_l1_gnn_plus_elu_gmoe.yaml`                  | meanmax    | true     | N15 + GMoE hop experts (OOM @48GB, 2-hop A@A explodes on CPG) |
-| N41 | `20260604_143602_lmgat_codebert_multiclass` | `N41_a1_l1_gnn_plus_elu_edgemoe.yaml`               | meanmax    | true     | N15 + edge-type MoE (5 CPG relation experts)   |
-| N42 | `20260605_042703_lmgat_codebert_multiclass` | `N42_a1_l1_rank03.yaml`                             | meanmax    | true     | N15 + rank_loss_weight=0.3                      |
-| N43 | `20260605_053417_lmgat_codebert_multiclass` | `N43_a1_l1_rank04.yaml`                             | meanmax    | true     | N15 + rank_loss_weight=0.4                      |
-| N44 | `20260605_042224_lmgat_codebert_multiclass` | `N44_a1_l1_supcon_group.yaml`                       | meanmax    | true     | N15 + SupCon group intragroup batch=64         |
-| N47 | `20260604_183502_lmgat_codebert_multiclass` | `N47_a1_l1_gatedgcn.yaml`                           | meanmax    | true     | N15 backbone gat to GatedGCN faithful GNN+     |
-| N45 | `20260606_091533_lmgat_codebert_multiclass` | `N45_a1_l1_mtl_group.yaml`                          | meanmax    | true     | N15 + MTL hierarchical group head, group loss 0.3 |
-| N46 | `20260606_131451_lmgat_codebert_multiclass` | `N46_a1_l1_mtl_group_linear.yaml`                   | meanmax    | true     | N15 + MTL group head linear thin (fair depth vs N15) |
-| N48 | `20260606_163818_lmgat_codebert_multiclass` | `N48_a1_l1_jknet.yaml`                              | jknet      | true     | N15 + JK-Net pool concat all 4 layers to 1024D      |
-| N49 | `20260606_173908_lmgat_codebert_multiclass` | `N49_a1_l1_imtl_mid2.yaml`                          | meanmax    | true     | N15 + intermediate MTL group at L2. CWE at L4       |
-| N50 | `20260606_201553_lmgat_codebert_multiclass` | `N50_a1_l1_imtl_cwe_l3.yaml`                        | meanmax    | true     | N15 + CWE head at L3 pool. localization at L4       |
-| N51 | `20260606_214055_lmgat_codebert_multiclass` | `N51_a1_l1_imtl_cwe_l2.yaml`                        | meanmax    | true     | N15 + CWE head at L2 pool. localization at L4       |
-| N52 | `20260607_084632_lmgat_codebert_multiclass` | `N52_a1_l1_graph_aug.yaml`                          | jknet      | true     | N48 + structural graph aug (DropEdge 0.1, NodeDrop 0.05, FeatureMask 0.1) |
-| N53 | `20260607_151540_lmgat_codebert_multiclass` | `N53_a1_l1_crt_n48.yaml`                            | jknet      | true     | cRT on N48 (Kang 2020). freeze backbone, reinit+retrain linear head, class-balanced sampler |
-| N54 | `20260607_170046_lmgat_codebert_multiclass` | `N54_a1_l1_crt_n48_dropout.yaml`                    | jknet      | true     | N53 cRT but head dropout 0.3 not 0.0. A/B on classifier dropout |
-| N56 | `20260608_004912_lmgat_codebert_multiclass` | `N56_a1_l1_tau_norm.yaml`                           | jknet      | true     | tau-norm on N48 (Kang 2020). post-hoc weight-norm rebalance, zero training. best tau=0 |
-| N57 | `20260608_011545_lmgat_codebert_multiclass` | `N57_a1_l1_tailcalib.yaml`                          | jknet      | true     | TailCalibX on N48. synth tail feats from borrowed head cov, retrain head. 25020 synth |
-| N55 | `20260607_181127_lmgat_codebert_multiclass` | `N55_a1_l1_balanced_mixup.yaml`                     | jknet      | true     | N48 + Balanced-Mixup Remix on h_graph, alpha 0.2, full training |
-| N58 | `20260608_032118_lmgat_codebert_multiclass` | `N58_a1_l1_crt_n48_weighted.yaml`                  | jknet      | true     | cRT on N48 keeping N48 loss class weights label smoothing. only loader differs |
-| N59 | `20260608_033323_lmgat_codebert_multiclass` | `N59_a1_l1_jknet_plain_ce.yaml`                    | jknet      | true     | N48 plain CE backbone. drop class weights label smoothing. paper stage 1 |
-| N60 | `20260608_062649_lmgat_codebert_multiclass` | `N60_a1_l1_crt_n59_plain.yaml`                     | jknet      | true     | cRT plain CE on N59 backbone. fully paper-pure two-stage |
-| N61 | `20260608_064712_lmgat_codebert_multiclass` | `N61_a1_l1_logit_adjust.yaml`                      | jknet      | true     | N48 + Logit Adjustment loss Menon 2021 tau 1.0 |
-| N63 | `20260608_221234_lmgat_codebert_multiclass` | `tau_norm.py on N53 ckpt`                          | jknet      | true     | cRT+tau-norm post-hoc on N53 head. best tau 0.9. zero training |
-| N62 | `20260608_162713_lmgat_codebert_multiclass` | `N62_a1_l1_crt_la_head.yaml`                       | jknet      | true     | cRT on N48 + Logit Adjustment head tau 0.3. balanced sampler + LA |
-| N64 | `20260608_164827_lmgat_codebert_multiclass` | `N64_a1_l1_crt_la_head_n59.yaml`                   | jknet      | true     | cRT on N59 plain-CE backbone + LA head tau 0.3 |
-| N65 | `20260608_170820_lmgat_codebert_multiclass` | `N65_a1_l1_flag.yaml`                              | jknet      | true     | N48 + FLAG adversarial node-feature Kong 2020 step 0.001 M 3 |
+| ID  | Run ID                                      | Config                                               | graph_pool | use_skip | block_style                                                                                 |
+| --- | ------------------------------------------- | ---------------------------------------------------- | ---------- | -------- | ------------------------------------------------------------------------------------------- |
+| N1  | `20260530_194019_lmgat_codebert_multiclass` | `N1_a1_l1.yaml`                                      | mean       | false    | resnet                                                                                      |
+| N2  | `20260530_203000_lmgat_codebert_multiclass` | `N2_a1_l1_meanmax.yaml`                              | meanmax    | false    | resnet                                                                                      |
+| N3  | `20260530_213022_lmgat_codebert_multiclass` | `N3_a1_l1_cnn.yaml`                                  | cnn        | false    | resnet                                                                                      |
+| N4  | `20260530_225801_lmgat_codebert_multiclass` | `N4_a1_l1_meanmax_residual.yaml`                     | meanmax    | true     | resnet                                                                                      |
+| N5  | `20260531_001117_lmgat_codebert_multiclass` | `N5_a1_l1_gnn_plus.yaml`                             | meanmax    | true     | gnn_plus                                                                                    |
+| N6  | `20260531_033903_lmgat_codebert_multiclass` | `N6_a1_l1_gnn_plus_graphnorm.yaml`                   | meanmax    | true     | gnn_plus + GraphNorm                                                                        |
+| N7  | `20260531_042425_lmgat_codebert_multiclass` | `N7_a1_l1_gnn_plus_elu.yaml`                         | meanmax    | true     | gnn_plus + ELU                                                                              |
+| N8  | `20260531_064326_lmgat_codebert_multiclass` | `N8_a1_l1_gnn_plus_graphnorm_elu.yaml`               | meanmax    | true     | gnn_plus + GraphNorm + ELU                                                                  |
+| N9  | `20260531_081742_lmgat_codebert_multiclass` | `N9_a1_l1_gnn_plus_elu_ffn.yaml`                     | meanmax    | true     | gnn_plus + ELU + FFN                                                                        |
+| N10 | `20260531_110214_lmgat_codebert_multiclass` | `N10_a1_l1_gnn_plus_elu_ffn_pe.yaml`                 | meanmax    | true     | gnn_plus + ELU + FFN + RWSE-32 PE                                                           |
+| N11 | `20260531_142518_lmgat_codebert_multiclass` | `N11_a1_l1_gnn_plus_elu_dim512.yaml`                 | meanmax    | true     | gnn_plus + ELU + hidden_dim=512                                                             |
+| N12 | `20260531_154612_lmgat_codebert_multiclass` | `N12_a1_l1_gnn_plus_elu_dim768.yaml`                 | meanmax    | true     | gnn_plus + ELU + hidden_dim=768                                                             |
+| N13 | `20260531_144339_lmgat_codebert_multiclass` | `N13_a1_l1_gnn_plus_elu_balo.yaml`                   | meanmax    | true     | gnn_plus + ELU + BalO init                                                                  |
+| N14 | `20260531_212716_lmgat_codebert_multiclass` | `N14_a1_l1_gnn_plus_elu_dim512_balo.yaml`            | meanmax    | true     | N11 dim=512 + N13 BalO                                                                      |
+| N15 | `20260531_204352_lmgat_codebert_multiclass` | `N15_a1_l1_gnn_plus_elu_ffn_linhead.yaml`            | meanmax    | true     | N9 FFN + linear func head (GNN+)                                                            |
+| N16 | `20260601_055452_lmgat_codebert_multiclass` | `N16_a1_l1_gnn_plus_elu_ffn_linhead_balo.yaml`       | meanmax    | true     | N15 + BalO init                                                                             |
+| N17 | `20260601_065912_lmgat_codebert_multiclass` | `N17_a1_l1_gnn_plus_elu_ffn_meanpool.yaml`           | mean       | true     | N15 + mean pool                                                                             |
+| N18 | `20260601_055453_lmgat_codebert_multiclass` | `N18_a1_l1_gnn_plus_elu_ffn_addpool.yaml`            | add        | true     | N15 + add pool                                                                              |
+| N19 | `20260601_075846_lmgat_codebert_multiclass` | `N19_a1_l1_gnn_plus_elu_ffn_maxpool.yaml`            | max        | true     | N15 + max pool                                                                              |
+| N20 | `20260601_110545_lmgat_codebert_multiclass` | `N20_a1_l1_gnn_plus_elu_ffn_linhead_ginit.yaml`      | meanmax    | true     | N15 + G-Init (Kelesis 2024)                                                                 |
+| N21 | `20260601_115551_lmgat_codebert_multiclass` | `N21_a1_l1_gnn_plus_elu_ffn_linhead_lsuv.yaml`       | meanmax    | true     | N15 + LSUV init (Mishkin 2016)                                                              |
+| N22 | `20260601_144252_lmgat_codebert_multiclass` | `N22_a1_l1_gnn_plus_elu_ffn_linhead_L3.yaml`         | meanmax    | true     | N15 + num_layers=3 (depth-1)                                                                |
+| N23 | `20260601_153557_lmgat_codebert_multiclass` | `N23_a1_l1_gnn_plus_elu_ffn_linhead_L5.yaml`         | meanmax    | true     | N15 + num_layers=5 (depth+1)                                                                |
+| N24 | `20260601_165353_lmgat_codebert_multiclass` | `N24_a1_l1_gnn_plus_elu_ffn_linhead_L6.yaml`         | meanmax    | true     | N15 + num_layers=6 (depth+2)                                                                |
+| N25 | `20260601_210541_lmgat_codebert_multiclass` | `N25_a1_l1_gnn_plus_elu_ffn_linhead_attnpool.yaml`   | attention  | true     | N15 + attention pool                                                                        |
+| N26 | `20260601_220205_lmgat_codebert_multiclass` | `N26_a1_l1_gnn_plus_elu_ffn_linhead_crossattn.yaml`  | meanmax    | true     | N15 + cross-task attention                                                                  |
+| N27 | `20260601_225416_lmgat_codebert_multiclass` | `N27_a1_l1_gnn_plus_elu_ffn_linhead_kendall.yaml`    | meanmax    | true     | N15 + Kendall uncertainty MTL                                                               |
+| N28 | `20260601_232916_lmgat_codebert_multiclass` | `N28_a1_l1_gnn_plus_elu_ffn_linhead_pcgrad.yaml`     | meanmax    | true     | N15 + PCGrad (Yu 2020)                                                                      |
+| N29 | `20260602_133832_lmgat_codebert_multiclass` | `N29_a1_l1_gnn_plus_elu_ffn_linhead_diagnose.yaml`   | meanmax    | true     | N15 + MTL diagnostics (num_workers=0 rerun)                                                 |
+| N30 | `20260602_153635_lmgat_codebert_multiclass` | `N30_a1_l1_gnn_plus_elu_ffn_linhead_dualflow.yaml`   | dualflow   | true     | N15 + dualflow pool (num_workers=0 rerun)                                                   |
+| N31 | `20260602_160417_lmgat_codebert_multiclass` | `N31_a1_l1_gnn_plus_elu_ffn_linhead_heads2.yaml`     | meanmax    | true     | N15 + heads=2 (num_workers=0 rerun)                                                         |
+| N32 | `20260602_155136_lmgat_codebert_multiclass` | `N32_a1_l1_gnn_plus_elu_ffn_linhead_heads8.yaml`     | meanmax    | true     | N15 + heads=8 GATv2 default (num_workers=0 rerun)                                           |
+| N33 | `20260602_170600_lmgat_codebert_multiclass` | `N33_a1_l1_gnn_plus_elu_ffn_linhead_heads16.yaml`    | meanmax    | true     | N15 + heads=16 (num_workers=0 rerun)                                                        |
+| N34 | `20260603_121533_lmgat_codebert_multiclass` | `N34_a1_l1_gnn_plus_elu_ffn_linhead_norank.yaml`     | meanmax    | true     | N15 + rank_loss_weight=0 (drop rank)                                                        |
+| N35 | `20260603_124325_lmgat_codebert_multiclass` | `N35_a1_l1_gnn_plus_elu_ffn_linhead_rank01.yaml`     | meanmax    | true     | N15 + rank_loss_weight=0.1 (halve rank)                                                     |
+| N36 | `20260603_131456_lmgat_codebert_multiclass` | `N36_a1_l1_gnn_plus_elu_ffn_linhead_pcgrad_enc.yaml` | meanmax    | true     | N15 + PCGrad encoder-only (N28b fix)                                                        |
+| N37 | `20260603_184356_lmgat_codebert_multiclass` | `N37_a1_l1_gnn_plus_elu_dim512.yaml`                 | meanmax    | true     | N15 + hidden_dim=512 (linear head)                                                          |
+| N38 | `20260603_200317_lmgat_codebert_multiclass` | `N38_a1_l1_gnn_plus_elu_ffn4.yaml`                   | meanmax    | true     | N15 + ffn_expansion=4                                                                       |
+| N39 | `20260603_205416_lmgat_codebert_multiclass` | `N39_a1_l1_gnn_plus_elu_moeffn.yaml`                 | meanmax    | true     | N15 + MoE-FFN (Switch, 8 experts)                                                           |
+| N40 | _(not run — infeasible)_                    | `N40_a1_l1_gnn_plus_elu_gmoe.yaml`                   | meanmax    | true     | N15 + GMoE hop experts (OOM @48GB, 2-hop A@A explodes on CPG)                               |
+| N41 | `20260604_143602_lmgat_codebert_multiclass` | `N41_a1_l1_gnn_plus_elu_edgemoe.yaml`                | meanmax    | true     | N15 + edge-type MoE (5 CPG relation experts)                                                |
+| N42 | `20260605_042703_lmgat_codebert_multiclass` | `N42_a1_l1_rank03.yaml`                              | meanmax    | true     | N15 + rank_loss_weight=0.3                                                                  |
+| N43 | `20260605_053417_lmgat_codebert_multiclass` | `N43_a1_l1_rank04.yaml`                              | meanmax    | true     | N15 + rank_loss_weight=0.4                                                                  |
+| N44 | `20260605_042224_lmgat_codebert_multiclass` | `N44_a1_l1_supcon_group.yaml`                        | meanmax    | true     | N15 + SupCon group intragroup batch=64                                                      |
+| N47 | `20260604_183502_lmgat_codebert_multiclass` | `N47_a1_l1_gatedgcn.yaml`                            | meanmax    | true     | N15 backbone gat to GatedGCN faithful GNN+                                                  |
+| N45 | `20260606_091533_lmgat_codebert_multiclass` | `N45_a1_l1_mtl_group.yaml`                           | meanmax    | true     | N15 + MTL hierarchical group head, group loss 0.3                                           |
+| N46 | `20260606_131451_lmgat_codebert_multiclass` | `N46_a1_l1_mtl_group_linear.yaml`                    | meanmax    | true     | N15 + MTL group head linear thin (fair depth vs N15)                                        |
+| N48 | `20260606_163818_lmgat_codebert_multiclass` | `N48_a1_l1_jknet.yaml`                               | jknet      | true     | N15 + JK-Net pool concat all 4 layers to 1024D                                              |
+| N49 | `20260606_173908_lmgat_codebert_multiclass` | `N49_a1_l1_imtl_mid2.yaml`                           | meanmax    | true     | N15 + intermediate MTL group at L2. CWE at L4                                               |
+| N50 | `20260606_201553_lmgat_codebert_multiclass` | `N50_a1_l1_imtl_cwe_l3.yaml`                         | meanmax    | true     | N15 + CWE head at L3 pool. localization at L4                                               |
+| N51 | `20260606_214055_lmgat_codebert_multiclass` | `N51_a1_l1_imtl_cwe_l2.yaml`                         | meanmax    | true     | N15 + CWE head at L2 pool. localization at L4                                               |
+| N52 | `20260607_084632_lmgat_codebert_multiclass` | `N52_a1_l1_graph_aug.yaml`                           | jknet      | true     | N48 + structural graph aug (DropEdge 0.1, NodeDrop 0.05, FeatureMask 0.1)                   |
+| N53 | `20260607_151540_lmgat_codebert_multiclass` | `N53_a1_l1_crt_n48.yaml`                             | jknet      | true     | cRT on N48 (Kang 2020). freeze backbone, reinit+retrain linear head, class-balanced sampler |
+| N54 | `20260607_170046_lmgat_codebert_multiclass` | `N54_a1_l1_crt_n48_dropout.yaml`                     | jknet      | true     | N53 cRT but head dropout 0.3 not 0.0. A/B on classifier dropout                             |
+| N56 | `20260608_004912_lmgat_codebert_multiclass` | `N56_a1_l1_tau_norm.yaml`                            | jknet      | true     | tau-norm on N48 (Kang 2020). post-hoc weight-norm rebalance, zero training. best tau=0      |
+| N57 | `20260608_011545_lmgat_codebert_multiclass` | `N57_a1_l1_tailcalib.yaml`                           | jknet      | true     | TailCalibX on N48. synth tail feats from borrowed head cov, retrain head. 25020 synth       |
+| N55 | `20260607_181127_lmgat_codebert_multiclass` | `N55_a1_l1_balanced_mixup.yaml`                      | jknet      | true     | N48 + Balanced-Mixup Remix on h_graph, alpha 0.2, full training                             |
+| N58 | `20260608_032118_lmgat_codebert_multiclass` | `N58_a1_l1_crt_n48_weighted.yaml`                    | jknet      | true     | cRT on N48 keeping N48 loss class weights label smoothing. only loader differs              |
+| N59 | `20260608_033323_lmgat_codebert_multiclass` | `N59_a1_l1_jknet_plain_ce.yaml`                      | jknet      | true     | N48 plain CE backbone. drop class weights label smoothing. paper stage 1                    |
+| N60 | `20260608_062649_lmgat_codebert_multiclass` | `N60_a1_l1_crt_n59_plain.yaml`                       | jknet      | true     | cRT plain CE on N59 backbone. fully paper-pure two-stage                                    |
+| N61 | `20260608_064712_lmgat_codebert_multiclass` | `N61_a1_l1_logit_adjust.yaml`                        | jknet      | true     | N48 + Logit Adjustment loss Menon 2021 tau 1.0                                              |
+| N63 | `20260608_221234_lmgat_codebert_multiclass` | `tau_norm.py on N53 ckpt`                            | jknet      | true     | cRT+tau-norm post-hoc on N53 head. best tau 0.9. zero training                              |
+| N62 | `20260608_162713_lmgat_codebert_multiclass` | `N62_a1_l1_crt_la_head.yaml`                         | jknet      | true     | cRT on N48 + Logit Adjustment head tau 0.3. balanced sampler + LA                           |
+| N64 | `20260608_164827_lmgat_codebert_multiclass` | `N64_a1_l1_crt_la_head_n59.yaml`                     | jknet      | true     | cRT on N59 plain-CE backbone + LA head tau 0.3                                              |
+| N65 | `20260608_170820_lmgat_codebert_multiclass` | `N65_a1_l1_flag.yaml`                                | jknet      | true     | N48 + FLAG adversarial node-feature Kong 2020 step 0.001 M 3                                |
 
 ## Classification
 

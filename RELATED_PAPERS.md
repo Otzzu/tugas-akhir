@@ -9,6 +9,7 @@ Papers that contribute to both groups appear in the most relevant one with cross
 ## Multiclass CWE / Vulnerability Type Classification
 
 ### 1. LIVABLE (IEEE TSE 2024)
+
 **Full title:** "LIVABLE: Exploring Long-Tailed Classification of Software Vulnerability Types"  
 **Venue:** IEEE Transactions on Software Engineering (IEEE TSE), 2024  
 **Paper:** https://arxiv.org/abs/2306.06935 | https://ieeexplore.ieee.org/document/10497542/  
@@ -28,6 +29,7 @@ GNN with a differentiated propagation method to reduce over-smoothing, combined 
 ---
 
 ### 2. VulExplainer (IEEE TSE 2023 / ICSE 2024)
+
 **Full title:** "VulExplainer: A Transformer-Based Hierarchical Distillation for Explaining Vulnerability Types"  
 **Authors:** Fu et al. (same lab as LineVul — Monash University)  
 **Venue:** IEEE Transactions on Software Engineering (IEEE TSE), 2023 — presented at ICSE 2024  
@@ -47,6 +49,7 @@ CodeBERT fine-tuned as encoder (CLS token embedding) with hierarchical knowledge
 ---
 
 ### 3. TreeVul (ICSE 2023)
+
 **Full title:** "Fine-Grained Commit-Level Vulnerability Type Prediction by CWE Tree Structure"  
 **Authors:** Pan et al.  
 **Venue:** ICSE 2023  
@@ -66,6 +69,7 @@ Transformer encoder on commit diffs (code changes, not full functions). Uses the
 ---
 
 ### 4. MultiGLICE (MDPI Computers 2025)
+
 **Full title:** "MultiGLICE: Combining Graph Neural Networks and Program Slicing for Multiclass Software Vulnerability Detection"  
 **Authors:** de Kraker et al.  
 **Venue:** MDPI Computers, 2025  
@@ -85,6 +89,7 @@ Extends GLICE (GNN + inter-procedural program slicing) to multiclass detection. 
 ---
 
 ### 5. muVulDeePecker (arXiv 2020)
+
 **Full title:** "A Deep Learning-Based System for Multiclass Vulnerability Detection"  
 **Venue:** arXiv 2020  
 **Paper:** https://arxiv.org/abs/2001.02334  
@@ -103,6 +108,7 @@ BiLSTM on code gadgets (program slices extracted via data/control dependence). E
 ---
 
 ### 6. Hierarchical Contrastive Learning for Vulnerability Type (EMNLP 2024)
+
 **Full title:** "Applying Contrastive Learning to Code Vulnerability Type Classification"  
 **Authors:** Chen Ji, Su Yang, Hongyu Sun, Yuqing Zhang et al.  
 **Venue:** EMNLP 2024  
@@ -123,6 +129,7 @@ LM encoder (CodeBERT/RoBERTa) with a hierarchical supervised contrastive loss th
 ---
 
 ### 7. SCL-CVD (Computers & Security 2024)
+
 **Full title:** "SCL-CVD: Supervised Contrastive Learning for Code Vulnerability Detection via GraphCodeBERT"  
 **Authors:** Rongcun Wang, Senlei Xu, Yuan Tian, Xingyu Ji, Xiaobing Sun, Shujuang Jiang  
 **Venue:** Computers & Security, 2024  
@@ -143,6 +150,7 @@ GraphCodeBERT fine-tuned with supervised contrastive loss (SCL) combined with R-
 ---
 
 ### 8. VulANalyzeR (ACM TOSEM 2023)
+
 **Full title:** "VulANalyzeR: Explainable Binary Vulnerability Detection with Multi-Task Learning and Attentional Graph Convolution"  
 **Authors:** Litao Li, Steven H.H. Ding, Yuan Tian, Benjamin C.M. Fung, Philippe Charland, Weiha Nou, Leo Song, Congwei Chen  
 **Venue:** ACM Transactions on Software Engineering and Methodology (TOSEM), 2023  
@@ -163,6 +171,7 @@ Works on **binary code** (not source code). Uses a combination of RNN (recurrent
 ---
 
 ### 9. Vul-LMGNNs (2024)
+
 **Full title:** "Vul-LMGNNs: Fusing Language Models and Online-Distilled Graph Neural Networks for Code Vulnerability Detection"  
 **Authors:** Ruitong Liu, Yanbin Wang, Haitao Xu, Jianguo Sun, Fan Zhang, Peiyue Li, Zhenhao Guo  
 **Venue:** arXiv 2024 (also in `src/vul-LMGNN/`)  
@@ -185,6 +194,7 @@ Integrates pre-trained CodeLMs with GNNs using **online knowledge distillation**
 ## Line-Level / Statement-Level Vulnerability Localization
 
 ### 10. LineVul (MSR 2022)
+
 **Full title:** "LineVul: A Transformer-based Line-Level Vulnerability Prediction"  
 **Authors:** Michael Fu, Chakkrit Tantithamthavorn (Monash University)  
 **Venue:** MSR 2022  
@@ -205,6 +215,7 @@ CodeBERT (RoBERTa-based) fine-tuned for function-level binary vulnerability clas
 ---
 
 ### 11. LineVD (MSR 2022)
+
 **Full title:** "LineVD: Statement-level Vulnerability Detection using Graph Neural Networks"  
 **Authors:** David Hin, Andrey Kan, Huaming Chen, M. Ali Babar (University of Adelaide + AWS AI Labs)  
 **Venue:** MSR 2022  
@@ -225,6 +236,7 @@ Formulates statement-level vulnerability detection as a **node classification ta
 ---
 
 ### 12. WAVES (ACM TOSEM 2024)
+
 **Full title:** "WAVES: Weakly Supervised Vulnerability Localization via Multiple Instance Learning"  
 **Authors:** Wenchao Gu, Yupan Chen, Yanlin Wang, Hongyu Zhang, Cuiyun Gao, Michael R. Lyu  
 **Venue:** ACM Transactions on Software Engineering and Methodology (TOSEM), 2024  
@@ -245,6 +257,7 @@ Transformer-based encoder with Multiple Instance Learning (MIL) framework. Conve
 ---
 
 ### 13. VulChecker (USENIX Security 2023)
+
 **Full title:** "VulChecker: Graph-based Vulnerability Localization in Source Code"  
 **Authors:** Yisroel Mirsky, George Macon, Michael Brown, Carter Yagemann, Matthew Pruett, Evan Downing, Sukarno Mertoguno, Wenke Lee  
 **Venue:** USENIX Security 2023  
@@ -265,6 +278,7 @@ Graph-based model that precisely localizes vulnerabilities down to the exact ins
 ---
 
 ### 14. EDAT (arXiv 2025)
+
 **Full title:** "Improving Vulnerability Type Prediction and Line-Level Detection via Adversarial Training-Based Data Augmentation and Multi-Task Learning"  
 **Authors:** Siyu Chen, Jiongyi Yang, Xiang Chen, Menglin Zheng, Minnan Wei, Xiaolin Ju (Nantong University, China)  
 **Venue:** arXiv, June 2025  
@@ -279,6 +293,7 @@ Unified framework combining two modules: (1) **EDAT** (Embedding-Layer Driven Ad
 **Dataset:** BigVul and other C/C++ vulnerability datasets. Evaluates on both VTP (CWE type classification) and LVD (line-level localization) simultaneously.
 
 **Key results:**
+
 - VTP: F1 +22.8% (CodeBERT), +20.7% (GraphCodeBERT), +17.8% (CodeT5) vs single-task baseline
 - LVD: Recall@20%LOC improved from 0.5582 → 0.6519 (CodeBERT); IFA reduced from 6.21 → 2.79
 - MTL alone: F1 from 0.4857 → 0.5965 (CodeBERT), 0.5185 → 0.6258 (GraphCodeBERT)
@@ -289,21 +304,21 @@ Unified framework combining two modules: (1) **EDAT** (Embedding-Layer Driven Ad
 
 ## Summary Table
 
-| # | Paper | Year | Venue | Task | PDF | Repo | SOTA? |
-|---|-------|------|-------|------|-----|------|-------|
-| 1 | LIVABLE | 2023/24 | IEEE TSE | Multiclass CWE | ✅ | ❌ | ✅ |
-| 2 | VulExplainer | 2023 | IEEE TSE | Multiclass CWE | ❌ | ✅ | ✅ |
-| 3 | TreeVul | 2023 | ICSE | Multiclass CWE | ❌ | ❌ | ✅ |
-| 4 | MultiGLICE | 2025 | MDPI | Multiclass CWE | ❌ | ✅ (GLICE) | ✅ |
-| 5 | muVulDeePecker | 2020 | arXiv | Multiclass CWE | ❌ | ✅ | ❌ |
-| 6 | Hier. Contrastive | 2024 | EMNLP | Multiclass CWE | ✅ | ❌ | ✅ |
-| 7 | SCL-CVD | 2024 | C&S | Binary + SupCon | ✅ | ✅ | ✅ |
-| 8 | VulANalyzeR | 2023 | ACM TOSEM | MTL + CWE | ✅ | ❌ | ✅ |
-| 9 | Vul-LMGNNs | 2024 | arXiv | Binary GNN+LM | ✅ | ✅ | ⚠️ |
-| 10 | LineVul | 2022 | MSR | Line localization | ✅ | ✅ | ⚠️ |
-| 11 | LineVD | 2022 | MSR | Line localization | ✅ | ✅ | ⚠️ |
-| 12 | WAVES | 2024 | ACM TOSEM | Line localization | ✅ | ❌ | ✅ |
-| 13 | VulChecker | 2023 | USENIX Sec | Line + CWE | ✅ | ✅ | ✅ |
-| 14 | EDAT | 2025 | arXiv | MTL: CWE + Line | ✅ | ✅ | ⚠️ |
+| #   | Paper             | Year    | Venue      | Task              | PDF | Repo       | SOTA? |
+| --- | ----------------- | ------- | ---------- | ----------------- | --- | ---------- | ----- |
+| 1   | LIVABLE           | 2023/24 | IEEE TSE   | Multiclass CWE    | ✅  | ❌         | ✅    |
+| 2   | VulExplainer      | 2023    | IEEE TSE   | Multiclass CWE    | ❌  | ✅         | ✅    |
+| 3   | TreeVul           | 2023    | ICSE       | Multiclass CWE    | ❌  | ❌         | ✅    |
+| 4   | MultiGLICE        | 2025    | MDPI       | Multiclass CWE    | ❌  | ✅ (GLICE) | ✅    |
+| 5   | muVulDeePecker    | 2020    | arXiv      | Multiclass CWE    | ❌  | ✅         | ❌    |
+| 6   | Hier. Contrastive | 2024    | EMNLP      | Multiclass CWE    | ✅  | ❌         | ✅    |
+| 7   | SCL-CVD           | 2024    | C&S        | Binary + SupCon   | ✅  | ✅         | ✅    |
+| 8   | VulANalyzeR       | 2023    | ACM TOSEM  | MTL + CWE         | ✅  | ❌         | ✅    |
+| 9   | Vul-LMGNNs        | 2024    | arXiv      | Binary GNN+LM     | ✅  | ✅         | ⚠️    |
+| 10  | LineVul           | 2022    | MSR        | Line localization | ✅  | ✅         | ⚠️    |
+| 11  | LineVD            | 2022    | MSR        | Line localization | ✅  | ✅         | ⚠️    |
+| 12  | WAVES             | 2024    | ACM TOSEM  | Line localization | ✅  | ❌         | ✅    |
+| 13  | VulChecker        | 2023    | USENIX Sec | Line + CWE        | ✅  | ✅         | ✅    |
+| 14  | EDAT              | 2025    | arXiv      | MTL: CWE + Line   | ✅  | ✅         | ⚠️    |
 
 **SOTA legend:** ✅ = current reference for its task | ⚠️ = competitive/partial | ❌ = superseded

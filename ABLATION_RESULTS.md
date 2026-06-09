@@ -98,7 +98,7 @@ score-level `(1-α)·gnn + α·lm`. gated = per-statement learned gate.
 
 | ID  | Run ID                                      | Config                      | stmt_both_mode         |
 | --- | ------------------------------------------- | --------------------------- | ---------------------- |
-| B0  | (= A4-L1 baseline, `20260514_174326`)       | —                           | concat                 |
+| B0  | (= C1 baseline, `20260514_174326`)          | —                           | concat                 |
 | B1  | `20260515_120709_lmgat_codebert_multiclass` | `B1_both_gated.yaml`        | gated                  |
 | B2  | `20260515_135412_lmgat_codebert_multiclass` | `B2_both_weighted_a03.yaml` | weighted (GNN-leaning) |
 | B3  | `20260515_165955_lmgat_codebert_multiclass` | `B3_both_weighted_a05.yaml` | weighted (balanced)    |
@@ -127,51 +127,51 @@ Architecture held at A4 (localization=both, concat).
 | Variant           | Run ID                                      | Loss Config                                                                   |
 | ----------------- | ------------------------------------------- | ----------------------------------------------------------------------------- |
 | A4 (Phase 1 base) | `20260514_102721_lmgat_codebert_multiclass` | focal γ=2.0 + epoch_adaptive, wd=1e-4, patience=25                            |
-| A4-L1             | `20260514_174326_lmgat_codebert_multiclass` | no focal + epoch_adaptive + label_smoothing=0.1, wd=1e-3, cosine, patience=15 |
-| A4-L2             | `20260515_052704_lmgat_codebert_multiclass` | LIVABLE two-branch (focal+LSCE), wd=1e-3, cosine, patience=15                 |
-| A4-L2-fixed       | `20260515_084125_lmgat_codebert_multiclass` | A4-L2, no early stopping (full T-schedule)                                    |
+| C1                | `20260514_174326_lmgat_codebert_multiclass` | no focal + epoch_adaptive + label_smoothing=0.1, wd=1e-3, cosine, patience=15 |
+| C2                | `20260515_052704_lmgat_codebert_multiclass` | LIVABLE two-branch (focal+LSCE), wd=1e-3, cosine, patience=15                 |
+| C2-fixed          | `20260515_084125_lmgat_codebert_multiclass` | C2, no early stopping (full T-schedule)                                       |
 
 ## Classification
 
-| Variant     | Val F1    | Test F1   | Test Acc  | F1-w  | AUC-ROC   | Conf.     | Epochs |
-| ----------- | --------- | --------- | --------- | ----- | --------- | --------- | ------ |
-| A4          | 0.550     | 0.504     | 0.507     | 0.503 | 0.899     | 0.813     | 74     |
-| A4-L1       | **0.560** | **0.519** | 0.518     | 0.517 | **0.915** | **0.630** | 31     |
-| A4-L2       | **0.561** | 0.475     | 0.529     | 0.526 | 0.904     | 0.757     | 43     |
-| A4-L2-fixed | —         | 0.497     | **0.550** | —     | —         | —         | 75     |
+| Variant  | Val F1    | Test F1   | Test Acc  | F1-w  | AUC-ROC   | Conf.     | Epochs |
+| -------- | --------- | --------- | --------- | ----- | --------- | --------- | ------ |
+| A4       | 0.550     | 0.504     | 0.507     | 0.503 | 0.899     | 0.813     | 74     |
+| C1       | **0.560** | **0.519** | 0.518     | 0.517 | **0.915** | **0.630** | 31     |
+| C2       | **0.561** | 0.475     | 0.529     | 0.526 | 0.904     | 0.757     | 43     |
+| C2-fixed | —         | 0.497     | **0.550** | —     | —         | —         | 75     |
 
 ## Localization
 
-| Variant     | IFA ↓     | Top-1 ↑   | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
-| ----------- | --------- | --------- | ------- | --------- | ---------- | ------------- |
-| A4          | 1.26      | 0.794     | 0.959   | 0.207     | 0.431      | 0.047         |
-| A4-L1       | **0.789** | **0.887** | 0.965   | 0.238     | 0.403      | **0.031**     |
-| A4-L2       | 0.867     | 0.817     | 0.949   | **0.256** | 0.476      | 0.029         |
-| A4-L2-fixed | 1.277     | —         | —       | —         | **0.492**  | —             |
+| Variant  | IFA ↓     | Top-1 ↑   | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| -------- | --------- | --------- | ------- | --------- | ---------- | ------------- |
+| A4       | 1.26      | 0.794     | 0.959   | 0.207     | 0.431      | 0.047         |
+| C1       | **0.789** | **0.887** | 0.965   | 0.238     | 0.403      | **0.031**     |
+| C2       | 0.867     | 0.817     | 0.949   | **0.256** | 0.476      | 0.029         |
+| C2-fixed | 1.277     | —         | —       | —         | **0.492**  | —             |
 
-A4-L1 (drop focal, add label smoothing) → best Test F1 + best localization
-precision + best calibration. A4-L2 (LIVABLE) → best accuracy but lower macro F1
+C1 (drop focal, add label smoothing) → best Test F1 + best localization
+precision + best calibration. C2 (LIVABLE) → best accuracy but lower macro F1
 (tail-class collapse — LIVABLE rebalances via focal branch only, no class-frequency
-weighting). A4-L2-fixed (full T-schedule, no early stop) recovered macro F1
-0.475→0.497 — still below A4-L1.
+weighting). C2-fixed (full T-schedule, no early stop) recovered macro F1
+0.475→0.497 — still below C1.
 
-**Phase 3 winner: A4-L1 (no focal + label smoothing). Baseline for Phases 4-5.**
+**Phase 3 winner: C1 (no focal + label smoothing). Baseline for Phases 4-5.**
 
 Note: 5 exploratory loss runs (`20260514_145017/160914/191041/214622/234550`,
-focal-off + livable on/off probes on frozen + live LM) predate the clean A4-L1/L2
+focal-off + livable on/off probes on frozen + live LM) predate the clean C1/L2
 runs — superseded, kept for reference only.
 
 ---
 
 # Phase 4 — Graph Pooling
 
-`configs/ablation/phase4/` — base A4-L1 (Phase 3 winner). Varies `graph_pool`
+`configs/ablation/phase4/` — base C1 (Phase 3 winner). Varies `graph_pool`
 (function classification representation): mean / gated attention / meanmax
 (0.8·max + 0.6·mean) / dualflow (suspicion-weighted focal + mean context).
 
 | Variant   | Run ID                                      | graph_pool | Epochs |
 | --------- | ------------------------------------------- | ---------- | ------ |
-| mean      | (= A4-L1, `20260514_174326`)                | mean       | 31     |
+| mean      | (= C1, `20260514_174326`)                   | mean       | 31     |
 | attention | `20260515_235912_lmgat_codebert_multiclass` | attention  | 50     |
 | meanmax   | `20260516_125619_lmgat_codebert_multiclass` | meanmax    | 48     |
 | dualflow  | `20260517_013824_lmgat_codebert_multiclass` | dualflow   | 38     |
@@ -194,13 +194,13 @@ Attention pool collapses macro F1 (−0.082) — learnable gate overfits tail cl
 `configs/ablation/phase5/` — bidirectional cross-task between localization
 (stmt_head) and classification (func_head). Zero-init residual gates
 (ReZero/ControlNet style) — module starts as a no-op.
-**Baseline E0 = A4-L1** (Phase 3 winner, no cross-task).
-All E-series runs use `graph_pool=mean` (same as E0/A4-L1 baseline) — Phase 4
+**Baseline E0 = C1** (Phase 3 winner, no cross-task).
+All E-series runs use `graph_pool=mean` (same as E0/C1 baseline) — Phase 4
 meanmax was found separately. Cross-task comparison is internally consistent.
 
 | ID  | Run ID                                      | Config                         | cross_task_method               | Epochs    |
 | --- | ------------------------------------------- | ------------------------------ | ------------------------------- | --------- |
-| E0  | `20260514_174326_lmgat_codebert_multiclass` | —                              | none (= A4-L1 baseline)         | 31        |
+| E0  | `20260514_174326_lmgat_codebert_multiclass` | —                              | none (= C1 baseline)            | 31        |
 | E1  | `20260516_213244_lmgat_codebert_multiclass` | `E1_crossattn.yaml`            | cross_attention                 | 31        |
 | E2  | `20260516_185818_lmgat_codebert_multiclass` | `E2_selfattn.yaml`             | self_attention                  | 55        |
 | E3  | —                                           | `E3_mmoe.yaml`                 | mmoe                            | _pending_ |
@@ -221,7 +221,7 @@ meanmax was found separately. Cross-task comparison is internally consistent.
 
 | ID  | Method                        | Test F1   | Test Acc  | F1-w      | AUC-ROC   | Conf. |
 | --- | ----------------------------- | --------- | --------- | --------- | --------- | ----- |
-| E0  | none (A4-L1)                  | 0.519     | 0.518     | 0.517     | 0.915     | 0.630 |
+| E0  | none (C1)                     | 0.519     | 0.518     | 0.517     | 0.915     | 0.630 |
 | E1  | cross_attention               | **0.530** | 0.532     | 0.533     | **0.919** | 0.615 |
 | E2  | self_attention                | 0.504     | **0.538** | **0.537** | 0.897     | 0.606 |
 | E4  | mmoe + task encoder           | 0.479     | 0.535     | 0.535     | 0.883     | 0.620 |
@@ -233,7 +233,7 @@ meanmax was found separately. Cross-task comparison is internally consistent.
 
 | ID  | Method                        | IFA ↓     | Top-1 ↑   | Top-5 ↑   | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
 | --- | ----------------------------- | --------- | --------- | --------- | --------- | ---------- | ------------- |
-| E0  | none (A4-L1)                  | 0.789     | **0.887** | 0.965     | 0.238     | 0.403      | 0.031         |
+| E0  | none (C1)                     | 0.789     | **0.887** | 0.965     | 0.238     | 0.403      | 0.031         |
 | E1  | cross_attention               | **0.717** | 0.823     | **0.971** | 0.209     | 0.381      | 0.045         |
 | E2  | self_attention                | 0.792     | 0.858     | 0.969     | 0.089     | 0.285      | 0.134         |
 | E4  | mmoe + task encoder           | 0.785     | 0.848     | 0.968     | 0.244     | 0.411      | 0.031         |
@@ -543,40 +543,46 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 
 # Training Efficiency
 
-| Run                   | GPU             | Params | Epoch Time | Total Time (hr) | VRAM Peak |
-| --------------------- | --------------- | ------ | ---------- | --------------- | --------- |
-| A1                    | RTX 5070 Ti     | 3.5M   | 48s        | 0.73            | 4.2 GB    |
-| A2                    | RTX 5070 Ti     | 129.6M | 216s       | 3.24            | 4.2 GB    |
-| A3                    | RTX 5070 Ti     | 129.6M | 175s       | 3.70            | 6.0 GB    |
-| A4                    | RTX 5070 Ti     | 129.6M | 176s       | 3.62            | 4.8 GB    |
-| A4-L1                 | RTX 5070 Ti     | 129.6M | 161s       | 1.39            | 6.9 GB    |
-| A4-L2                 | RTX 5070 Ti     | 129.6M | 162s       | 1.93            | 7.7 GB    |
-| A4-L2-fixed           | RTX 5070 Ti     | 129.6M | 162s       | 3.37            | 7.7 GB    |
-| fusion gated          | RTX 5070 Ti     | 129.6M | 163s       | 1.72            | 7.8 GB    |
-| fusion weighted α=0.3 | RTX 5070 Ti     | 129.6M | 162s       | 1.53            | 7.3 GB    |
-| fusion weighted α=0.5 | RTX 5070 Ti     | 129.6M | 162s       | 1.75            | 7.4 GB    |
-| fusion weighted α=0.7 | RTX 5070 Ti     | 129.6M | 162s       | 1.44            | 7.1 GB    |
-| pool attention        | RTX 5070 Ti     | 129.6M | 162s       | 2.25            | 7.4 GB    |
-| pool meanmax          | RTX 5070 Ti     | 129.6M | 162s       | 2.16            | 7.2 GB    |
-| B2 cross_attn         | RTX 5070 Ti     | 129.6M | 169s       | 2.72            | 7.1 GB    |
-| B3 self_attn          | RTX 5070 Ti     | 129.6M | 245s       | 4.29            | 7.3 GB    |
-| B4 mmoe               | RTX 5070 Ti     | 129.6M | 165s       | 1.83            | 7.9 GB    |
-| F4 both=CT5+          | RTX 5070 Ti     | 137.0M | 323s       | 5.94            | 9.1 GB    |
-| F5 CT5+ raw           | RTX 5070 Ti     | 138.2M | 457s       | 6.86            | 8.4 GB    |
-| F6 CT5+ norm          | RTX 5070 Ti     | 138.0M | 460s       | 4.35            | 8.7 GB    |
-| F7 both normed        | RTX 5070 Ti     | 138.0M | 460s       | 8.96            | 8.9 GB    |
-| G2 dim=768            | RTX 5070 Ti     | 146.9M | 409s       | 3.87            | 10.2 GB   |
-| H2 sliding stride512  | RTX 5090        | 146.9M | 250s       | 2.09            | 18.6 GB   |
-| H3 sliding stride1024 | RTX 5090        | 146.9M | 150s       | 1.30            | 17.1 GB   |
-| H4 winattn stride1024 | RTX 5090        | 146.9M | 211s       | 1.29            | 18.0 GB   |
-| H5 winattn stride512  | RTX PRO 6000 Bk | 146.9M | 265s       | 2.51            | 19.9 GB   |
-| H6 winattn hidden     | RTX PRO 6000 Bk | 146.9M | 162s       | 1.40            | 17.1 GB   |
-| H7 centerweight s512  | RTX 5090        | 146.9M | 328s       | 3.10            | 19.8 GB   |
-| H8 crosswin s512      | RTX PRO 6000 Bk | 149.3M | 332s       | 3.78            | 24.2 GB   |
-| I2 line frozen        | RTX 5090        | 161.7M | 95s        | 0.61            | 18.3 GB   |
-| I3 line live          | RTX 5090        | 161.7M | 205s       | 1.66            | 20.1 GB   |
-| I4 line ctx±5 frozen  | RTX 5090        | 161.7M | 84s        | 1.22            | 17.4 GB   |
-| J3 ModernBERT         | RTX 6000 Bk     | 170.0M | 74s        | 1.14            | 21.3 GB   |
-| K2 supcon w0.2        | RTX 5090        | 147.3M | 190s       | 1.75            | 19.7 GB   |
-| K5 supcon group       | RTX 5090        | 147.3M | 190s       | 1.59            | 17.5 GB   |
-| K6 supcon balanced    | RTX 5090        | 147.3M | 188s       | 1.68            | 17.6 GB   |
+| Run                      | GPU             | Params | Epoch Time | Total Time (hr) | VRAM Peak |
+| ------------------------ | --------------- | ------ | ---------- | --------------- | --------- |
+| A1                       | RTX 5070 Ti     | 3.5M   | 48s        | 0.73            | 4.2 GB    |
+| A2                       | RTX 5070 Ti     | 129.6M | 216s       | 3.24            | 4.2 GB    |
+| A3                       | RTX 5070 Ti     | 129.6M | 175s       | 3.70            | 6.0 GB    |
+| A4                       | RTX 5070 Ti     | 129.6M | 176s       | 3.62            | 4.8 GB    |
+| B1 fusion gated          | RTX 5070 Ti     | 129.6M | 163s       | 1.72            | 7.8 GB    |
+| B2 fusion weighted α=0.3 | RTX 5070 Ti     | 129.6M | 162s       | 1.53            | 7.3 GB    |
+| B3 fusion weighted α=0.5 | RTX 5070 Ti     | 129.6M | 162s       | 1.75            | 7.4 GB    |
+| B4 fusion weighted α=0.7 | RTX 5070 Ti     | 129.6M | 162s       | 1.44            | 7.1 GB    |
+| C1                       | RTX 5070 Ti     | 129.6M | 161s       | 1.39            | 6.9 GB    |
+| C2                       | RTX 5070 Ti     | 129.6M | 162s       | 1.93            | 7.7 GB    |
+| C2-fixed                 | RTX 5070 Ti     | 129.6M | 162s       | 3.37            | 7.7 GB    |
+| D1 pool attention        | RTX 5070 Ti     | 129.6M | 162s       | 2.25            | 7.4 GB    |
+| D2 pool meanmax          | RTX 5070 Ti     | 129.6M | 162s       | 2.16            | 7.2 GB    |
+| D3 pool dualflow         | RTX 5070 Ti     | 129.6M | 161s       | 1.71            | 7.8 GB    |
+| E1 cross_attn            | RTX 5070 Ti     | 131.7M | 166s       | 1.44            | 7.0 GB    |
+| E2 self_attn             | RTX 5070 Ti     | 131.0M | 164s       | 2.51            | 7.9 GB    |
+| E4 mmoe+taskenc          | RTX 5070 Ti     | 131.4M | 166s       | 1.85            | 7.9 GB    |
+| E5 mmoe taskenc thin     | RTX 5070 Ti     | 131.1M | 166s       | 1.61            | 7.7 GB    |
+| E6 crossattn no-resid    | RTX 5070 Ti     | 131.7M | 166s       | 4.24            | 8.6 GB    |
+| E7 selfattn no-resid     | RTX 5070 Ti     | 131.0M | 164s       | 2.64            | 7.0 GB    |
+| F2 node=CT5+             | RTX 5070 Ti     | 128.6M | 159s       | 2.13            | 7.1 GB    |
+| F3 func=CT5+             | RTX 5070 Ti     | 138.0M | 476s       | 8.87            | 9.9 GB    |
+| F4 both=CT5+             | RTX 5070 Ti     | 137.0M | 323s       | 5.94            | 9.1 GB    |
+| F5 CT5+ raw              | RTX 5070 Ti     | 138.2M | 457s       | 6.86            | 8.4 GB    |
+| F6 CT5+ norm             | RTX 5070 Ti     | 138.0M | 460s       | 4.35            | 8.7 GB    |
+| F7 both normed           | RTX 5070 Ti     | 138.0M | 460s       | 8.96            | 8.9 GB    |
+| G2 dim=768               | RTX 5070 Ti     | 146.9M | 409s       | 3.87            | 10.2 GB   |
+| H2 sliding stride512     | RTX 5090        | 146.9M | 250s       | 2.09            | 18.6 GB   |
+| H3 sliding stride1024    | RTX 5090        | 146.9M | 150s       | 1.30            | 17.1 GB   |
+| H4 winattn stride1024    | RTX 5090        | 146.9M | 211s       | 1.29            | 18.0 GB   |
+| H5 winattn stride512     | RTX PRO 6000 Bk | 146.9M | 265s       | 2.51            | 19.9 GB   |
+| H6 winattn hidden        | RTX PRO 6000 Bk | 146.9M | 162s       | 1.40            | 17.1 GB   |
+| H7 centerweight s512     | RTX 5090        | 146.9M | 328s       | 3.10            | 19.8 GB   |
+| H8 crosswin s512         | RTX PRO 6000 Bk | 149.3M | 332s       | 3.78            | 24.2 GB   |
+| I2 line frozen           | RTX 5090        | 161.7M | 95s        | 0.61            | 18.3 GB   |
+| I3 line live             | RTX 5090        | 161.7M | 205s       | 1.66            | 20.1 GB   |
+| I4 line ctx±5 frozen     | RTX 5090        | 161.7M | 84s        | 1.22            | 17.4 GB   |
+| J3 ModernBERT            | RTX 6000 Bk     | 170.0M | 74s        | 1.14            | 21.3 GB   |
+| K2 supcon w0.2           | RTX 5090        | 147.3M | 190s       | 1.75            | 19.7 GB   |
+| K5 supcon group          | RTX 5090        | 147.3M | 190s       | 1.59            | 17.5 GB   |
+| K6 supcon balanced       | RTX 5090        | 147.3M | 188s       | 1.68            | 17.6 GB   |
