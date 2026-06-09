@@ -81,13 +81,13 @@ CUDA_MAJOR=$(echo "$CUDA_VER" | cut -d. -f1)
 CUDA_MINOR=$(echo "$CUDA_VER" | cut -d. -f2)
 echo "    Detected CUDA: ${CUDA_VER}"
 
-# Choose PyTorch wheel: CUDA >= 13.0 → cu130 (native support, first wheel: 2.11.0)
+# Choose PyTorch wheel: CUDA >= 13.0 → cu130 (2.9.0 has matching flash-attn 2.8.3 cu13 wheel on py3.12, 2.11.0 does not)
 #                       CUDA >= 12.8 → cu128 (sm_120 Blackwell; 2.7.0 has matching flash-attn 2.8.3 wheel, 2.9.0 does not)
 #                       CUDA >= 12.4 → cu124
 #                       fallback      → cu121
 if [[ "$CUDA_MAJOR" -ge 13 ]]; then
     TORCH_CUDA="cu130"
-    TORCH_VER="2.11.0"
+    TORCH_VER="2.9.0"
 elif [[ "$CUDA_MAJOR" -eq 12 && "$CUDA_MINOR" -ge 8 ]]; then
     TORCH_CUDA="cu128"
     TORCH_VER="2.7.0"
