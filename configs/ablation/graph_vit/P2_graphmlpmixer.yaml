@@ -32,7 +32,7 @@ model:
   patch_drop_rate: 0.0
   mixer_type: mlp
   mixer_layers: 4
-  patch_rw_dim: 8
+  pe_walk_length: 16
   heads: 4
   edge_dim: 31
   dropout: 0.3

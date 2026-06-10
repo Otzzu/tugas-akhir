@@ -24,9 +24,11 @@ from gnn_vuln.models.heads import FuncHead, LinearFuncHead, ThinFuncHead, StmtHe
 # ── token mixers ───────────────────────────────────────────────────────────────
 
 class _FeedForward(nn.Module):
+    """Reference FeedForward: Dropout -> Linear -> GELU -> Dropout -> Linear."""
+
     def __init__(self, dim, hidden, dropout=0.0):
         super().__init__()
-        self.net = nn.Sequential(nn.Linear(dim, hidden), nn.GELU(),
+        self.net = nn.Sequential(nn.Dropout(dropout), nn.Linear(dim, hidden), nn.GELU(),
                                  nn.Dropout(dropout), nn.Linear(hidden, dim))
 
     def forward(self, x):
@@ -34,14 +36,15 @@ class _FeedForward(nn.Module):
 
 
 class _MixerBlock(nn.Module):
-    """MLP-Mixer block (Tolstikhin 2021): token-mix over patches + channel-mix."""
+    """MLP-Mixer block (reference mlp_mixer.py): token-mix over patches + channel-mix.
+    token_dim = dim*4, channel_dim = dim//2 (faithful to MixerBlock(nhid, P, nhid*4, nhid//2))."""
 
     def __init__(self, dim, n_patches, dropout=0.0):
         super().__init__()
         self.norm1 = nn.LayerNorm(dim)
-        self.token_mix = _FeedForward(n_patches, n_patches * 4, dropout)
+        self.token_mix = _FeedForward(n_patches, dim * 4, dropout)        # token_dim = nhid*4
         self.norm2 = nn.LayerNorm(dim)
-        self.channel_mix = _FeedForward(dim, dim * 2, dropout)
+        self.channel_mix = _FeedForward(dim, max(dim // 2, 1), dropout)   # channel_dim = nhid//2
 
     def forward(self, x, key_padding_mask=None):  # x [B, P, D]
         y = self.norm1(x).transpose(1, 2)          # [B, D, P]
@@ -91,31 +94,32 @@ class GraphViTVulnDetector(VulnDetectorBase):
     def __init__(self, in_channels, hidden_dim, num_classes,
                  nlayer_gnn=2, n_patches=32, num_hops=1, patch_drop_rate=0.0,
                  heads=4, edge_dim=31, dropout=0.3, mixer_type="attention",
-                 mixer_layers=4, patch_rw_dim=8, func_head_type="linear",
+                 mixer_layers=4, pe_walk_length=16, func_head_type="linear",
                  add_self_loops=False):
         super().__init__()
         self.n_patches = n_patches
         self.num_hops = num_hops
         self.patch_drop_rate = patch_drop_rate
         self.hidden_dim = hidden_dim
+        self.pe_walk_length = pe_walk_length
         self._live_lm = "none"
 
         self.input_proj = nn.Linear(in_channels, hidden_dim)
         self.edge_proj = nn.Linear(edge_dim, hidden_dim)
-        # patch GNN: GATv2 layers (concat=False so out=hidden), simplified (no FFN block)
+        # node RWSE positional encoding (reference: x += rw_encoder(rw_pos_enc) before patch gather)
+        self.node_pe = nn.Linear(pe_walk_length, hidden_dim) if pe_walk_length > 0 else None
+        # patch GNN: each "block" = GATv2 → BN → ReLU → drop → +residual → Linear
+        # (reference GNN(nlayer=1) block: conv→bn→relu→drop→+prev→output_encoder), GATv2 per user.
         self.gnns = nn.ModuleList([
             GATv2Conv(hidden_dim, hidden_dim, heads=heads, concat=False,
                       dropout=dropout, edge_dim=hidden_dim, add_self_loops=add_self_loops)
             for _ in range(nlayer_gnn)
         ])
         self.bns = nn.ModuleList([nn.BatchNorm1d(hidden_dim) for _ in range(nlayer_gnn)])
-        # U: cross-scale mix between GNN layers (reference model.py)
+        self.out_lin = nn.ModuleList([nn.Linear(hidden_dim, hidden_dim) for _ in range(nlayer_gnn)])
+        # U: cross-scale node↔patch mix between GNN layers (reference model.py: U=MLP nlayer1 w/ act)
         self.U = nn.ModuleList([nn.Sequential(nn.Linear(hidden_dim, hidden_dim), nn.GELU())
                                 for _ in range(nlayer_gnn - 1)])
-        # patch positional encoding (RWSE over the coarsened patch graph → here per-node RWSE pooled)
-        self.patch_rw_dim = patch_rw_dim
-        if patch_rw_dim > 0:
-            self.patch_pe = nn.Linear(patch_rw_dim, hidden_dim)
 
         self.mixer = _TokenMixer(mixer_type, hidden_dim, n_patches, mixer_layers, heads, dropout)
         self.dropout = dropout
@@ -180,18 +184,26 @@ class GraphViTVulnDetector(VulnDetectorBase):
         edge_attr_ord = edge_attr[order]
         e_slots = self.edge_proj(edge_attr_ord[e_glob_idx])        # [M_edges, hid]
 
-        xs = self.input_proj(x)[nm]                                # slot node feats [M, hid]
+        # node features + RWSE PE (reference: x += rw_encoder(rwse)), then gather into patch slots
+        x_proj = self.input_proj(x)
+        if self.node_pe is not None:
+            if rwse is None:
+                rwse = _compute_rwse(edge_index, x.size(0), walk_length=self.pe_walk_length)
+            x_proj = x_proj + self.node_pe(rwse)
+        xs = x_proj[nm]                                            # slot node feats [M, hid]
         TP = B * self.n_patches                                    # total patch slots
 
-        for i, (gnn, bn) in enumerate(zip(self.gnns, self.bns)):
+        for i in range(len(self.gnns)):
             if i > 0:
                 patch_sum = scatter(xs, po, dim=0, dim_size=TP, reduce="mean")[po]
                 xs = xs + self.U[i - 1](patch_sum)
                 xs = scatter(xs, nm, dim=0, dim_size=x.size(0), reduce="mean")[nm]  # sync node copies
-            xs = gnn(xs, comb_edge, edge_attr=e_slots)
-            xs = bn(xs)
-            xs = F.gelu(xs)
-            xs = F.dropout(xs, p=self.dropout, training=self.training)
+            res = xs
+            h = self.gnns[i](xs, comb_edge, edge_attr=e_slots)
+            h = self.bns[i](h)
+            h = F.relu(h)
+            h = F.dropout(h, p=self.dropout, training=self.training)
+            xs = self.out_lin[i](h + res)                          # +residual → output_encoder (reference)
 
         # patch tokens [TP, hid] → [B, P, hid]
         patch_tok = scatter(xs, po, dim=0, dim_size=TP, reduce="mean")
@@ -231,7 +243,7 @@ class GraphViTVulnDetector(VulnDetectorBase):
             dropout=getattr(cfg.train, "dropout", 0.3) if hasattr(cfg, "train") else 0.3,
             mixer_type=getattr(m, "mixer_type", "attention"),
             mixer_layers=getattr(m, "mixer_layers", 4),
-            patch_rw_dim=getattr(m, "patch_rw_dim", 8),
+            pe_walk_length=getattr(m, "pe_walk_length", 16),
             func_head_type=getattr(m, "func_head_type", "linear"),
             add_self_loops=getattr(m, "add_self_loops", False),
         )
