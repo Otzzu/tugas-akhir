@@ -309,6 +309,7 @@ def main() -> None:
         resample_seed=getattr(cfg.data, "resample_seed", 42),
         func_max_length=getattr(cfg.model, "func_max_length", 512),
         storage=getattr(cfg.data, "storage", "inmemory"),
+        ds_name_suffix=getattr(cfg.data, "ds_name_suffix", ""),
     )
     _, _, test_idx = dataset.get_splits(seed=cfg.train.seed)
 
