@@ -307,6 +307,52 @@ class WindowAttentionPool(torch.nn.Module):
         return cls
 
 
+class WindowMixerPool(torch.nn.Module):
+    """MLP-Mixer over per-window CLS vectors → single global CLS (H10).
+
+    The ONLY chunk-aggregator with window↔window mixing (mean / WindowAttentionPool
+    just average / reweight, no cross-window interaction). MixerBlock with reference
+    mlp_mixer.py dims (token_mix nhid*4, channel_mix nhid//2) over [B, W, D] padded to
+    max_windows (token-mix MLP is fixed-size), then masked mean over valid windows.
+
+    Input : window_cls [B, N, D], valid_mask [B, N] bool (optional)
+    Output: [B, D]
+    """
+
+    def __init__(self, hidden_dim: int, max_windows: int, dropout: float = 0.0):
+        super().__init__()
+        self.max_windows = max_windows
+        ch = max(hidden_dim // 2, 1)
+        self.norm1 = torch.nn.LayerNorm(hidden_dim)
+        self.token_mix = torch.nn.Sequential(
+            torch.nn.Linear(max_windows, hidden_dim * 4), torch.nn.GELU(),
+            torch.nn.Dropout(dropout), torch.nn.Linear(hidden_dim * 4, max_windows))
+        self.norm2 = torch.nn.LayerNorm(hidden_dim)
+        self.channel_mix = torch.nn.Sequential(
+            torch.nn.Linear(hidden_dim, ch), torch.nn.GELU(),
+            torch.nn.Dropout(dropout), torch.nn.Linear(ch, hidden_dim))
+
+    def forward(self, window_cls, valid_mask=None):
+        w_dtype = self.norm1.weight.dtype
+        x = window_cls.to(w_dtype)
+        B, W, _ = x.shape
+        if valid_mask is None:
+            valid_mask = torch.ones(B, W, dtype=torch.bool, device=x.device)
+        # pad / truncate to max_windows (fixed-size token-mix MLP)
+        if W < self.max_windows:
+            pad = self.max_windows - W
+            x = torch.nn.functional.pad(x, (0, 0, 0, pad))
+            valid_mask = torch.nn.functional.pad(valid_mask, (0, pad), value=False)
+        elif W > self.max_windows:
+            x, valid_mask = x[:, :self.max_windows], valid_mask[:, :self.max_windows]
+        # MixerBlock: token-mix over windows + channel-mix over features
+        y = self.norm1(x).transpose(1, 2)                 # [B, D, maxW]
+        x = x + self.token_mix(y).transpose(1, 2)
+        x = x + self.channel_mix(self.norm2(x))
+        m = valid_mask.unsqueeze(-1).to(x.dtype)          # masked mean over valid windows
+        return (x * m).sum(1) / m.sum(1).clamp(min=1.0)   # [B, D]
+
+
 class CrossWindowAttn(torch.nn.Module):
     """Cross-attention from per-token hidden states to window CLS vectors.
 

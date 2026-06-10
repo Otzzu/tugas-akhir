@@ -378,11 +378,13 @@ class CodeBERTGraphDataset(Dataset):
         force_rebuild: bool = False,
         storage: str = "inmemory",  # "inmemory" | "lazy"
         precompute_line_cls: bool = False,
+        ds_name_suffix: str = "",   # graph_vit: load a separate patched .pt
         transform=None,
         pre_transform=None,
     ):
         self._force_rebuild = force_rebuild
         self._storage = storage  # "inmemory" | "lazy"
+        self._ds_name_suffix = ds_name_suffix
         self._precompute_line_cls = precompute_line_cls
         self._func_max_length = func_max_length
         self.max_nodes = max_nodes
@@ -451,7 +453,7 @@ class CodeBERTGraphDataset(Dataset):
         live_suffix = f"_live_{self._func_short}" if self._func_short != self._lm_short else ""
         return (
             f"lm_dataset_{self._source}_{self._mode}_{self._lm_short}{live_suffix}"
-            f"{ft_suffix}{ml_suffix}{top_suffix}{self._fsuffix}{samp_suffix}"
+            f"{ft_suffix}{ml_suffix}{top_suffix}{self._fsuffix}{samp_suffix}{self._ds_name_suffix}"
         )
 
     @property

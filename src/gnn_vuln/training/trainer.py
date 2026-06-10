@@ -280,6 +280,9 @@ class Trainer:
                 func_line_cls_batch=func_line_cls_b,
                 rwse=rwse,
             )
+        elif hasattr(batch, "subgraphs_nodes_mapper"):
+            # graph_vit offline: pass the batch so it reads precomputed patch fields
+            out = self.model(_x, batch.edge_index, batch.batch, node_line, edge_attr, rwse=rwse, data=batch)
         else:
             out = self.model(_x, batch.edge_index, batch.batch, node_line, edge_attr, rwse=rwse)
 

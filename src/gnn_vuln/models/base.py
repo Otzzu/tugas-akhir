@@ -41,7 +41,7 @@ if not hasattr(_tpu, "find_pruneable_heads_and_indices"):
 from gnn_vuln.models._lm_utils import (
     lm_hidden_dim, lm_pool, lm_pool_windowed, lm_full_windowed, lm_per_line_embed,
     lm_per_line_raw, lm_full_codet5p, lm_full_codet5p_raw, _is_codet5p_embedding,
-    WindowAttentionPool, CrossWindowAttn, _is_decoder_only,
+    WindowAttentionPool, CrossWindowAttn, WindowMixerPool, _is_decoder_only,
 )
 
 
@@ -86,6 +86,8 @@ class VulnDetectorBase(nn.Module):
         window_attn_hidden: bool = False,
         window_center_weight: bool = False,
         cross_window_attn: bool = False,
+        window_mixer: bool = False,
+        window_mixer_max: int = 6,
     ) -> None:
         """
         Load a live LM and store as self.codebert.
@@ -173,9 +175,15 @@ class VulnDetectorBase(nn.Module):
         self._use_window_attn_pool = window_attn_pool and func_chunk_size > 0
         self._use_window_attn_hidden = window_attn_hidden and self._use_window_attn_pool
         self._use_window_center_weight = window_center_weight and func_chunk_size > 0
+        # H10: MLP-Mixer over window CLS — alternative chunk aggregator (window↔window mix).
+        self._use_window_mixer = window_mixer and func_chunk_size > 0
+        # both poolers route through the same win_cls path in _lm_embed_full
+        self._use_window_pool = self._use_window_attn_pool or self._use_window_mixer
         if self._use_window_attn_pool:
             self.window_attn_pool = WindowAttentionPool(self._lm_dim)
-        if cross_window_attn and self._use_window_attn_pool:
+        if self._use_window_mixer:
+            self.window_mixer_pool = WindowMixerPool(self._lm_dim, window_mixer_max)
+        if cross_window_attn and self._use_window_pool:
             self.cross_window_attn_module = CrossWindowAttn(self._lm_dim)
 
     def _lm_embed_full(
@@ -229,7 +237,7 @@ class VulnDetectorBase(nn.Module):
         # Sliding-window full forward — per-token hidden aligned to input positions
         if self._func_chunk_size > 0:
             try:
-                if getattr(self, "_use_window_attn_pool", False):
+                if getattr(self, "_use_window_pool", False):
                     win_cls, win_mask, hidden = lm_full_windowed(
                         self.codebert, self._is_enc_dec,
                         func_input_ids, func_attention_mask,
@@ -241,7 +249,9 @@ class VulnDetectorBase(nn.Module):
                     )
                     if hasattr(self, "cross_window_attn_module"):
                         hidden = self.cross_window_attn_module(hidden, win_cls, win_mask)
-                    if getattr(self, "_use_window_attn_hidden", False):
+                    if getattr(self, "_use_window_mixer", False):
+                        cls = self.window_mixer_pool(win_cls, win_mask)   # H10: MLP-Mixer over window CLS
+                    elif getattr(self, "_use_window_attn_hidden", False):
                         cls, win_weights = self.window_attn_pool(win_cls, win_mask, return_weights=True)
                         # Scale per-token hidden by their window's attention weight.
                         # Designed for non-overlapping windows (stride >= chunk_size).

@@ -1,0 +1,80 @@
+# Phase 8 — H10: MLP-Mixer over window CLS (window_mixer) — chunk-level token mixing.
+# Base: H3/H4 (stride=1024, NON-overlap, 5 windows, clean CLS).
+# Varies: window_attn_pool=false, window_mixer=true — replaces the softmax-weighted-sum
+#   aggregator (winattn) with a MLP-Mixer block over the per-window CLS [B, W, 768]:
+#   token-mix (window<->window) + channel-mix, then masked mean. It's the ONLY chunk
+#   aggregator with window<->window interaction (mean / winattn just average / reweight).
+#   Reference mlp_mixer.py dims (token_mix nhid*4, channel_mix nhid//2); pad to
+#   window_mixer_max=6. Chunks are ordered + fixed-count = the rare spot plain MLP-Mixer fits.
+#   Hypothesis: F1-NEUTRAL (mean .528 ~ winattn .520 ~ crosswin .520 — window interaction
+#   is not the lever, signal local to chunk 1). Ablation-completeness, not a lever.
+#
+# .pt build: configs/data/megavul_multiclass_top25_node-unixcoder_func-unixcoder_ml5120.yaml
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase8/H10_unixcoder_sliding_chunk1024_stride1024_winmixer.yaml
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 5120
+  func_chunk_size: 1024
+  func_chunk_stride: 1024
+  window_attn_pool: false
+  window_mixer: true
+  window_mixer_max: 6
+  cross_window_attn: false
+  localization_encoder: both
+  stmt_both_mode: concat
+  graph_pool: meanmax
+  cross_task_method: none
+  hidden_dim: 768
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: false
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  lm_lr: 0.00001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: true
+  use_flash_attention: true
+  grad_accum_steps: 1
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 8
+  prefetch_factor: 2

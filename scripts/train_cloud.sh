@@ -18,6 +18,10 @@
 #                   ID = model_id whose <ID>_checkpoints.zip sits on gdrive checkpoints/.
 #                   Unzips to checkpoints/<ID>/best_*.pt so a cRT config can load it
 #                   via crt_init_checkpoint. Repeatable. Not cleaned by --clean-every.
+#   --graphvit-patch N  Build offline graph_vit patches (n_patches=N) after each dataset
+#                   download, before train. Transforms base .pt → <name>_gvitp<N> patched .pt
+#                   (METIS, needs --init). N MUST match config n_patches + data.ds_name_suffix.
+#                   Idempotent (skips if already built).
 #   (default: auto-detect — runs setup only if uv/torch missing or rclone.conf absent)
 #
 # Usage:
@@ -57,6 +61,7 @@ FLAG_INIT=false    # --init: force run setup_cloud.sh + rclone setup regardless 
 FLAG_SKIP=false    # --skip: skip setup_cloud.sh + rclone setup entirely
 FLAG_RESUME=false  # --resume: pass --resume to train.py (continues from last_{arch}.pt)
 CLEAN_EVERY=0      # --clean-every N: delete dataset .pt after every Nth run (0 = never)
+GRAPHVIT_PATCH=""  # --graphvit-patch N: build offline graph_vit patches (n_patches=N) before each run
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -67,6 +72,7 @@ while [[ $# -gt 0 ]]; do
         --skip)          FLAG_SKIP=true;        shift ;;
         --resume)        FLAG_RESUME=true;      shift ;;
         --clean-every)   CLEAN_EVERY="$2";      shift 2 ;;
+        --graphvit-patch) GRAPHVIT_PATCH="$2";  shift 2 ;;
         -h|--help)
             sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
@@ -320,6 +326,34 @@ run_train() {
     success "Training done: $config"
 }
 
+# ─── 4b. graph_vit offline patch build (one-time per dataset) ─────────────────
+# Transforms the downloaded base .pt into a patched .pt (adds METIS patch fields)
+# so graph_vit reads precomputed patches. Idempotent: skips if already built.
+# n_patches MUST match the config's n_patches; suffix must match data.ds_name_suffix.
+graphvit_patch() {
+    local dataset="$1"
+    local np="$2"
+    local local_name
+    local_name=$(echo "$dataset" | sed 's/_[0-9]\{8\}_[0-9]\{6\}$//')
+    local suffix="_gvitp${np}"
+    if [[ -d "${PROCESSED_DIR}/${local_name}${suffix}_graphs" ]]; then
+        success "graph_vit patches already built: ${local_name}${suffix}"
+        return 0
+    fi
+    # help the metis pkg locate libmetis (libmetis-dev installs it; preempts "Could not locate METIS dll")
+    if [[ -z "${METIS_DLL:-}" ]]; then
+        for cand in /usr/lib/x86_64-linux-gnu/libmetis.so /usr/lib/x86_64-linux-gnu/libmetis.so.5 /usr/lib/libmetis.so; do
+            [[ -f "$cand" ]] && export METIS_DLL="$cand" && info "METIS_DLL=$cand" && break
+        done
+    fi
+    info "Building graph_vit patches (n_patches=$np) → ${local_name}${suffix}"
+    PYTHONPATH=src python scripts/build_graphvit_patches.py \
+        --processed-dir "$PROCESSED_DIR" \
+        --ds-name "$local_name" \
+        --suffix "$suffix" --n-patches "$np" --num-hops 1 --patch-rw-dim 8
+    success "graph_vit patches ready: ${local_name}${suffix}"
+}
+
 # ─── 5. Evaluate ─────────────────────────────────────────────────────────────
 run_evaluate() {
     local model_dir="$1"
@@ -446,6 +480,10 @@ for i in "${!CONFIG_LIST[@]}"; do
     echo -e "${CYAN}════════════════════════════════════════${NC}"
 
     download_dataset "$DATASET" "$CONFIG"
+    # only build patches for graph_vit configs (skip lmgat_codebert H9/H10 etc.)
+    if [[ -n "$GRAPHVIT_PATCH" ]] && grep -qE '^[[:space:]]*architecture:[[:space:]]*graph_vit' "$CONFIG"; then
+        graphvit_patch "$DATASET" "$GRAPHVIT_PATCH"
+    fi
 
     # Snapshot latest checkpoint dir before training
     BEFORE=$(ls -dt ${CHECKPOINTS_DIR}/* 2>/dev/null | head -1 || echo "")

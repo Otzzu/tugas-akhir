@@ -16,6 +16,7 @@ data:
   max_per_class: 1600
   resample_seed: 42
   storage: lazy
+  ds_name_suffix: _gvitp32   # loads the offline patched .pt (build_graphvit_patches.py, n_patches must match)
 
 model:
   architecture: graph_vit
@@ -27,12 +28,13 @@ model:
   localization_encoder: gnn
   hidden_dim: 256
   num_layers: 2
-  n_patches: 16
+  n_patches: 32            # paper default (every reference config uses 32)
   num_hops: 1
   patch_drop_rate: 0.0
   mixer_type: mlp
   mixer_layers: 4
   pe_walk_length: 16
+  patch_rw_dim: 8
   heads: 4
   edge_dim: 31
   dropout: 0.3

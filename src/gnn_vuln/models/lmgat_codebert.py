@@ -96,6 +96,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  window_attn_hidden=False,
                  window_center_weight=False,
                  cross_window_attn=False,
+                 window_mixer=False,
+                 window_mixer_max=6,
                  supcon_proj_dim=0,
                  supcon_proj_hidden=256,
                  supcon_proj_dropout=0.1,
@@ -144,6 +146,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                 window_attn_hidden=window_attn_hidden,
                 window_center_weight=window_center_weight,
                 cross_window_attn=cross_window_attn,
+                window_mixer=window_mixer,
+                window_mixer_max=window_mixer_max,
             )
         # Line-level transformer (live_lm=line): contextualizes per-line LM
         # embeddings across the function. Classification = meanmax pool of its
@@ -492,6 +496,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             window_attn_hidden=getattr(cfg.model, "window_attn_hidden", False),
             window_center_weight=getattr(cfg.model, "window_center_weight", False),
             cross_window_attn=getattr(cfg.model, "cross_window_attn", False),
+            window_mixer=getattr(cfg.model, "window_mixer", False),
+            window_mixer_max=getattr(cfg.model, "window_mixer_max", 6),
             supcon_proj_dim=getattr(cfg.model, "supcon_proj_dim", 0),
             supcon_proj_hidden=getattr(cfg.model, "supcon_proj_hidden", 256),
             supcon_proj_dropout=getattr(cfg.model, "supcon_proj_dropout", 0.1),

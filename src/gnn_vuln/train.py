@@ -415,6 +415,7 @@ class TrainingSession:
             func_max_length=getattr(cfg.model, "func_max_length", 512),
             storage=getattr(cfg.data, "storage", "inmemory"),
             precompute_line_cls=getattr(cfg.model, "precompute_line_cls", False),
+            ds_name_suffix=getattr(cfg.data, "ds_name_suffix", ""),
         )
         bs          = cfg.train.batch_size
         num_workers = getattr(cfg.train, "num_workers",    4)

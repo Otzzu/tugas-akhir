@@ -94,20 +94,23 @@ class GraphViTVulnDetector(VulnDetectorBase):
     def __init__(self, in_channels, hidden_dim, num_classes,
                  nlayer_gnn=2, n_patches=32, num_hops=1, patch_drop_rate=0.0,
                  heads=4, edge_dim=31, dropout=0.3, mixer_type="attention",
-                 mixer_layers=4, pe_walk_length=16, func_head_type="linear",
-                 add_self_loops=False):
+                 mixer_layers=4, pe_walk_length=16, patch_rw_dim=8,
+                 func_head_type="linear", add_self_loops=False):
         super().__init__()
         self.n_patches = n_patches
         self.num_hops = num_hops
         self.patch_drop_rate = patch_drop_rate
         self.hidden_dim = hidden_dim
         self.pe_walk_length = pe_walk_length
+        self.patch_rw_dim = patch_rw_dim
         self._live_lm = "none"
 
         self.input_proj = nn.Linear(in_channels, hidden_dim)
         self.edge_proj = nn.Linear(edge_dim, hidden_dim)
         # node RWSE positional encoding (reference: x += rw_encoder(rw_pos_enc) before patch gather)
         self.node_pe = nn.Linear(pe_walk_length, hidden_dim) if pe_walk_length > 0 else None
+        # patch-level RWSE PE on coarsened patch-adjacency (reference: subgraph_x += patch_rw_encoder(patch_pe))
+        self.patch_rw_encoder = nn.Linear(patch_rw_dim, hidden_dim) if patch_rw_dim > 0 else None
         # patch GNN: each "block" = GATv2 → BN → ReLU → drop → +residual → Linear
         # (reference GNN(nlayer=1) block: conv→bn→relu→drop→+prev→output_encoder), GATv2 per user.
         self.gnns = nn.ModuleList([
@@ -143,7 +146,7 @@ class GraphViTVulnDetector(VulnDetectorBase):
         device = x.device
         B = int(batch.max().item()) + 1 if batch.numel() else 1
         node_off = patch_off = slot_off = edge_off = 0
-        nm, po, ce, ei, mem_g = [], [], [], [], []
+        nm, po, ce, ei, mem_g, pe = [], [], [], [], [], []
         for g in range(B):
             mask = batch == g
             nodes = mask.nonzero(as_tuple=True)[0]
@@ -154,36 +157,52 @@ class GraphViTVulnDetector(VulnDetectorBase):
             remap[nodes] = torch.arange(ng, device=device)
             e_mask = mask[edge_index[0]] & mask[edge_index[1]]
             ge = remap[edge_index[:, e_mask]]                       # local edges [2, Eg]
-            node_mapper, patch_of, comb_edge, e_idx, membership = build_patches(
+            node_mapper, patch_of, comb_edge, e_idx, membership, patch_pe = build_patches(
                 ge, ng, self.n_patches, self.num_hops,
-                self.patch_drop_rate if self.training else 0.0)
+                self.patch_drop_rate if self.training else 0.0,
+                self.patch_rw_dim if self.patch_rw_encoder is not None else 8)
             nm.append(node_mapper + node_off)
             po.append(patch_of + patch_off)
             ce.append(comb_edge + slot_off)
             ei.append(e_idx + edge_off)                            # index into this graph's edges
             mem_g.append(membership + patch_off)                  # per original node (graph order)
+            pe.append(patch_pe)                                   # [n_patches, patch_rw_dim]
             node_off += ng
             patch_off += self.n_patches
             slot_off += node_mapper.numel()
             edge_off += int(e_mask.sum().item())
         # global edge index list (to gather edge_attr): edges in graph order
         return (torch.cat(nm), torch.cat(po), torch.cat(ce, dim=1),
-                torch.cat(ei), torch.cat(mem_g), B)
+                torch.cat(ei), torch.cat(mem_g), torch.stack(pe), B)
 
     def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
-                rwse=None, **kwargs):
+                rwse=None, data=None, **kwargs):
         device = x.device
         if edge_attr is None:
             edge_attr = torch.zeros(edge_index.size(1), self.edge_proj.in_features, device=device)
+        B = int(batch.max().item()) + 1 if batch.numel() else 1
 
-        nm, po, comb_edge, e_glob_idx, membership, B = self._partition_batch(x, edge_index, batch)
-        # build global edge order matching e_glob_idx (per-graph edge slices concatenated)
-        # e_glob_idx already offset by per-graph edge counts in graph order; gather edge_attr
-        # via the same graph-order edge listing:
-        order = torch.argsort(batch[edge_index[0]], stable=True)   # edges grouped by graph
-        edge_attr_ord = edge_attr[order]
-        e_slots = self.edge_proj(edge_attr_ord[e_glob_idx])        # [M_edges, hid]
+        if data is not None and hasattr(data, "subgraphs_nodes_mapper"):
+            # OFFLINE: precomputed patches (DataLoader-batched via SubgraphsData.__inc__).
+            nm = data.subgraphs_nodes_mapper
+            po = data.subgraphs_batch
+            comb_edge = data.combined_subgraphs
+            membership = data.patch_membership
+            patch_pe = data.patch_pe.view(B, self.n_patches, -1)
+            e_slots = self.edge_proj(edge_attr[data.subgraphs_edges_mapper])  # mapper indexes batch.edge_attr
+        else:
+            # ONLINE fallback (no precomputed .pt — local testing).
+            nm, po, comb_edge, e_glob_idx, membership, patch_pe, B = self._partition_batch(x, edge_index, batch)
+            order = torch.argsort(batch[edge_index[0]], stable=True)
+            e_slots = self.edge_proj(edge_attr[order][e_glob_idx])
 
+        h_graph, h_loc = self._encode(x, edge_index, nm, po, comb_edge, e_slots, membership, patch_pe, B, rwse)
+        logit = self.func_head(h_graph)
+        stmt_scores = self.stmt_head.score(h_loc, batch, node_line) if node_line is not None else None
+        return logit, stmt_scores
+
+    def _encode(self, x, edge_index, nm, po, comb_edge, e_slots, membership, patch_pe, B, rwse):
+        """Shared patch-GNN + U mix + mixer + pool (online and offline paths)."""
         # node features + RWSE PE (reference: x += rw_encoder(rwse)), then gather into patch slots
         x_proj = self.input_proj(x)
         if self.node_pe is not None:
@@ -191,7 +210,7 @@ class GraphViTVulnDetector(VulnDetectorBase):
                 rwse = _compute_rwse(edge_index, x.size(0), walk_length=self.pe_walk_length)
             x_proj = x_proj + self.node_pe(rwse)
         xs = x_proj[nm]                                            # slot node feats [M, hid]
-        TP = B * self.n_patches                                    # total patch slots
+        TP = B * self.n_patches
 
         for i in range(len(self.gnns)):
             if i > 0:
@@ -205,27 +224,21 @@ class GraphViTVulnDetector(VulnDetectorBase):
             h = F.dropout(h, p=self.dropout, training=self.training)
             xs = self.out_lin[i](h + res)                          # +residual → output_encoder (reference)
 
-        # patch tokens [TP, hid] → [B, P, hid]
         patch_tok = scatter(xs, po, dim=0, dim_size=TP, reduce="mean")
         valid = scatter(torch.ones_like(po, dtype=torch.float), po, dim=0, dim_size=TP, reduce="sum") > 0
         patch_tok = patch_tok.view(B, self.n_patches, self.hidden_dim)
         valid = valid.view(B, self.n_patches)
+        if self.patch_rw_encoder is not None:
+            patch_tok = patch_tok + self.patch_rw_encoder(patch_pe)   # patch-level RWSE PE (reference)
 
-        # mixer over patches (mask empty patches)
         patch_tok = self.mixer(patch_tok, key_padding_mask=~valid)
-
-        # graph rep = masked mean over valid patches
         m = valid.unsqueeze(-1).float()
         h_graph = (patch_tok * m).sum(1) / m.sum(1).clamp(min=1.0)
 
-        # localization: per-original-node embed (sync copies) + its patch's mixer context
         node_embed = scatter(xs, nm, dim=0, dim_size=x.size(0), reduce="mean")  # [N, hid]
         patch_flat = patch_tok.reshape(TP, self.hidden_dim)
         h_loc = node_embed + patch_flat[membership]                # broadcast patch context
-
-        logit = self.func_head(h_graph)
-        stmt_scores = self.stmt_head.score(h_loc, batch, node_line) if node_line is not None else None
-        return logit, stmt_scores
+        return h_graph, h_loc
 
     @classmethod
     def from_config(cls, cfg, in_channels, **kwargs):
@@ -244,6 +257,7 @@ class GraphViTVulnDetector(VulnDetectorBase):
             mixer_type=getattr(m, "mixer_type", "attention"),
             mixer_layers=getattr(m, "mixer_layers", 4),
             pe_walk_length=getattr(m, "pe_walk_length", 16),
+            patch_rw_dim=getattr(m, "patch_rw_dim", 8),
             func_head_type=getattr(m, "func_head_type", "linear"),
             add_self_loops=getattr(m, "add_self_loops", False),
         )
