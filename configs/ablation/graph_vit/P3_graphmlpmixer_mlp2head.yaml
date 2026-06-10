@@ -1,0 +1,74 @@
+# Graph-MLP-Mixer + 2-layer readout head — P3.
+# Base: P2 (mlp mixer, best of P1/P2). Only change: func_head_type linear -> mlp
+#   (FuncHead = Linear -> ReLU -> Dropout -> Linear, 2-layer = reference output_decoder).
+# Tests whether a higher-capacity readout recovers the Graph-ViT classification collapse
+#   (P1/P2 F1 ~0.34 vs flat-GNN ~0.52). Head is independent of the mixer, so this isolates
+#   the readout. Expect: small recovery at most — the bottleneck is patch-isolation breaking
+#   message passing, not head capacity. Reuses _gvitp32 patched .pt (same n_patches=32).
+#
+# Run (cloud): include --graphvit-patch 32 (idempotent; rebuilds _gvitp32 if cleaned)
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+  ds_name_suffix: _gvitp32   # loads the offline patched .pt (build_graphvit_patches.py, n_patches must match)
+
+model:
+  architecture: graph_vit
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  hidden_dim: 256
+  num_layers: 2
+  n_patches: 32            # paper default (every reference config uses 32)
+  num_hops: 1
+  patch_drop_rate: 0.0
+  mixer_type: mlp
+  mixer_layers: 4
+  pe_walk_length: 16
+  patch_rw_dim: 8
+  heads: 4
+  edge_dim: 31
+  dropout: 0.3
+  num_classes: 26
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  func_head_type: mlp      # 2-layer FuncHead (Linear-ReLU-Drop-Linear) vs P1/P2 linear 1-layer
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: false
+  use_flash_attention: false
+  grad_accum_steps: 2
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 0
+  prefetch_factor: 2

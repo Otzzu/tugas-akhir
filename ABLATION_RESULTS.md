@@ -175,6 +175,7 @@ runs — superseded, kept for reference only.
 | attention | `20260515_235912_lmgat_codebert_multiclass` | attention  | 50     |
 | meanmax   | `20260516_125619_lmgat_codebert_multiclass` | meanmax    | 48     |
 | dualflow  | `20260517_013824_lmgat_codebert_multiclass` | dualflow   | 38     |
+| cnn       | `20260609_190812_lmgat_codebert_multiclass` | cnn        | 37     |
 
 | Variant   | Test F1   | Test Acc  | F1-w      | AUC-ROC   | Conf. | IFA ↓     | Top-1 ↑   | Top-5 ↑   | R@20%LOC ↑ |
 | --------- | --------- | --------- | --------- | --------- | ----- | --------- | --------- | --------- | ---------- |
@@ -182,8 +183,9 @@ runs — superseded, kept for reference only.
 | attention | 0.437     | 0.522     | 0.523     | 0.895     | 0.625 | 1.253     | 0.805     | 0.943     | 0.439      |
 | meanmax   | 0.517     | **0.538** | **0.539** | 0.911     | 0.502 | **0.644** | **0.900** | **0.982** | **0.487**  |
 | dualflow  | 0.496     | 0.528     | 0.528     | 0.896     | 0.667 | 0.717     | 0.886     | 0.971     | 0.417      |
+| cnn       | 0.511     | 0.535     | 0.532     | 0.903     | 0.610 | 0.927     | 0.873     | 0.959     | 0.414      |
 
-Attention pool collapses macro F1 (−0.082) — learnable gate overfits tail classes. Mean and meanmax tie on macro F1 but **meanmax wins everywhere else**: best accuracy, F1-w, and all localization metrics. dualflow lands mid-pack (F1 0.496) with same overfit risk as attention but milder.
+Attention pool collapses macro F1 (−0.082) — learnable gate overfits tail classes. Mean and meanmax tie on macro F1 but **meanmax wins everywhere else**: best accuracy, F1-w, and all localization metrics. dualflow lands mid-pack (F1 0.496) with same overfit risk as attention but milder. cnn pool (D4, late rerun) F1 0.511 ≈ meanmax with best IFA (0.927) but doesn't beat meanmax on F1.
 
 **Phase 4 winner: meanmax.**
 
@@ -541,6 +543,36 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 
 ---
 
+# Phase 12 — ULMFiT Fine-tuning
+
+`configs/ablation/phase12/` — base H4 (UniXcoder, winattn pool, stride=1024, dim=768, ml5120). ULMFiT to curb the live-LM val-loss divergence: M1 = LLRD (discriminative per-layer LR, decay 0.95), M2 = gradual unfreezing (progressive layer-unfreeze schedule), M3 = both combined.
+
+| ID  | Run ID                                      | Config                          | Technique         | Epochs |
+| --- | ------------------------------------------- | ------------------------------- | ----------------- | ------ |
+| M1  | `20260609_130107_lmgat_codebert_multiclass` | `M1_llrd_only.yaml`             | LLRD (decay 0.95) | 25     |
+| M2  | `20260609_142900_lmgat_codebert_multiclass` | `M2_gradual_unfreeze.yaml`      | gradual unfreeze  | 58     |
+| M3  | `20260609_171605_lmgat_codebert_multiclass` | `M3_llrd_gradual_combined.yaml` | LLRD + gradual    | 40     |
+
+## Classification
+
+| ID  | Val F1 | Test F1 | Test Acc | F1-w  | AUC-ROC | Conf. | Epochs |
+| --- | ------ | ------- | -------- | ----- | ------- | ----- | ------ |
+| M1  | 0.498  | 0.493   | 0.514    | 0.511 | 0.900   | 0.569 | 25     |
+| M2  | 0.494  | 0.532   | 0.531    | 0.541 | 0.890   | 0.484 | 58     |
+| M3  | 0.524  | 0.455   | 0.514    | 0.513 | 0.910   | 0.557 | 40     |
+
+## Statement-Level Localization
+
+| ID  | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| --- | ----- | ------- | ------- | --------- | ---------- | ------------- |
+| M1  | 1.003 | 0.868   | 0.978   | 0.206     | 0.423      | 0.047         |
+| M2  | 1.187 | 0.848   | 0.974   | 0.229     | 0.454      | 0.039         |
+| M3  | 1.045 | 0.857   | 0.977   | 0.210     | 0.422      | 0.045         |
+
+Base H4 = Test F1 0.520. **M2 (gradual) = best ULMFiT (F1 0.532, +0.012 vs H4)** but slowest (58 ep) and worst IFA (1.187). M1 (LLRD) 0.493 and M3 (combined) 0.455 both regress. **M3 is the tell: highest Val F1 (0.524) but lowest Test F1 (0.455) — widest val/test gap, the opposite of ULMFiT's intent.** Net: ULMFiT ≈ F1-neutral, doesn't beat H1/H4; val-loss divergence is a calibration issue, not an F1 lever.
+
+---
+
 # Training Efficiency
 
 | Run                      | GPU             | Params | Epoch Time | Total Time (hr) | VRAM Peak |
@@ -586,3 +618,7 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 | K2 supcon w0.2           | RTX 5090        | 147.3M | 190s       | 1.75            | 19.7 GB   |
 | K5 supcon group          | RTX 5090        | 147.3M | 190s       | 1.59            | 17.5 GB   |
 | K6 supcon balanced       | RTX 5090        | 147.3M | 188s       | 1.68            | 17.6 GB   |
+| M1 ulmfit llrd           | RTX 5090        | 146.9M | 189s       | 1.31            | 18.9 GB   |
+| M2 ulmfit gradual        | RTX 5090        | 146.9M | 171s       | 2.76            | 17.5 GB   |
+| M3 ulmfit combined       | RTX 5090        | 146.9M | 163s       | 1.81            | 21.6 GB   |
+| D4 pool cnn              | RTX 5090        | 130.8M | 92s        | 0.95            | 8.1 GB    |

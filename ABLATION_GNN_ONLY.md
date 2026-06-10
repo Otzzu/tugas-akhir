@@ -216,6 +216,33 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N64 | 0.452     | 0.900     | 0.982     | 0.249     | 0.457      | 0.032         |
 | N65 | 0.435     | 0.914     | 0.985     | 0.274     | 0.479      | 0.023         |
 
+---
+
+## Graph-ViT / MLP-Mixer (P series)
+
+`configs/ablation/graph_vit/` — faithful Graph-ViT/MLP-Mixer (He et al. 2023): METIS 32-patch partition → GATv2 patch-GNN + U cross-scale mix → token-mixer over patches → pool. `live_lm=none`, ml1024 node feats, offline patched `.pt` (`_gvitp32`, reference verbatim partition). P1 = attention mixer, P2 = MLP-Mixer.
+
+| ID  | Run ID                                 | Config                  | Mixer     | n_patches | Params |
+| --- | -------------------------------------- | ----------------------- | --------- | --------- | ------ |
+| P1  | `20260610_105429_graph_vit_multiclass` | `P1_graphvit_attn.yaml` | attention | 32        | 4.1M   |
+| P2  | `20260610_114940_graph_vit_multiclass` | `P2_graphmlpmixer.yaml` | mlp       | 32        | 2.6M   |
+
+### Classification
+
+| ID           | Val F1 | Test F1 | Test Acc | F1-w  | AUC-ROC | Conf. | Epochs |
+| ------------ | ------ | ------- | -------- | ----- | ------- | ----- | ------ |
+| P1 attention | 0.389  | 0.340   | 0.394    | 0.402 | 0.848   | 0.367 | 90     |
+| P2 mlp       | 0.389  | 0.343   | 0.409    | 0.408 | 0.867   | 0.433 | 55     |
+
+### Statement-Level Localization
+
+| ID           | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| ------------ | ----- | ------- | ------- | --------- | ---------- | ------------- |
+| P1 attention | 0.436 | 0.928   | 0.988   | 0.113     | 0.323      | 0.102         |
+| P2 mlp       | 0.302 | 0.956   | 0.984   | 0.154     | 0.313      | 0.082         |
+
+Graph-ViT/MLP-Mixer **collapses classification** — Test F1 ~0.34 vs the N-series flat-GNN best ~0.52 (N48 0.525, ≈ −0.18). Patch-isolation breaks the direct message passing CPGs (small-world, diameter 5–7) rely on, so patchify hurts short-range graphs. P2 (MLP-Mixer) ≥ P1 (attention) on every metric at lower cost (2.6M vs 4.1M, 0.56h vs 0.91h) — attention over patches adds nothing. Localization stays strong (IFA 0.30–0.44, Top-1 0.93–0.96) but the pooled graph rep is too weak to classify. **Negative result: Graph-ViT not justified for CPGs (confirms diameter analysis).**
+
 # Training Efficiency
 
 | Run                   | GPU             | Params | Epoch Time | Total Time (hr) | VRAM Peak |
@@ -284,3 +311,5 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N62 cRT+LA N48        | RTX A4000       | 4.7M   | 56s        | 0.34            | 2.9 GB    |
 | N64 cRT+LA N59        | RTX A4000       | 4.7M   | 58s        | 0.32            | 3.0 GB    |
 | N65 N48+FLAG          | RTX A4000       | 4.7M   | 210s       | 3.26            | 9.2 GB    |
+| P1 graph-vit attn     | RTX 5090        | 4.1M   | 36s        | 0.91            | 17.3 GB   |
+| P2 graph-vit mlp      | RTX 5090        | 2.6M   | 36s        | 0.56            | 18.0 GB   |
