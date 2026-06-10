@@ -10,12 +10,14 @@ for arg in "$@"; do
 done
 set -e
 
-echo "=== [0/6] Installing system tools (zip, unzip, gdrive, rclone) ==="
+echo "=== [0/6] Installing system tools (zip, unzip, gdrive, rclone, libmetis) ==="
 if ! command -v zip &>/dev/null || ! command -v unzip &>/dev/null || ! command -v wget &>/dev/null || ! command -v curl &>/dev/null || ! command -v pigz &>/dev/null; then
-    apt-get update -y && apt-get install -y zip unzip wget curl pigz
+    apt-get update -y && apt-get install -y zip unzip wget curl pigz libmetis-dev
 else
     echo "    System tools already installed, skipping apt-get"
 fi
+# libmetis for the graph_vit arch (METIS patch partitioning). Non-fatal if absent.
+apt-get install -y libmetis-dev 2>/dev/null || echo "    libmetis-dev install skipped (only needed for graph_vit)"
 
 # Install gdrive (optional — training pipeline uses rclone; gdrive only for manual tasks)
 if ! command -v gdrive &>/dev/null; then
@@ -115,7 +117,7 @@ $UVP torch-scatter torch-sparse \
 echo "=== [5/6] Installing project dependencies ==="
 $UVP \
   "transformers>=4.48,<5.0" loguru tqdm pyyaml \
-  numpy pandas scikit-learn networkx \
+  numpy pandas scikit-learn networkx metis \
   datasets sentencepiece hf_transfer
 
 echo "=== [6/6] Installing project package ==="

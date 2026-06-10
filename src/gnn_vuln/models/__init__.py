@@ -10,6 +10,7 @@ from gnn_vuln.models.lmgat_seq import LMGATSeqVulnDetector
 from gnn_vuln.models.lmgat_waves_seq import LMGATWavesSeqVulnDetector
 from gnn_vuln.models.lmgat_dualflow import LMGATDualFlowVulnDetector
 from gnn_vuln.models.lmgat_hcdfgat import LMGATHCDFGATVulnDetector
+from gnn_vuln.models.graph_vit import GraphViTVulnDetector
 
 __all__ = [
     "VulnDetectorBase",
@@ -24,4 +25,5 @@ __all__ = [
     "LMGATWavesSeqVulnDetector",
     "LMGATDualFlowVulnDetector",
     "LMGATHCDFGATVulnDetector",
+    "GraphViTVulnDetector",
 ]
