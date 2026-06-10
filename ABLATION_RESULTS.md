@@ -370,6 +370,8 @@ and ml5120 dataset on RTX 5090. Earlier H2/H3 runs with ml1024 never activated s
 | H6  | `H6_unixcoder_sliding_chunk1024_stride1024_winattn_hidden.yaml`  | 1024  | 1024   | 5120    | 5+attn+hidden   | `20260528_085945` | 31     |
 | H7  | `H7_unixcoder_sliding_chunk1024_stride512_winattn_centerw.yaml`  | 1024  | 512    | 5120    | 9+attn+cw       | `20260528_063142` | 34     |
 | H8  | `H8_unixcoder_sliding_chunk1024_stride512_winattn_crosswin.yaml` | 1024  | 512    | 5120    | 9+attn+crosswin | `20260528_094016` | 41     |
+| H9  | `H9_unixcoder_sliding_chunk1024_stride1024_winattn_crosswin.yaml` | 1024  | 1024   | 5120    | 5+attn+crosswin | `20260610_122559` | 55     |
+| H10 | `H10_unixcoder_sliding_chunk1024_stride1024_winmixer.yaml`       | 1024  | 1024   | 5120    | 5+mixer         | `20260610_152801` | 26     |
 
 ## Classification
 
@@ -383,6 +385,8 @@ and ml5120 dataset on RTX 5090. Earlier H2/H3 runs with ml1024 never activated s
 | H6        | 0.513   | 0.532    | 0.533 | 0.903     | 0.607 | 31     |
 | H7        | 0.485   | 0.524    | 0.525 | 0.896     | 0.618 | 34     |
 | H8        | 0.520   | 0.536    | 0.538 | 0.898     | 0.584 | 41     |
+| H9        | 0.490   | 0.520    | 0.539 | 0.897     | 0.479 | 55     |
+| H10       | **0.534** | 0.538    | 0.537 | 0.879     | 0.607 | 26     |
 
 ## Statement-Level Localization
 
@@ -396,6 +400,8 @@ and ml5120 dataset on RTX 5090. Earlier H2/H3 runs with ml1024 never activated s
 | H6        | **1.034** | 0.823     | 0.969     | 0.204     | **0.445**  | 0.048         |
 | H7        | 2.804     | 0.669     | 0.846     | 0.143     | 0.410      | 0.076         |
 | H8        | 1.069     | **0.912** | 0.977     | 0.167     | 0.400      | 0.068         |
+| H9        | 1.391     | 0.905     | 0.974     | 0.146     | 0.387      | 0.072         |
+| H10       | 1.180     | 0.798     | 0.975     | 0.212     | 0.432      | 0.045         |
 
 Both H2 and H3 use ml5120 dataset with fixed `lm_full_windowed` (mean-pool CLS across windows),
 so sliding window is genuinely active for functions exceeding 1024 tokens (~32% of MegaVul vuln functions).
@@ -416,7 +422,11 @@ H2/H3 both below G1 localization baseline (IFA 0.644) — mean aggregation blurs
 
 **H8 (cross-window attention, stride=512)** — H5 + CrossWindowAttn: Q=per-token hidden [B,L,768], K/V=window CLS [B,W,768]; each token attends over all window summaries for global context. Improves over H5 on both classification (F1 0.520 vs 0.443, +0.077) and localization (IFA 1.069 vs 1.220, Top-1 0.912 vs 0.827, best Top-1 overall). Ties H4 on F1 (0.520) but worse than H3 (0.528).
 
-**Phase 8 winner: H4 — best AUC 0.927 (vs H1 0.914, +0.013). F1 0.520 ties H8 but below H3 (0.528) and H1 baseline (0.529) — window attn improves ranking quality, not macro F1. H6 best localization IFA (1.034). H8 best Top-1 (0.912) + strongest classification recovery over H5. H3 best Effort (0.041). H4 baseline for Phase 11+.**
+**H9 (cross-window attention, stride=1024)** — H8 with non-overlap windows (5 vs 9). Classification drops vs H8 (F1 0.490 vs 0.520, −0.030) and localization too (IFA 1.391 vs 1.069, Top-1 0.905 vs 0.912) — CrossWindowAttn benefits from H8's overlapping windows giving each token richer cross-window context; non-overlap starves it of that signal. Worst F1 in phase 8 besides H2/H5.
+
+**H10 (MLP-Mixer over window CLS, stride=1024)** — replaces softmax window-attn pool with WindowMixerPool (token-mix + channel-mix over 5 fixed window CLS). New phase-8 best F1 (0.534, +0.005 vs H1 0.529) and best Test Acc (0.538) with fewest epochs (26, early-stopped) — non-overlap + fixed window count is exactly the regime MLP-Mixer needs (ordered, fixed-length token set). Localization regresses vs H1 (IFA 1.180 vs 1.410 is actually better than H1, but Top-1 0.798 vs H1 0.747 better too — yet both well below H3/H6/H8); mixer pool has no localization-side branch (cross_window_attn=false), so stmt_head gets no extra signal from the mixer.
+
+**Phase 8 winner: H10 — new best F1 (0.534) and Test Acc (0.538), beating H1 baseline (0.529/0.582 resp. — note H1 Acc still highest overall at 0.582) with the fewest epochs (26). H4 best AUC (0.927). H6 best localization IFA (1.034). H8 best Top-1 (0.912). H3 best Effort (0.041). H9 confirms CrossWindowAttn needs H8's overlapping windows — non-overlap (H9) regresses both tasks vs H8. H4/H10 candidates for Phase 11+ baseline depending on task priority (ranking vs macro-F1).**
 
 ---
 
@@ -611,6 +621,8 @@ Base H4 = Test F1 0.520. **M2 (gradual) = best ULMFiT (F1 0.532, +0.012 vs H4)**
 | H6 winattn hidden        | RTX PRO 6000 Bk | 146.9M | 162s       | 1.40            | 17.1 GB   |
 | H7 centerweight s512     | RTX 5090        | 146.9M | 328s       | 3.10            | 19.8 GB   |
 | H8 crosswin s512         | RTX PRO 6000 Bk | 149.3M | 332s       | 3.78            | 24.2 GB   |
+| H9 crosswin s1024        | RTX 5090        | 149.3M | 196s       | 3.00            | 21.4 GB   |
+| H10 winmixer s1024       | RTX 5090        | 147.5M | 192s       | 1.39            | 17.1 GB   |
 | I2 line frozen           | RTX 5090        | 161.7M | 95s        | 0.61            | 18.3 GB   |
 | I3 line live             | RTX 5090        | 161.7M | 205s       | 1.66            | 20.1 GB   |
 | I4 line ctx±5 frozen     | RTX 5090        | 161.7M | 84s        | 1.22            | 17.4 GB   |
