@@ -222,94 +222,100 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 
 `configs/ablation/graph_vit/` — faithful Graph-ViT/MLP-Mixer (He et al. 2023): METIS 32-patch partition → GATv2 patch-GNN + U cross-scale mix → token-mixer over patches → pool. `live_lm=none`, ml1024 node feats, offline patched `.pt` (`_gvitp32`, reference verbatim partition). P1 = attention mixer, P2 = MLP-Mixer.
 
-| ID  | Run ID                                 | Config                  | Mixer     | n_patches | Params |
-| --- | -------------------------------------- | ----------------------- | --------- | --------- | ------ |
-| P1  | `20260610_105429_graph_vit_multiclass` | `P1_graphvit_attn.yaml` | attention | 32        | 4.1M   |
-| P2  | `20260610_114940_graph_vit_multiclass` | `P2_graphmlpmixer.yaml` | mlp       | 32        | 2.6M   |
+| ID  | Run ID                                 | Config                           | Mixer         | n_patches | Params |
+| --- | -------------------------------------- | -------------------------------- | ------------- | --------- | ------ |
+| P1  | `20260610_105429_graph_vit_multiclass` | `P1_graphvit_attn.yaml`          | attention     | 32        | 4.1M   |
+| P2  | `20260610_114940_graph_vit_multiclass` | `P2_graphmlpmixer.yaml`          | mlp           | 32        | 2.6M   |
+| P3  | `20260610_161100_graph_vit_multiclass` | `P3_graphmlpmixer_mlp2head.yaml` | mlp (2L head) | 32        | 2.6M   |
 
 ### Classification
 
-| ID           | Val F1 | Test F1 | Test Acc | F1-w  | AUC-ROC | Conf. | Epochs |
-| ------------ | ------ | ------- | -------- | ----- | ------- | ----- | ------ |
-| P1 attention | 0.389  | 0.340   | 0.394    | 0.402 | 0.848   | 0.367 | 90     |
-| P2 mlp       | 0.389  | 0.343   | 0.409    | 0.408 | 0.867   | 0.433 | 55     |
+| ID             | Val F1 | Test F1 | Test Acc | F1-w  | AUC-ROC | Conf. | Epochs |
+| -------------- | ------ | ------- | -------- | ----- | ------- | ----- | ------ |
+| P1 attention   | 0.389  | 0.340   | 0.394    | 0.402 | 0.848   | 0.367 | 90     |
+| P2 mlp         | 0.389  | 0.343   | 0.409    | 0.408 | 0.867   | 0.433 | 55     |
+| P3 mlp 2L head | 0.377  | 0.334   | 0.399    | 0.401 | 0.801   | 0.408 | 72     |
 
 ### Statement-Level Localization
 
-| ID           | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
-| ------------ | ----- | ------- | ------- | --------- | ---------- | ------------- |
-| P1 attention | 0.436 | 0.928   | 0.988   | 0.113     | 0.323      | 0.102         |
-| P2 mlp       | 0.302 | 0.956   | 0.984   | 0.154     | 0.313      | 0.082         |
+| ID             | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| -------------- | ----- | ------- | ------- | --------- | ---------- | ------------- |
+| P1 attention   | 0.436 | 0.928   | 0.988   | 0.113     | 0.323      | 0.102         |
+| P2 mlp         | 0.302 | 0.956   | 0.984   | 0.154     | 0.313      | 0.082         |
+| P3 mlp 2L head | 0.310 | 0.958   | 0.988   | 0.144     | 0.289      | 0.101         |
 
 Graph-ViT/MLP-Mixer **collapses classification** — Test F1 ~0.34 vs the N-series flat-GNN best ~0.52 (N48 0.525, ≈ −0.18). Patch-isolation breaks the direct message passing CPGs (small-world, diameter 5–7) rely on, so patchify hurts short-range graphs. P2 (MLP-Mixer) ≥ P1 (attention) on every metric at lower cost (2.6M vs 4.1M, 0.56h vs 0.91h) — attention over patches adds nothing. Localization stays strong (IFA 0.30–0.44, Top-1 0.93–0.96) but the pooled graph rep is too weak to classify. **Negative result: Graph-ViT not justified for CPGs (confirms diameter analysis).**
 
+**P3 (P2 + 2-layer FuncHead readout)** — same params (2.6M, the extra readout layer is offset elsewhere), F1 0.334 vs P2 0.343 (−0.009), AUC 0.801 vs P2 0.867 (−0.066) — readout capacity does NOT recover the collapse, slightly worse if anything. Confirms the bottleneck is the pooled graph representation itself (patch-isolation), not head capacity. Localization comparable to P1/P2 (IFA 0.310, Top-1 0.958). **Closes the readout-capacity question — P-series result stands as negative.**
+
 # Training Efficiency
 
-| Run                   | GPU             | Params | Epoch Time | Total Time (hr) | VRAM Peak |
-| --------------------- | --------------- | ------ | ---------- | --------------- | --------- |
-| N1 a1+l1 mean         | RTX A4500       | 3.5M   | 47s        | 0.82            | 11.0 GB   |
-| N2 a1+l1 meanmax      | RTX A4500       | 3.5M   | 47s        | 1.00            | 9.2 GB    |
-| N3 a1+l1 cnn          | RTX A4500       | 4.7M   | 53s        | 1.45            | 9.1 GB    |
-| N4 a1+l1 meanmax+skip | RTX A4500       | 3.7M   | 47s        | 1.21            | 9.6 GB    |
-| N5 a1+l1 gnn_plus     | RTX A4500       | 3.7M   | 47s        | 0.83            | 11.0 GB   |
-| N6 N5+GraphNorm       | RTX A4500       | 3.7M   | 49s        | 0.75            | 9.5 GB    |
-| N7 N5+ELU             | RTX A4500       | 3.7M   | 47s        | 0.72            | 9.3 GB    |
-| N8 N5+GraphNorm+ELU   | RTX A4500       | 3.7M   | 50s        | 0.61            | 10.7 GB   |
-| N9 N7+FFN             | RTX A4500       | 4.8M   | 50s        | 1.01            | 10.3 GB   |
-| N10 N9+RWSE-32 PE     | RTX A4500       | 4.9M   | 52s        | 0.85            | 12.4 GB   |
-| N11 N7+dim512         | RTX A6000       | 10.7M  | 95s        | 0.95            | 31.2 GB   |
-| N12 N7+dim768         | RTX A6000       | 21.0M  | 118s       | 1.61            | 29.8 GB   |
-| N13 N7+BalO init      | RTX A5000       | 3.7M   | 57s        | 0.70            | 10.5 GB   |
-| N14 N11+BalO          | RTX A6000       | 10.7M  | 87s        | 1.55            | 17.5 GB   |
-| N15 N9+linear head    | RTX A4500       | 4.7M   | 54s        | 1.17            | 8.8 GB    |
-| N16 N15+BalO          | RTX A4500       | 4.7M   | 50s        | 1.07            | 12.4 GB   |
-| N17 N15+mean pool     | RTX A4500       | 4.7M   | 50s        | 1.10            | 10.2 GB   |
-| N18 N15+add pool      | RTX 4060 Ti     | 4.7M   | 100s       | 2.05            | 10.8 GB   |
-| N19 N15+max pool      | RTX 4060 Ti     | 4.7M   | 98s        | 1.67            | 9.8 GB    |
-| N20 N15+G-Init        | RTX A4500       | 4.7M   | 51s        | 0.83            | 10.5 GB   |
-| N21 N15+LSUV          | RTX A4500       | 4.7M   | 51s        | 0.84            | 10.1 GB   |
-| N22 N15+L=3           | RTX A4500       | 3.9M   | 50s        | 0.88            | 9.1 GB    |
-| N23 N15+L=5           | RTX A4500       | 5.5M   | 69s        | 1.29            | 11.2 GB   |
-| N24 N15+L=6           | RTX A4500       | 6.4M   | 79s        | 1.52            | 12.9 GB   |
-| N25 N15+attn pool     | RTX A4500       | 4.7M   | 50s        | 0.93            | 9.3 GB    |
-| N26 N15+cross-attn    | RTX A4500       | 5.6M   | 56s        | 0.86            | 9.8 GB    |
-| N27 N15+Kendall MTL   | RTX A4500       | 4.7M   | 49s        | 0.58            | 9.5 GB    |
-| N28 N15+PCGrad        | RTX A4500       | 4.7M   | 98s        | 1.56            | 9.1 GB    |
-| N29 N15+MTL diag (w0) | RTX A4500       | 4.7M   | 58s        | 1.38            | 11.2 GB   |
-| N30 N15+dualflow (w0) | RTX A4500       | 4.7M   | 51s        | 0.45            | 10.9 GB   |
-| N31 N15+heads=2 (w0)  | RTX A4500       | 3.0M   | 34s        | 0.71            | 5.3 GB    |
-| N32 N15+heads=8 (w0)  | RTX A6000       | 8.2M   | 83s        | 1.23            | 22.1 GB   |
-| N33 N15+heads=16 (w0) | RTX A6000       | 15.0M  | 131s       | 2.00            | 26.3 GB   |
-| N34 N15+rank=0        | RTX 5070 Ti     | 4.7M   | 33s        | 0.46            | 10.4 GB   |
-| N35 N15+rank=0.1      | RTX 5070 Ti     | 4.7M   | 35s        | 0.52            | 11.5 GB   |
-| N36 N15+PCGrad enc    | RTX 5070 Ti     | 4.7M   | 77s        | 1.76            | 10.3 GB   |
-| N37 N15+dim512        | RTX A5000       | 14.7M  | 86s        | 1.31            | 13.7 GB   |
-| N38 N15+ffn4          | RTX A5000       | 5.8M   | 46s        | 0.84            | 9.7 GB    |
-| N39 N15+MoE-FFN       | RTX A5000       | 12.1M  | 63s        | 0.97            | 12.0 GB   |
-| N41 N15+edge-MoE      | RTX 3090        | 18.5M  | 109s       | 1.82            | 9.9 GB    |
-| N42 N15+rank0.3       | RTX A4500       | 4.7M   | 52s        | 1.11            | 12.4 GB   |
-| N43 N15+rank0.4       | RTX A4500       | 4.7M   | 52s        | 1.03            | 10.3 GB   |
-| N44 N15+supcon group  | RTX PRO 5000 Bk | 4.8M   | 49s        | 0.67            | 17.3 GB   |
-| N47 N15 GatedGCN      | RTX 3090        | 2.6M   | 26s        | 0.37            | 4.6 GB    |
-| N45 N15+MTL group     | RTX A4500       | 4.9M   | 55s        | 1.16            | 9.6 GB    |
-| N46 N15+MTL linear    | RTX A4000       | 4.7M   | 87s        | 1.34            | 9.7 GB    |
-| N48 N15+JK-Net pool   | RTX A5000       | 4.7M   | 89s        | 1.0             | 9.6 GB    |
-| N49 N15+imtl mid2     | RTX A5000       | 4.7M   | 85s        | 1.57            | 9.5 GB    |
-| N50 N15+imtl_cwe l3   | RTX A4000       | 4.7M   | 78s        | 1.41            | 9.8 GB    |
-| N51 N15+imtl_cwe l2   | RTX A4000       | 4.7M   | 77s        | 0.87            | 9.7 GB    |
-| N52 N48+graph aug     | RTX A4000       | 4.7M   | 74s        | 0.91            | 9.1 GB    |
-| N53 N48+cRT           | RTX A4000       | 4.7M   | 57s        | 0.33            | 3.1 GB    |
-| N54 N48+cRT+dropout   | RTX A4000       | 4.7M   | 53s        | 0.19            | 3.8 GB    |
-| N56 N48+tau-norm      | post-hoc        | 4.7M   | 0s         | 0.00            | -         |
-| N57 N48+tailcalib     | post-hoc        | 4.7M   | 0s         | 0.00            | -         |
-| N55 N48+bal-mixup     | RTX A4000       | 4.7M   | 83s        | 0.92            | 9.6 GB    |
-| N58 N48+cRT+weighted  | RTX A4000       | 4.7M   | 57s        | 0.19            | 3.2 GB    |
-| N59 N48 plain CE      | RTX A4000       | 4.7M   | 85s        | 2.35            | 10.4 GB   |
-| N60 cRT on N59        | RTX A4000       | 4.7M   | 56s        | 0.33            | 3.1 GB    |
-| N61 N48+logit-adjust  | RTX A4000       | 4.7M   | 83s        | 1.50            | 9.8 GB    |
-| N63 cRT+tau-norm      | post-hoc        | 4.7M   | 0s         | 0.00            | -         |
-| N62 cRT+LA N48        | RTX A4000       | 4.7M   | 56s        | 0.34            | 2.9 GB    |
-| N64 cRT+LA N59        | RTX A4000       | 4.7M   | 58s        | 0.32            | 3.0 GB    |
-| N65 N48+FLAG          | RTX A4000       | 4.7M   | 210s       | 3.26            | 9.2 GB    |
-| P1 graph-vit attn     | RTX 5090        | 4.1M   | 36s        | 0.91            | 17.3 GB   |
-| P2 graph-vit mlp      | RTX 5090        | 2.6M   | 36s        | 0.56            | 18.0 GB   |
+| Run                      | GPU             | Params | Epoch Time | Total Time (hr) | VRAM Peak |
+| ------------------------ | --------------- | ------ | ---------- | --------------- | --------- |
+| N1 a1+l1 mean            | RTX A4500       | 3.5M   | 47s        | 0.82            | 11.0 GB   |
+| N2 a1+l1 meanmax         | RTX A4500       | 3.5M   | 47s        | 1.00            | 9.2 GB    |
+| N3 a1+l1 cnn             | RTX A4500       | 4.7M   | 53s        | 1.45            | 9.1 GB    |
+| N4 a1+l1 meanmax+skip    | RTX A4500       | 3.7M   | 47s        | 1.21            | 9.6 GB    |
+| N5 a1+l1 gnn_plus        | RTX A4500       | 3.7M   | 47s        | 0.83            | 11.0 GB   |
+| N6 N5+GraphNorm          | RTX A4500       | 3.7M   | 49s        | 0.75            | 9.5 GB    |
+| N7 N5+ELU                | RTX A4500       | 3.7M   | 47s        | 0.72            | 9.3 GB    |
+| N8 N5+GraphNorm+ELU      | RTX A4500       | 3.7M   | 50s        | 0.61            | 10.7 GB   |
+| N9 N7+FFN                | RTX A4500       | 4.8M   | 50s        | 1.01            | 10.3 GB   |
+| N10 N9+RWSE-32 PE        | RTX A4500       | 4.9M   | 52s        | 0.85            | 12.4 GB   |
+| N11 N7+dim512            | RTX A6000       | 10.7M  | 95s        | 0.95            | 31.2 GB   |
+| N12 N7+dim768            | RTX A6000       | 21.0M  | 118s       | 1.61            | 29.8 GB   |
+| N13 N7+BalO init         | RTX A5000       | 3.7M   | 57s        | 0.70            | 10.5 GB   |
+| N14 N11+BalO             | RTX A6000       | 10.7M  | 87s        | 1.55            | 17.5 GB   |
+| N15 N9+linear head       | RTX A4500       | 4.7M   | 54s        | 1.17            | 8.8 GB    |
+| N16 N15+BalO             | RTX A4500       | 4.7M   | 50s        | 1.07            | 12.4 GB   |
+| N17 N15+mean pool        | RTX A4500       | 4.7M   | 50s        | 1.10            | 10.2 GB   |
+| N18 N15+add pool         | RTX 4060 Ti     | 4.7M   | 100s       | 2.05            | 10.8 GB   |
+| N19 N15+max pool         | RTX 4060 Ti     | 4.7M   | 98s        | 1.67            | 9.8 GB    |
+| N20 N15+G-Init           | RTX A4500       | 4.7M   | 51s        | 0.83            | 10.5 GB   |
+| N21 N15+LSUV             | RTX A4500       | 4.7M   | 51s        | 0.84            | 10.1 GB   |
+| N22 N15+L=3              | RTX A4500       | 3.9M   | 50s        | 0.88            | 9.1 GB    |
+| N23 N15+L=5              | RTX A4500       | 5.5M   | 69s        | 1.29            | 11.2 GB   |
+| N24 N15+L=6              | RTX A4500       | 6.4M   | 79s        | 1.52            | 12.9 GB   |
+| N25 N15+attn pool        | RTX A4500       | 4.7M   | 50s        | 0.93            | 9.3 GB    |
+| N26 N15+cross-attn       | RTX A4500       | 5.6M   | 56s        | 0.86            | 9.8 GB    |
+| N27 N15+Kendall MTL      | RTX A4500       | 4.7M   | 49s        | 0.58            | 9.5 GB    |
+| N28 N15+PCGrad           | RTX A4500       | 4.7M   | 98s        | 1.56            | 9.1 GB    |
+| N29 N15+MTL diag (w0)    | RTX A4500       | 4.7M   | 58s        | 1.38            | 11.2 GB   |
+| N30 N15+dualflow (w0)    | RTX A4500       | 4.7M   | 51s        | 0.45            | 10.9 GB   |
+| N31 N15+heads=2 (w0)     | RTX A4500       | 3.0M   | 34s        | 0.71            | 5.3 GB    |
+| N32 N15+heads=8 (w0)     | RTX A6000       | 8.2M   | 83s        | 1.23            | 22.1 GB   |
+| N33 N15+heads=16 (w0)    | RTX A6000       | 15.0M  | 131s       | 2.00            | 26.3 GB   |
+| N34 N15+rank=0           | RTX 5070 Ti     | 4.7M   | 33s        | 0.46            | 10.4 GB   |
+| N35 N15+rank=0.1         | RTX 5070 Ti     | 4.7M   | 35s        | 0.52            | 11.5 GB   |
+| N36 N15+PCGrad enc       | RTX 5070 Ti     | 4.7M   | 77s        | 1.76            | 10.3 GB   |
+| N37 N15+dim512           | RTX A5000       | 14.7M  | 86s        | 1.31            | 13.7 GB   |
+| N38 N15+ffn4             | RTX A5000       | 5.8M   | 46s        | 0.84            | 9.7 GB    |
+| N39 N15+MoE-FFN          | RTX A5000       | 12.1M  | 63s        | 0.97            | 12.0 GB   |
+| N41 N15+edge-MoE         | RTX 3090        | 18.5M  | 109s       | 1.82            | 9.9 GB    |
+| N42 N15+rank0.3          | RTX A4500       | 4.7M   | 52s        | 1.11            | 12.4 GB   |
+| N43 N15+rank0.4          | RTX A4500       | 4.7M   | 52s        | 1.03            | 10.3 GB   |
+| N44 N15+supcon group     | RTX PRO 5000 Bk | 4.8M   | 49s        | 0.67            | 17.3 GB   |
+| N47 N15 GatedGCN         | RTX 3090        | 2.6M   | 26s        | 0.37            | 4.6 GB    |
+| N45 N15+MTL group        | RTX A4500       | 4.9M   | 55s        | 1.16            | 9.6 GB    |
+| N46 N15+MTL linear       | RTX A4000       | 4.7M   | 87s        | 1.34            | 9.7 GB    |
+| N48 N15+JK-Net pool      | RTX A5000       | 4.7M   | 89s        | 1.0             | 9.6 GB    |
+| N49 N15+imtl mid2        | RTX A5000       | 4.7M   | 85s        | 1.57            | 9.5 GB    |
+| N50 N15+imtl_cwe l3      | RTX A4000       | 4.7M   | 78s        | 1.41            | 9.8 GB    |
+| N51 N15+imtl_cwe l2      | RTX A4000       | 4.7M   | 77s        | 0.87            | 9.7 GB    |
+| N52 N48+graph aug        | RTX A4000       | 4.7M   | 74s        | 0.91            | 9.1 GB    |
+| N53 N48+cRT              | RTX A4000       | 4.7M   | 57s        | 0.33            | 3.1 GB    |
+| N54 N48+cRT+dropout      | RTX A4000       | 4.7M   | 53s        | 0.19            | 3.8 GB    |
+| N56 N48+tau-norm         | post-hoc        | 4.7M   | 0s         | 0.00            | -         |
+| N57 N48+tailcalib        | post-hoc        | 4.7M   | 0s         | 0.00            | -         |
+| N55 N48+bal-mixup        | RTX A4000       | 4.7M   | 83s        | 0.92            | 9.6 GB    |
+| N58 N48+cRT+weighted     | RTX A4000       | 4.7M   | 57s        | 0.19            | 3.2 GB    |
+| N59 N48 plain CE         | RTX A4000       | 4.7M   | 85s        | 2.35            | 10.4 GB   |
+| N60 cRT on N59           | RTX A4000       | 4.7M   | 56s        | 0.33            | 3.1 GB    |
+| N61 N48+logit-adjust     | RTX A4000       | 4.7M   | 83s        | 1.50            | 9.8 GB    |
+| N63 cRT+tau-norm         | post-hoc        | 4.7M   | 0s         | 0.00            | -         |
+| N62 cRT+LA N48           | RTX A4000       | 4.7M   | 56s        | 0.34            | 2.9 GB    |
+| N64 cRT+LA N59           | RTX A4000       | 4.7M   | 58s        | 0.32            | 3.0 GB    |
+| N65 N48+FLAG             | RTX A4000       | 4.7M   | 210s       | 3.26            | 9.2 GB    |
+| P1 graph-vit attn        | RTX 5090        | 4.1M   | 36s        | 0.91            | 17.3 GB   |
+| P2 graph-vit mlp         | RTX 5090        | 2.6M   | 36s        | 0.56            | 18.0 GB   |
+| P3 graph-vit mlp 2L head | RTX 5000 Ada    | 2.6M   | 80s        | 1.60            | 19.0 GB   |
