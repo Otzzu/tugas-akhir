@@ -20,12 +20,14 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import time
 from pathlib import Path
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from loguru import logger
+from tqdm import tqdm
 
 from gnn_vuln.config import Config, load_default_config
 from gnn_vuln.models.registry import build_model
@@ -95,7 +97,7 @@ def _recalibrate_bn(enc: nn.Module, loader, device, n_batches: int = 0) -> None:
         m.momentum = None          # cumulative moving average
     enc.train()
     seen = 0
-    for i, batch in enumerate(loader):
+    for i, batch in enumerate(tqdm(loader, desc="BN recalib", leave=False, dynamic_ncols=True)):
         if n_batches and i >= n_batches:
             break
         _forward_enc(enc, batch.to(device))
@@ -166,12 +168,15 @@ def main() -> None:
     history = []
     step = 0
     m = ema_start
+    epoch_times = []
     for epoch in range(1, epochs + 1):
+        t_epoch = time.time()
         online.train()
         predictor.train()
         run_loss = run_std = 0.0
         n_batches = 0
-        for batch in train_loader:
+        pbar = tqdm(train_loader, desc=f"epoch {epoch}/{epochs}", leave=False, dynamic_ncols=True)
+        for batch in pbar:
             batch = batch.to(device)
             x = batch.x
             N = x.size(0)
@@ -208,17 +213,24 @@ def main() -> None:
             _ema_update(target, online, m)
             step += 1
 
-            run_loss += loss.item()
-            run_std += tgt.float().std(dim=0).mean().item()           # collapse monitor
+            _l = loss.item()
+            _s = tgt.float().std(dim=0).mean().item()                 # collapse monitor
+            run_loss += _l
+            run_std += _s
             n_batches += 1
+            pbar.set_postfix(loss=f"{_l:.4f}", tgt_std=f"{_s:.3f}", m=f"{m:.4f}")
 
         avg_loss = run_loss / max(1, n_batches)
         avg_std = run_std / max(1, n_batches)
+        ep_time = time.time() - t_epoch
+        epoch_times.append(ep_time)
         logger.info(
             f"epoch {epoch:3d}/{epochs} | jepa_loss={avg_loss:.5f} | "
-            f"target_std={avg_std:.4f} | ema_m={m:.5f} | lr={sched.get_last_lr()[0]:.2e}"
+            f"target_std={avg_std:.4f} | ema_m={m:.5f} | lr={sched.get_last_lr()[0]:.2e} | "
+            f"epoch_time={ep_time:.1f}s"
         )
-        history.append({"epoch": epoch, "jepa_loss": avg_loss, "target_std": avg_std, "ema_m": m})
+        history.append({"epoch": epoch, "jepa_loss": avg_loss, "target_std": avg_std,
+                        "ema_m": m, "epoch_time_s": ep_time})
         if avg_std < 1e-3:
             logger.warning(f"target_std={avg_std:.5f} near 0 — possible representation collapse")
 
@@ -235,9 +247,13 @@ def main() -> None:
             "ema_start": ema_start, "ema_end": ema_end,
             "in_channels": in_channels, "hidden_dim": cfg.model.hidden_dim,
             "predictor_layers": pred_layers, "predictor_hidden": pred_hidden,
+            "avg_epoch_time_s": sum(epoch_times) / max(1, len(epoch_times)),
+            "total_time_s": sum(epoch_times),
             "history": history,
         }, f, indent=2)
+    _avg = sum(epoch_times) / max(1, len(epoch_times))
     logger.info(f"saved EMA encoder → {ema_path}")
+    logger.info(f"pretrain done: avg_epoch={_avg:.1f}s | total={sum(epoch_times)/60:.1f}min")
     logger.info(f"downstream: set train.gnn_init_checkpoint: {ema_path}")
 
 
