@@ -293,6 +293,16 @@ class TrainConfig:
     use_flag: bool = False
     flag_step_size: float = 1e-3   # init range AND ascent step (single param, = paper step_size)
     flag_steps:     int   = 3      # M ascent steps (= grad-accumulation count)
+    # ── Node-masked JEPA downstream init (Q-series) ───────────────────────────
+    # Load a JEPA-SSL-pretrained GNN encoder (gnn_vuln.pretrain_jepa) into
+    # model.encoder. freeze_gnn=true → frozen linear probe (encoder frozen + kept
+    # eval, only func_head trains — mirrors cRT, the canonical JEPA SSL-quality
+    # measure); false → finetune from the SSL init (all params trainable).
+    # The JEPA SSL hyperparams (jepa_mask_ratio, jepa_ema_start/end, jepa_loss,
+    # jepa_predictor_layers, jepa_epochs, jepa_lr, jepa_out_dir) are read directly
+    # by pretrain_jepa.py via getattr and need no declared field here.
+    gnn_init_checkpoint: str = ""
+    freeze_gnn: bool = False
 
 
 @dataclass

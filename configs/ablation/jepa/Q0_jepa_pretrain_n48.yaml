@@ -1,0 +1,72 @@
+# Phase Q — Q0: node-masked JEPA self-supervised pretraining of the N48 GNN encoder.
+# Masked-latent prediction (I-JEPA / GraphMAE flavor, NO METIS — the P-series showed
+# METIS patchify collapses CPGs). Online encoder sees the graph with a random 50% of
+# node features replaced by a learned [MASK] token; an EMA target encoder sees the full
+# graph; a 2-layer MLP predictor maps online->target latents at masked nodes (SmoothL1,
+# masked nodes only). EMA weights + stop-grad prevent collapse (pure SSL, no labels).
+# Saves the EMA encoder → checkpoints/jepa/Q0_n48/encoder_ema.pt for Q1/Q2 downstream.
+#
+# model block = N48 exactly (jknet pool, gnn_plus, elu, ffn, skip, hidden 256, L4) so
+# the saved encoder loads strict into the N48 downstream model.encoder.
+#
+# Run (cloud, Linux) — NOT via train_cloud.sh (this is SSL pretrain, no evaluate):
+#   PYTHONPATH=src python -m gnn_vuln.pretrain_jepa --config configs/ablation/jepa/Q0_jepa_pretrain_n48.yaml
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  graph_pool: jknet
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  func_head_type: linear
+
+train:
+  seed: 42
+  device: cuda
+  weight_decay: 0.001
+  grad_clip: 1.0
+  use_amp: false
+  num_workers: 8
+  prefetch_factor: 2
+  batch_size: 32
+  # ── JEPA SSL hyperparameters (read by pretrain_jepa.py via getattr) ──
+  jepa_epochs: 100
+  jepa_lr: 0.001
+  jepa_mask_ratio: 0.5
+  jepa_loss: smoothl1
+  jepa_target_layernorm: true
+  jepa_predictor_layers: 2
+  jepa_predictor_dropout: 0.0
+  jepa_ema_start: 0.996
+  jepa_ema_end: 1.0
+  jepa_out_dir: checkpoints/jepa/Q0_n48

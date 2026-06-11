@@ -122,6 +122,12 @@ class TrainingSession:
         # func_head. Must run before the optimizer is built so it sees the frozen
         # requires_grad flags. Returns the trainable head (or None when disabled).
         crt_module = self._setup_crt(model)
+        # JEPA downstream init (Q-series): load a node-masked-JEPA-pretrained GNN
+        # encoder. Mutually exclusive with cRT (cRT takes precedence). Frozen-probe
+        # mode returns func_head so the trainer keeps the backbone in eval(), reusing
+        # the cRT eval mechanism; finetune mode returns None (normal full training).
+        if crt_module is None:
+            crt_module = self._setup_jepa_init(model)
 
         # LSUV init (Mishkin & Matas ICLR 2016) — applied to GNN encoder only.
         # Runs orthonormal init + per-layer variance normalization using first batch.
@@ -384,6 +390,62 @@ class TrainingSession:
         logger.info(
             f"cRT: trainable={n_train:,} (func_head) | frozen={n_frozen:,} (backbone) | "
             f"class_balanced_sampling={getattr(cfg.train, 'class_balanced_sampling', False)}"
+        )
+        return model.func_head
+
+    def _setup_jepa_init(self, model):
+        """JEPA downstream init (Q-series). Loads a node-masked-JEPA-pretrained GNN
+        encoder (gnn_vuln.pretrain_jepa → encoder_ema.pt) into ``model.encoder``.
+
+        freeze_gnn=false → finetune: encoder is just initialized, all params trainable
+        (returns None → normal training).
+        freeze_gnn=true → frozen linear probe: freeze every param except ``func_head``,
+        re-init the head, and return it so the trainer keeps the backbone in eval()
+        (reuses the cRT mechanism). This is the canonical JEPA SSL-quality measure.
+        Returns the trainable head module, or None when finetuning / disabled.
+        """
+        cfg = self.cfg
+        ckpt = getattr(cfg.train, "gnn_init_checkpoint", "") or ""
+        if not ckpt:
+            return None
+        if not hasattr(model, "encoder"):
+            raise ValueError("train.gnn_init_checkpoint set but model has no .encoder")
+        p = Path(ckpt)
+        if not p.exists():
+            raise FileNotFoundError(f"gnn_init_checkpoint not found: {p}")
+        sd = torch.load(p, map_location=str(self.device))
+        missing, unexpected = model.encoder.load_state_dict(sd, strict=False)
+        logger.info(
+            f"JEPA: loaded GNN encoder ← {p} "
+            f"(missing={len(missing)} unexpected={len(unexpected)})"
+        )
+        if missing or unexpected:
+            logger.warning(
+                f"JEPA encoder load mismatch — missing={list(missing)} unexpected={list(unexpected)}"
+            )
+
+        if not getattr(cfg.train, "freeze_gnn", False):
+            logger.info("JEPA: finetune mode — encoder initialized, all params trainable")
+            return None
+
+        # Frozen linear probe — mirror cRT: re-init head, freeze all but func_head.
+        if getattr(cfg.train, "crt_reinit_head", True):
+            n_reinit = 0
+            for m in model.func_head.modules():
+                if hasattr(m, "reset_parameters"):
+                    m.reset_parameters()
+                    n_reinit += 1
+            logger.info(f"JEPA frozen probe: re-initialized func_head ({n_reinit} layer(s) reset)")
+        n_train = n_frozen = 0
+        for name, prm in model.named_parameters():
+            if name.startswith("func_head."):
+                prm.requires_grad = True
+                n_train += prm.numel()
+            else:
+                prm.requires_grad = False
+                n_frozen += prm.numel()
+        logger.info(
+            f"JEPA frozen probe: trainable={n_train:,} (func_head) | frozen={n_frozen:,} (encoder+rest)"
         )
         return model.func_head
 

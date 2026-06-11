@@ -248,6 +248,32 @@ Graph-ViT/MLP-Mixer **collapses classification** — Test F1 ~0.34 vs the N-seri
 
 **P3 (P2 + 2-layer FuncHead readout)** — same params (2.6M, the extra readout layer is offset elsewhere), F1 0.334 vs P2 0.343 (−0.009), AUC 0.801 vs P2 0.867 (−0.066) — readout capacity does NOT recover the collapse, slightly worse if anything. Confirms the bottleneck is the pooled graph representation itself (patch-isolation), not head capacity. Localization comparable to P1/P2 (IFA 0.310, Top-1 0.958). **Closes the readout-capacity question — P-series result stands as negative.**
 
+---
+
+## Node-Masked JEPA (Q series)
+
+`configs/ablation/jepa/` — self-supervised pretraining of the N48 GNN encoder via node-masked latent prediction (I-JEPA / GraphMAE flavor, **NO METIS** — the P-series showed patchify collapses CPGs). Online encoder sees the graph with a random 50% of node features replaced by a learned `[MASK]` token; an EMA target encoder sees the full graph; a 2-layer MLP predictor maps online→target latents at masked nodes (SmoothL1, masked nodes only). EMA weights + stop-grad prevent collapse (pure SSL, no labels). Target BN stats recalibrated on full graphs before save. Then evaluate two ways off the same encoder: **Q1 finetune** (init the N48 classifier from it, train all params) and **Q2 frozen probe** (freeze encoder + train only the linear head — the canonical JEPA SSL-quality measure). Baseline to beat: N48 (Test F1 0.525). `live_lm=none`, ml1024 node feats, same megavul dataset as the N-series. New SSL code: `src/gnn_vuln/pretrain_jepa.py` (pretrain entry) + `train.gnn_init_checkpoint`/`freeze_gnn` (downstream, reuses the cRT freeze/eval mechanism).
+
+| ID  | Run ID     | Config                        | Mode          | Encoder init | Encoder  |
+| --- | ---------- | ----------------------------- | ------------- | ------------ | -------- |
+| Q0  | (pretrain) | `Q0_jepa_pretrain_n48.yaml`   | SSL pretrain  | random       | trained  |
+| Q1  | (pending)  | `Q1_jepa_finetune_n48.yaml`   | finetune      | JEPA-EMA     | trainable |
+| Q2  | (pending)  | `Q2_jepa_frozenprobe_n48.yaml`| frozen probe  | JEPA-EMA     | frozen   |
+
+### Classification
+
+| ID              | Val F1 | Test F1 | Test Acc | F1-w | Prec | Rec | Prec-w | Rec-w | AUC-ROC | Conf. | Epochs |
+| --------------- | ------ | ------- | -------- | ---- | ---- | --- | ------ | ----- | ------- | ----- | ------ |
+| Q1 finetune     |        |         |          |      |      |     |        |       |         |       |        |
+| Q2 frozen probe |        |         |          |      |      |     |        |       |         |       |        |
+
+### Statement-Level Localization
+
+| ID              | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| --------------- | ----- | ------- | ------- | --------- | ---------- | ------------- |
+| Q1 finetune     |       |         |         |           |            |               |
+| Q2 frozen probe |       |         |         |           |            |               |
+
 # Training Efficiency
 
 | Run                      | GPU             | Params | Epoch Time | Total Time (hr) | VRAM Peak |

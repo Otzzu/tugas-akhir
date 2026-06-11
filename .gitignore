@@ -79,5 +79,10 @@ src/FLAG/
 src/graph-jepa/
 src/graph-vit-mlpmixer/
 src/llm-jepa/
+src/ijepa/
+src/GraphMAE/
+src/GraphMAE2/
+src/bgrl/
+src/StructMAE/
 src/hypermixing/
 src/pnlp-mixer/
