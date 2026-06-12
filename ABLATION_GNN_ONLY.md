@@ -227,6 +227,7 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | P1  | `20260610_105429_graph_vit_multiclass` | `P1_graphvit_attn.yaml`          | attention     | 32        | 4.1M   |
 | P2  | `20260610_114940_graph_vit_multiclass` | `P2_graphmlpmixer.yaml`          | mlp           | 32        | 2.6M   |
 | P3  | `20260610_161100_graph_vit_multiclass` | `P3_graphmlpmixer_mlp2head.yaml` | mlp (2L head) | 32        | 2.6M   |
+| P4  | `20260611_094457_graph_vit_multiclass` | `P4_graphmlpmixer_p16.yaml`      | mlp           | 16        | 2.4M   |
 
 ### Classification
 
@@ -235,6 +236,7 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | P1 attention   | 0.389  | 0.340   | 0.394    | 0.402 | 0.848   | 0.367 | 90     |
 | P2 mlp         | 0.389  | 0.343   | 0.409    | 0.408 | 0.867   | 0.433 | 55     |
 | P3 mlp 2L head | 0.377  | 0.334   | 0.399    | 0.401 | 0.801   | 0.408 | 72     |
+| P4 mlp p16     | 0.424  | 0.357   | 0.418    | 0.406 | 0.849   | 0.517 | 61     |
 
 ### Statement-Level Localization
 
@@ -243,10 +245,13 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | P1 attention   | 0.436 | 0.928   | 0.988   | 0.113     | 0.323      | 0.102         |
 | P2 mlp         | 0.302 | 0.956   | 0.984   | 0.154     | 0.313      | 0.082         |
 | P3 mlp 2L head | 0.310 | 0.958   | 0.988   | 0.144     | 0.289      | 0.101         |
+| P4 mlp p16     | 0.498 | 0.943   | 0.987   | 0.129     | 0.278      | 0.108         |
 
 Graph-ViT/MLP-Mixer **collapses classification** — Test F1 ~0.34 vs the N-series flat-GNN best ~0.52 (N48 0.525, ≈ −0.18). Patch-isolation breaks the direct message passing CPGs (small-world, diameter 5–7) rely on, so patchify hurts short-range graphs. P2 (MLP-Mixer) ≥ P1 (attention) on every metric at lower cost (2.6M vs 4.1M, 0.56h vs 0.91h) — attention over patches adds nothing. Localization stays strong (IFA 0.30–0.44, Top-1 0.93–0.96) but the pooled graph rep is too weak to classify. **Negative result: Graph-ViT not justified for CPGs (confirms diameter analysis).**
 
 **P3 (P2 + 2-layer FuncHead readout)** — same params (2.6M, the extra readout layer is offset elsewhere), F1 0.334 vs P2 0.343 (−0.009), AUC 0.801 vs P2 0.867 (−0.066) — readout capacity does NOT recover the collapse, slightly worse if anything. Confirms the bottleneck is the pooled graph representation itself (patch-isolation), not head capacity. Localization comparable to P1/P2 (IFA 0.310, Top-1 0.958). **Closes the readout-capacity question — P-series result stands as negative.**
+
+**P4 (P2 MLP-Mixer with n_patches 16 instead of 32)** — Test F1 0.357 vs P2 0.343 (+0.014), AUC 0.849 vs 0.867 (−0.018), at lower cost (2.4M, 0.97h, 13.1 GB). Halving the patch count (larger patches, less patch-isolation) nudges classification up marginally but stays deeply collapsed (0.357 vs N48 0.525, −0.17). Confirms the patch-count knob does not rescue Graph-ViT on CPGs — the patchify bottleneck is structural, not a granularity tuning issue. **P-series closed: Graph-ViT/MLP-Mixer not viable for CPGs across mixer type, readout depth, and patch count.**
 
 ---
 
@@ -254,25 +259,25 @@ Graph-ViT/MLP-Mixer **collapses classification** — Test F1 ~0.34 vs the N-seri
 
 `configs/ablation/jepa/` — self-supervised pretraining of the N48 GNN encoder via node-masked latent prediction (I-JEPA / GraphMAE flavor, **NO METIS** — the P-series showed patchify collapses CPGs). Online encoder sees the graph with a random 50% of node features replaced by a learned `[MASK]` token; an EMA target encoder sees the full graph; a 2-layer MLP predictor maps online→target latents at masked nodes (SmoothL1, masked nodes only). EMA weights + stop-grad prevent collapse (pure SSL, no labels). Target BN stats recalibrated on full graphs before save. Then evaluate two ways off the same encoder: **Q1 finetune** (init the N48 classifier from it, train all params) and **Q2 frozen probe** (freeze encoder + train only the linear head — the canonical JEPA SSL-quality measure). Baseline to beat: N48 (Test F1 0.525). `live_lm=none`, ml1024 node feats, same megavul dataset as the N-series. New SSL code: `src/gnn_vuln/pretrain_jepa.py` (pretrain entry) + `train.gnn_init_checkpoint`/`freeze_gnn` (downstream, reuses the cRT freeze/eval mechanism).
 
-| ID  | Run ID     | Config                        | Mode          | Encoder init | Encoder  |
-| --- | ---------- | ----------------------------- | ------------- | ------------ | -------- |
-| Q0  | (pretrain) | `Q0_jepa_pretrain_n48.yaml`   | SSL pretrain  | random       | trained  |
-| Q1  | (pending)  | `Q1_jepa_finetune_n48.yaml`   | finetune      | JEPA-EMA     | trainable |
-| Q2  | (pending)  | `Q2_jepa_frozenprobe_n48.yaml`| frozen probe  | JEPA-EMA     | frozen   |
+| ID  | Run ID     | Config                         | Mode         | Encoder init | Encoder   |
+| --- | ---------- | ------------------------------ | ------------ | ------------ | --------- |
+| Q0  | (pretrain) | `Q0_jepa_pretrain_n48.yaml`    | SSL pretrain | random       | trained   |
+| Q1  | `20260611_140015_lmgat_codebert_multiclass` | `Q1_jepa_finetune_n48.yaml`    | finetune     | JEPA-EMA     | trainable |
+| Q2  | `20260611_144416_lmgat_codebert_multiclass` | `Q2_jepa_frozenprobe_n48.yaml` | frozen probe | JEPA-EMA     | frozen    |
 
 ### Classification
 
-| ID              | Val F1 | Test F1 | Test Acc | F1-w | Prec | Rec | Prec-w | Rec-w | AUC-ROC | Conf. | Epochs |
-| --------------- | ------ | ------- | -------- | ---- | ---- | --- | ------ | ----- | ------- | ----- | ------ |
-| Q1 finetune     |        |         |          |      |      |     |        |       |         |       |        |
-| Q2 frozen probe |        |         |          |      |      |     |        |       |         |       |        |
+| ID              | Val F1 | Test F1 | Test Acc | F1-w  | Prec  | Rec   | Prec-w | Rec-w | AUC-ROC | Conf. | Epochs |
+| --------------- | ------ | ------- | -------- | ----- | ----- | ----- | ------ | ----- | ------- | ----- | ------ |
+| Q1 finetune     | 0.497  | 0.475   | 0.473    | 0.471 | 0.419 | 0.470 | 0.494  | 0.480 | 0.892   | 0.424 | 51     |
+| Q2 frozen probe | 0.243  | 0.272   | 0.336    | 0.327 | 0.279 | 0.260 | 0.341  | 0.306 | 0.865   | 0.253 | 34     |
 
 ### Statement-Level Localization
 
-| ID              | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
-| --------------- | ----- | ------- | ------- | --------- | ---------- | ------------- |
-| Q1 finetune     |       |         |         |           |            |               |
-| Q2 frozen probe |       |         |         |           |            |               |
+| ID              | IFA ↓  | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| --------------- | ------ | ------- | ------- | --------- | ---------- | ------------- |
+| Q1 finetune     | 0.514  | 0.867   | 0.981   | 0.226     | 0.424      | 0.039         |
+| Q2 frozen probe | 23.818 | 0.171   | 0.401   | 0.053     | 0.210      | 0.189         |
 
 # Training Efficiency
 
@@ -345,3 +350,6 @@ Graph-ViT/MLP-Mixer **collapses classification** — Test F1 ~0.34 vs the N-seri
 | P1 graph-vit attn        | RTX 5090        | 4.1M   | 36s        | 0.91            | 17.3 GB   |
 | P2 graph-vit mlp         | RTX 5090        | 2.6M   | 36s        | 0.56            | 18.0 GB   |
 | P3 graph-vit mlp 2L head | RTX 5000 Ada    | 2.6M   | 80s        | 1.60            | 19.0 GB   |
+| P4 graph-vit mlp p16     | RTX 5090        | 2.4M   | 57s        | 0.97            | 13.1 GB   |
+| Q1 jepa finetune         | RTX A4500       | 4.7M   | 51s        | 0.72            | 10.3 GB   |
+| Q2 jepa frozen probe     | RTX A4500       | 4.7M   | 27s        | 0.26            | 3.3 GB    |

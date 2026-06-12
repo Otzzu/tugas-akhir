@@ -360,32 +360,32 @@ H2 and H3 results are from reruns with fixed `lm_full_windowed` (mean-pool CLS a
 and ml5120 dataset on RTX 5090. Earlier H2/H3 runs with ml1024 never activated sliding window
 (fast path always triggered when func_max_length=max_length=1024).
 
-| ID  | Config                                                           | chunk | stride | max_len | Max windows     | Run ID            | Epochs |
-| --- | ---------------------------------------------------------------- | ----- | ------ | ------- | --------------- | ----------------- | ------ |
-| H1  | — (= G2)                                                         | —     | —      | 1024    | 1               | `20260520_132730` | 34     |
-| H2  | `H2_unixcoder_sliding_chunk1024_stride512.yaml`                  | 1024  | 512    | 5120    | 9               | `20260525_104032` | 30     |
-| H3  | `H3_unixcoder_sliding_chunk1024_stride1024.yaml`                 | 1024  | 1024   | 5120    | 5               | `20260525_125031` | 31     |
-| H4  | `H4_unixcoder_sliding_chunk1024_stride1024_winattn.yaml`         | 1024  | 1024   | 5120    | 5+attn          | `20260527_121315` | 22     |
-| H5  | `H5_unixcoder_sliding_chunk1024_stride512_winattn.yaml`          | 1024  | 512    | 5120    | 9+attn          | `20260528_062323` | 34     |
-| H6  | `H6_unixcoder_sliding_chunk1024_stride1024_winattn_hidden.yaml`  | 1024  | 1024   | 5120    | 5+attn+hidden   | `20260528_085945` | 31     |
-| H7  | `H7_unixcoder_sliding_chunk1024_stride512_winattn_centerw.yaml`  | 1024  | 512    | 5120    | 9+attn+cw       | `20260528_063142` | 34     |
-| H8  | `H8_unixcoder_sliding_chunk1024_stride512_winattn_crosswin.yaml` | 1024  | 512    | 5120    | 9+attn+crosswin | `20260528_094016` | 41     |
+| ID  | Config                                                            | chunk | stride | max_len | Max windows     | Run ID            | Epochs |
+| --- | ----------------------------------------------------------------- | ----- | ------ | ------- | --------------- | ----------------- | ------ |
+| H1  | — (= G2)                                                          | —     | —      | 1024    | 1               | `20260520_132730` | 34     |
+| H2  | `H2_unixcoder_sliding_chunk1024_stride512.yaml`                   | 1024  | 512    | 5120    | 9               | `20260525_104032` | 30     |
+| H3  | `H3_unixcoder_sliding_chunk1024_stride1024.yaml`                  | 1024  | 1024   | 5120    | 5               | `20260525_125031` | 31     |
+| H4  | `H4_unixcoder_sliding_chunk1024_stride1024_winattn.yaml`          | 1024  | 1024   | 5120    | 5+attn          | `20260527_121315` | 22     |
+| H5  | `H5_unixcoder_sliding_chunk1024_stride512_winattn.yaml`           | 1024  | 512    | 5120    | 9+attn          | `20260528_062323` | 34     |
+| H6  | `H6_unixcoder_sliding_chunk1024_stride1024_winattn_hidden.yaml`   | 1024  | 1024   | 5120    | 5+attn+hidden   | `20260528_085945` | 31     |
+| H7  | `H7_unixcoder_sliding_chunk1024_stride512_winattn_centerw.yaml`   | 1024  | 512    | 5120    | 9+attn+cw       | `20260528_063142` | 34     |
+| H8  | `H8_unixcoder_sliding_chunk1024_stride512_winattn_crosswin.yaml`  | 1024  | 512    | 5120    | 9+attn+crosswin | `20260528_094016` | 41     |
 | H9  | `H9_unixcoder_sliding_chunk1024_stride1024_winattn_crosswin.yaml` | 1024  | 1024   | 5120    | 5+attn+crosswin | `20260610_122559` | 55     |
-| H10 | `H10_unixcoder_sliding_chunk1024_stride1024_winmixer.yaml`       | 1024  | 1024   | 5120    | 5+mixer         | `20260610_152801` | 26     |
+| H10 | `H10_unixcoder_sliding_chunk1024_stride1024_winmixer.yaml`        | 1024  | 1024   | 5120    | 5+mixer         | `20260610_152801` | 26     |
 
 ## Classification
 
-| ID        | Test F1 | Test Acc | F1-w  | AUC-ROC   | Conf. | Epochs |
-| --------- | ------- | -------- | ----- | --------- | ----- | ------ |
-| H1 (= G2) | 0.529   | 0.582    | 0.579 | 0.914     | 0.569 | 34     |
-| H2        | 0.459   | 0.508    | 0.507 | 0.890     | 0.588 | 30     |
-| H3        | 0.528   | 0.529    | 0.533 | 0.895     | 0.587 | 31     |
-| H4        | 0.520   | 0.563    | 0.560 | **0.927** | 0.695 | 22     |
-| H5        | 0.443   | 0.522    | 0.522 | 0.885     | 0.589 | 34     |
-| H6        | 0.513   | 0.532    | 0.533 | 0.903     | 0.607 | 31     |
-| H7        | 0.485   | 0.524    | 0.525 | 0.896     | 0.618 | 34     |
-| H8        | 0.520   | 0.536    | 0.538 | 0.898     | 0.584 | 41     |
-| H9        | 0.490   | 0.520    | 0.539 | 0.897     | 0.479 | 55     |
+| ID        | Test F1   | Test Acc | F1-w  | AUC-ROC   | Conf. | Epochs |
+| --------- | --------- | -------- | ----- | --------- | ----- | ------ |
+| H1 (= G2) | 0.529     | 0.582    | 0.579 | 0.914     | 0.569 | 34     |
+| H2        | 0.459     | 0.508    | 0.507 | 0.890     | 0.588 | 30     |
+| H3        | 0.528     | 0.529    | 0.533 | 0.895     | 0.587 | 31     |
+| H4        | 0.520     | 0.563    | 0.560 | **0.927** | 0.695 | 22     |
+| H5        | 0.443     | 0.522    | 0.522 | 0.885     | 0.589 | 34     |
+| H6        | 0.513     | 0.532    | 0.533 | 0.903     | 0.607 | 31     |
+| H7        | 0.485     | 0.524    | 0.525 | 0.896     | 0.618 | 34     |
+| H8        | 0.520     | 0.536    | 0.538 | 0.898     | 0.584 | 41     |
+| H9        | 0.490     | 0.520    | 0.539 | 0.897     | 0.479 | 55     |
 | H10       | **0.534** | 0.538    | 0.537 | 0.879     | 0.607 | 26     |
 
 ## Statement-Level Localization
@@ -512,7 +512,7 @@ encoder-only LMs with longer native context. All configs use `live_lm=func, free
 
 **J3 (ModernBERT-base, 5120-token native)** — localization improves (IFA 0.950 vs 1.410, −33%; Top-1 0.814 vs 0.747) but classification collapses (F1 0.378, −0.151; AUC 0.847 vs 0.914). Alternating local/global attention fails to produce function-level CWE semantics that UniXcoder's full bidirectional attention computes in a single pass.
 
-**Phase 10 finding: ModernBERT-base is a localization/classification trade-off, not an improvement.** UniXcoder with sliding window (H4, F1=0.554) remains best overall.
+**Phase 10 finding: ModernBERT-base is a localization/classification trade-off, not an improvement.** UniXcoder with sliding window remains best overall — H10 (window mixer, F1=0.534) best classification, H4 (winattn, AUC=0.927) best AUC. (Note: earlier text here cited "H4, F1=0.554" — that 0.554 was actually F2's Test Acc from Phase 6, an unrelated copy-paste error; H4's actual Test F1=0.520.)
 
 ---
 
