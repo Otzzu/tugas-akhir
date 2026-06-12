@@ -33,6 +33,7 @@ Thumbs.db
 
 # Claude Code local config (commands, hooks — project-local, not for repo)
 .claude/
+.serena/
 
 # Env files
 .env
