@@ -232,12 +232,12 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                                   both_mode=stmt_both_mode, lm_alpha=stmt_lm_alpha)
         self._cross_task_method = cross_task_method
         self.cross_task = build_cross_task(
-            cross_task_method, hidden_dim + self._lm_dim, hidden_dim, num_classes,
+            cross_task_method, self._pool_out_dim + self._lm_dim, hidden_dim, num_classes,
             self._lm_dim, localization_encoder, num_heads,
             mmoe_task_encoder=mmoe_task_encoder, residual=cross_task_residual,
             mmoe_loc_transformer=mmoe_loc_transformer,
         )
-        _fused_dim_total = hidden_dim + self._lm_dim
+        _fused_dim_total = self._pool_out_dim + self._lm_dim
         self.supcon_head = (
             SupConProjector(_fused_dim_total, supcon_proj_hidden, supcon_proj_dim,
                             dropout=supcon_proj_dropout)
