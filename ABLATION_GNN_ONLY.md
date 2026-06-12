@@ -228,6 +228,7 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | P2  | `20260610_114940_graph_vit_multiclass` | `P2_graphmlpmixer.yaml`          | mlp           | 32        | 2.6M   |
 | P3  | `20260610_161100_graph_vit_multiclass` | `P3_graphmlpmixer_mlp2head.yaml` | mlp (2L head) | 32        | 2.6M   |
 | P4  | `20260611_094457_graph_vit_multiclass` | `P4_graphmlpmixer_p16.yaml`      | mlp           | 16        | 2.4M   |
+| P5  | `20260612_051319_graph_vit_multiclass` | `P5_graphmlpmixer_p8.yaml`       | mlp           | 8         | 2.4M   |
 
 ### Classification
 
@@ -237,6 +238,7 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | P2 mlp         | 0.389  | 0.343   | 0.409    | 0.408 | 0.867   | 0.433 | 55     |
 | P3 mlp 2L head | 0.377  | 0.334   | 0.399    | 0.401 | 0.801   | 0.408 | 72     |
 | P4 mlp p16     | 0.424  | 0.357   | 0.418    | 0.406 | 0.849   | 0.517 | 61     |
+| P5 mlp p8      | 0.431  | 0.386   | 0.450    | 0.452 | 0.831   | 0.436 | 100    |
 
 ### Statement-Level Localization
 
@@ -246,12 +248,15 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | P2 mlp         | 0.302 | 0.956   | 0.984   | 0.154     | 0.313      | 0.082         |
 | P3 mlp 2L head | 0.310 | 0.958   | 0.988   | 0.144     | 0.289      | 0.101         |
 | P4 mlp p16     | 0.498 | 0.943   | 0.987   | 0.129     | 0.278      | 0.108         |
+| P5 mlp p8      | 0.262 | 0.955   | 0.988   | 0.094     | 0.265      | 0.151         |
 
 Graph-ViT/MLP-Mixer **collapses classification** — Test F1 ~0.34 vs the N-series flat-GNN best ~0.52 (N48 0.525, ≈ −0.18). Patch-isolation breaks the direct message passing CPGs (small-world, diameter 5–7) rely on, so patchify hurts short-range graphs. P2 (MLP-Mixer) ≥ P1 (attention) on every metric at lower cost (2.6M vs 4.1M, 0.56h vs 0.91h) — attention over patches adds nothing. Localization stays strong (IFA 0.30–0.44, Top-1 0.93–0.96) but the pooled graph rep is too weak to classify. **Negative result: Graph-ViT not justified for CPGs (confirms diameter analysis).**
 
 **P3 (P2 + 2-layer FuncHead readout)** — same params (2.6M, the extra readout layer is offset elsewhere), F1 0.334 vs P2 0.343 (−0.009), AUC 0.801 vs P2 0.867 (−0.066) — readout capacity does NOT recover the collapse, slightly worse if anything. Confirms the bottleneck is the pooled graph representation itself (patch-isolation), not head capacity. Localization comparable to P1/P2 (IFA 0.310, Top-1 0.958). **Closes the readout-capacity question — P-series result stands as negative.**
 
 **P4 (P2 MLP-Mixer with n_patches 16 instead of 32)** — Test F1 0.357 vs P2 0.343 (+0.014), AUC 0.849 vs 0.867 (−0.018), at lower cost (2.4M, 0.97h, 13.1 GB). Halving the patch count (larger patches, less patch-isolation) nudges classification up marginally but stays deeply collapsed (0.357 vs N48 0.525, −0.17). Confirms the patch-count knob does not rescue Graph-ViT on CPGs — the patchify bottleneck is structural, not a granularity tuning issue. **P-series closed: Graph-ViT/MLP-Mixer not viable for CPGs across mixer type, readout depth, and patch count.**
+
+**P5 (P2 MLP-Mixer with n_patches 8)** — Test F1 0.386 vs P4 0.357 (+0.029) vs P2 0.343, Acc 0.450 (best of P-series), F1-w 0.452, at 2.4M / 2.29h. Fewer patches keeps helping: 32→16→8 gives a **monotone** F1 0.343→0.357→0.386. Direction is consistent — larger patches = less patch-isolation = closer to plain message passing — but the limit of the trend is just N48 itself (n_patches→1 = no partition = the flat GNN). Still −0.14 vs N48 0.525 at p8, and the only knob left (shrink patches further) converges to N48 by construction, not past it. AUC slips (0.831, lowest P-series) and localization R@5%/R@20% are weakest (0.094/0.265) despite best IFA/Top-1 (0.262/0.955). **Confirms the negative result with a clean monotone: patchify only helps insofar as it undoes itself; Graph-ViT has no headroom over the flat GNN on CPGs.**
 
 ---
 
@@ -351,5 +356,6 @@ Graph-ViT/MLP-Mixer **collapses classification** — Test F1 ~0.34 vs the N-seri
 | P2 graph-vit mlp         | RTX 5090        | 2.6M   | 36s        | 0.56            | 18.0 GB   |
 | P3 graph-vit mlp 2L head | RTX 5000 Ada    | 2.6M   | 80s        | 1.60            | 19.0 GB   |
 | P4 graph-vit mlp p16     | RTX 5090        | 2.4M   | 57s        | 0.97            | 13.1 GB   |
+| P5 graph-vit mlp p8      | RTX A6000       | 2.4M   | 82s        | 2.29            | 10.6 GB   |
 | Q1 jepa finetune         | RTX A4500       | 4.7M   | 51s        | 0.72            | 10.3 GB   |
 | Q2 jepa frozen probe     | RTX A4500       | 4.7M   | 27s        | 0.26            | 3.3 GB    |
