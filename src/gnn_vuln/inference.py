@@ -146,27 +146,37 @@ def predict(
     batch = torch.zeros(data.num_nodes, dtype=torch.long, device=device)
     node_line = getattr(data, "node_line", None)
     edge_attr = getattr(data, "edge_attr", None)
+    rwse = getattr(data, "rwse", None)
+
+    def _with_batch_dim(t):
+        # Data stores [max_length]; model expects [B, max_length]
+        return t.unsqueeze(0) if t is not None and t.dim() == 1 else t
 
     # Forward pass — route func tokens when present
     if hasattr(model, "codebert"):
-        func_input_ids = getattr(data, "func_input_ids", None)
-        func_attention_mask = getattr(data, "func_attention_mask", None)
-        # Data stores [1, 512]; model expects [B, 512] — squeeze/unsqueeze as needed
-        if func_input_ids is not None and func_input_ids.dim() == 2:
-            fids = func_input_ids   # already [1, 512]
-            fmask = func_attention_mask
-        elif func_input_ids is not None:
-            fids = func_input_ids.unsqueeze(0)
-            fmask = func_attention_mask.unsqueeze(0)
-        else:
-            fids = fmask = None
-        logit_func, stmt_scores_list = model(
-            data.x, data.edge_index, batch, node_line, edge_attr, fids, fmask
+        func_input_ids = _with_batch_dim(getattr(data, "func_input_ids", None))
+        func_attention_mask = _with_batch_dim(getattr(data, "func_attention_mask", None))
+        func_token_lines = _with_batch_dim(getattr(data, "func_token_lines", None))
+        out = model(
+            data.x, data.edge_index, batch, node_line, edge_attr,
+            func_input_ids, func_attention_mask, func_token_lines,
+            func_line_cls=getattr(data, "func_line_cls", None),
+            func_line_ids=getattr(data, "func_line_ids", None),
+            func_line_cls_batch=getattr(data, "func_line_cls_batch", None),
+            rwse=rwse,
         )
     else:
-        logit_func, stmt_scores_list = model(
-            data.x, data.edge_index, batch, node_line, edge_attr
-        )
+        out = model(data.x, data.edge_index, batch, node_line, edge_attr, rwse=rwse)
+
+    # Unpack return tuple — mirrors trainer._forward (2/3/4/5-tuple model outputs)
+    if len(out) == 5:
+        logit_func, _logit_group, _logit_binary, stmt_scores_list, _z = out
+    elif len(out) == 4:
+        logit_func, _logit_group, _logit_binary, stmt_scores_list = out
+    elif len(out) == 3:
+        logit_func, stmt_scores_list, _z = out
+    else:
+        logit_func, stmt_scores_list = out
 
     # ── Function-level result ────────────────────────────────────────────────
     probs = F.softmax(logit_func[0], dim=-1)          # [num_classes]
@@ -267,6 +277,8 @@ def predict_from_file(
     cpg_path: str | Path,
     class_names: list[str] | None = None,
     pretrained_lm: str = "microsoft/codebert-base",
+    func_lm: str = "",
+    func_max_length: int = 512,
     label: int = 0,
     flaw_lines: list[int] | None = None,
     max_nodes: int = 1000,
@@ -281,7 +293,10 @@ def predict_from_file(
     model        : trained model
     cpg_path     : path to a Joern-exported CPG file (.json or .xml/.graphml)
     class_names  : ordered class label list
-    pretrained_lm: HuggingFace model name for node embedding
+    pretrained_lm: HuggingFace model name for node embedding (frozen node features)
+    func_lm      : HuggingFace model name for the live function-level branch;
+                   falls back to pretrained_lm if empty
+    func_max_length: tokenizer max_length for the func_lm branch
     label        : ground-truth label (only stored in Data.y, does not affect output)
     flaw_lines   : known flaw lines (optional; stored in flaw_line_mask)
     max_nodes    : skip graphs larger than this
@@ -309,21 +324,24 @@ def predict_from_file(
     ]
     cls_feats = torch.cat(parts, dim=0)
 
-    # Tokenize function text when the model has a live CodeBERT branch
-    func_input_ids = func_attention_mask = None
+    # Tokenize function text when the model has a live CodeBERT/UniXcoder branch
+    func_input_ids = func_attention_mask = func_token_lines = None
     if hasattr(model, "codebert"):
-        from transformers import RobertaTokenizer
-        tokenizer = RobertaTokenizer.from_pretrained(pretrained_lm)
+        from gnn_vuln.data.dataset_lm import _load_tokenizer, _compute_func_token_lines
+        tokenizer = _load_tokenizer(func_lm or pretrained_lm)
         func_text = build_func_text(cpg)
         enc = tokenizer(
-            func_text, max_length=512, truncation=True,
+            func_text, max_length=func_max_length, truncation=True,
             padding="max_length", return_tensors="pt",
         )
-        func_input_ids = enc["input_ids"]        # [1, 512]
+        func_input_ids = enc["input_ids"]        # [1, func_max_length]
         func_attention_mask = enc["attention_mask"]
+        func_token_lines = _compute_func_token_lines(
+            func_text, func_max_length, tokenizer
+        ).unsqueeze(0)                            # [1, func_max_length]
 
     data = build_from_parsed(cpg, cls_feats, label, flaw_lines,
-                              func_input_ids, func_attention_mask)
+                              func_input_ids, func_attention_mask, func_token_lines)
 
     return predict(model, data, class_names, device=device, top_k_lines=top_k_lines)
 
@@ -352,11 +370,15 @@ class VulnPredictor:
         class_names: list[str] | None,
         device: torch.device,
         pretrained_lm: str = "microsoft/codebert-base",
+        func_lm: str = "",
+        func_max_length: int = 512,
     ) -> None:
         self.model = model
         self.class_names = class_names
         self.device = device
         self.pretrained_lm = pretrained_lm
+        self.func_lm = func_lm or pretrained_lm
+        self.func_max_length = func_max_length
 
     @classmethod
     def from_checkpoint(
@@ -369,7 +391,9 @@ class VulnPredictor:
         model, class_names = load_model(checkpoint, config, device)
         cfg = Config.from_yaml(config) if Path(config).exists() else load_default_config()
         pretrained_lm = getattr(cfg.model, "pretrained_lm", "microsoft/codebert-base")
-        return cls(model, class_names, get_device(device), pretrained_lm)
+        func_lm = getattr(cfg.model, "func_lm", "")
+        func_max_length = getattr(cfg.model, "func_max_length", 512)
+        return cls(model, class_names, get_device(device), pretrained_lm, func_lm, func_max_length)
 
     def predict(self, data, top_k_lines: int | None = None) -> dict:
         """Run inference on a single PyG Data object."""
@@ -389,6 +413,8 @@ class VulnPredictor:
             self.model, cpg_path,
             class_names=self.class_names,
             pretrained_lm=self.pretrained_lm,
+            func_lm=self.func_lm,
+            func_max_length=self.func_max_length,
             label=label,
             flaw_lines=flaw_lines,
             max_nodes=max_nodes,
