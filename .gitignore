@@ -54,6 +54,7 @@ joern_workspace/
 /results/
 /paper/
 src/LineVul/
+src/linevd/
 src/VulChecker/
 src/vul-LMGNN/
 src/gnn_vuln/joern/
