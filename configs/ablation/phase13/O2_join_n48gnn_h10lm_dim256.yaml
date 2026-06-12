@@ -1,0 +1,85 @@
+# Phase 13 — O2: O1 but GNN hidden_dim 256 (faithful N48) instead of 768.
+# Rationale: O1 used H10's hidden_dim 768 + jknet pool -> GNN side = 4*768 = 3072D,
+# which DOMINATES the 768D LM in the fused vector 4:1 (LM signal drowned). Also 768
+# is NOT N48's actual width — N48 (best GNN-only, F1 0.525) is hidden_dim 256.
+# O2 sets hidden_dim 256 -> jknet pool = 4*256 = 1024D GNN, balanced against LM 768D
+# (~1.3:1, like H10's original 768:768). This is the TRUE "best GNN (N48) + best LM
+# (H10)" join — same GNN block AND same GNN width as N48.
+# fused = 1024 (jknet) + 768 (LM) = 1792 -> LinearFuncHead(1792, num_classes).
+# Baseline to beat: H10 0.534, O1 (dim768). Hypothesis: balanced fusion >= GNN-dominant.
+#
+# .pt build: configs/data/megavul_multiclass_top25_node-unixcoder_func-unixcoder_ml5120.yaml
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/phase13/O2_join_n48gnn_h10lm_dim256.yaml
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 5120
+  func_chunk_size: 1024
+  func_chunk_stride: 1024
+  window_attn_pool: false
+  window_mixer: true
+  window_mixer_max: 6
+  cross_window_attn: false
+  localization_encoder: both
+  stmt_both_mode: concat
+  graph_pool: jknet
+  cross_task_method: none
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  func_head_type: linear
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  lm_lr: 0.00001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: true
+  use_flash_attention: true
+  grad_accum_steps: 1
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 8
+  prefetch_factor: 2
