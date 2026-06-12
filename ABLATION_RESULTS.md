@@ -583,6 +583,30 @@ Base H4 = Test F1 0.520. **M2 (gradual) = best ULMFiT (F1 0.532, +0.012 vs H4)**
 
 ---
 
+# Phase 13 — Join Best GNN + Best LM
+
+`configs/ablation/phase13/` — join the best GNN-only block (N48: jknet pool + gnn_plus + elu + ffn + skip) with the best Phase 8 LM aggregation (H10: UniXcoder sliding-window stride1024 + WindowMixerPool, localization=both concat). Tests whether the two architectural winners stack. O1 = hidden_dim 768 (from H10) → jknet pool 4×768=3072D dominates the 768D LM 4:1 (GNN-dominant fusion). O2 (pending) = hidden_dim 256 (faithful N48) → 1024D GNN balanced vs 768D LM.
+
+| Run | Run ID | Config | hidden | jknet pool | fused | GNN:LM |
+|---|---|---|---|---|---|---|
+| O1 | `20260612_131926_lmgat_codebert_multiclass` | `O1_join_n48gnn_h10lm.yaml` | 768 | 3072D | 3840 | 4:1 |
+
+## Classification
+
+| Run | Val F1 | Test F1 | Test Acc | F1-w | Prec | Rec | Prec-w | Rec-w | AUC-ROC | Conf. | Epochs |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| O1 | 0.534 | 0.524 | 0.494 | 0.544 | 0.512 | 0.542 | 0.659 | 0.455 | 0.877 | 0.332 | 77 |
+
+## Statement-Level Localization
+
+| Run | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+|---|---|---|---|---|---|---|
+| O1 | 0.707 | 0.878 | 0.966 | 0.258 | 0.439 | 0.027 |
+
+**O1 (N48 GNN block + H10 LM aggregation, GNN-dominant 768)** — Test F1 0.524, tied with N48 (0.525), **below H10 (0.534)**. The two bests **do NOT stack** — the join lands at the GNN level, not above. Likely cause: jknet at hidden 768 makes the GNN pool 3072D drown the 768D LM 4:1 in the fused vector, so classification tracks the GNN branch (N48-like) and loses H10's LM edge. **Best F1-w of all runs (0.544)** with very high weighted precision (0.659) — strong on head classes — but macro 0.524 means the tail is weaker, and Val 0.534 vs Test 0.524 shows an overfit gap. Motivates **O2 (hidden 256, balanced 1024:768 fusion)** to stop the GNN dominating. 156.5M params, 20.7 GB (matched the ~20-24 GB estimate), 9 hr / 77 ep on RTX 5000 Ada.
+
+---
+
 # Training Efficiency
 
 | Run                      | GPU             | Params | Epoch Time | Total Time (hr) | VRAM Peak |
@@ -634,3 +658,4 @@ Base H4 = Test F1 0.520. **M2 (gradual) = best ULMFiT (F1 0.532, +0.012 vs H4)**
 | M2 ulmfit gradual        | RTX 5090        | 146.9M | 171s       | 2.76            | 17.5 GB   |
 | M3 ulmfit combined       | RTX 5090        | 146.9M | 163s       | 1.81            | 21.6 GB   |
 | D4 pool cnn              | RTX 5090        | 130.8M | 92s        | 0.95            | 8.1 GB    |
+| O1 join n48gnn h10lm     | RTX 5000 Ada    | 156.5M | 422s       | 9.02            | 20.7 GB   |
