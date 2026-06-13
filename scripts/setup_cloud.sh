@@ -73,12 +73,16 @@ echo "=== [1/6] Removing conflicting packages ==="
 $PIP uninstall -y torch torchvision torchaudio torch-scatter torch-sparse 2>/dev/null || true
 
 echo "=== [2/6] Detecting CUDA version and installing PyTorch ==="
-# Detect CUDA version from nvcc (major.minor)
-if command -v nvcc &>/dev/null; then
+# Prefer the DRIVER's max CUDA (nvidia-smi) over the toolkit (nvcc). Prebuilt torch
+# wheels only require driver >= wheel-CUDA; the nvcc toolkit version is irrelevant and
+# is often LOWER than the driver (e.g. toolkit 12.8 under a 13.1 driver). Selecting by
+# the toolkit there installs cu128, which fails to init on the newer 13.x driver with
+# "CUDA-capable device(s) is/are busy or unavailable". Driver version is the right basis.
+CUDA_VER=$(nvidia-smi 2>/dev/null | grep -oP "CUDA Version: \K[0-9]+\.[0-9]+" || true)
+if [[ -z "$CUDA_VER" ]] && command -v nvcc &>/dev/null; then
     CUDA_VER=$(nvcc --version | grep "release" | sed 's/.*release \([0-9]*\.[0-9]*\).*/\1/')
-else
-    CUDA_VER=$(nvidia-smi | grep -oP "CUDA Version: \K[0-9]+\.[0-9]+" || echo "12.4")
 fi
+[[ -z "$CUDA_VER" ]] && CUDA_VER="12.4"
 CUDA_MAJOR=$(echo "$CUDA_VER" | cut -d. -f1)
 CUDA_MINOR=$(echo "$CUDA_VER" | cut -d. -f2)
 echo "    Detected CUDA: ${CUDA_VER}"
