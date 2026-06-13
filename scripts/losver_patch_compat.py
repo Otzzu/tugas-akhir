@@ -60,6 +60,9 @@ def main() -> None:
             src,
             flags=re.DOTALL,
         )
+        # single-fold: LOSVER runs 5-fold CV (main("1")..main("5")); we have ONE split,
+        # so drop folds 2-5 (run only fold 1). No-op if the file has no such calls.
+        src2 = re.sub(r'(?m)^[ \t]*main\(\s*"[2-5]"\s*\)[ \t]*\n', "", src2)
         # insert shim AFTER any `from __future__` imports (which must stay first)
         lines = src2.split("\n")
         fut = [i for i, l in enumerate(lines) if l.lstrip().startswith("from __future__")]

@@ -39,7 +39,11 @@ PYTHONPATH=src python scripts/export_losver_jsonl.py \
   --tokenizer microsoft/unixcoder-base-nine --token-limit 512 2>&1 | tee "$OUT/convert.log"
 # grab the printed cwe_labels list for the label patch
 LABELS=$(grep '^cwe_labels = ' "$OUT/convert.log" | sed 's/^cwe_labels = //')
-cp megavul_ml1024/losver/CWE_*_unix_512.jsonl src/losver/classification/
+# LOSVER inserts a fold index into the filename (CWE_train -> CWE_train1) and runs
+# 5-fold CV. We have ONE split -> name it fold "1" and run only fold 1 (patched below).
+for s in train val test; do
+  cp "megavul_ml1024/losver/CWE_${s}_unix_512.jsonl" "src/losver/classification/CWE_${s}1_unix_512.jsonl"
+done
 
 echo "=== [5/7] patch CWE label set (BigVul 36 -> our 25) ==="
 python scripts/losver_patch_labels.py \

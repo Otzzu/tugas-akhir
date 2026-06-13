@@ -19,6 +19,9 @@ echo "=== [1/6] LineVD present (vendored in-repo; clone only if missing) ==="
 echo "=== [2/6] deps (POD env — torch from setup_cloud; no venv) ==="
 # torch / torch_scatter / transformers / pandas / sklearn / numpy / tqdm = project env.
 pip install -q pytorch-lightning networkx fastparquet
+# DGL's graphbolt imports torchdata.datapipes, REMOVED in torchdata>=0.10 -> pin older.
+# --no-deps so it can't drag torch to an older version (datapipes is pure-python).
+pip install -q --no-deps 'torchdata==0.9.0' || pip install -q --no-deps 'torchdata<0.10'
 # DGL: auto-pick the wheel matching the pod torch + CUDA (not a hardcoded cu121).
 TORCH_MM=$(python -c "import torch; v=torch.__version__.split('+')[0].split('.'); print(f'{v[0]}.{v[1]}')")
 TORCH_CU=$(python -c "import torch; print('cu'+torch.version.cuda.replace('.',''))")
