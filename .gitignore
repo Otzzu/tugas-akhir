@@ -53,9 +53,13 @@ joern_workspace/
 /checkpoints/
 /results/
 /paper/
-src/LineVul/
-src/linevd/
-src/losver/
+# Baselines tracked in-repo (LineVul, LineVD, LOSVER) so the pod gets them via git pull.
+# Ignore only their generated junk:
+src/*/__pycache__/
+src/**/*.pyc
+src/LineVul/saved_models/
+src/linevd/storage/cache/
+src/linevd/storage/processed/
 src/VulChecker/
 src/vul-LMGNN/
 src/gnn_vuln/joern/
@@ -90,3 +94,4 @@ src/StructMAE/
 src/hypermixing/
 src/pnlp-mixer/
 src/GraphGPS/
+src/LineVul/cppcheck/

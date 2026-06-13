@@ -14,9 +14,10 @@ WORK="$PWD"
 OUT="$WORK/baseline_runs/$RUN_ID"
 mkdir -p "$OUT"
 
-echo "=== [1/5] env ==="
-python -m venv lv_env && source lv_env/bin/activate
-pip install -q torch transformers captum pandas scikit-learn numpy tqdm
+echo "=== [1/5] deps (POD env — torch already correct from setup_cloud; no venv) ==="
+# torch/transformers/pandas/sklearn/numpy/tqdm = project env. Only captum is extra.
+pip install -q captum
+python -c "import torch; print('torch', torch.__version__, '| cuda op:', (torch.randn(2).cuda()+1).sum().item())"
 
 echo "=== [2/5] data ==="
 if [[ ! -d megavul_ml1024 ]]; then

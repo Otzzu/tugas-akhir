@@ -13,12 +13,19 @@ RUN_ID="losver_megavul_ml1024_$(date +%Y%m%d_%H%M%S)"
 WORK="$PWD"
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
 
-echo "=== [1/7] clone LOSVER (gitignored) ==="
+echo "=== [1/7] LOSVER present (vendored; clone only if missing) ==="
 [[ -d src/losver ]] || git clone --depth 1 https://github.com/waroad/losver.git src/losver
 
-echo "=== [2/7] env (LOSVER pins: transformers 4.19.0) ==="
-python -m venv lsv_env && source lsv_env/bin/activate
-pip install -q torch transformers==4.19.0 scikit-learn pandas numpy tqdm tensorboardX
+echo "=== [2/7] deps + transformers-compat patch (POD env, transformers 4.48; no venv) ==="
+# Run in the pod env (correct torch). LOSVER pins transformers 4.19 only for AdamW/WEIGHTS_NAME
+# (removed in newer transformers); we patch those to torch.optim instead of downgrading
+# (4.19 + modern torch breaks on torch._six). torch/sklearn/pandas/numpy/tqdm = project env.
+pip install -q tensorboardX
+python scripts/losver_patch_compat.py --files \
+  src/losver/classification/run_line_CWE.py \
+  src/losver/classification/run_weighted_CWE.py \
+  src/losver/classification/run_base_CWE.py
+python -c "import torch; print('torch', torch.__version__, '| cuda op:', (torch.randn(2).cuda()+1).sum().item())"
 
 echo "=== [3/7] UniXcoder model ==="
 cd src/losver && python download_unixcoder.py && cd "$WORK"   # -> src/losver/unixcoder-nine

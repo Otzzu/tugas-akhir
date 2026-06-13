@@ -13,16 +13,20 @@ DATA_TAR="megavul_ml1024_baselines_20260613.tar.gz"
 RUN_ID="linevd_megavul_ml1024_$(date +%Y%m%d_%H%M%S)"
 WORK="$PWD"
 
-echo "=== [1/6] clone LineVD (gitignored in our repo) ==="
+echo "=== [1/6] LineVD present (vendored in-repo; clone only if missing) ==="
 [[ -d src/linevd ]] || git clone --depth 1 https://github.com/davidhin/linevd.git src/linevd
 
-echo "=== [2/6] env (DGL must match pod torch+CUDA — adjust if it fails) ==="
-python -m venv lvd_env && source lvd_env/bin/activate
-pip install -q torch pandas fastparquet scikit-learn numpy tqdm networkx \
-    pytorch-lightning torch_scatter transformers
-# DGL: pick the wheel matching the pod's torch+CUDA (example cu121); see https://www.dgl.ai/pages/start.html
-pip install -q dgl -f https://data.dgl.ai/wheels/torch-2.1/cu121/repo.html || \
-  echo "!! DGL install needs the right torch/CUDA index — fix per dgl.ai/start"
+echo "=== [2/6] deps (POD env — torch from setup_cloud; no venv) ==="
+# torch / torch_scatter / transformers / pandas / sklearn / numpy / tqdm = project env.
+pip install -q pytorch-lightning networkx fastparquet
+# DGL: auto-pick the wheel matching the pod torch + CUDA (not a hardcoded cu121).
+TORCH_MM=$(python -c "import torch; v=torch.__version__.split('+')[0].split('.'); print(f'{v[0]}.{v[1]}')")
+TORCH_CU=$(python -c "import torch; print('cu'+torch.version.cuda.replace('.',''))")
+echo "    DGL target: torch-${TORCH_MM} / ${TORCH_CU}"
+pip install -q dgl -f "https://data.dgl.ai/wheels/torch-${TORCH_MM}/${TORCH_CU}/repo.html" \
+  || pip install -q dgl \
+  || echo "!! DGL wheel for torch-${TORCH_MM}/${TORCH_CU} not found — see https://www.dgl.ai/pages/start.html"
+python -c "import torch,dgl; print('torch',torch.__version__,'dgl',dgl.__version__,'| cuda op:',(torch.randn(2).cuda()+1).sum().item())"
 
 echo "=== [3/6] data + LineVD cache files (our split + flaw GT, no code edit) ==="
 if [[ ! -d megavul_ml1024 ]]; then
