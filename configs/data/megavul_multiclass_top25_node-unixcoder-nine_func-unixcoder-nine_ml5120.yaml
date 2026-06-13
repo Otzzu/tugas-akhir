@@ -1,0 +1,35 @@
+# Dataset build config — node + func LM = unixcoder-base-NINE (9 langs incl C/C++).
+# Our prior datasets used unixcoder-base (6 langs, NO C/C++) — wrong for MegaVul (94% C).
+# unixcoder-base-nine was pretrained on 1.5M C/C++/C# pairs -> C-aware node embeddings.
+# Matches LOSVER (also uses unixcoder-base-nine). ml5120 serves H10/O1 directly; N48
+# (live_lm=none) ignores the func tokens so it reuses this dataset too.
+#
+# Build (cloud): downloads raw CPGs, re-embeds nodes with nine, uploads the .pt.
+#   bash scripts/cloud_process_datasets.sh \
+#     configs/data/megavul_multiclass_top25_node-unixcoder-nine_func-unixcoder-nine_ml5120.yaml
+# Resulting dataset: lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml5120_<hash>_s1600r42
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  max_per_class: 1600
+  resample_seed: 42
+  filter_top25_dangerous: true
+  filter_owasp: false
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  pretrained_lm: microsoft/unixcoder-base-nine
+  func_lm: microsoft/unixcoder-base-nine
+  add_func_tokens: true
+  func_max_length: 5120
+  num_classes: 26
+  num_groups: 16
+
+train:
+  device: cuda
+  use_flash_attention: true
+  compile_model: false
