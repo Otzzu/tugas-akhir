@@ -1,15 +1,14 @@
 # N48 with unixcoder-base-NINE node embeddings (C-aware) — sanity test vs N48 base 0.525.
-# Identical to N48_a1_l1_jknet.yaml EXCEPT pretrained_lm/func_lm = unixcoder-base-nine and
-# func_max_length 5120 so it resolves to the ml5120 nine dataset (GNN-only -> ignores the
-# func tokens, uses the nine NODE embeddings). If this beats 0.525, the C-aware LM helps and
-# the rebuild is worth it for H10/O1; if flat, stay on base.
+# Identical to N48_a1_l1_jknet.yaml EXCEPT pretrained_lm/func_lm = unixcoder-base-nine
+# (ml1024, same as N48 base — only the node-LM changes). If this beats 0.525, the C-aware LM
+# helps and the rebuild is worth it for H10/O1; if flat, stay on base.
 #
-# Needs the nine dataset built first:
+# Needs the ml1024 nine dataset built first:
 #   bash scripts/cloud_process_datasets.sh \
-#     configs/data/megavul_multiclass_top25_node-unixcoder-nine_func-unixcoder-nine_ml5120.yaml
+#     configs/data/megavul_multiclass_top25_node-unixcoder-nine_func-unixcoder-nine_ml1024.yaml
 # Run:
 #   ./scripts/train_cloud.sh --skip --config configs/ablation/gnn_only/N48_nine.yaml \
-#     --dataset lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml5120_<hash>_s1600r42
+#     --dataset lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_<hash>_s1600r42
 
 data:
   source: megavul
@@ -28,7 +27,7 @@ model:
   pretrained_lm: microsoft/unixcoder-base-nine
   func_lm: microsoft/unixcoder-base-nine
   add_func_tokens: true
-  func_max_length: 5120
+  func_max_length: 1024
   localization_encoder: gnn
   graph_pool: jknet
   hidden_dim: 256

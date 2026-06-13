@@ -1,0 +1,35 @@
+# Dataset build config — node + func LM = unixcoder-base-NINE (9 langs incl C/C++), ml1024.
+# Same as the _ml5120 nine config but func_max_length 1024 (for N48 / GNN-only and 1024 models).
+# Build this FIRST (full node re-embed via the megavul.hdf5 CPGs, no Joern); then the _ml5120
+# build PATCHES from this (reuses the nine node embeddings, just re-tokenizes func to 5120).
+#
+# Build (cloud, both in one call — ml1024 full, ml5120 fast-patch):
+#   bash scripts/cloud_process_datasets.sh \
+#     configs/data/megavul_multiclass_top25_node-unixcoder-nine_func-unixcoder-nine_ml1024.yaml \
+#     configs/data/megavul_multiclass_top25_node-unixcoder-nine_func-unixcoder-nine_ml5120.yaml
+# Resulting: lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_<hash>_s1600r42
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  max_per_class: 1600
+  resample_seed: 42
+  filter_top25_dangerous: true
+  filter_owasp: false
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  pretrained_lm: microsoft/unixcoder-base-nine
+  func_lm: microsoft/unixcoder-base-nine
+  add_func_tokens: true
+  func_max_length: 1024
+  num_classes: 26
+  num_groups: 16
+
+train:
+  device: cuda
+  use_flash_attention: true
+  compile_model: false
