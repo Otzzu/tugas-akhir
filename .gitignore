@@ -95,3 +95,4 @@ src/hypermixing/
 src/pnlp-mixer/
 src/GraphGPS/
 src/LineVul/cppcheck/
+/data/baselines/
