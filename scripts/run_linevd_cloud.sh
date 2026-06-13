@@ -18,7 +18,7 @@ echo "=== [1/6] LineVD present (vendored in-repo; clone only if missing) ==="
 
 echo "=== [2/6] deps (POD env — torch from setup_cloud; no venv) ==="
 # torch / torch_scatter / transformers / pandas / sklearn / numpy / tqdm = project env.
-pip install -q pytorch-lightning networkx fastparquet
+pip install -q pytorch-lightning networkx fastparquet pydantic   # pydantic: DGL graphbolt dep
 # DGL's graphbolt imports torchdata.datapipes, REMOVED in torchdata>=0.10 -> pin older.
 # --no-deps so it can't drag torch to an older version (datapipes is pure-python).
 pip install -q --no-deps 'torchdata==0.9.0' || pip install -q --no-deps 'torchdata<0.10'
