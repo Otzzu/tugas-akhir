@@ -117,29 +117,50 @@ for CONFIG in "$@"; do
     after=$(ls "$PT_DIR"/*.pt 2>/dev/null | sort || true)
     new_pts=$(comm -13 <(echo "$before") <(echo "$after"))
 
-    if [[ -z "$new_pts" ]]; then
-        echo "[warn] No new .pt file — skipping upload"
-    else
+    GZIP_BIN=$(command -v pigz || echo "gzip")
+    uploaded_any=false
+    if [[ -n "$new_pts" ]]; then
         for pt_file in $new_pts; do
             stem=$(basename "$pt_file" .pt)
-            archive="${stem}_${TS}.tar.gz"
-            echo "Compressing $pt_file → $archive ..."
-            GZIP_BIN=$(command -v pigz || echo "gzip")
-            if command -v pv &>/dev/null; then
-                tar -cf - -C "$PT_DIR" "$(basename "$pt_file")" \
-                    | pv -s "$(du -sb "$pt_file" | awk '{print $1}')" \
-                    | $GZIP_BIN > "$archive"
+            # skip PyG marker files — not datasets
+            case "$stem" in pre_filter|pre_transform) continue ;; esac
+
+            if [[ "$stem" == *_meta ]]; then
+                # LAZY storage: meta.pt + <base>_graphs/ subdir. Tar BOTH with _lazy_ marker
+                # so train_cloud.sh's `${dataset}_lazy_*.tar.gz` download finds it.
+                base="${stem%_meta}"
+                graphs_dir="${base}_graphs"
+                if [[ -d "$PT_DIR/$graphs_dir" ]]; then
+                    archive="${base}_lazy_${TS}.tar.gz"
+                    echo "Compressing (lazy) ${base}_meta.pt + ${graphs_dir}/ → $archive ..."
+                    tar -cf - -C "$PT_DIR" "${base}_meta.pt" "$graphs_dir" | $GZIP_BIN > "$archive"
+                    targets=("$PT_DIR/${base}_meta.pt" "$PT_DIR/$graphs_dir")
+                else
+                    archive="${stem}_${TS}.tar.gz"
+                    echo "[warn] lazy meta without ${graphs_dir}/ — uploading meta only → $archive"
+                    tar -cf - -C "$PT_DIR" "$(basename "$pt_file")" | $GZIP_BIN > "$archive"
+                    targets=("$pt_file")
+                fi
             else
+                # INMEMORY single-file dataset — legacy name, no marker (fallback regex matches)
+                archive="${stem}_${TS}.tar.gz"
+                echo "Compressing (inmemory) $pt_file → $archive ..."
                 tar -cf - -C "$PT_DIR" "$(basename "$pt_file")" | $GZIP_BIN > "$archive"
+                targets=("$pt_file")
             fi
+
             echo "Uploading $archive → $remote_dest ..."
             rclone copy "$archive" "$remote_dest" --progress
             rm -f "$archive"
+            uploaded_any=true
             if [[ "$DELETE_PT" == "true" ]]; then
-                rm -f "$pt_file"
-                echo "Deleted local $pt_file"
+                rm -rf "${targets[@]}"
+                echo "Deleted local: ${targets[*]}"
             fi
         done
+    fi
+    if ! $uploaded_any; then
+        echo "[warn] No new dataset .pt — skipping upload"
     fi
 
     # Clear .pt files: --clear-after N (once) or --clear-every N (repeating)
