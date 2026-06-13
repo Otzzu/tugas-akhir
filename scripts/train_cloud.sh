@@ -195,6 +195,18 @@ check_setup() {
 # ─── 3. Dataset download (cached) ────────────────────────────────────────────
 DOWNLOADED_DATASETS=()
 
+# Exact presence check for ONE dataset's own files — NOT a loose prefix glob.
+# A loose glob (`${ln}*.pt`) wrongly matches suffixed variants (`${ln}_top18_meta.pt`,
+# `${ln}_gvitp8_meta.pt`), so a base request false-positives on a stripped/patched leftover.
+dataset_present() {
+    local ln="$1"
+    [[ -d "${PROCESSED_DIR}/${ln}" ]]            && return 0  # legacy: zip extracted to a dir
+    [[ -f "${PROCESSED_DIR}/${ln}.pt" ]]         && return 0  # inmemory single .pt
+    [[ -f "${PROCESSED_DIR}/${ln}_meta.pt" ]]    && return 0  # lazy meta
+    [[ -d "${PROCESSED_DIR}/${ln}_graphs" ]]     && return 0  # lazy graphs dir
+    return 1
+}
+
 download_dataset() {
     local dataset="$1"
     local config="${2:-}"
@@ -216,7 +228,7 @@ download_dataset() {
     # A prior --clean-every run may have deleted the .pt; re-download in that case.
     for d in "${DOWNLOADED_DATASETS[@]:-}"; do
         if [[ "$d" == "$dataset" ]]; then
-            if [[ -d "$local_dir" ]] || compgen -G "${PROCESSED_DIR}/${local_name}*.pt" > /dev/null 2>&1; then
+            if dataset_present "$local_name"; then
                 return 0
             fi
             info "Dataset was cleaned earlier — re-downloading: $local_name"
@@ -224,12 +236,12 @@ download_dataset() {
         fi
     done
 
-    if [[ -d "$local_dir" ]] || compgen -G "${PROCESSED_DIR}/${local_name}*.pt" > /dev/null 2>&1; then
+    if dataset_present "$local_name"; then
         success "Dataset already exists: $local_name"
         DOWNLOADED_DATASETS+=("$dataset")
         return 0
     fi
-    info "Not found locally (checked: ${local_dir}/ and ${PROCESSED_DIR}/${local_name}*.pt)"
+    info "Not found locally (checked exact: ${local_name}{.pt,_meta.pt,_graphs/})"
 
     info "Downloading dataset: $dataset (storage=$storage)"
     mkdir -p "$PROCESSED_DIR"
@@ -253,13 +265,15 @@ download_dataset() {
     source=$(echo "$dataset" | sed 's/lm_dataset_\([^_]*\)_.*/\1/')
     local remote_tar remote_subdir
     for remote_subdir in "${remote_proc}/${source}" "${remote_proc}"; do
-        # Preferred: tar with storage marker
+        # Preferred: tar with storage marker DIRECTLY after the exact dataset name.
+        # Anchored `_${storage}_` (not `.*_${storage}_`) so a base request can't match
+        # a suffixed variant tar (`${dataset}_top18_lazy_…`, `${dataset}_gvitp8_lazy_…`).
         remote_tar=$(rclone lsf "$remote_subdir" 2>/dev/null \
-            | grep "^${dataset}.*_${storage}_.*\.tar\.gz$" | sort | tail -1 || true)
-        # Fallback: any tar for this dataset (legacy, no marker)
+            | grep "^${dataset}_${storage}_.*\.tar\.gz$" | sort | tail -1 || true)
+        # Fallback: legacy no-marker tar — exact name, optional timestamp, no other suffix.
         if [[ -z "$remote_tar" ]]; then
             remote_tar=$(rclone lsf "$remote_subdir" 2>/dev/null \
-                | grep "^${dataset}.*\.tar\.gz$" | sort | tail -1 || true)
+                | grep -E "^${dataset}(_[0-9]{8}_[0-9]{6})?\.tar\.gz$" | sort | tail -1 || true)
             [[ -n "$remote_tar" ]] && warn "No ${storage}-marked tar found — using legacy: $remote_tar"
         fi
         if [[ -n "$remote_tar" ]]; then
@@ -438,11 +452,13 @@ upload_run() {
         local local_name
         local_name=$(echo "$dataset" | sed 's/_[0-9]\{8\}_[0-9]\{6\}$//')
         info "[upload:$model_id] Cleaning dataset files for: $local_name"
-        local pts
-        pts=$(compgen -G "${PROCESSED_DIR}/${local_name}*.pt" 2>/dev/null || true)
+        # Exact files only — don't nuke suffixed variants (`${local_name}_top18*`, `_gvitp8*`).
+        local pts=""
+        [[ -f "${PROCESSED_DIR}/${local_name}.pt" ]]      && pts+=" ${PROCESSED_DIR}/${local_name}.pt"
+        [[ -f "${PROCESSED_DIR}/${local_name}_meta.pt" ]] && pts+=" ${PROCESSED_DIR}/${local_name}_meta.pt"
         if [[ -n "$pts" ]]; then
-            echo "$pts" | xargs rm -f
-            info "[upload:$model_id] Deleted .pt files: $pts"
+            rm -f $pts
+            info "[upload:$model_id] Deleted .pt files:$pts"
         else
             warn "[upload:$model_id] No .pt files found to clean for $local_name"
         fi
