@@ -54,7 +54,9 @@ echo "=== [4/6] Joern + build graphs + codebert embeddings ==="
 # Joern graphs (.edges.json/.nodes.json per func) take ~3h to build. Cache the whole
 # processed/megavul tree on Drive so a fresh pod restores it and skips getgraphs.
 GRAPH_CACHE="linevd_megavul_joerngraphs.tar.gz"
-COMP=(gzip); command -v pigz >/dev/null && COMP=(pigz -p "$(nproc)")
+command -v pigz >/dev/null || apt-get install -y -q pigz || true   # parallel gz
+# NB: `cmd && COMP=(...)` as a bare statement trips set -e when cmd fails — use if.
+if command -v pigz >/dev/null; then COMP=(pigz -p "$(nproc)"); else COMP=(gzip); fi
 HAVE=$(ls storage/processed/megavul/before/*.edges.json 2>/dev/null | wc -l)
 if [[ "$HAVE" -lt 1000 ]] && rclone ls "$REMOTE/data/baselines/$GRAPH_CACHE" >/dev/null 2>&1; then
   echo "  restoring cached joern graphs from Drive (skips getgraphs) ..."
