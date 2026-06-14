@@ -57,16 +57,19 @@ rm_local "$NINE1024"
 
 echo "=== [2/5] seed node=base ml5120 source, build FUNCNINE (only base present) ==="
 seed "$BASE5120" "$BASE5120_TAR"
-bash scripts/cloud_process_datasets.sh "$CFG_FUNCNINE"
+# --delete-pt: drop the funcnine output locally right after its Drive upload.
+bash scripts/cloud_process_datasets.sh --delete-pt "$CFG_FUNCNINE"
+rm_local "$FUNCNINE"; rm_local "$BASE5120"   # free both before the nine build
 
-echo "=== [3/5] clear nine-matching dirs before nine build (keep base ml5120) ==="
-# funcnine output also matches `unixcoder-base-nine`? no — it starts unixcoder-base_live.
-# nothing to clear here; nine prefix is unambiguous. left as a checkpoint.
-
-echo "=== [4/5] seed nine ml1024 source, build NINE ml5120 ==="
+echo "=== [3/5] seed nine ml1024 source, build NINE ml5120 ==="
 seed "$NINE1024" "$NINE1024_TAR"
-bash scripts/cloud_process_datasets.sh "$CFG_NINE5120"
+bash scripts/cloud_process_datasets.sh --delete-pt "$CFG_NINE5120"
+rm_local "$NINE5120"; rm_local "$NINE1024"
+
+echo "=== [4/5] free build scratch (raw CPGs not needed for training) ==="
+rm -rf data/raw/megavul 2>/dev/null || true
 
 echo "=== [5/5] verify new tars on Drive ==="
 rclone lsf "$PROC_REMOTE/" | grep -E "(${NINE5120}|${FUNCNINE})_lazy_" || echo "  WARN: new tars not found — check upload logs above"
-echo "DONE. Rebuilt: $FUNCNINE  and  $NINE5120"
+df -h /workspace 2>/dev/null | tail -1
+echo "DONE. Rebuilt + uploaded: $FUNCNINE  and  $NINE5120 (local scratch cleared)"
