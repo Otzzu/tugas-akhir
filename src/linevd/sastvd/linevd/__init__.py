@@ -241,7 +241,8 @@ class BigVulDatasetLineVDDataModule(pl.LightningDataModule):
     def node_dl(self, g, shuffle=False):
         """Return node dataloader."""
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(self.nsampling_hops)
-        return dgl.dataloading.NodeDataLoader(
+        # dgl 2.x renamed NodeDataLoader -> DataLoader (same signature).
+        return dgl.dataloading.DataLoader(
             g,
             g.nodes(),
             sampler,
