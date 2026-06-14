@@ -50,9 +50,15 @@ echo "=== [4/6] Joern + build graphs + codebert embeddings ==="
 # LineVD wraps every subprocess in `singularity exec main.sif` unless SINGULARITY=true.
 # We run joern/flawfinder directly on the pod, so bypass the container wrapper.
 export SINGULARITY=true
+# Joern v1.1.260 (2022) bundles a Scala/ammonite that cannot parse Java 21 classfiles
+# (ConstantPool errorBadIndex crash). Pin Java 17. Outside the download block so it
+# always exports JAVA_HOME, even when joern-cli was unzipped on a prior run.
+JAVA17="/usr/lib/jvm/java-17-openjdk-amd64"
+[[ -d "$JAVA17" ]] || (apt-get update -q && apt-get install -y -q openjdk-17-jre-headless)
+export JAVA_HOME="$JAVA17"
+export PATH="$JAVA_HOME/bin:$PATH"
 # svd.external_dir() = storage/external/joern-cli — old pinned release the LineVD code expects.
 if [[ ! -d storage/external/joern-cli ]]; then
-  command -v java >/dev/null || (apt-get update -q && apt-get install -y -q default-jre)
   wget -q https://github.com/joernio/joern/releases/download/v1.1.260/joern-cli.zip -O /tmp/joern-cli.zip
   mkdir -p storage/external
   unzip -q /tmp/joern-cli.zip -d storage/external
