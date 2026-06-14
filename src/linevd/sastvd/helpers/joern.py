@@ -176,8 +176,14 @@ def get_node_edges(filepath: str, verbose=0):
         if type(e.outnode) == str:
             lineNum = linemap[e.innode]
             node_label = f"TYPE_{lineNum}: {typemap[int(e.outnode.split('_')[0])]}"
-            nodes = nodes.append(
-                {"id": e.outnode, "node_label": node_label, "lineNumber": lineNum},
+            # DataFrame.append removed in pandas 2.0 -> use concat.
+            nodes = pd.concat(
+                [
+                    nodes,
+                    pd.DataFrame(
+                        [{"id": e.outnode, "node_label": node_label, "lineNumber": lineNum}]
+                    ),
+                ],
                 ignore_index=True,
             )
 

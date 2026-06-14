@@ -66,10 +66,17 @@ if [[ ! -d storage/external/joern-cli ]]; then
 fi
 # Ammonite exports the JDK runtime to ~/.ammonite/rt-<ver>.jar on first boot. getgraphs
 # runs 8 parallel joern workers that all race to create it (FileAlreadyExistsException).
-# Pre-warm single-threaded so the jar exists before the parallel loop.
+# Pre-warm single-threaded with the REAL script on a throwaway C file (exact compile path
+# the workers hit) so the jar exists before the parallel loop; retry until it lands.
 rm -f /root/.ammonite/rt-*.jar
-echo 'println("joern warmup")' > /tmp/joern_warm.sc
-storage/external/joern-cli/joern --script /tmp/joern_warm.sc >/dev/null 2>&1 || true
+printf 'int warm(int a){return a+1;}\n' > /tmp/joern_warm.c
+for _ in 1 2 3; do
+  [[ -e /root/.ammonite/rt-*.jar ]] 2>/dev/null && break
+  storage/external/joern-cli/joern --script storage/external/get_func_graph.scala \
+    --params='filename=/tmp/joern_warm.c' || true
+  ls /root/.ammonite/rt-*.jar >/dev/null 2>&1 && break
+done
+ls -la /root/.ammonite/rt-*.jar 2>&1 || echo "WARN: rt jar not pre-warmed; parallel joern may race"
 # getgraphs is a 100-way job-array script (NUM_JOBS=100); loop all shards to cover our full split.
 for i in $(seq 1 100); do PYTHONPATH=. python sastvd/scripts/getgraphs.py "$i"; done
 PYTHONPATH=. python sastvd/scripts/prepare.py
