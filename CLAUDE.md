@@ -50,7 +50,22 @@ When passing Windows paths as CLI arguments from **bash**, use **forward slashes
 
 From **PowerShell**, backslashes work fine.
 
-## Project Structure
+## Archiving — always use the fastest method
+
+Datasets/results are multi-GB. **Never** plain `gzip`/`tar -z`/`zip` for these. Always use `pigz` (parallel gzip, all cores) for compression; install it if missing.
+
+```bash
+# install guard (put once near the top of any script that archives)
+command -v pigz >/dev/null || apt-get install -y -q pigz
+
+# compress (multi-core; pigz uses all cores by default, no -p needed)
+tar -cf - <dir> | pigz > out.tar.gz
+
+# extract
+tar -I pigz -xf out.tar.gz
+```
+
+Note: pigz parallelizes **compression** only — gz **decompression** is single-core by format, so extraction speed is I/O-bound (especially lazy datasets = many tiny per-graph files). That is expected, not a misconfiguration. In scripts use `COMP="$(command -v pigz || echo gzip)"` then `tar -I "$COMP"` so it degrades gracefully but prefers pigz.
 
 ```
 src/gnn_vuln/          # Main Python package
