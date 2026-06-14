@@ -47,6 +47,18 @@ cd src/linevd
 PYTHONPATH=. python "$WORK/scripts/linevd_prepare_megavul.py" --in-dir "$WORK/megavul_ml1024/linevd"
 
 echo "=== [4/6] Joern + build graphs + codebert embeddings ==="
+# Joern graphs (.edges.json/.nodes.json per func) take ~3h to build. Cache the whole
+# processed/megavul tree on Drive so a fresh pod restores it and skips getgraphs.
+GRAPH_CACHE="linevd_megavul_joerngraphs.tar.gz"
+COMP=(gzip); command -v pigz >/dev/null && COMP=(pigz -p "$(nproc)")
+HAVE=$(ls storage/processed/megavul/before/*.edges.json 2>/dev/null | wc -l)
+if [[ "$HAVE" -lt 1000 ]] && rclone ls "$REMOTE/data/baselines/$GRAPH_CACHE" >/dev/null 2>&1; then
+  echo "  restoring cached joern graphs from Drive (skips getgraphs) ..."
+  rclone copy "$REMOTE/data/baselines/$GRAPH_CACHE" /tmp/ --progress
+  tar -I "${COMP[0]}" -xf "/tmp/$GRAPH_CACHE" && rm -f "/tmp/$GRAPH_CACHE"
+fi
+BEFORE_CNT=$(ls storage/processed/megavul/before/*.edges.json 2>/dev/null | wc -l)
+
 # LineVD wraps every subprocess in `singularity exec main.sif` unless SINGULARITY=true.
 # We run joern/flawfinder directly on the pod, so bypass the container wrapper.
 export SINGULARITY=true
@@ -78,7 +90,16 @@ for _ in 1 2 3; do
 done
 ls -la /root/.ammonite/rt-*.jar 2>&1 || echo "WARN: rt jar not pre-warmed; parallel joern may race"
 # getgraphs is a 100-way job-array script (NUM_JOBS=100); loop all shards to cover our full split.
+# Idempotent: skips any func whose .edges.json already exists (so a restored cache is a no-op).
 for i in $(seq 1 100); do PYTHONPATH=. python sastvd/scripts/getgraphs.py "$i"; done
+
+AFTER_CNT=$(ls storage/processed/megavul/before/*.edges.json 2>/dev/null | wc -l)
+# Refresh the Drive cache only if we built new graphs (or no cache exists yet).
+if [[ "$AFTER_CNT" -gt "$BEFORE_CNT" ]] || ! rclone ls "$REMOTE/data/baselines/$GRAPH_CACHE" >/dev/null 2>&1; then
+  echo "  caching joern graphs to Drive ($AFTER_CNT funcs) ..."
+  tar -cf - storage/processed/megavul | "${COMP[@]}" > "/tmp/$GRAPH_CACHE"
+  rclone copy "/tmp/$GRAPH_CACHE" "$REMOTE/data/baselines/" --progress && rm -f "/tmp/$GRAPH_CACHE"
+fi
 PYTHONPATH=. python sastvd/scripts/prepare.py
 
 echo "=== [5/6] train + localize ==="
