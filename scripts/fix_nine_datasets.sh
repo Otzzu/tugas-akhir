@@ -19,6 +19,7 @@ set -euo pipefail
 REMOTE="gdrive-mesach:tugas-akhir"
 PROC_REMOTE="$REMOTE/data/processed/megavul"
 PT_DIR="data/processed"
+command -v pigz >/dev/null || apt-get install -y -q pigz || true   # parallel gz (upload + extract)
 COMP="$(command -v pigz || echo gzip)"
 
 # ── names ───────────────────────────────────────────────────────────────────────
