@@ -38,17 +38,17 @@ def train_linevd(
         splits=config["splits"],
     )
 
-    # # Train model
+    # # Train model — PL 2.x: gpus=1 -> accelerator/devices; auto_lr_find removed.
+    # Drop deprecated TuneReportCallback (the Checkpoint variant reports the same metrics).
     checkpoint_callback = pl.callbacks.ModelCheckpoint(monitor="val_loss")
     metrics = ["train_loss", "val_loss", "val_auroc"]
-    raytune_callback = TuneReportCallback(metrics, on="validation_end")
     rtckpt_callback = TuneReportCheckpointCallback(metrics, on="validation_end")
     trainer = pl.Trainer(
-        gpus=1,
-        auto_lr_find=False,
+        accelerator="gpu",
+        devices=1,
         default_root_dir=savepath,
         num_sanity_val_steps=0,
-        callbacks=[checkpoint_callback, raytune_callback, rtckpt_callback],
+        callbacks=[checkpoint_callback, rtckpt_callback],
         max_epochs=max_epochs,
     )
     trainer.fit(model, data)
