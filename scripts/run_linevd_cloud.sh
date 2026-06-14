@@ -106,6 +106,13 @@ if [[ "$AFTER_CNT" -gt "$BEFORE_CNT" ]] || ! rclone ls "$REMOTE/data/baselines/$
   tar -cf - storage/processed/megavul | "${COMP[@]}" > "/tmp/$GRAPH_CACHE"
   rclone copy "/tmp/$GRAPH_CACHE" "$REMOTE/data/baselines/" --progress && rm -f "/tmp/$GRAPH_CACHE"
 fi
+# LineVD hardcodes the "bigvul" dataset dir everywhere (dclass finished-glob, itempath,
+# sast pkl, glove). Our graphs live under processed/megavul (dataset="megavul"). Bridge
+# with symlinks so the hardcoded bigvul/ paths resolve — no rename, no rebuild, cache stays
+# megavul-pathed. bigvul/ is a real dir (doc2vec writes there); only before/ + after/ link.
+mkdir -p storage/processed/bigvul
+ln -sfn ../megavul/before storage/processed/bigvul/before
+ln -sfn ../megavul/after  storage/processed/bigvul/after
 PYTHONPATH=. python sastvd/scripts/prepare.py
 
 echo "=== [5/6] train + localize ==="
