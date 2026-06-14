@@ -635,6 +635,12 @@ class CodeBERTGraphDataset(Dataset):
                 for j, g in enumerate(graphs):
                     g.func_input_ids = enc["input_ids"][j].unsqueeze(0)
                     g.func_attention_mask = enc["attention_mask"][j].unsqueeze(0)
+                    # regenerate token->line map for the new tokenizer + length
+                    # (else stays the base tokenizer's stale map -> wrong localization
+                    # or length mismatch with func_input_ids in the stmt head).
+                    g.func_token_lines = _compute_func_token_lines(
+                        batch_funcs[j], self._func_max_length, tokenizer
+                    ).unsqueeze(0)
                     all_patched.append(g)
             torch.save({"n_graphs": n, "class_names": class_names, "graphs": all_patched}, out_path)
 
@@ -655,6 +661,12 @@ class CodeBERTGraphDataset(Dataset):
                 for j, g in enumerate(graphs):
                     g.func_input_ids = enc["input_ids"][j].unsqueeze(0)
                     g.func_attention_mask = enc["attention_mask"][j].unsqueeze(0)
+                    # regenerate token->line map for the new tokenizer + length
+                    # (else stays the base tokenizer's stale map -> wrong localization
+                    # or length mismatch with func_input_ids in the stmt head).
+                    g.func_token_lines = _compute_func_token_lines(
+                        batch_funcs[j], self._func_max_length, tokenizer
+                    ).unsqueeze(0)
                     torch.save(g, self._graphs_dir / f"{batch_start + j}.pt")
             torch.save({"n_graphs": n, "class_names": class_names}, out_path)
 
@@ -1551,10 +1563,17 @@ class CodeBERTGraphDataset(Dataset):
         if self._storage == "inmemory":
             return self._graphs[idx]
         g = torch.load(self._graphs_dir / f"{idx}.pt", weights_only=False)
+        # Recompute func_token_lines when missing OR length-mismatched with
+        # func_input_ids (corrupt patched datasets re-tokenized func_input_ids to a
+        # new length but kept the old token->line map -> IndexError in stmt head).
         if (
-            not hasattr(g, "func_token_lines")
-            and hasattr(g, "raw_func") and g.raw_func
+            hasattr(g, "raw_func") and g.raw_func
             and hasattr(g, "func_input_ids") and g.func_input_ids is not None
+            and (
+                not hasattr(g, "func_token_lines")
+                or g.func_token_lines is None
+                or g.func_token_lines.shape[-1] != g.func_input_ids.shape[-1]
+            )
         ):
             g = self._patch_func_token_lines(g, idx)
         return g
