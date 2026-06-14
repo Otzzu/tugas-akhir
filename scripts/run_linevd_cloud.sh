@@ -16,25 +16,25 @@ WORK="$PWD"
 echo "=== [1/6] LineVD present (vendored in-repo; clone only if missing) ==="
 [[ -d src/linevd ]] || git clone --depth 1 https://github.com/davidhin/linevd.git src/linevd
 
-echo "=== [2/6] deps (POD env — torch from setup_cloud; no venv) ==="
-# torch / torch_scatter / transformers / pandas / sklearn / numpy / tqdm = project env.
+echo "=== [2/6] isolated venv (torch 2.4.1+cu121 + dgl 2.4.0; pod main env torch 2.9 has no DGL build) ==="
+VENV="/workspace/linevd_env"
+if [[ ! -d "$VENV" ]]; then
+  /venv/main/bin/python -m venv "$VENV" --system-site-packages   # 3.11, inherits pod pkgs (transformers/pandas/...)
+fi
+source "$VENV/bin/activate"
+if ! python -c "import torch,dgl" 2>/dev/null; then
+  pip install -q torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
+  pip install -q dgl -f https://data.dgl.ai/wheels/torch-2.4/cu121/repo.html
+  # dgl install drags nvidia-nvjitlink-cu12 to a version that breaks torch's .so lookup — refix
+  pip install -q --upgrade --force-reinstall torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
+fi
 pip install -q pytorch-lightning networkx fastparquet pydantic   # pydantic: DGL graphbolt dep
 # DGL's graphbolt imports torchdata.datapipes, REMOVED in torchdata>=0.10 -> pin older.
-# --no-deps so it can't drag torch to an older version (datapipes is pure-python).
 pip install -q --no-deps 'torchdata==0.9.0' || pip install -q --no-deps 'torchdata<0.10'
-# DGL: no build for torch>=2.5, and data.dgl.ai CUDA wheels frequently 403. If dgl already
-# imports (e.g. a pre-set torch-2.4 venv), skip. Else try CUDA wheel, then CPU wheel, then PyPI.
-if python -c "import dgl" 2>/dev/null; then
-  echo "    DGL already importable — skip install"
-else
-  TORCH_MM=$(python -c "import torch; v=torch.__version__.split('+')[0].split('.'); print(f'{v[0]}.{v[1]}')")
-  TORCH_CU=$(python -c "import torch; print('cu'+torch.version.cuda.replace('.','')) if torch.version.cuda else ''")
-  echo "    DGL target: torch-${TORCH_MM} / ${TORCH_CU:-cpu}"
-  { [ -n "$TORCH_CU" ] && pip install -q dgl -f "https://data.dgl.ai/wheels/torch-${TORCH_MM}/${TORCH_CU}/repo.html"; } \
-    || pip install -q dgl -f "https://data.dgl.ai/wheels/torch-${TORCH_MM}/repo.html" \
-    || pip install -q dgl \
-    || echo "!! DGL install failed — see https://www.dgl.ai/pages/start.html"
-fi
+# rest of sastvd's actual runtime imports (per requirements.txt, minus dgl/torch already handled
+# and torchtext/torchsummary/etc which are unused and would drag torch off the cu121 pin).
+pip install -q gensim graphviz matplotlib networkx pandas scipy scikit-learn seaborn \
+  torchmetrics tqdm transformers tsne-torch unidiff "ray[tune]"
 python -c "import torch,dgl; print('torch',torch.__version__,'dgl',dgl.__version__,'| cuda',torch.cuda.is_available())"
 
 echo "=== [3/6] data + LineVD cache files (our split + flaw GT, no code edit) ==="
@@ -44,9 +44,17 @@ fi
 cd src/linevd
 PYTHONPATH=. python "$WORK/scripts/linevd_prepare_megavul.py" --in-dir "$WORK/megavul_ml1024/linevd"
 
-echo "=== [4/6] build graphs (Joern) + codebert embeddings ==="
-# Needs Joern installed + on PATH. getgraphs writes per-id CPGs that BigVulDatasetLineVD reads.
-PYTHONPATH=. python sastvd/scripts/getgraphs.py
+echo "=== [4/6] Joern + build graphs + codebert embeddings ==="
+# svd.external_dir() = storage/external/joern-cli — old pinned release the LineVD code expects.
+if [[ ! -d storage/external/joern-cli ]]; then
+  command -v java >/dev/null || (apt-get update -q && apt-get install -y -q default-jre)
+  wget -q https://github.com/joernio/joern/releases/download/v1.1.260/joern-cli.zip -O /tmp/joern-cli.zip
+  mkdir -p storage/external
+  unzip -q /tmp/joern-cli.zip -d storage/external
+  rm -f /tmp/joern-cli.zip
+fi
+# getgraphs is a 100-way job-array script (NUM_JOBS=100); loop all shards to cover our full split.
+for i in $(seq 1 100); do PYTHONPATH=. python sastvd/scripts/getgraphs.py "$i"; done
 PYTHONPATH=. python sastvd/scripts/prepare.py
 
 echo "=== [5/6] train + localize ==="
