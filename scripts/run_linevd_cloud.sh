@@ -47,6 +47,9 @@ cd src/linevd
 PYTHONPATH=. python "$WORK/scripts/linevd_prepare_megavul.py" --in-dir "$WORK/megavul_ml1024/linevd"
 
 echo "=== [4/6] Joern + build graphs + codebert embeddings ==="
+# LineVD wraps every subprocess in `singularity exec main.sif` unless SINGULARITY=true.
+# We run joern/flawfinder directly on the pod, so bypass the container wrapper.
+export SINGULARITY=true
 # svd.external_dir() = storage/external/joern-cli — old pinned release the LineVD code expects.
 if [[ ! -d storage/external/joern-cli ]]; then
   command -v java >/dev/null || (apt-get update -q && apt-get install -y -q default-jre)

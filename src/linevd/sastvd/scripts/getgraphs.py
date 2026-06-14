@@ -50,10 +50,15 @@ def preprocess(row):
     if not os.path.exists(f"{fpath2}.edges.json") and len(row["diff"]) > 0:
         svdj.full_run_joern(fpath2, verbose=3)
 
-    # Run SAST extraction
+    # Run SAST extraction. rats/flawfinder/cppcheck binaries are optional — if
+    # absent the empty output crashes XML parsing; tolerate it (LineVD reads SAST
+    # lines via get_sast_lines which already returns empty on a missing pkl).
     fpath3 = savedir_before / f"{row['id']}.c.sast.pkl"
     if not os.path.exists(fpath3):
-        sast_before = sast.run_sast(row["before"])
+        try:
+            sast_before = sast.run_sast(row["before"])
+        except Exception:
+            sast_before = []
         with open(fpath3, "wb") as f:
             pkl.dump(sast_before, f)
 
