@@ -40,7 +40,7 @@ pip install -q --no-deps 'torchdata==0.9.0' || pip install -q --no-deps 'torchda
 # rest of sastvd's actual runtime imports (per requirements.txt, minus dgl/torch already handled
 # and torchtext/torchsummary/etc which are unused and would drag torch off the cu121 pin).
 pip install -q gensim graphviz matplotlib networkx pandas scipy scikit-learn seaborn \
-  torchmetrics tqdm transformers tsne-torch unidiff "ray[tune]"
+  torchmetrics tqdm transformers tsne-torch unidiff "ray[tune]" tensorboard   # tensorboard: sastvd/helpers/ml.py SummaryWriter
 python -c "import torch,dgl; print('torch',torch.__version__,'dgl',dgl.__version__,'| cuda',torch.cuda.is_available())"
 
 echo "=== [3/6] data + LineVD cache files (our split + flaw GT, no code edit) ==="
