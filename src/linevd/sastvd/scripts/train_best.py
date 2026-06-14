@@ -30,15 +30,17 @@ trainable = tune.with_parameters(
     lvdrun.train_linevd, max_epochs=130, samplesz=samplesz, savepath=sp
 )
 
+# Baseline: single run of the fixed best config (all tune.choice are single-valued).
+# num_samples=1 not 1000 (1000 = identical trainings). local_dir->storage_path (absolute,
+# modern ray). Checkpointing handled by Lightning inside train_linevd via savepath, so
+# the removed keep_checkpoints_num/checkpoint_score_attr (gone from modern tune.run) aren't needed.
 analysis = tune.run(
     trainable,
     resources_per_trial={"cpu": 2, "gpu": 0.5},
     metric="val_loss",
     mode="min",
     config=config,
-    num_samples=1000,
+    num_samples=1,
     name="tune_linevd",
-    local_dir=sp,
-    keep_checkpoints_num=1,
-    checkpoint_score_attr="min-val_loss",
+    storage_path=os.path.abspath(str(sp)),
 )
