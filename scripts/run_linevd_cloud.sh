@@ -31,6 +31,10 @@ if ! python -c "import torch,dgl" 2>/dev/null; then
   pip install -q --upgrade --force-reinstall torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
 fi
 pip install -q pytorch-lightning networkx fastparquet pydantic   # pydantic: DGL graphbolt dep
+# torchmetrics 1.x eagerly imports torchvision; the pod's system torchvision (0.26+cu128,
+# built for torch 2.11) ABI-mismatches our torch 2.4.1 -> `torchvision::nms does not exist`.
+# Install the torch-2.4.1-matched build into the venv to shadow it. --no-deps keeps the pin.
+pip install -q --no-deps torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
 # DGL's graphbolt imports torchdata.datapipes, REMOVED in torchdata>=0.10 -> pin older.
 pip install -q --no-deps 'torchdata==0.9.0' || pip install -q --no-deps 'torchdata<0.10'
 # rest of sastvd's actual runtime imports (per requirements.txt, minus dgl/torch already handled
