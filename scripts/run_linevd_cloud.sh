@@ -24,9 +24,10 @@ fi
 source "$VENV/bin/activate"
 if ! python -c "import torch,dgl" 2>/dev/null; then
   pip install -q torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
-  # data.dgl.ai CUDA wheels (cu121, any dgl version) 403 — CPU dgl 2.4.0's .so covers
-  # torch 2.4.0 AND 2.4.1, so CPU dgl + cu121 torch works fine (only DGL ops run on CPU).
-  pip install -q dgl==2.4.0 -f https://data.dgl.ai/wheels/torch-2.4/repo.html
+  # CUDA dgl (cu121) — Lightning moves the DGL graph to GPU, CPU dgl can't (DGLError
+  # "Device API cuda is not enabled"). The cu121 wheel downloads fine (earlier 403 was
+  # transient). dgl 2.4.0+cu121 cp312 pairs with torch 2.4.1+cu121.
+  pip install -q dgl==2.4.0 -f https://data.dgl.ai/wheels/torch-2.4/cu121/repo.html
   # dgl install drags nvidia-nvjitlink-cu12 to a version that breaks torch's .so lookup — refix
   pip install -q --upgrade --force-reinstall torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
 fi
