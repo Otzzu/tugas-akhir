@@ -1,0 +1,78 @@
+# H10 with func LM swapped to unixcoder-base-nine (C-aware), node LM stays unixcoder-base.
+# Isolates the func-LM effect cleanly: N48-nine (node-LM only, live_lm=none) was flat-to-worse
+# (0.484 vs 0.525); H10_nine (both swapped) tests the combined effect; this config tests
+# func-LM alone — H10's sliding-window encoder is the actual consumer of func_lm.
+#
+# .pt build (patches from base ml5120, no GPU node re-embed needed):
+#   bash scripts/cloud_process_datasets.sh \
+#     configs/data/megavul_multiclass_top25_node-unixcoder_func-unixcoder-nine_ml5120.yaml
+# Resulting: lm_dataset_megavul_multiclass_unixcoder-base_live_unixcoder-base-nine_ft_ml5120_f40f2e964_s1600r42
+# Run:
+#   ./scripts/train_cloud.sh --skip --config configs/ablation/phase8/H10_funcnine.yaml \
+#     --dataset lm_dataset_megavul_multiclass_unixcoder-base_live_unixcoder-base-nine_ft_ml5120_f40f2e964_s1600r42
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base-nine
+  add_func_tokens: true
+  func_max_length: 5120
+  func_chunk_size: 1024
+  func_chunk_stride: 1024
+  window_attn_pool: false
+  window_mixer: true
+  window_mixer_max: 6
+  cross_window_attn: false
+  localization_encoder: both
+  stmt_both_mode: concat
+  graph_pool: meanmax
+  cross_task_method: none
+  hidden_dim: 768
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: false
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  lm_lr: 0.00001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: true
+  use_flash_attention: true
+  grad_accum_steps: 1
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 8
+  prefetch_factor: 2

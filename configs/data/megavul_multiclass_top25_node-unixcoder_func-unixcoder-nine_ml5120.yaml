@@ -1,0 +1,37 @@
+# Dataset build config — node LM = unixcoder-base (unchanged), func LM = unixcoder-base-nine
+# (C-aware). Isolates the func-LM effect for H10 (N48-nine showed node-LM swap alone is
+# flat-to-worse; func_lm is what H10's sliding-window encoder actually uses).
+#
+# Patches from the existing node-unixcoder_func-unixcoder ml5120 dataset (same node-LM +
+# data params) — re-tokenizes func tokens with unixcoder-base-nine only, skips node
+# re-embedding entirely (fast, CPU-ok).
+#
+# Build (cloud):
+#   bash scripts/cloud_process_datasets.sh \
+#     configs/data/megavul_multiclass_top25_node-unixcoder_func-unixcoder-nine_ml5120.yaml
+# Resulting dataset: lm_dataset_megavul_multiclass_unixcoder-base_live_unixcoder-base-nine_ft_ml5120_f40f2e964_s1600r42
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  max_per_class: 1600
+  resample_seed: 42
+  filter_top25_dangerous: true
+  filter_owasp: false
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base-nine
+  add_func_tokens: true
+  func_max_length: 5120
+  num_classes: 26
+  num_groups: 16
+
+train:
+  device: cuda
+  use_flash_attention: true
+  compile_model: false
