@@ -15,7 +15,10 @@ JOB_ARRAY_NUMBER = 0 if "ipykernel" in sys.argv[0] else int(sys.argv[1]) - 1
 # Read Data
 df = svdd.bigvul()
 df = df.iloc[::-1]
-splits = np.array_split(df, NUM_JOBS)
+# np.array_split on a DataFrame returns plain ndarrays (asanyarray drops the
+# DataFrame type) on modern numpy -> dfmp's type check rejects it. Split indices
+# instead, same row partitioning, .iloc keeps DataFrame type.
+splits = [df.iloc[idx] for idx in np.array_split(np.arange(len(df)), NUM_JOBS)]
 
 
 def preprocess(row):
