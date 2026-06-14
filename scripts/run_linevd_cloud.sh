@@ -57,13 +57,13 @@ GRAPH_CACHE="linevd_megavul_joerngraphs.tar.gz"
 command -v pigz >/dev/null || apt-get install -y -q pigz || true   # parallel gz
 # NB: `cmd && COMP=(...)` as a bare statement trips set -e when cmd fails — use if.
 if command -v pigz >/dev/null; then COMP=(pigz -p "$(nproc)"); else COMP=(gzip); fi
-HAVE=$(ls storage/processed/megavul/before/*.edges.json 2>/dev/null | wc -l)
+HAVE=$( (ls storage/processed/megavul/before/*.edges.json 2>/dev/null || true) | wc -l )
 if [[ "$HAVE" -lt 1000 ]] && rclone ls "$REMOTE/data/baselines/$GRAPH_CACHE" >/dev/null 2>&1; then
   echo "  restoring cached joern graphs from Drive (skips getgraphs) ..."
   rclone copy "$REMOTE/data/baselines/$GRAPH_CACHE" /tmp/ --progress
   tar -I "${COMP[0]}" -xf "/tmp/$GRAPH_CACHE" && rm -f "/tmp/$GRAPH_CACHE"
 fi
-BEFORE_CNT=$(ls storage/processed/megavul/before/*.edges.json 2>/dev/null | wc -l)
+BEFORE_CNT=$( (ls storage/processed/megavul/before/*.edges.json 2>/dev/null || true) | wc -l )
 
 # LineVD wraps every subprocess in `singularity exec main.sif` unless SINGULARITY=true.
 # We run joern/flawfinder directly on the pod, so bypass the container wrapper.
@@ -99,7 +99,7 @@ ls -la /root/.ammonite/rt-*.jar 2>&1 || echo "WARN: rt jar not pre-warmed; paral
 # Idempotent: skips any func whose .edges.json already exists (so a restored cache is a no-op).
 for i in $(seq 1 100); do PYTHONPATH=. python sastvd/scripts/getgraphs.py "$i"; done
 
-AFTER_CNT=$(ls storage/processed/megavul/before/*.edges.json 2>/dev/null | wc -l)
+AFTER_CNT=$( (ls storage/processed/megavul/before/*.edges.json 2>/dev/null || true) | wc -l )
 # Refresh the Drive cache only if we built new graphs (or no cache exists yet).
 if [[ "$AFTER_CNT" -gt "$BEFORE_CNT" ]] || ! rclone ls "$REMOTE/data/baselines/$GRAPH_CACHE" >/dev/null 2>&1; then
   echo "  caching joern graphs to Drive ($AFTER_CNT funcs) ..."
