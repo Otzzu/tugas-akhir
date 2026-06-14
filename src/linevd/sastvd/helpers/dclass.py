@@ -23,10 +23,15 @@ class BigVulDataset:
         self.df = self.df[self.df.label == partition]
         self.df = self.df[self.df.id.isin(self.finished)]
 
-        # Balance training set
+        # Balance training set. LineVD assumes nonvul is the majority (BigVul); our
+        # megavul split is vuln-majority, so the nonvul pool can be smaller than len(vul)
+        # -> oversample with replacement when needed (keeps all vuln for localization eval).
         if partition == "train" or partition == "val":
             vul = self.df[self.df.vul == 1]
-            nonvul = self.df[self.df.vul == 0].sample(len(vul), random_state=0)
+            nonvul_pool = self.df[self.df.vul == 0]
+            nonvul = nonvul_pool.sample(
+                len(vul), random_state=0, replace=len(nonvul_pool) < len(vul)
+            )
             self.df = pd.concat([vul, nonvul])
 
         # Correct ratio for test set
