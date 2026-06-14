@@ -64,6 +64,12 @@ if [[ ! -d storage/external/joern-cli ]]; then
   unzip -q /tmp/joern-cli.zip -d storage/external
   rm -f /tmp/joern-cli.zip
 fi
+# Ammonite exports the JDK runtime to ~/.ammonite/rt-<ver>.jar on first boot. getgraphs
+# runs 8 parallel joern workers that all race to create it (FileAlreadyExistsException).
+# Pre-warm single-threaded so the jar exists before the parallel loop.
+rm -f /root/.ammonite/rt-*.jar
+echo 'println("joern warmup")' > /tmp/joern_warm.sc
+storage/external/joern-cli/joern --script /tmp/joern_warm.sc >/dev/null 2>&1 || true
 # getgraphs is a 100-way job-array script (NUM_JOBS=100); loop all shards to cover our full split.
 for i in $(seq 1 100); do PYTHONPATH=. python sastvd/scripts/getgraphs.py "$i"; done
 PYTHONPATH=. python sastvd/scripts/prepare.py
