@@ -117,9 +117,28 @@ ln -sfn ../megavul/before storage/processed/bigvul/before
 ln -sfn ../megavul/after  storage/processed/bigvul/after
 PYTHONPATH=. python sastvd/scripts/prepare.py
 
+# LineVD item cache (built DGL graphs + per-func codebert embeddings + doc2vec). Building
+# all ~14k graphs takes ~25min; restore from Drive on a fresh pod to go straight to train.
+PREP_CACHE="linevd_megavul_prepcache.tar.gz"
+PREP_MARK="storage/cache/bigvul_linevd_codebert_pdg+raw"
+PREP_RESTORED=""
+if [[ ! -d "$PREP_MARK" ]] && rclone ls "$REMOTE/data/baselines/$PREP_CACHE" >/dev/null 2>&1; then
+  echo "  restoring LineVD prep cache from Drive (skips item build) ..."
+  rclone copy "$REMOTE/data/baselines/$PREP_CACHE" /tmp/ --progress
+  tar -I "${COMP[0]}" -xf "/tmp/$PREP_CACHE" && rm -f "/tmp/$PREP_CACHE"
+  PREP_RESTORED=1
+fi
+
 echo "=== [5/6] train + localize ==="
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
 PYTHONPATH=. python sastvd/scripts/train_best.py 2>&1 | tee "$OUT/train.log"
+# Cache the prep on Drive if we built it this run (not if restored) so future pods skip it.
+if [[ -z "$PREP_RESTORED" && -d "$PREP_MARK" ]] && ! rclone ls "$REMOTE/data/baselines/$PREP_CACHE" >/dev/null 2>&1; then
+  echo "  caching LineVD prep to Drive ..."
+  tar -cf - storage/cache/codebert_method_level "$PREP_MARK" storage/processed/bigvul/d2v_False 2>/dev/null \
+    | "${COMP[@]}" > "/tmp/$PREP_CACHE"
+  rclone copy "/tmp/$PREP_CACHE" "$REMOTE/data/baselines/" --progress && rm -f "/tmp/$PREP_CACHE"
+fi
 # eval/localization metrics are emitted by linevd's eval; copy storage outputs
 cp -rf storage/processed "$OUT/" 2>/dev/null || true
 cp -rf storage/outputs "$OUT/" 2>/dev/null || true
