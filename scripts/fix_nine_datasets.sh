@@ -67,8 +67,12 @@ seed "$NINE1024" "$NINE1024_TAR"
 bash scripts/cloud_process_datasets.sh --delete-pt "$CFG_NINE5120"
 rm_local "$NINE5120"; rm_local "$NINE1024"
 
-echo "=== [4/5] free build scratch (raw CPGs not needed for training) ==="
+echo "=== [4/5] free build scratch (keep cwe_vocab.json — training guard needs it) ==="
+# Preserve the tiny cwe_vocab.json; drop only the bulky raw CPG graphs.
+[[ -f data/raw/megavul/cwe_vocab.json ]] && cp data/raw/megavul/cwe_vocab.json /tmp/cwe_vocab.json || true
 rm -rf data/raw/megavul 2>/dev/null || true
+mkdir -p data/raw/megavul
+[[ -f /tmp/cwe_vocab.json ]] && mv /tmp/cwe_vocab.json data/raw/megavul/cwe_vocab.json || true
 
 echo "=== [5/5] verify new tars on Drive ==="
 rclone lsf "$PROC_REMOTE/" | grep -E "(${NINE5120}|${FUNCNINE})_lazy_" || echo "  WARN: new tars not found — check upload logs above"
