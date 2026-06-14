@@ -325,10 +325,11 @@ class LitGNN(pl.LightningModule):
             )
             self.loss_f = th.nn.CrossEntropyLoss()
 
-        # Metrics
-        self.accuracy = torchmetrics.Accuracy()
-        self.auroc = torchmetrics.AUROC(compute_on_step=False)
-        self.mcc = torchmetrics.MatthewsCorrcoef(2)
+        # Metrics — torchmetrics 1.x needs explicit task=; LineVD is binary (2-class
+        # func/line vuln). compute_on_step removed; MatthewsCorrcoef renamed MatthewsCorrCoef.
+        self.accuracy = torchmetrics.Accuracy(task="binary")
+        self.auroc = torchmetrics.AUROC(task="binary")
+        self.mcc = torchmetrics.MatthewsCorrCoef(task="binary")
 
         # GraphConv Type
         hfeat = self.hparams.hfeat
