@@ -39,8 +39,10 @@ pip install -q --no-deps torchvision==0.19.1 --index-url https://download.pytorc
 pip install -q --no-deps 'torchdata==0.9.0' || pip install -q --no-deps 'torchdata<0.10'
 # rest of sastvd's actual runtime imports (per requirements.txt, minus dgl/torch already handled
 # and torchtext/torchsummary/etc which are unused and would drag torch off the cu121 pin).
+# transformers>=4.50 blocks torch.load of .bin checkpoints under torch<2.6 (CVE-2025-32434);
+# codebert-base ships .bin and our torch is pinned 2.4.1 (DGL cap) -> pin transformers<4.50.
 pip install -q gensim graphviz matplotlib networkx pandas scipy scikit-learn seaborn \
-  torchmetrics tqdm transformers tsne-torch unidiff "ray[tune]" tensorboard   # tensorboard: sastvd/helpers/ml.py SummaryWriter
+  torchmetrics tqdm "transformers<4.50" tsne-torch unidiff "ray[tune]" tensorboard   # tensorboard: sastvd/helpers/ml.py SummaryWriter
 python -c "import torch,dgl; print('torch',torch.__version__,'dgl',dgl.__version__,'| cuda',torch.cuda.is_available())"
 
 echo "=== [3/6] data + LineVD cache files (our split + flaw GT, no code edit) ==="
