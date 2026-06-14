@@ -82,6 +82,11 @@ def glove_dict(vectors_path, cache=True):
             print(E)
             pass
 
+    # Glove vectors are optional: embtype=codebert never uses emb_dict, and the Stanford
+    # glove C binaries may be absent. Return empty maps instead of crashing.
+    if not Path(vectors_path).exists():
+        return {}, {}
+
     # Read into dict
     embeddings_dict = {}
     with open(vectors_path, "r") as f:
