@@ -15,22 +15,32 @@ set -euo pipefail
 
 REMOTE="gdrive-mesach:tugas-akhir"
 DATA_TAR="megavul_ml1024_baselines_20260613.tar.gz"   # our exported split (func_before, vul, cwe_name, flaw_lines)
-RUN_ID="livable_megavul_$(date +%Y%m%d_%H%M%S)"
+TS="$(date +%Y%m%d_%H%M%S)"
 VULN_ONLY=""; OPT="adamw"; LR="1e-3"   # README pt6 says RAdam 1e-4 but it FREEZES on our data
                                         # (loss flat, acc 0); AdamW 1e-3 = repo's shipped default + trains.
+MODE="megavul"; TOPCWE=31              # --bigvul = faithful repro on LIVABLE's OWN Big-Vul (all_vul.csv),
+                                        # top-31 CWE (incl Nonetype) == their hardcoded class_num=31.
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --vuln-only) VULN_ONLY=1;;
+    --bigvul)    MODE="bigvul";;
+    --top-cwe)   TOPCWE="$2"; shift;;
     --opt) OPT="$2"; shift;;
     --lr)  LR="$2"; shift;;
     *) echo "unknown arg: $1";;
   esac; shift
 done
-[[ -n "$VULN_ONLY" ]] && RUN_ID="${RUN_ID}_vo"
-RUN_ID="${RUN_ID}_${OPT}${LR}"
 WORK="$PWD"
 LV="$WORK/src/LIVABLE"
-PREP="$WORK/megavul_livable"
+if [[ "$MODE" == "bigvul" ]]; then
+  PREP="$WORK/bigvul_livable"; PREP_CACHE="livable_bigvul_preprocess.tar.gz"
+  RUN_ID="livable_bigvul_${TS}_top${TOPCWE}_${OPT}${LR}"
+else
+  PREP="$WORK/megavul_livable"; PREP_CACHE="livable_megavul_preprocess.tar.gz"
+  RUN_ID="livable_megavul_${TS}"
+  [[ -n "$VULN_ONLY" ]] && RUN_ID="${RUN_ID}_vo"
+  RUN_ID="${RUN_ID}_${OPT}${LR}"
+fi
 
 echo "=== [1/7] LIVABLE present (vendored) ==="
 [[ -d "$LV" ]] || git clone --depth 1 https://github.com/LIVABLE01/LIVABLE.git "$LV"
@@ -54,15 +64,27 @@ pip install -q gensim nltk graphviz jsonlines yacs pandas scikit-learn tqdm fast
 python -c "import nltk; nltk.download('punkt', quiet=True)" || true
 python -c "import torch,dgl; print('torch',torch.__version__,'dgl',dgl.__version__,'cuda',torch.cuda.is_available())"
 
-echo "=== [3/7] data: our split + LIVABLE adapter (.c files + jsonl + cwe_labels) ==="
-if [[ ! -d megavul_ml1024 ]]; then
-  rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar --no-same-owner -xzf "$DATA_TAR"
+echo "=== [3/7] data + LIVABLE adapter (.c files + jsonl + cwe_labels) [mode=$MODE] ==="
+if [[ "$MODE" == "bigvul" ]]; then
+  # LIVABLE's OWN Big-Vul (all_vul.csv): rclone from our Drive, else gdown the public link.
+  CSV="$WORK/data/LIVABLE/all_vul.csv"
+  if [[ ! -f "$CSV" ]]; then
+    mkdir -p "$WORK/data/LIVABLE"
+    rclone copy "$REMOTE/data/baselines/all_vul.csv" "$WORK/data/LIVABLE/" --progress 2>/dev/null || true
+    [[ -f "$CSV" ]] || { pip install -q gdown && gdown 1j8WUSNte6Tda2uXR8Ue3Hk9jRa-33LGL -O "$CSV"; }
+  fi
+  [[ -f "$CSV" ]] || { echo "ERR: all_vul.csv missing (upload to $REMOTE/data/baselines/ or check gdown)"; exit 1; }
+  python "$WORK/scripts/livable_prepare_bigvul.py" --csv "$CSV" --out-dir "$PREP" --top-cwe "$TOPCWE"
+else
+  if [[ ! -d megavul_ml1024 ]]; then
+    rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar --no-same-owner -xzf "$DATA_TAR"
+  fi
+  # Always --keep-benign here (26-class ggnn) so ONE joern/ggnn cache serves both modes; --vuln-only
+  # filters benign out of the built ggnn downstream (label-independent cache, no re-parse).
+  python "$WORK/scripts/livable_prepare_megavul.py" --in-dir "$WORK/megavul_ml1024/linevd" --out-dir "$PREP" --keep-benign
 fi
-# Always --keep-benign here (26-class ggnn) so ONE joern/ggnn cache serves both modes; --vuln-only
-# filters benign out of the built ggnn downstream (label-independent cache, no re-parse).
-python "$WORK/scripts/livable_prepare_megavul.py" --in-dir "$WORK/megavul_ml1024/linevd" --out-dir "$PREP" --keep-benign
 NUM_CLASSES=$(python -c "import json;print(json.load(open('$PREP/cwe_labels.json'))['num_classes'])")
-echo "  num_classes=$NUM_CLASSES"
+echo "  mode=$MODE num_classes=$NUM_CLASSES"
 
 echo "=== [4/7] compiled Joern (zenodo 7607623) + parse each function ==="
 # zenodo joern.zip is double-nested: extracts to preprocessing/joern/{slicer.sh,process.py,joern/}
@@ -79,9 +101,8 @@ fi
 JD="$LV/preprocessing/joern/joern"   # joern-lang repo root
 cp -f "$LV/preprocessing/joern/slicer.sh" "$LV/preprocessing/joern/process.py" "$JD/"
 find "$JD" -type f \( -name joern-parse -o -name "*.sh" -o -name joern \) -exec chmod +x {} \;
-# Preprocess cache (joern_csv + ggnn_input + wv) — parsing 9116 funcs is the slow part; restore
-# from Drive on a fresh pod to skip straight to train (like LineVD's joern graph cache).
-PREP_CACHE="livable_megavul_preprocess.tar.gz"
+# Preprocess cache (joern_csv + ggnn_input + wv) — parsing the funcs is the slow part; restore
+# from Drive on a fresh pod to skip straight to train. PREP_CACHE set per-mode up top.
 PREP_RESTORED=""
 if [[ ! -d "$PREP/ggnn_input" ]] && rclone ls "$REMOTE/data/baselines/$PREP_CACHE" >/dev/null 2>&1; then
   echo "  restoring LIVABLE preprocess cache from Drive (skips joern parse + builder) ..."
@@ -137,7 +158,7 @@ GG="$PREP/ggnn_input"
 # --vuln-only: drop benign (label 0) + remap CWE 1..25 -> 0..24, in place on the renamed ggnn.
 # joern/ggnn cache is label-independent so this only filters graphs (no re-parse/rebuild). Cache
 # holds pristine diverse-*.json (cached pre-rename) so it stays 26-class. Marker = idempotent.
-if [[ -n "$VULN_ONLY" ]]; then
+if [[ -n "$VULN_ONLY" && "$MODE" == "megavul" ]]; then   # bigvul label 0 is a real CWE, never filter
   if [[ ! -f "$GG/.vo_done" ]]; then     # filter once (marker); decrement always (below)
     python - "$GG" <<'PY'
 import json, os, sys
