@@ -66,11 +66,11 @@ python run_weighted_CWE.py --output_dir="$OUT/classifier" --model_type roberta \
 cd "$WORK"
 
 echo "=== [7/7] upload weights + results ==="
-tar -czf "${RUN_ID}_results.tar.gz" -C "$OUT" .
+tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" .
 rclone copy "${RUN_ID}_results.tar.gz" "$REMOTE/results/baselines/" --progress
 WBIN=$(find "$OUT" -name "*.bin" | head -1 || true)
 if [[ -n "$WBIN" ]]; then
-  tar -czf "${RUN_ID}_weights.tar.gz" -C "$OUT" "$(realpath --relative-to="$OUT" "$WBIN")"
+  tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_weights.tar.gz" -C "$OUT" "$(realpath --relative-to="$OUT" "$WBIN")"
   rclone copy "${RUN_ID}_weights.tar.gz" "$REMOTE/checkpoints/baselines/" --progress
 fi
 echo "DONE: $RUN_ID -> results/baselines/${RUN_ID}_results.tar.gz (+weights)"

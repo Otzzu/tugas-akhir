@@ -146,11 +146,11 @@ cp -rf storage/outputs "$OUT/" 2>/dev/null || true
 cd "$WORK"
 
 echo "=== [6/6] upload weights + results ==="
-tar -czf "${RUN_ID}_results.tar.gz" -C "$OUT" .
+tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" .
 rclone copy "${RUN_ID}_results.tar.gz" "$REMOTE/results/baselines/" --progress
 WCKPT=$(find "$OUT" src/linevd/storage -name "*.ckpt" 2>/dev/null | head -1 || true)
 if [[ -n "$WCKPT" ]]; then
-  tar -czf "${RUN_ID}_weights.tar.gz" -C "$(dirname "$WCKPT")" "$(basename "$WCKPT")"
+  tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_weights.tar.gz" -C "$(dirname "$WCKPT")" "$(basename "$WCKPT")"
   rclone copy "${RUN_ID}_weights.tar.gz" "$REMOTE/checkpoints/baselines/" --progress
 fi
 echo "DONE: $RUN_ID -> results/baselines/${RUN_ID}_results.tar.gz (+weights if any)"

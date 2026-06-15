@@ -50,12 +50,12 @@ cd "$WORK"
 echo "=== [5/5] upload weights + results ==="
 # weights = best model .bin under OUT/checkpoint-best-f1; results = logs + any csv
 cp -f "$OUT"/*.log "$OUT"/ 2>/dev/null || true
-tar -czf "${RUN_ID}_results.tar.gz" -C "$OUT" .
+tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" .
 rclone copy "${RUN_ID}_results.tar.gz" "$REMOTE/results/baselines/" --progress
 # weights separately (can be large)
 WBIN=$(find "$OUT" -name "*.bin" | head -1 || true)
 if [[ -n "$WBIN" ]]; then
-  tar -czf "${RUN_ID}_weights.tar.gz" -C "$(dirname "$WBIN")" "$(basename "$WBIN")"
+  tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_weights.tar.gz" -C "$(dirname "$WBIN")" "$(basename "$WBIN")"
   rclone copy "${RUN_ID}_weights.tar.gz" "$REMOTE/checkpoints/baselines/" --progress
 fi
 echo "DONE: $RUN_ID  -> results/baselines/${RUN_ID}_results.tar.gz  (+weights)"
