@@ -27,19 +27,22 @@ source "$VENV/bin/activate"
 python -c "import torch,transformers,sklearn" 2>/dev/null || \
   pip install -q torch transformers scikit-learn numpy tqdm
 
-echo "=== [2/6] dataset.zip -> extract categorization linux pkls ==="
-ZIP="$WORK/data/VulPCL/dataset.zip"
-if [[ ! -f "$ZIP" ]]; then
-  mkdir -p "$WORK/data/VulPCL"
-  rclone copy "$REMOTE_BASE/vulpcl_dataset.zip" "$WORK/data/VulPCL/" --progress
-  [[ -f "$WORK/data/VulPCL/vulpcl_dataset.zip" ]] && ZIP="$WORK/data/VulPCL/vulpcl_dataset.zip"
-fi
+echo "=== [2/6] get categorization linux pkls (small ~130MB, not the full 1.9GB zip) ==="
+PKL_DIR="$WORK/data/VulPCL/_cat_linux"; mkdir -p "$PKL_DIR"
 SRC="dataset/vul_categorization/vul_data/linux"
-unzip -o "$ZIP" "$SRC/*" -d "$WORK/data/VulPCL/_ext" >/dev/null
+if [[ ! -f "$PKL_DIR/train_set_token.pkl" ]]; then
+  if [[ -f "$WORK/data/VulPCL/dataset.zip" ]]; then               # local full zip
+    unzip -o "$WORK/data/VulPCL/dataset.zip" "$SRC/*" -d "$WORK/data/VulPCL/_ext" >/dev/null
+    cp -f "$WORK/data/VulPCL/_ext/$SRC"/*.pkl "$PKL_DIR/"
+  else                                                            # small tar from Drive
+    rclone copy "$REMOTE_BASE/vulpcl_cat_linux.tar.gz" /tmp/ --progress
+    tar --no-same-owner -xzf /tmp/vulpcl_cat_linux.tar.gz -C "$PKL_DIR"
+  fi
+fi
 
 echo "=== [3/6] stage pkls at codebert_blstm's expected path ./vul_data/$CWE/$PROJ ==="
 DEST="$CAT/vul_data/$CWE/$PROJ"; mkdir -p "$DEST"
-cp -f "$WORK/data/VulPCL/_ext/$SRC"/{train,val,test}_set_token.pkl "$DEST/"
+cp -f "$PKL_DIR"/{train,val,test}_set_token.pkl "$DEST/"
 mkdir -p "$CAT/save_dict/$PROJ/$CWE"   # codebert_blstm uses os.mkdir (no -p)
 
 echo "=== [4/6] derive vocab (n_vocab = max FCDS id + 1) + class count ==="
