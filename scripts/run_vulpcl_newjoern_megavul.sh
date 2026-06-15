@@ -91,6 +91,6 @@ echo "=== [8/8] upload pkls (preprocess) + results to Drive ==="
 COMP=(gzip); command -v pigz >/dev/null && COMP=(pigz)
 tar -cf - -C "$PKL" . | "${COMP[@]}" > "/tmp/${RUN_ID}_pkls.tar.gz"
 rclone copy "/tmp/${RUN_ID}_pkls.tar.gz" "$REMOTE/data/baselines/" --progress 2>/dev/null || true
-tar -czf "${RUN_ID}_results.tar.gz" -C "$OUT" . && \
+tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" . && \
   rclone copy "${RUN_ID}_results.tar.gz" "$REMOTE/results/baselines/" --progress 2>/dev/null || true
 echo "DONE: $RUN_ID"

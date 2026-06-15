@@ -83,6 +83,6 @@ OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
 cd "$CAT"
 python codebert_blstm.py --p "$PROJ" --cwe "$CWE" 2>&1 | tee "$OUT/train.log"
 cd "$WORK"
-tar -czf "${RUN_ID}_results.tar.gz" -C "$OUT" . && \
+tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" . && \
   rclone copy "${RUN_ID}_results.tar.gz" "gdrive-mesach:tugas-akhir/results/baselines/" --progress 2>/dev/null || true
 echo "DONE: $RUN_ID"

@@ -235,6 +235,6 @@ python main_sta.py --input_dir "$GG" 2>&1 | tee "$OUT/train.log"
 
 echo "=== [7/7] upload results ==="
 cd "$WORK"
-tar -czf "${RUN_ID}_results.tar.gz" -C "$OUT" .
+tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" .
 rclone copy "${RUN_ID}_results.tar.gz" "$REMOTE/results/baselines/" --progress
 echo "DONE: $RUN_ID"

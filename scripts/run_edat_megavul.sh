@@ -20,8 +20,8 @@ VENV="/workspace/edat_env"
 BASEPY=/venv/main/bin/python; [[ -x "$BASEPY" ]] || BASEPY="$(command -v python3 || command -v python)"
 [[ -d "$VENV" ]] || "$BASEPY" -m venv "$VENV"
 source "$VENV/bin/activate"
-python -c "import torch,transformers,sklearn,pandas,numpy,fastparquet" 2>/dev/null || \
-  pip install -q torch transformers scikit-learn numpy tqdm pandas fastparquet
+python -c "import torch,transformers,sklearn,pandas,numpy,fastparquet,matplotlib,seaborn" 2>/dev/null || \
+  pip install -q torch transformers scikit-learn numpy tqdm pandas fastparquet matplotlib seaborn
 [[ -f "$VD/multi_task_train_alternate.py" ]] || { rm -rf "$ED"; git clone --depth 1 https://github.com/Karelye/EDAT-MLT.git "$ED"; }
 [[ -f "$VD/multi_task_train_alternate.py" ]] || { echo "ERR: EDAT variant not found at $VD (check clone/path)"; exit 1; }
 
@@ -52,9 +52,13 @@ OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
 
 echo "=== [6/6] upload results ==="
 cd "$WORK"
-tar -czf "${RUN_ID}_results.tar.gz" -C "$OUT" . 2>/dev/null && \
+COMP="$(command -v pigz || echo gzip)"
+tar -I "$COMP" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" . 2>/dev/null && \
   rclone copy "${RUN_ID}_results.tar.gz" "$REMOTE/results/baselines/" --progress 2>/dev/null || true
-# the trained model + EDAT's own output dir (relative to $VD) — back up too
-find "$VD" -maxdepth 1 -type d -name "*output*" -exec tar -czf "${RUN_ID}_model.tar.gz" {} + 2>/dev/null && \
-  rclone copy "${RUN_ID}_model.tar.gz" "$REMOTE/results/baselines/" --progress 2>/dev/null || true
+# trained model / EDAT output dir (only if train produced one — else skip, no spurious rclone error)
+MODELDIR=$(find "$VD" -maxdepth 1 -type d -name "*output*" | head -1)
+if [[ -n "$MODELDIR" ]]; then
+  tar -I "$COMP" -cf "${RUN_ID}_model.tar.gz" -C "$VD" "$(basename "$MODELDIR")" 2>/dev/null && \
+    rclone copy "${RUN_ID}_model.tar.gz" "$REMOTE/results/baselines/" --progress 2>/dev/null || true
+fi
 echo "DONE: $RUN_ID"
