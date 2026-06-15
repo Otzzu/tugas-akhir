@@ -45,33 +45,63 @@ NUM_CLASSES=$(python -c "import json;print(json.load(open('$PREP/cwe_labels.json
 echo "  num_classes=$NUM_CLASSES"
 
 echo "=== [4/7] compiled Joern (zenodo 7607623) + parse each function ==="
-# [VERIFY] LIVABLE ships a compiled Joern at https://zenodo.org/record/7607623 ; preprocessing
-# starts from preprocessing/process.py (runs slicer.sh per .c). Confirm the download URL +
-# that process.py emits nodes.csv/edges.csv under the dir layout the builder expects
-# (args.csv/<file>/tmp/<file>/nodes.csv).
+# zenodo joern.zip is double-nested: extracts to preprocessing/joern/{slicer.sh,process.py,joern/}
+# where preprocessing/joern/joern is the joern-lang repo root (joern-parse at its joern/joern-parse).
+# slicer.sh's `./joern/joern-parse` only resolves run FROM that repo root, so we copy slicer.sh +
+# process.py in, chmod +x the binaries, and run there. joern-parse writes <file>/tmp/<file>/nodes.csv
+# (keyed by filename -> no collision; the slicer `rm -rf parsed` is harmless). We collect per split.
 command -v java >/dev/null || (apt-get update -q && apt-get install -y -q default-jre)
-if [[ ! -f "$LV/preprocessing/slicer.sh" ]]; then
+if [[ ! -f "$LV/preprocessing/joern/slicer.sh" ]]; then
   echo "  fetching compiled joern (zenodo 7607623, ~95MB) ..."
   wget -q "https://zenodo.org/api/records/7607623/files/joern.zip/content" -O /tmp/joern.zip
   unzip -q -o /tmp/joern.zip -d "$LV/preprocessing/" && rm -f /tmp/joern.zip
 fi
-cd "$LV/preprocessing"
-echo "  preprocessing/ contents (confirm slicer.sh + joern layout):"; ls
-for split in train valid test; do
-  s=$split; [[ "$split" == valid ]] && s=val
-  # process.py runs ./slicer.sh per .c -> parsed/<file>/ (nodes.csv, edges.csv)
-  python process.py --file_path "$PREP/functions/$s" --start 0 --end 100000 || true
-done
+JD="$LV/preprocessing/joern/joern"   # joern-lang repo root
+cp -f "$LV/preprocessing/joern/slicer.sh" "$LV/preprocessing/joern/process.py" "$JD/"
+find "$JD" -type f \( -name joern-parse -o -name "*.sh" -o -name joern \) -exec chmod +x {} \;
+# Preprocess cache (joern_csv + ggnn_input + wv) — parsing 9116 funcs is the slow part; restore
+# from Drive on a fresh pod to skip straight to train (like LineVD's joern graph cache).
+PREP_CACHE="livable_megavul_preprocess.tar.gz"
+PREP_RESTORED=""
+if [[ ! -d "$PREP/ggnn_input" ]] && rclone ls "$REMOTE/data/baselines/$PREP_CACHE" >/dev/null 2>&1; then
+  echo "  restoring LIVABLE preprocess cache from Drive (skips joern parse + builder) ..."
+  rclone copy "$REMOTE/data/baselines/$PREP_CACHE" /tmp/ --progress
+  mkdir -p "$PREP"; tar -xzf "/tmp/$PREP_CACHE" -C "$PREP" && rm -f "/tmp/$PREP_CACHE"
+  PREP_RESTORED=1
+fi
+HAVE=$( (ls -d "$PREP"/joern_csv/test/*.c 2>/dev/null || true) | wc -l )
+if [[ "$HAVE" -lt 100 ]]; then
+  cd "$JD"
+  for split in train val test; do
+    rm -rf "$JD"/*.c 2>/dev/null || true            # clear prev split's parse dirs from cwd
+    python process.py --file_path "$PREP/functions/$split" --start 0 --end 100000 || true
+    mkdir -p "$PREP/joern_csv/$split"
+    for d in "$JD"/*.c; do [[ -d "$d" ]] && mv "$d" "$PREP/joern_csv/$split/" 2>/dev/null || true; done
+    echo "  $split: $(ls -d "$PREP"/joern_csv/$split/*.c 2>/dev/null | wc -l) parsed"
+  done
+fi
 
 echo "=== [5/7] word2vec + GGNNinput builder ==="
-# [VERIFY] word2vec_multi.py CLI to train the wv model on our tokens.
-python word2vec_multi.py || true   # produces wv model -> set --wv below
-# Builder: csv dirs (Joern out) + our jsonls + wv -> GGNNinput JSON
-python "ori_ourdevign+token.py" \
-  --csv "$PREP/joern_csv/train" "$PREP/joern_csv/test" "$PREP/joern_csv/val" \
-  --json_files "$PREP/train.jsonl" "$PREP/test.jsonl" "$PREP/val.jsonl" \
-  --wv "$LV/preprocessing/wv_model" \
-  --output_dir "$PREP/ggnn_input" || true
+if [[ ! -d "$PREP/ggnn_input" ]]; then
+  cd "$LV/preprocessing"   # builder imports my_tokenizer from local utils.py
+  # word2vec on our func tokens (128-d, matches LIVABLE node feature size).
+  python word2vec_multi.py --data_paths "$PREP/train.jsonl" \
+    --save_model_dir "$PREP/wv" --model_name wvmodel --embedding_size 128
+  # Builder: csv dirs (joern out) + our jsonls + wv -> GGNNinput JSON
+  # (--csv/--json_files order is train,test,valid). Output: ggnn_input/diverse-{train,test,valid}-v0.json
+  python "ori_ourdevign+token.py" \
+    --csv "$PREP/joern_csv/train" "$PREP/joern_csv/test" "$PREP/joern_csv/val" \
+    --json_files "$PREP/train.jsonl" "$PREP/test.jsonl" "$PREP/val.jsonl" \
+    --wv "$PREP/wv/wvmodel" \
+    --output_dir "$PREP/ggnn_input"
+fi
+# Cache the preprocess to Drive if we built it (skip when restored) so future pods skip the parse.
+if [[ -z "$PREP_RESTORED" && -d "$PREP/ggnn_input" ]] && ! rclone ls "$REMOTE/data/baselines/$PREP_CACHE" >/dev/null 2>&1; then
+  echo "  caching LIVABLE preprocess to Drive ..."
+  COMP=(gzip); command -v pigz >/dev/null && COMP=(pigz -p "$(nproc)")
+  tar -cf - -C "$PREP" joern_csv ggnn_input wv 2>/dev/null | "${COMP[@]}" > "/tmp/$PREP_CACHE"
+  rclone copy "/tmp/$PREP_CACHE" "$REMOTE/data/baselines/" --progress && rm -f "/tmp/$PREP_CACHE"
+fi
 
 echo "=== [6/7] train (set num_classes to our label space) ==="
 cd "$LV/code"
