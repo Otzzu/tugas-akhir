@@ -53,7 +53,12 @@ BASEPY=/venv/main/bin/python
 [[ -x "$BASEPY" ]] || BASEPY="$(command -v python3 || command -v python || true)"
 [[ -n "$BASEPY" ]] || { echo "ERR: no python on this pod (install python3)"; exit 1; }
 echo "  base python: $BASEPY ($($BASEPY --version 2>&1))"
-[[ -d "$VENV" ]] || "$BASEPY" -m venv "$VENV" --system-site-packages
+# --system-site-packages only for RunPod's clean /venv/main (reuses its torch). A plain system
+# python3 can have a broken system dist (version=None) that crashes pip's resolver -> isolate it
+# (we install torch/dgl explicitly below regardless, so nothing is lost).
+VENV_FLAGS="--system-site-packages"
+[[ "$BASEPY" == /venv/main/bin/python ]] || VENV_FLAGS=""
+[[ -d "$VENV" ]] || "$BASEPY" -m venv "$VENV" $VENV_FLAGS
 source "$VENV/bin/activate"
 if ! python -c "import torch,dgl" 2>/dev/null; then
   pip install -q torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
