@@ -21,6 +21,14 @@ WORK="$PWD"; VP="$WORK/src/VulPCL"; CAT="$VP/vul_categorization"
 PROJ="megavul"; CWE="all"
 RUN_ID="vulpcl_megavul_$(date +%Y%m%d_%H%M%S)"
 
+echo "=== [0/7] venv + py3 deps (export + adc/cd extractors + train; graph_generation.py py2 is separate) ==="
+VENV="/workspace/vulpcl_env"
+BASEPY=/venv/main/bin/python; [[ -x "$BASEPY" ]] || BASEPY="$(command -v python3 || command -v python)"
+[[ -d "$VENV" ]] || "$BASEPY" -m venv "$VENV"
+source "$VENV/bin/activate"
+python -c "import pandas,torch,transformers,sklearn,gensim,networkx" 2>/dev/null || \
+  pip install -q pandas fastparquet numpy networkx "gensim<4.4" tqdm scikit-learn torch transformers
+
 echo "=== [1/7] export our megavul split as .c + labels (26-class, matches our model + split) ==="
 # vulpcl_prepare_megavul.py: --keep-benign => 26-class (benign + 25 CWE), == our model/LineVD/LineVul.
 if [[ ! -d megavul_ml1024 ]]; then
