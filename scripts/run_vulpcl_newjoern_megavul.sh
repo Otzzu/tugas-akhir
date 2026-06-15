@@ -38,7 +38,7 @@ JH=$(ls -d /usr/lib/jvm/java-21-openjdk* /usr/lib/jvm/*-21-* 2>/dev/null | head 
 [[ -n "${JH:-}" ]] && export JAVA_HOME="$JH" && export PATH="$JH/bin:$PATH"
 JCLI="$WORK/joern-cli"
 if [[ ! -x "$JCLI/joern-parse" ]]; then
-  wget -q "https://github.com/joernio/joern/releases/download/v${JOERN_VER}/joern-cli.zip" -O /tmp/joern-cli.zip
+  wget -q --show-progress "https://github.com/joernio/joern/releases/download/v${JOERN_VER}/joern-cli.zip" -O /tmp/joern-cli.zip
   unzip -q -o /tmp/joern-cli.zip -d "$WORK" && rm -f /tmp/joern-cli.zip
   chmod +x "$JCLI"/joern-parse "$JCLI"/joern-export "$JCLI"/*.sh 2>/dev/null || true
 fi

@@ -41,7 +41,7 @@ PYTHONPATH=src python scripts/bigvul_survivor_to_parquet.py \
 echo "=== [4/6] joern-cli v${JOERN_VER} + CPG (no --sample/--limit) ==="
 JCLI="$WORK/joern-cli"
 if [[ ! -x "$JCLI/joern-parse" ]]; then
-  wget -q "https://github.com/joernio/joern/releases/download/v${JOERN_VER}/joern-cli.zip" -O /tmp/joern-cli.zip
+  wget -q --show-progress "https://github.com/joernio/joern/releases/download/v${JOERN_VER}/joern-cli.zip" -O /tmp/joern-cli.zip
   unzip -q -o /tmp/joern-cli.zip -d "$WORK" && rm -f /tmp/joern-cli.zip
   chmod +x "$JCLI"/joern-parse "$JCLI"/joern-export "$JCLI"/*.sh 2>/dev/null || true
 fi
