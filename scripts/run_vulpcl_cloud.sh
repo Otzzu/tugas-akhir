@@ -1,75 +1,73 @@
 #!/usr/bin/env bash
-# run_vulpcl_cloud.sh — train VulPCL categorization (multiclass CWE, CodeBERT+BLSTM)
-# on OUR MegaVul split.  VulPCL = IST'24, src/VulPCL/vul_categorization.
-# Pipeline: our .c funcs -> graph_generation.py (OLD Neo4j-Gremlin Joern) -> ast/cfg_dfg/
-# ddg_cdg SVG -> adc_features_extracting (deepwalk) + cd_features_extracting (FCDS seq) +
-# CodeBERT tokens -> codebert_blstm.py train.
+# run_vulpcl_cloud.sh — train VulPCL categorization on ITS OWN Linux-Kernel data (faithful repro).
+# Uses the PREPROCESSED token pkls shipped in dataset.zip (vul_categorization/vul_data/linux/*) so
+# NO ancient Neo4j-Gremlin joern is needed. Model = their CodeBert_Blstm (untouched). 11-class.
+# STANDALONE reference number (their data is tokenized only -> NOT a head-to-head with our model).
 #
-# STATUS: SKELETON. The BIG hurdle is the ANCIENT Joern (joern.all.JoernSteps + Gremlin +
-# py2neo + Neo4j) used by graph_generation.py — far older/harder than LineVD's Joern.
-# Marked [HARD]. Model side (CodeBERT+BLSTM) is light (no DGL).
+# Patches (faithfulness = numerical/config only, model unchanged):
+#   - linux_code_vocab.json MISSING -> derive n_vocab = max(FCDS id)+1 from the pkls.
+#   - Config.num_classes 12 -> 11 (data is 11-class: labels 0..10).
+#   - codebert_blstm target_names 0..11 -> 0..(NC-1).
+#   - pkl path layout: codebert_blstm reads ./vul_data/<cwe>/<p>/ -> stage pkls there.
+#
+# dataset.zip: local data/VulPCL/dataset.zip, else rclone gdrive .../data/baselines/vulpcl_dataset.zip
 # Usage (pod, project root):  bash scripts/run_vulpcl_cloud.sh
 set -euo pipefail
 
-REMOTE="gdrive-mesach:tugas-akhir"
-DATA_TAR="megavul_ml1024_baselines_20260613.tar.gz"
-RUN_ID="vulpcl_megavul_$(date +%Y%m%d_%H%M%S)"
-WORK="$PWD"
-VP="$WORK/src/VulPCL"
-CAT="$VP/vul_categorization"
-PREP="$WORK/megavul_vulpcl"
-PROJ="megavul"
+REMOTE_BASE="gdrive-mesach:tugas-akhir/data/baselines"
+WORK="$PWD"; VP="$WORK/src/VulPCL"; CAT="$VP/vul_categorization"
+CWE="all"; PROJ="linux"
+RUN_ID="vulpcl_linux_$(date +%Y%m%d_%H%M%S)"
 
-echo "=== [1/7] VulPCL present (vendored) ==="
-[[ -d "$VP" ]] || git clone --depth 1 https://github.com/liucyy/VulPCL.git "$VP"
-
-echo "=== [2/7] venv: torch + transformers(CodeBERT) + graph deps ==="
+echo "=== [1/6] venv + deps ==="
 VENV="/workspace/vulpcl_env"
-[[ -d "$VENV" ]] || /venv/main/bin/python -m venv "$VENV" --system-site-packages
+BASEPY=/venv/main/bin/python; [[ -x "$BASEPY" ]] || BASEPY="$(command -v python3 || command -v python)"
+[[ -d "$VENV" ]] || "$BASEPY" -m venv "$VENV"
 source "$VENV/bin/activate"
-pip install -q torch transformers scikit-learn networkx tqdm pandas fastparquet graphviz "gensim<4.4"
-# deepwalk for graph node embeddings (adc_features_extracting/deepwalk_embed)
-pip install -q deepwalk || true
-python -c "import torch,transformers; print('torch',torch.__version__,'tf',transformers.__version__,'cuda',torch.cuda.is_available())"
+python -c "import torch,transformers,sklearn" 2>/dev/null || \
+  pip install -q torch transformers scikit-learn numpy tqdm
 
-echo "=== [3/7] data: our split + VulPCL adapter (source .c + label file) ==="
-if [[ ! -d megavul_ml1024 ]]; then
-  rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar -xzf "$DATA_TAR"
+echo "=== [2/6] dataset.zip -> extract categorization linux pkls ==="
+ZIP="$WORK/data/VulPCL/dataset.zip"
+if [[ ! -f "$ZIP" ]]; then
+  mkdir -p "$WORK/data/VulPCL"
+  rclone copy "$REMOTE_BASE/vulpcl_dataset.zip" "$WORK/data/VulPCL/" --progress
+  [[ -f "$WORK/data/VulPCL/vulpcl_dataset.zip" ]] && ZIP="$WORK/data/VulPCL/vulpcl_dataset.zip"
 fi
-# --keep-benign: 26-class (benign + 25 CWE), == our model + LineVD/LineVul (only LOSVER vuln-only).
-python "$WORK/scripts/vulpcl_prepare_megavul.py" --in-dir "$WORK/megavul_ml1024/linevd" \
-  --out-dir "$PREP" --project "$PROJ" --keep-benign
-NUM_CLASSES=$(python -c "import json;print(json.load(open('$PREP/cwe_labels.json'))['num_classes'])")
-echo "  num_classes=$NUM_CLASSES"
+SRC="dataset/vul_categorization/vul_data/linux"
+unzip -o "$ZIP" "$SRC/*" -d "$WORK/data/VulPCL/_ext" >/dev/null
 
-echo "=== [4/7] [HARD] graph generation: OLD Neo4j-Gremlin Joern -> SVG (ast/cfg_dfg/ddg_cdg) ==="
-# graph_generation.py uses `from joern.all import JoernSteps` (Yamaguchi joern, ~2014):
-#   - needs Neo4j + the old joern python bindings + a Joern DB built from our .c files.
-#   - this is the single biggest reproduction risk. Options to try on the pod:
-#     (a) the old joern docker image, (b) build Neo4j + joern-lang from source.
-# [HARD/VERIFY] confirm: how graph_generation.py ingests source dir + writes SVGs to
-#   data/graph/<project>/{ast,cfg_dfg,ddg_cdg}/<file>@<func>.svg
-cd "$VP/data_preprocessing"
-echo "  [HARD] set up old Joern (Neo4j/Gremlin) then:"
-echo "    for g in ast cfg_dfg ddg_cdg; do python graph_generation.py --g \$g; done"
-# for g in ast cfg_dfg ddg_cdg; do python graph_generation.py --g "$g"; done   # <- enable after Joern works
+echo "=== [3/6] stage pkls at codebert_blstm's expected path ./vul_data/$CWE/$PROJ ==="
+DEST="$CAT/vul_data/$CWE/$PROJ"; mkdir -p "$DEST"
+cp -f "$WORK/data/VulPCL/_ext/$SRC"/{train,val,test}_set_token.pkl "$DEST/"
+mkdir -p "$CAT/save_dict/$PROJ/$CWE"   # codebert_blstm uses os.mkdir (no -p)
 
-echo "=== [5/7] features: deepwalk graph (adc) + FCDS sequence (cd) + CodeBERT tokens ==="
-cd "$CAT"
-cp "$PREP/${PROJ}_labels.txt" "$CAT/${PROJ}_labels.txt"
-# [VERIFY] adc/cd read ./data/graph/<project>/*.svg ; --p <project> --cwe CWE-TOP (multiclass)
-# python adc_features_extracting.py --p "$PROJ" --cwe CWE-TOP
-# python cd_features_extracting.py  --p "$PROJ" --cwe CWE-TOP
-# python vul_files_label.py --p "$PROJ" --cwe CWE-TOP
+echo "=== [4/6] derive vocab (n_vocab = max FCDS id + 1) + class count ==="
+read NV NC < <(python - "$DEST" "$CAT/${PROJ}_code_vocab.json" <<'PY'
+import pickle, json, sys
+base, vocab_out = sys.argv[1], sys.argv[2]
+mx = 0; labs = set()
+for s in ("train", "val", "test"):
+    for it in pickle.load(open(f"{base}/{s}_set_token.pkl", "rb")):
+        labs.add(it[4])
+        if it[2]: mx = max(mx, max(it[2]))
+nv = mx + 1; nc = len(labs)
+json.dump({str(i): i for i in range(nv)}, open(vocab_out, "w"))   # len() == n_vocab is all codebert_blstm needs
+print(nv, nc)
+PY
+)
+echo "  n_vocab=$NV  num_classes=$NC"
 
-echo "=== [6/7] train (set target_names/num_classes = our label space) ==="
-# [VERIFY] codebert.py target_names hardcodes ['0'..'11'] -> patch to range($NUM_CLASSES).
+echo "=== [5/6] patch model num_classes + target_names to $NC (faithful: config only) ==="
+git -C "$VP" checkout -- vul_categorization/module/CodeBert_Blstm.py vul_categorization/codebert_blstm.py 2>/dev/null || true
+sed -i "s/self.num_classes = 12/self.num_classes = $NC/" "$CAT/module/CodeBert_Blstm.py"
+sed -i "s/target_names=\[[^]]*\]/target_names=[str(i) for i in range($NC)]/" "$CAT/codebert_blstm.py"
+
+echo "=== [6/6] train (their CodeBert_Blstm, untouched arch) ==="
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
-# python codebert_blstm.py --p "$PROJ" --cwe CWE-TOP 2>&1 | tee "$OUT/train.log"
-echo "  [VERIFY] python codebert_blstm.py --p $PROJ --cwe CWE-TOP"
-
-echo "=== [7/7] upload results ==="
+cd "$CAT"
+python codebert_blstm.py --p "$PROJ" --cwe "$CWE" 2>&1 | tee "$OUT/train.log"
 cd "$WORK"
-[[ -d "$OUT" ]] && tar -czf "${RUN_ID}_results.tar.gz" -C "$OUT" . && \
-  rclone copy "${RUN_ID}_results.tar.gz" "$REMOTE/results/baselines/" --progress || true
-echo "DONE (skeleton): $RUN_ID  — old-Joern setup is the blocker, see [HARD] in step 4"
+tar -czf "${RUN_ID}_results.tar.gz" -C "$OUT" . && \
+  rclone copy "${RUN_ID}_results.tar.gz" "gdrive-mesach:tugas-akhir/results/baselines/" --progress 2>/dev/null || true
+echo "DONE: $RUN_ID"
