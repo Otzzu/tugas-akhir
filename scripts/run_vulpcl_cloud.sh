@@ -36,8 +36,9 @@ echo "=== [3/7] data: our split + VulPCL adapter (source .c + label file) ==="
 if [[ ! -d megavul_ml1024 ]]; then
   rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar -xzf "$DATA_TAR"
 fi
+# --keep-benign: 26-class (benign + 25 CWE), == our model + LineVD/LineVul (only LOSVER vuln-only).
 python "$WORK/scripts/vulpcl_prepare_megavul.py" --in-dir "$WORK/megavul_ml1024/linevd" \
-  --out-dir "$PREP" --project "$PROJ"
+  --out-dir "$PREP" --project "$PROJ" --keep-benign
 NUM_CLASSES=$(python -c "import json;print(json.load(open('$PREP/cwe_labels.json'))['num_classes'])")
 echo "  num_classes=$NUM_CLASSES"
 

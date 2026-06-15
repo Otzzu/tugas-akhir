@@ -55,8 +55,15 @@ def main() -> None:
     if not a.keep_benign:
         df = df[df["vul"] == 1].reset_index(drop=True)   # vuln-only, no benign (== LOSVER)
 
+    # keep_benign (default for LIVABLE/VulPCL, == our model): class 0 = "benign" (vul==0),
+    # classes 1..N = 25 CWE. vuln-only (== LOSVER): 0..N-1 over CWEs, no benign.
     df["cwe_name"] = df["cwe_name"].fillna("others").replace("", "others").astype(str)
-    cwe_labels = sorted(df["cwe_name"].unique())
+    if a.keep_benign:
+        df.loc[df["vul"] == 0, "cwe_name"] = "benign"
+        vuln_cwes = sorted(df[df["vul"] == 1]["cwe_name"].unique())
+        cwe_labels = ["benign"] + vuln_cwes        # benign == class 0
+    else:
+        cwe_labels = sorted(df["cwe_name"].unique())
     cwe_to_label = {c: i for i, c in enumerate(cwe_labels)}
 
     src_dir = out / "source"

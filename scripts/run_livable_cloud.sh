@@ -39,7 +39,8 @@ echo "=== [3/7] data: our split + LIVABLE adapter (.c files + jsonl + cwe_labels
 if [[ ! -d megavul_ml1024 ]]; then
   rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar -xzf "$DATA_TAR"
 fi
-python "$WORK/scripts/livable_prepare_megavul.py" --in-dir "$WORK/megavul_ml1024/linevd" --out-dir "$PREP"
+# --keep-benign: 26-class (benign + 25 CWE), == our model + LineVD/LineVul (only LOSVER is vuln-only).
+python "$WORK/scripts/livable_prepare_megavul.py" --in-dir "$WORK/megavul_ml1024/linevd" --out-dir "$PREP" --keep-benign
 NUM_CLASSES=$(python -c "import json;print(json.load(open('$PREP/cwe_labels.json'))['num_classes'])")
 echo "  num_classes=$NUM_CLASSES"
 
@@ -48,14 +49,17 @@ echo "=== [4/7] compiled Joern (zenodo 7607623) + parse each function ==="
 # starts from preprocessing/process.py (runs slicer.sh per .c). Confirm the download URL +
 # that process.py emits nodes.csv/edges.csv under the dir layout the builder expects
 # (args.csv/<file>/tmp/<file>/nodes.csv).
-if [[ ! -d "$LV/preprocessing/joern" ]]; then
-  echo "  [VERIFY] fetch compiled joern from zenodo 7607623 -> $LV/preprocessing/joern"
-  # wget -q <zenodo joern zip> -O /tmp/joern.zip && unzip -q /tmp/joern.zip -d "$LV/preprocessing/"
+command -v java >/dev/null || (apt-get update -q && apt-get install -y -q default-jre)
+if [[ ! -f "$LV/preprocessing/slicer.sh" ]]; then
+  echo "  fetching compiled joern (zenodo 7607623, ~95MB) ..."
+  wget -q "https://zenodo.org/api/records/7607623/files/joern.zip/content" -O /tmp/joern.zip
+  unzip -q -o /tmp/joern.zip -d "$LV/preprocessing/" && rm -f /tmp/joern.zip
 fi
 cd "$LV/preprocessing"
+echo "  preprocessing/ contents (confirm slicer.sh + joern layout):"; ls
 for split in train valid test; do
   s=$split; [[ "$split" == valid ]] && s=val
-  # [VERIFY] process.py --file_path <dir of .c> --start 0 --end <n>
+  # process.py runs ./slicer.sh per .c -> parsed/<file>/ (nodes.csv, edges.csv)
   python process.py --file_path "$PREP/functions/$s" --start 0 --end 100000 || true
 done
 
