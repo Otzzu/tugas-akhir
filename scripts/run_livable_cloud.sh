@@ -138,6 +138,10 @@ for f in "$LV/code/main_sta.py" "$LV/code/trainer_sta.py"; do
   sed -i "s/num_class_list = \[917,.*\]/num_class_list = $NCL/g" "$f"
   sed -i "s/num_classes = 31\$/num_classes = $NUM_CLASSES/g" "$f"
 done
+# ClassBalanceFocal head loss: pow(base, gamma=0.5) has an INFINITE gradient when the
+# sigmoid saturates (base->0) -> nan loss. Add an epsilon to the base to stabilize, keeping
+# LIVABLE's dual-branch long-tail loss intact (faithful — only numerical, not a loss change).
+sed -i 's/torch.pow((1-p)\*label + p \* (1-label), self.gamma)/torch.pow((1-p)*label + p * (1-label) + 1e-6, self.gamma)/' "$LV/code/trainer_sta.py"
 cd "$LV/code"
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
 python main_sta.py --input_dir "$GG" 2>&1 | tee "$OUT/train.log"
