@@ -47,7 +47,7 @@ python -c "import torch,dgl; print('torch',torch.__version__,'dgl',dgl.__version
 
 echo "=== [3/7] data: our split + LIVABLE adapter (.c files + jsonl + cwe_labels) ==="
 if [[ ! -d megavul_ml1024 ]]; then
-  rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar -xzf "$DATA_TAR"
+  rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar --no-same-owner -xzf "$DATA_TAR"
 fi
 # Always --keep-benign here (26-class ggnn) so ONE joern/ggnn cache serves both modes; --vuln-only
 # filters benign out of the built ggnn downstream (label-independent cache, no re-parse).
@@ -77,7 +77,7 @@ PREP_RESTORED=""
 if [[ ! -d "$PREP/ggnn_input" ]] && rclone ls "$REMOTE/data/baselines/$PREP_CACHE" >/dev/null 2>&1; then
   echo "  restoring LIVABLE preprocess cache from Drive (skips joern parse + builder) ..."
   rclone copy "$REMOTE/data/baselines/$PREP_CACHE" /tmp/ --progress
-  mkdir -p "$PREP"; tar -xzf "/tmp/$PREP_CACHE" -C "$PREP" && rm -f "/tmp/$PREP_CACHE"
+  mkdir -p "$PREP"; tar --no-same-owner -xzf "/tmp/$PREP_CACHE" -C "$PREP" && rm -f "/tmp/$PREP_CACHE"
   PREP_RESTORED=1
 fi
 HAVE=$( (ls -d "$PREP"/joern_csv/test/*.c 2>/dev/null || true) | wc -l )
