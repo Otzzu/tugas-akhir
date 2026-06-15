@@ -22,8 +22,8 @@ VENV="/workspace/vulpcl_env"
 BASEPY=/venv/main/bin/python; [[ -x "$BASEPY" ]] || BASEPY="$(command -v python3 || command -v python)"
 [[ -d "$VENV" ]] || "$BASEPY" -m venv "$VENV"
 source "$VENV/bin/activate"
-python -c "import torch,transformers,sklearn,pandas,networkx,gensim,fastparquet" 2>/dev/null || \
-  pip install -q torch transformers scikit-learn numpy tqdm pandas networkx gensim fastparquet
+python -c "import torch,transformers,sklearn,pandas,networkx,gensim,fastparquet,loguru" 2>/dev/null || \
+  pip install -q torch transformers scikit-learn numpy tqdm pandas networkx gensim fastparquet loguru
 [[ -f "$CAT/module/CodeBert_Blstm.py" ]] || { rm -rf "$VP"; git clone --depth 1 https://github.com/liucyy/VulPCL.git "$VP"; }
 # deepwalk_embed uses gensim 3.x Word2Vec API (size=, iter=); gensim<4 won't build on py3.12, so use
 # 4.x + patch the two renamed kwargs (size->vector_size, iter->epochs). Idempotent on reruns.
@@ -64,7 +64,7 @@ PY
 
 echo "=== [5/8] joern CPGs (modern, per-func json; --binary keeps ALL funcs) ==="
 WORKERS=$(( $(nproc) < 8 ? $(nproc) : 8 ))   # joern-4 JVMs ~1.5GB each -> cap (nproc=112 OOMs)
-if [[ ! -d "$CPG" ]]; then
+if ! ls "$CPG"/bigvul/*/func_*.json >/dev/null 2>&1; then   # re-run if no CPGs (partial dir won't skip)
   PYTHONPATH=src python scripts/prepare_dataset.py --input "$WORK/megavul_vulpcl_cpg_input.parquet" \
     --format bigvul --binary --joern-cli "$JCLI" --out-dir "$CPG" --workers "$WORKERS"
 fi
