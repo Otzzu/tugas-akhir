@@ -30,8 +30,8 @@ VENV="/workspace/vulpcl_env"
 BASEPY=/venv/main/bin/python; [[ -x "$BASEPY" ]] || BASEPY="$(command -v python3 || command -v python)"
 [[ -d "$VENV" ]] || "$BASEPY" -m venv "$VENV"
 source "$VENV/bin/activate"
-python -c "import torch,transformers,sklearn" 2>/dev/null || \
-  pip install -q torch transformers scikit-learn numpy tqdm
+python -c "import torch,transformers,sklearn,pandas" 2>/dev/null || \
+  pip install -q torch transformers scikit-learn numpy tqdm pandas
 
 echo "=== [2/6] get categorization linux pkls (small ~130MB, not the full 1.9GB zip) ==="
 PKL_DIR="$WORK/data/VulPCL/_cat_linux"; mkdir -p "$PKL_DIR"
