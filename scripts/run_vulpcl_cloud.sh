@@ -19,6 +19,12 @@ WORK="$PWD"; VP="$WORK/src/VulPCL"; CAT="$VP/vul_categorization"
 CWE="all"; PROJ="linux"
 RUN_ID="vulpcl_linux_$(date +%Y%m%d_%H%M%S)"
 
+# VulPCL repo is untracked in our git (not pulled) — ensure a complete clone (else module/ missing).
+if [[ ! -f "$CAT/module/CodeBert_Blstm.py" ]]; then
+  echo "  VulPCL incomplete/missing -> fresh clone"
+  rm -rf "$VP"; git clone --depth 1 https://github.com/liucyy/VulPCL.git "$VP"
+fi
+
 echo "=== [1/6] venv + deps ==="
 VENV="/workspace/vulpcl_env"
 BASEPY=/venv/main/bin/python; [[ -x "$BASEPY" ]] || BASEPY="$(command -v python3 || command -v python)"
