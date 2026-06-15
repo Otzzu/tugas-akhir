@@ -87,6 +87,9 @@ if [[ ! -d "$PREP/ggnn_input" ]]; then
   # word2vec on our func tokens (128-d, matches LIVABLE node feature size).
   python word2vec_multi.py --data_paths "$PREP/train.jsonl" \
     --save_model_dir "$PREP/wv" --model_name wvmodel --embedding_size 128
+  # builder's --csv/--json_files have no nargs -> patch to accept multiple paths
+  sed -i "s/'--csv', help/'--csv', nargs='+', help/" "ori_ourdevign+token.py"
+  sed -i "s/'--json_files', help/'--json_files', nargs='+', help/" "ori_ourdevign+token.py"
   # Builder: csv dirs (joern out) + our jsonls + wv -> GGNNinput JSON
   # (--csv/--json_files order is train,test,valid). Output: ggnn_input/diverse-{train,test,valid}-v0.json
   python "ori_ourdevign+token.py" \
