@@ -23,8 +23,13 @@ BASEPY=/venv/main/bin/python; [[ -x "$BASEPY" ]] || BASEPY="$(command -v python3
 [[ -d "$VENV" ]] || "$BASEPY" -m venv "$VENV"
 source "$VENV/bin/activate"
 python -c "import torch,transformers,sklearn,pandas,networkx,gensim,fastparquet" 2>/dev/null || \
-  pip install -q torch transformers scikit-learn numpy tqdm pandas networkx "gensim<4.0" fastparquet
+  pip install -q torch transformers scikit-learn numpy tqdm pandas networkx gensim fastparquet
 [[ -f "$CAT/module/CodeBert_Blstm.py" ]] || { rm -rf "$VP"; git clone --depth 1 https://github.com/liucyy/VulPCL.git "$VP"; }
+# deepwalk_embed uses gensim 3.x Word2Vec API (size=, iter=); gensim<4 won't build on py3.12, so use
+# 4.x + patch the two renamed kwargs (size->vector_size, iter->epochs). Idempotent on reruns.
+DWE="$CAT/deepwalk_embed/deepwalk_embedding.py"
+sed -i 's/kwargs\["size"\] = embed_size/kwargs["vector_size"] = embed_size/' "$DWE"
+sed -i 's/kwargs\["iter"\] = iter/kwargs["epochs"] = iter/' "$DWE"
 command -v pigz >/dev/null || (apt-get update -q && apt-get install -y -q pigz)
 
 echo "=== [2/8] JDK21 + joern v${JOERN_VER} (matches local) ==="
