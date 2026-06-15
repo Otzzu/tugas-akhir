@@ -118,12 +118,12 @@ rm -f "$GG"/multi_128_64batch_*.bin   # stale cached dataset binary (rebuild for
 sed -i "s/from trainer_test import train/from trainer_sta import train/" "$LV/code/main_sta.py"
 sed -i "s/self.graph.add_edge(/self.graph.add_edges(/" "$LV/code/data_loader/dataset.py"   # dgl 2.x rename
 sed -i "s/os.environ\['CUDA_VISIBLE_DEVICES'\] = '1'/os.environ['CUDA_VISIBLE_DEVICES'] = '0'/" "$LV/code/main_sta.py"  # single-GPU pod
-sed -i "s/^    num_classes = 31/    num_classes = $NUM_CLASSES/" "$LV/code/main_sta.py"
 sed -i "s/MLPReadout(self.hidden_dim2, 31)/MLPReadout(self.hidden_dim2, $NUM_CLASSES)/" "$LV/code/modules/model.py"
 sed -i "s/MLPReadout(2 \* self.seq_hid, 31)/MLPReadout(2 * self.seq_hid, $NUM_CLASSES)/" "$LV/code/modules/model.py"
-# num_class_list is hardcoded 31-long -> the BalancedSoftmaxCE/dual-branch loss builds a
-# 31-wide one-hot, mismatching our 26 outputs. Replace with OUR per-class train counts
-# (also makes LIVABLE's long-tail re-weighting faithful to our distribution).
+# num_classes=31 + the 917-long num_class_list are hardcoded in BOTH main_sta.py AND
+# trainer_sta.py (3 loss classes: CrossEntropy, BalancedSoftmaxCE, ClassBalanceFocal — the
+# head loss at line 189). Each builds a 31-wide one-hot, mismatching our 26 outputs. Patch
+# ALL of them to our label space + OUR per-class train counts (faithful long-tail re-weighting).
 NCL=$(python - "$GG/multi-train1-v0.json" "$NUM_CLASSES" <<'PY'
 import json, sys
 from collections import Counter
@@ -134,7 +134,10 @@ print("[" + ", ".join(str(c.get(i, 1)) for i in range(n)) + "]")
 PY
 )
 echo "  num_class_list = $NCL"
-sed -i "s/^    num_class_list = \[.*\]/    num_class_list = $NCL/" "$LV/code/main_sta.py"
+for f in "$LV/code/main_sta.py" "$LV/code/trainer_sta.py"; do
+  sed -i "s/num_class_list = \[917,.*\]/num_class_list = $NCL/g" "$f"
+  sed -i "s/num_classes = 31\$/num_classes = $NUM_CLASSES/g" "$f"
+done
 cd "$LV/code"
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
 python main_sta.py --input_dir "$GG" 2>&1 | tee "$OUT/train.log"
