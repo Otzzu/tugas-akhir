@@ -528,6 +528,8 @@ class TrainingSession:
         dataset = CodeBERTGraphDataset(source=getattr(cfg.data, "source", "bigvul"), **kwargs)
         _dataset_pt = Path(dataset.processed_paths[0]).name
         self._dataset_pt = _dataset_pt
+        if getattr(cfg.data, "split_file", ""):
+            dataset.load_split_file(cfg.data.split_file)
         if use_official:
             val_ds  = CodeBERTGraphDataset(source=source_val,  **kwargs)
             test_ds = CodeBERTGraphDataset(source=source_test, **kwargs)

@@ -1241,6 +1241,7 @@ class CodeBERTGraphDataset(Dataset):
                             GROUP_VOCAB["benign"] if is_benign_unit else -1
                         )
                         g.group_id = torch.tensor([_rgid], dtype=torch.long)
+                        g.parquet_id = torch.tensor([row_id], dtype=torch.long)
                         if self.pre_transform is not None:
                             g = self.pre_transform(g)
                         hit_graphs.append(g)
@@ -1599,13 +1600,53 @@ class CodeBERTGraphDataset(Dataset):
             return len(self.class_names)
         return 2
 
+    def load_split_file(self, path: str | Path) -> None:
+        """Load an explicit train/val/test split keyed on parquet_id (overrides get_splits).
+        Accepts {"train":[id...],"val":[...],"test":[...]} or a flat {id: "train|val|test"}.
+        """
+        import json
+        d = json.loads(Path(path).read_text(encoding="utf-8"))
+        if all(k in d for k in ("train", "val", "test")):
+            sm = {int(pid): s for s in ("train", "val", "test") for pid in d[s]}
+        else:
+            sm = {int(k): v for k, v in d.items()}
+        self._split_map = sm
+        logger.info(f"loaded explicit split file ({len(sm)} parquet_ids) → {path}")
+
+    def get_all_parquet_ids(self) -> torch.Tensor:
+        """[N] long tensor of parquet_id per dataset index (storage-agnostic)."""
+        return torch.tensor(
+            [int(self[i].parquet_id) for i in range(len(self))], dtype=torch.long
+        )
+
     def get_splits(
         self,
         train_ratio: float = 0.8,
         val_ratio: float = 0.1,
         seed: int = 42,
     ) -> tuple[list[int], list[int], list[int]]:
-        """Return (train_idx, val_idx, test_idx) index lists."""
+        """Return (train_idx, val_idx, test_idx) index lists.
+
+        If an explicit split was loaded (load_split_file), bucket indices by parquet_id
+        (ignores seed/ratios) — used to match a baseline's exact split. Else seeded 80/10/10.
+        """
+        sm = getattr(self, "_split_map", None)
+        if sm:
+            pids = self.get_all_parquet_ids().tolist()
+            buckets: dict[str, list[int]] = {"train": [], "val": [], "test": []}
+            unmapped = 0
+            for i, pid in enumerate(pids):
+                s = sm.get(pid)
+                if s in buckets:
+                    buckets[s].append(i)
+                else:
+                    unmapped += 1
+            logger.info(
+                f"explicit split: train={len(buckets['train'])} val={len(buckets['val'])} "
+                f"test={len(buckets['test'])} (unmapped={unmapped})"
+            )
+            return buckets["train"], buckets["val"], buckets["test"]
+
         import random
 
         indices = list(range(len(self)))
