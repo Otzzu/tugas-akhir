@@ -20,8 +20,8 @@ VENV="/workspace/edat_env"
 BASEPY=/venv/main/bin/python; [[ -x "$BASEPY" ]] || BASEPY="$(command -v python3 || command -v python)"
 [[ -d "$VENV" ]] || "$BASEPY" -m venv "$VENV"
 source "$VENV/bin/activate"
-python -c "import torch,transformers,sklearn,pandas,numpy,fastparquet,matplotlib,seaborn" 2>/dev/null || \
-  pip install -q torch transformers scikit-learn numpy tqdm pandas fastparquet matplotlib seaborn
+python -c "import torch,transformers,sklearn,pandas,numpy,fastparquet,matplotlib,tree_sitter,tree_sitter_c" 2>/dev/null || \
+  pip install -q torch transformers scikit-learn numpy tqdm pandas fastparquet matplotlib tree-sitter tree-sitter-c
 [[ -f "$VD/multi_task_train_alternate.py" ]] || { rm -rf "$ED"; git clone --depth 1 https://github.com/Karelye/EDAT-MLT.git "$ED"; }
 [[ -f "$VD/multi_task_train_alternate.py" ]] || { echo "ERR: EDAT variant not found at $VD (check clone/path)"; exit 1; }
 
