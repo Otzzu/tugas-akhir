@@ -121,6 +121,20 @@ sed -i "s/os.environ\['CUDA_VISIBLE_DEVICES'\] = '1'/os.environ['CUDA_VISIBLE_DE
 sed -i "s/^    num_classes = 31/    num_classes = $NUM_CLASSES/" "$LV/code/main_sta.py"
 sed -i "s/MLPReadout(self.hidden_dim2, 31)/MLPReadout(self.hidden_dim2, $NUM_CLASSES)/" "$LV/code/modules/model.py"
 sed -i "s/MLPReadout(2 \* self.seq_hid, 31)/MLPReadout(2 * self.seq_hid, $NUM_CLASSES)/" "$LV/code/modules/model.py"
+# num_class_list is hardcoded 31-long -> the BalancedSoftmaxCE/dual-branch loss builds a
+# 31-wide one-hot, mismatching our 26 outputs. Replace with OUR per-class train counts
+# (also makes LIVABLE's long-tail re-weighting faithful to our distribution).
+NCL=$(python - "$GG/multi-train1-v0.json" "$NUM_CLASSES" <<'PY'
+import json, sys
+from collections import Counter
+data = json.load(open(sys.argv[1])); n = int(sys.argv[2]); c = Counter()
+for e in data:
+    c[int(e["targets"][0][0])] += 1
+print("[" + ", ".join(str(c.get(i, 1)) for i in range(n)) + "]")
+PY
+)
+echo "  num_class_list = $NCL"
+sed -i "s/^    num_class_list = \[.*\]/    num_class_list = $NCL/" "$LV/code/main_sta.py"
 cd "$LV/code"
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
 python main_sta.py --input_dir "$GG" 2>&1 | tee "$OUT/train.log"
