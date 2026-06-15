@@ -20,8 +20,12 @@ VENV="/workspace/edat_env"
 BASEPY=/venv/main/bin/python; [[ -x "$BASEPY" ]] || BASEPY="$(command -v python3 || command -v python)"
 [[ -d "$VENV" ]] || "$BASEPY" -m venv "$VENV"
 source "$VENV/bin/activate"
-python -c "import torch,transformers,sklearn,pandas,numpy,fastparquet,matplotlib,tree_sitter,tree_sitter_c" 2>/dev/null || \
-  pip install -q torch transformers scikit-learn numpy tqdm pandas fastparquet matplotlib tree-sitter tree-sitter-c
+# torch MUST be the cu121 build (plain `pip install torch` pulls a newer-CUDA wheel the pod driver
+# 12.8 rejects -> falls back to CPU). Match the other scripts: torch 2.4.1 cu121. Verify cuda works.
+python -c "import torch,transformers,sklearn,pandas,fastparquet,matplotlib,tree_sitter_c; assert torch.cuda.is_available()" 2>/dev/null || {
+  pip install -q --force-reinstall torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
+  pip install -q transformers scikit-learn numpy tqdm pandas fastparquet matplotlib tree-sitter tree-sitter-c
+}
 [[ -f "$VD/multi_task_train_alternate.py" ]] || { rm -rf "$ED"; git clone --depth 1 https://github.com/Karelye/EDAT-MLT.git "$ED"; }
 [[ -f "$VD/multi_task_train_alternate.py" ]] || { echo "ERR: EDAT variant not found at $VD (check clone/path)"; exit 1; }
 
