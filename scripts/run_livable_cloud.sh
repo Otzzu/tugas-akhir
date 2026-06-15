@@ -8,12 +8,17 @@
 # Joern parse command + builder csv-dir layout + main_sta.py CLI. Stages marked [VERIFY].
 #
 # Use a NON-Blackwell GPU pod (DGL caps torch<=2.4 = sm<=90; same wall as LineVD).
-# Usage (pod, project root):  bash scripts/run_livable_cloud.sh
+# Usage (pod, project root):  bash scripts/run_livable_cloud.sh [--vuln-only]
+#   --vuln-only: 25-class vuln-only (drop benign), faithful to LIVABLE paper (group w/ LOSVER).
+#                Reuses the SAME joern/ggnn cache (label-independent) -> just filters+relabels.
 set -euo pipefail
 
 REMOTE="gdrive-mesach:tugas-akhir"
 DATA_TAR="megavul_ml1024_baselines_20260613.tar.gz"   # our exported split (func_before, vul, cwe_name, flaw_lines)
 RUN_ID="livable_megavul_$(date +%Y%m%d_%H%M%S)"
+VULN_ONLY=""
+for a in "$@"; do [[ "$a" == "--vuln-only" ]] && VULN_ONLY=1; done
+[[ -n "$VULN_ONLY" ]] && RUN_ID="${RUN_ID}_vo"
 WORK="$PWD"
 LV="$WORK/src/LIVABLE"
 PREP="$WORK/megavul_livable"
@@ -39,7 +44,8 @@ echo "=== [3/7] data: our split + LIVABLE adapter (.c files + jsonl + cwe_labels
 if [[ ! -d megavul_ml1024 ]]; then
   rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar -xzf "$DATA_TAR"
 fi
-# --keep-benign: 26-class (benign + 25 CWE), == our model + LineVD/LineVul (only LOSVER is vuln-only).
+# Always --keep-benign here (26-class ggnn) so ONE joern/ggnn cache serves both modes; --vuln-only
+# filters benign out of the built ggnn downstream (label-independent cache, no re-parse).
 python "$WORK/scripts/livable_prepare_megavul.py" --in-dir "$WORK/megavul_ml1024/linevd" --out-dir "$PREP" --keep-benign
 NUM_CLASSES=$(python -c "import json;print(json.load(open('$PREP/cwe_labels.json'))['num_classes'])")
 echo "  num_classes=$NUM_CLASSES"
@@ -114,10 +120,38 @@ GG="$PREP/ggnn_input"
 [[ -f "$GG/diverse-train-v0.json" ]] && mv -f "$GG/diverse-train-v0.json" "$GG/multi-train1-v0.json"
 [[ -f "$GG/diverse-valid-v0.json" ]] && mv -f "$GG/diverse-valid-v0.json" "$GG/multi-valid-v0.json"
 [[ -f "$GG/diverse-test-v0.json" ]]  && mv -f "$GG/diverse-test-v0.json"  "$GG/multi-test-v0.json"
+# --vuln-only: drop benign (label 0) + remap CWE 1..25 -> 0..24, in place on the renamed ggnn.
+# joern/ggnn cache is label-independent so this only filters graphs (no re-parse/rebuild). Cache
+# holds pristine diverse-*.json (cached pre-rename) so it stays 26-class. Marker = idempotent.
+if [[ -n "$VULN_ONLY" ]]; then
+  if [[ ! -f "$GG/.vo_done" ]]; then     # filter once (marker); decrement always (below)
+    python - "$GG" <<'PY'
+import json, os, sys
+gg = sys.argv[1]
+for fn in ("multi-train1-v0.json", "multi-valid-v0.json", "multi-test-v0.json"):
+    p = os.path.join(gg, fn)
+    if not os.path.exists(p): continue
+    data = json.load(open(p)); out = []
+    for e in data:
+        lab = int(e["targets"][0][0])
+        if lab == 0: continue          # benign -> drop
+        e["targets"] = [[lab - 1]]     # CWE 1..25 -> 0..24
+        out.append(e)
+    json.dump(out, open(p, "w"))
+    print(f"  {fn}: kept {len(out)}/{len(data)} (dropped benign)")
+PY
+    touch "$GG/.vo_done"
+  fi
+  NUM_CLASSES=$((NUM_CLASSES - 1))     # benign class removed (always, even if already filtered)
+  echo "  vuln-only: NUM_CLASSES=$NUM_CLASSES"
+fi
 # main_sta pickles the built DataSet (DGL graphs) to a .bin and reloads it next run — keep
 # it as a cache; only invalidate when the GGNNinput actually changed (else rebuild the 4389
 # graphs every run, ~1-2 min). .bin is data-only (graphs+labels), independent of num_classes.
 [[ -f "$GG/multi-train1-v0.json" ]] && find "$GG" -maxdepth 1 -name "multi_*batch*.bin" ! -newer "$GG/multi-train1-v0.json" -delete 2>/dev/null || true
+# Reset patched source to pristine first, so the seds below (which match the ORIGINAL 31 / [917,...]
+# / AdamW text) always apply — otherwise a same-pod re-run silently no-ops and leaves stale values.
+git -C "$LV" checkout -- code/main_sta.py code/trainer_sta.py code/modules/model.py code/data_loader/dataset.py 2>/dev/null || true
 sed -i "s/from trainer_test import train/from trainer_sta import train/" "$LV/code/main_sta.py"
 sed -i "s/self.graph.add_edge(/self.graph.add_edges(/" "$LV/code/data_loader/dataset.py"   # dgl 2.x rename
 sed -i "s/os.environ\['CUDA_VISIBLE_DEVICES'\] = '1'/os.environ['CUDA_VISIBLE_DEVICES'] = '0'/" "$LV/code/main_sta.py"  # single-GPU pod
@@ -145,6 +179,11 @@ done
 # sigmoid saturates (base->0) -> nan loss. Add an epsilon to the base to stabilize, keeping
 # LIVABLE's dual-branch long-tail loss intact (faithful — only numerical, not a loss change).
 sed -i 's/torch.pow((1-p)\*label + p \* (1-label), self.gamma)/torch.pow((1-p)*label + p * (1-label) + 1e-6, self.gamma)/' "$LV/code/trainer_sta.py"
+# Optimizer: repo leaves AdamW(lr=1e-3) ACTIVE, but README pt6 (type classification) specifies
+# RAdam lr=1e-4 wd=1e-6. AdamW 1e-3 (wrong opt + 10x LR) collapsed training (run ..._082009,
+# F1 1.19%). Use the documented paper config (torch.optim.RAdam exists in torch 2.4) — faithful.
+sed -i 's/^\(\s*\)optim = AdamW(model.parameters(), lr=1e-3, weight_decay=1e-6)/\1optim = torch.optim.RAdam(model.parameters(), lr=1e-4, weight_decay=1e-6)  # README pt6/' "$LV/code/main_sta.py"
+grep -q "torch.optim.RAdam" "$LV/code/main_sta.py" || { echo "ERR: RAdam optimizer patch failed"; exit 1; }
 cd "$LV/code"
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
 python main_sta.py --input_dir "$GG" 2>&1 | tee "$OUT/train.log"
