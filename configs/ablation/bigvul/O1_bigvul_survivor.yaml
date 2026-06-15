@@ -17,7 +17,7 @@ data:
   max_per_class: 0           # NO subsampling — keep every survivor so the split matches LIVABLE
   resample_seed: 42
   storage: lazy
-  split_file: data/datasets/bigvul_survivor/split_file.json
+  split_file: configs/ablation/bigvul/bigvul_survivor_split.json
 
 model:
   architecture: lmgat_codebert
