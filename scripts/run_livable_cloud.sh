@@ -29,7 +29,12 @@ echo "=== [1/7] LIVABLE present (vendored) ==="
 echo "=== [2/7] venv: DGL(cuda) + torch 2.4.1 + deps ==="
 # Reuse the LineVD recipe: cuda dgl (cu121 wheel), torch 2.4.1, plus LIVABLE's deps.
 VENV="/workspace/livable_env"
-[[ -d "$VENV" ]] || /venv/main/bin/python -m venv "$VENV" --system-site-packages
+# base python differs per pod image: prefer RunPod's /venv/main, else system python3.
+BASEPY=/venv/main/bin/python
+[[ -x "$BASEPY" ]] || BASEPY="$(command -v python3 || command -v python || true)"
+[[ -n "$BASEPY" ]] || { echo "ERR: no python on this pod (install python3)"; exit 1; }
+echo "  base python: $BASEPY ($($BASEPY --version 2>&1))"
+[[ -d "$VENV" ]] || "$BASEPY" -m venv "$VENV" --system-site-packages
 source "$VENV/bin/activate"
 if ! python -c "import torch,dgl" 2>/dev/null; then
   pip install -q torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
