@@ -103,12 +103,21 @@ if [[ -z "$PREP_RESTORED" && -d "$PREP/ggnn_input" ]] && ! rclone ls "$REMOTE/da
   rclone copy "/tmp/$PREP_CACHE" "$REMOTE/data/baselines/" --progress && rm -f "/tmp/$PREP_CACHE"
 fi
 
-echo "=== [6/7] train (set num_classes to our label space) ==="
+echo "=== [6/7] train (patch num_classes 31 -> $NUM_CLASSES, rename GGNNinput, run) ==="
+# main_sta.py reads input_dir/multi-{train1,valid,test}-v0.json but builder writes
+# diverse-{train,test,valid}-v0.json -> rename. And 31 is hardcoded in main_sta + both
+# DevignModel MLPReadout output heads -> patch to our label space.
+GG="$PREP/ggnn_input"
+[[ -f "$GG/diverse-train-v0.json" ]] && mv -f "$GG/diverse-train-v0.json" "$GG/multi-train1-v0.json"
+[[ -f "$GG/diverse-valid-v0.json" ]] && mv -f "$GG/diverse-valid-v0.json" "$GG/multi-valid-v0.json"
+[[ -f "$GG/diverse-test-v0.json" ]]  && mv -f "$GG/diverse-test-v0.json"  "$GG/multi-test-v0.json"
+rm -f "$GG"/multi_128_64batch_*.bin   # stale cached dataset binary (rebuild for our classes)
+sed -i "s/^    num_classes = 31/    num_classes = $NUM_CLASSES/" "$LV/code/main_sta.py"
+sed -i "s/MLPReadout(self.hidden_dim2, 31)/MLPReadout(self.hidden_dim2, $NUM_CLASSES)/" "$LV/code/modules/model.py"
+sed -i "s/MLPReadout(2 \* self.seq_hid, 31)/MLPReadout(2 * self.seq_hid, $NUM_CLASSES)/" "$LV/code/modules/model.py"
 cd "$LV/code"
-# [VERIFY] main_sta.py reads GGNNinput JSON; set num_classes=$NUM_CLASSES (it hardcodes 31)
-# + num_class_list from our per-class counts. Patch via sed or a small config before train.
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
-python main_sta.py 2>&1 | tee "$OUT/train.log"
+python main_sta.py --input_dir "$GG" 2>&1 | tee "$OUT/train.log"
 
 echo "=== [7/7] upload results ==="
 cd "$WORK"
