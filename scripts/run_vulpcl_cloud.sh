@@ -71,6 +71,12 @@ echo "=== [5/6] patch model num_classes + target_names to $NC (faithful: config 
 git -C "$VP" checkout -- vul_categorization/module/CodeBert_Blstm.py vul_categorization/codebert_blstm.py 2>/dev/null || true
 sed -i "s/self.num_classes = 12/self.num_classes = $NC/" "$CAT/module/CodeBert_Blstm.py"
 sed -i "s/target_names=\[[^]]*\]/target_names=[str(i) for i in range($NC)]/" "$CAT/codebert_blstm.py"
+# single-GPU pod: repo hardcodes GPU 3 -> use 0.
+sed -i "s/os.environ\['CUDA_VISIBLE_DEVICES'\] = '3'/os.environ['CUDA_VISIBLE_DEVICES'] = '0'/" "$CAT/codebert_blstm.py"
+# forward returns the 768-d concat with the classifier (linear2) commented out -> wire it so
+# cross_entropy gets [B,num_classes] logits, not features. (linear2 is defined; faithful intent.)
+sed -i "s/^\(\s*\)return out$/\1return self.linear2(out)/" "$CAT/module/CodeBert_Blstm.py"
+grep -q "self.linear2(out)" "$CAT/module/CodeBert_Blstm.py" || { echo "ERR: linear2 wire patch failed"; exit 1; }
 
 echo "=== [6/6] train (their CodeBert_Blstm, untouched arch) ==="
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
