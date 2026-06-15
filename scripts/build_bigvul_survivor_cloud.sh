@@ -20,7 +20,7 @@ command -v pigz >/dev/null || (apt-get update -q && apt-get install -y -q pigz)
 # joern 4.0.526 needs JDK 21+ (local uses 25). Install 21 AND force it onto JAVA_HOME/PATH — the
 # base image's default java is often older -> joern-parse fails SILENTLY for every function.
 apt-get update -q && (apt-get install -y -q openjdk-21-jdk-headless || apt-get install -y -q default-jdk)
-JH=$(ls -d /usr/lib/jvm/java-21-openjdk* /usr/lib/jvm/temurin-21* /usr/lib/jvm/*-21-* 2>/dev/null | head -1)
+JH=$(ls -d /usr/lib/jvm/java-21-openjdk* /usr/lib/jvm/temurin-21* /usr/lib/jvm/*-21-* 2>/dev/null | head -1 || true)
 [[ -n "${JH:-}" ]] && export JAVA_HOME="$JH" && export PATH="$JH/bin:$PATH"
 echo "  java: $(java -version 2>&1 | head -1)  JAVA_HOME=${JAVA_HOME:-unset}"
 WORKERS=$(( $(nproc) < 8 ? $(nproc) : 8 ))   # joern-4 JVMs ~1.5GB each -> cap (112 workers = OOM)
