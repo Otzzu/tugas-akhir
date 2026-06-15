@@ -114,7 +114,10 @@ GG="$PREP/ggnn_input"
 [[ -f "$GG/diverse-train-v0.json" ]] && mv -f "$GG/diverse-train-v0.json" "$GG/multi-train1-v0.json"
 [[ -f "$GG/diverse-valid-v0.json" ]] && mv -f "$GG/diverse-valid-v0.json" "$GG/multi-valid-v0.json"
 [[ -f "$GG/diverse-test-v0.json" ]]  && mv -f "$GG/diverse-test-v0.json"  "$GG/multi-test-v0.json"
-rm -f "$GG"/multi_128_64batch_*.bin   # stale cached dataset binary (rebuild for our classes)
+# main_sta pickles the built DataSet (DGL graphs) to a .bin and reloads it next run — keep
+# it as a cache; only invalidate when the GGNNinput actually changed (else rebuild the 4389
+# graphs every run, ~1-2 min). .bin is data-only (graphs+labels), independent of num_classes.
+[[ -f "$GG/multi-train1-v0.json" ]] && find "$GG" -maxdepth 1 -name "multi_*batch*.bin" ! -newer "$GG/multi-train1-v0.json" -delete 2>/dev/null || true
 sed -i "s/from trainer_test import train/from trainer_sta import train/" "$LV/code/main_sta.py"
 sed -i "s/self.graph.add_edge(/self.graph.add_edges(/" "$LV/code/data_loader/dataset.py"   # dgl 2.x rename
 sed -i "s/os.environ\['CUDA_VISIBLE_DEVICES'\] = '1'/os.environ['CUDA_VISIBLE_DEVICES'] = '0'/" "$LV/code/main_sta.py"  # single-GPU pod
