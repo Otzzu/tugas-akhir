@@ -17,8 +17,13 @@ JOERN_VER="4.0.526"   # MUST match local C:/joern/joern-cli (io.joern.joern-cli-
 echo "=== [1/6] deps ==="
 pip install -q torch transformers torch_geometric pandas scikit-learn tqdm fastparquet networkx gdown
 command -v pigz >/dev/null || (apt-get update -q && apt-get install -y -q pigz)
-# joern 4.x needs JDK 21+ (local uses 25). Install 21, fall back to default-jdk.
+# joern 4.0.526 needs JDK 21+ (local uses 25). Install 21 AND force it onto JAVA_HOME/PATH — the
+# base image's default java is often older -> joern-parse fails SILENTLY for every function.
 apt-get update -q && (apt-get install -y -q openjdk-21-jdk-headless || apt-get install -y -q default-jdk)
+JH=$(ls -d /usr/lib/jvm/java-21-openjdk* /usr/lib/jvm/temurin-21* /usr/lib/jvm/*-21-* 2>/dev/null | head -1)
+[[ -n "${JH:-}" ]] && export JAVA_HOME="$JH" && export PATH="$JH/bin:$PATH"
+echo "  java: $(java -version 2>&1 | head -1)  JAVA_HOME=${JAVA_HOME:-unset}"
+WORKERS=$(( $(nproc) < 8 ? $(nproc) : 8 ))   # joern-4 JVMs ~1.5GB each -> cap (112 workers = OOM)
 
 echo "=== [2/6] data: all_vul.csv + split record ==="
 mkdir -p data/LIVABLE bigvul_livable
@@ -32,18 +37,26 @@ fi
 echo "=== [3/6] adapter -> parquet + cwe_vocab + split_file ==="
 PYTHONPATH=src python scripts/bigvul_survivor_to_parquet.py \
   --csv data/LIVABLE/all_vul.csv --record-dir bigvul_livable --out-dir "$DS" --top-cwe 31
-mkdir -p "$RAW"; cp -f "$DS/cwe_vocab.json" "$RAW/cwe_vocab.json"
 
-echo "=== [4/6] joern-cli (1.1+) + CPG (no --sample/--limit) ==="
+echo "=== [4/6] joern-cli v${JOERN_VER} + CPG (no --sample/--limit) ==="
 JCLI="$WORK/joern-cli"
 if [[ ! -x "$JCLI/joern-parse" ]]; then
   wget -q "https://github.com/joernio/joern/releases/download/v${JOERN_VER}/joern-cli.zip" -O /tmp/joern-cli.zip
   unzip -q -o /tmp/joern-cli.zip -d "$WORK" && rm -f /tmp/joern-cli.zip
   chmod +x "$JCLI"/joern-parse "$JCLI"/joern-export "$JCLI"/*.sh 2>/dev/null || true
 fi
-"$JCLI/joern-parse" --version 2>/dev/null | head -1 || true   # sanity: should report ${JOERN_VER}
+# sanity: one tiny parse — abort early if joern/java broken (else 5841 silent failures again)
+printf 'int f(){return 0;}\n' > /tmp/t.c
+"$JCLI/joern-parse" /tmp/t.c --output /tmp/t.bin >/dev/null 2>&1 \
+  || { echo "ERR: joern-parse failed. java=$(java -version 2>&1|head -1) JAVA_HOME=${JAVA_HOME:-unset}"; exit 1; }
+echo "  joern sanity OK"
+# prepare_dataset auto-appends a '<format>' subdir (-> $OUTP/bigvul). Pre-seed cwe_vocab THERE so
+# load_bigvul reuses LIVABLE's 31-class map (else it builds its own benign+top31 = 32). Flatten -> $RAW.
+OUTP="$WORK/data/_bvs"; rm -rf "$OUTP"; mkdir -p "$OUTP/bigvul"
+cp -f "$DS/cwe_vocab.json" "$OUTP/bigvul/cwe_vocab.json"
 PYTHONPATH=src python scripts/prepare_dataset.py --input "$DS/survivors.parquet" \
-  --format bigvul --joern-cli "$JCLI" --out-dir "$RAW" --top-cwe 31 --workers "$(nproc)"
+  --format bigvul --joern-cli "$JCLI" --out-dir "$OUTP" --top-cwe 31 --workers "$WORKERS"
+rm -rf "$RAW"; mkdir -p "$(dirname "$RAW")"; mv "$OUTP/bigvul" "$RAW"; rm -rf "$OUTP"
 
 echo "=== [5/6] build .pt (lazy) — matches O1_bigvul_survivor.yaml ==="
 BUILD_PY="

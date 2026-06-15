@@ -30,14 +30,22 @@ if (-not (Test-Path "$RecordDir/used_train.json")) {
 Write-Host "[2/5] adapter -> $DataDir"
 uv run python scripts/bigvul_survivor_to_parquet.py --csv $Csv --record-dir $RecordDir --out-dir $DataDir --top-cwe $TopCwe
 
-# 3) pre-seed cwe_vocab so prepare_dataset assigns LIVABLE's 31-class labels (not its own vocab) -
-Write-Host "[3/5] pre-seed cwe_vocab -> $RawOut"
-New-Item -ItemType Directory -Force -Path $RawOut | Out-Null
-Copy-Item "$DataDir/cwe_vocab.json" "$RawOut/cwe_vocab.json" -Force
+# 3+4) joern CPG. prepare_dataset auto-appends a 'bigvul' subdir to --out-dir; pre-seed cwe_vocab
+#       THERE so load_bigvul reuses LIVABLE's 31-class map (else it builds benign+top31 = 32),
+#       then flatten that subdir into $RawOut (where dataset_lm source=bigvul_survivor reads).
+$OutTmp = "data/_bvs"
+Write-Host "[3/5] pre-seed cwe_vocab -> $OutTmp/bigvul"
+if (Test-Path $OutTmp) { Remove-Item -Recurse -Force $OutTmp }
+New-Item -ItemType Directory -Force -Path "$OutTmp/bigvul" | Out-Null
+Copy-Item "$DataDir/cwe_vocab.json" "$OutTmp/bigvul/cwe_vocab.json" -Force
 
-# 4) joern CPG (NO --sample-per-class / --limit -> preserve row order so position == parquet_id) -
 Write-Host "[4/5] joern CPG -> $RawOut"
-uv run python scripts/prepare_dataset.py --input "$DataDir/survivors.parquet" --format bigvul --joern-cli $JoernCli --out-dir $RawOut --top-cwe $TopCwe --workers $Workers
+uv run python scripts/prepare_dataset.py --input "$DataDir/survivors.parquet" --format bigvul --joern-cli $JoernCli --out-dir $OutTmp --top-cwe $TopCwe --workers $Workers
+if (Test-Path $RawOut) { Remove-Item -Recurse -Force $RawOut }
+$rawParent = Split-Path $RawOut
+if ($rawParent) { New-Item -ItemType Directory -Force -Path $rawParent | Out-Null }
+Move-Item "$OutTmp/bigvul" $RawOut
+Remove-Item -Recurse -Force $OutTmp
 
 # 5) train ------------------------------------------------------------------------------------
 Write-Host "[5/5] CPGs ready in $RawOut."
