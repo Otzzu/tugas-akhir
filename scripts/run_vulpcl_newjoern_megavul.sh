@@ -58,9 +58,10 @@ o.to_parquet(out, index=False); print("combined", len(o))
 PY
 
 echo "=== [5/8] joern CPGs (modern, per-func json; --binary keeps ALL funcs) ==="
+WORKERS=$(( $(nproc) < 8 ? $(nproc) : 8 ))   # joern-4 JVMs ~1.5GB each -> cap (nproc=112 OOMs)
 if [[ ! -d "$CPG" ]]; then
   PYTHONPATH=src python scripts/prepare_dataset.py --input "$WORK/megavul_vulpcl_cpg_input.parquet" \
-    --format bigvul --binary --joern-cli "$JCLI" --out-dir "$CPG" --workers "$(nproc)"
+    --format bigvul --binary --joern-cli "$JCLI" --out-dir "$CPG" --workers "$WORKERS"
 fi
 
 echo "=== [6/8] adapter: CPGs -> VulPCL pkls (PTSC + FCDS + CPAG DeepWalk) ==="
