@@ -116,6 +116,7 @@ GG="$PREP/ggnn_input"
 [[ -f "$GG/diverse-test-v0.json" ]]  && mv -f "$GG/diverse-test-v0.json"  "$GG/multi-test-v0.json"
 rm -f "$GG"/multi_128_64batch_*.bin   # stale cached dataset binary (rebuild for our classes)
 sed -i "s/from trainer_test import train/from trainer_sta import train/" "$LV/code/main_sta.py"
+sed -i "s/self.graph.add_edge(/self.graph.add_edges(/" "$LV/code/data_loader/dataset.py"   # dgl 2.x rename
 sed -i "s/^    num_classes = 31/    num_classes = $NUM_CLASSES/" "$LV/code/main_sta.py"
 sed -i "s/MLPReadout(self.hidden_dim2, 31)/MLPReadout(self.hidden_dim2, $NUM_CLASSES)/" "$LV/code/modules/model.py"
 sed -i "s/MLPReadout(2 \* self.seq_hid, 31)/MLPReadout(2 * self.seq_hid, $NUM_CLASSES)/" "$LV/code/modules/model.py"
