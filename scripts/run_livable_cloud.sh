@@ -16,9 +16,18 @@ set -euo pipefail
 REMOTE="gdrive-mesach:tugas-akhir"
 DATA_TAR="megavul_ml1024_baselines_20260613.tar.gz"   # our exported split (func_before, vul, cwe_name, flaw_lines)
 RUN_ID="livable_megavul_$(date +%Y%m%d_%H%M%S)"
-VULN_ONLY=""
-for a in "$@"; do [[ "$a" == "--vuln-only" ]] && VULN_ONLY=1; done
+VULN_ONLY=""; OPT="adamw"; LR="1e-3"   # README pt6 says RAdam 1e-4 but it FREEZES on our data
+                                        # (loss flat, acc 0); AdamW 1e-3 = repo's shipped default + trains.
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --vuln-only) VULN_ONLY=1;;
+    --opt) OPT="$2"; shift;;
+    --lr)  LR="$2"; shift;;
+    *) echo "unknown arg: $1";;
+  esac; shift
+done
 [[ -n "$VULN_ONLY" ]] && RUN_ID="${RUN_ID}_vo"
+RUN_ID="${RUN_ID}_${OPT}${LR}"
 WORK="$PWD"
 LV="$WORK/src/LIVABLE"
 PREP="$WORK/megavul_livable"
@@ -184,11 +193,16 @@ done
 # sigmoid saturates (base->0) -> nan loss. Add an epsilon to the base to stabilize, keeping
 # LIVABLE's dual-branch long-tail loss intact (faithful — only numerical, not a loss change).
 sed -i 's/torch.pow((1-p)\*label + p \* (1-label), self.gamma)/torch.pow((1-p)*label + p * (1-label) + 1e-6, self.gamma)/' "$LV/code/trainer_sta.py"
-# Optimizer: repo leaves AdamW(lr=1e-3) ACTIVE, but README pt6 (type classification) specifies
-# RAdam lr=1e-4 wd=1e-6. AdamW 1e-3 (wrong opt + 10x LR) collapsed training (run ..._082009,
-# F1 1.19%). Use the documented paper config (torch.optim.RAdam exists in torch 2.4) — faithful.
-sed -i 's/^\(\s*\)optim = AdamW(model.parameters(), lr=1e-3, weight_decay=1e-6)/\1optim = torch.optim.RAdam(model.parameters(), lr=1e-4, weight_decay=1e-6)  # README pt6/' "$LV/code/main_sta.py"
-grep -q "torch.optim.RAdam" "$LV/code/main_sta.py" || { echo "ERR: RAdam optimizer patch failed"; exit 1; }
+# Optimizer (--opt/--lr): repo ships AdamW(lr=1e-3) active; README pt6 says RAdam lr=1e-4 but that
+# FREEZES on our data (loss flat, acc 0). Default here = AdamW 1e-3 (trains). Patch the active line.
+case "$OPT" in
+  radam) OPTLINE="optim = torch.optim.RAdam(model.parameters(), lr=$LR, weight_decay=1e-6)";;
+  adam)  OPTLINE="optim = torch.optim.Adam(model.parameters(), lr=$LR, weight_decay=1e-6)";;
+  *)     OPTLINE="optim = AdamW(model.parameters(), lr=$LR, weight_decay=1e-6)";;
+esac
+echo "  optimizer: $OPTLINE"
+sed -i "s|^\(\s*\)optim = AdamW(model.parameters(), lr=1e-3, weight_decay=1e-6)|\1$OPTLINE  # patched|" "$LV/code/main_sta.py"
+grep -qF "$OPTLINE" "$LV/code/main_sta.py" || { echo "ERR: optimizer patch failed"; exit 1; }
 cd "$LV/code"
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
 python main_sta.py --input_dir "$GG" 2>&1 | tee "$OUT/train.log"
