@@ -20,10 +20,11 @@ VENV="/workspace/edat_env"
 BASEPY=/venv/main/bin/python; [[ -x "$BASEPY" ]] || BASEPY="$(command -v python3 || command -v python)"
 [[ -d "$VENV" ]] || "$BASEPY" -m venv "$VENV"
 source "$VENV/bin/activate"
-# torch MUST be the cu121 build (plain `pip install torch` pulls a newer-CUDA wheel the pod driver
-# 12.8 rejects -> falls back to CPU). Match the other scripts: torch 2.4.1 cu121. Verify cuda works.
-python -c "import torch,transformers,sklearn,pandas,fastparquet,matplotlib,tree_sitter_c; assert torch.cuda.is_available()" 2>/dev/null || {
-  pip install -q --force-reinstall torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
+# torch must be >=2.6 (transformers blocks torch.load of graphcodebert-base's .bin below that,
+# CVE-2025-32434) AND a CUDA build the pod's 12.8 driver accepts -> torch 2.6.0 + cu124 (runtime
+# 12.4 <= 12.8 = GPU works). Plain `pip install torch` pulls a too-new-CUDA wheel -> CPU fallback.
+python -c "import torch,transformers,sklearn,pandas,fastparquet,matplotlib,tree_sitter_c; v=tuple(map(int,torch.__version__.split('+')[0].split('.')[:2])); assert torch.cuda.is_available() and v>=(2,6)" 2>/dev/null || {
+  pip install -q --force-reinstall torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
   pip install -q transformers scikit-learn numpy tqdm pandas fastparquet matplotlib tree-sitter tree-sitter-c
 }
 [[ -f "$VD/multi_task_train_alternate.py" ]] || { rm -rf "$ED"; git clone --depth 1 https://github.com/Karelye/EDAT-MLT.git "$ED"; }
