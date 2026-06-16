@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pickle
 import re
 import sys
@@ -144,8 +145,10 @@ def main() -> None:
 
     emb: dict[str, np.ndarray] = {}
     if G.number_of_nodes() > 0:
-        dp = deepwalk(G, walk_length=10, num_walks=80, workers=1)
-        dp.train(window_size=5, iter=3)
+        nw = os.cpu_count() or 4                      # parallel walk-gen + w2v (was workers=1 = 1 core)
+        print(f"  deepwalk on {G.number_of_nodes()} nodes / {G.number_of_edges()} edges, workers={nw}")
+        dp = deepwalk(G, walk_length=10, num_walks=80, workers=nw)
+        dp.train(window_size=5, iter=3, workers=nw)
         emb = dp.get_embedding()
     zero = np.zeros(DW_DIM, dtype=np.float32)
 
