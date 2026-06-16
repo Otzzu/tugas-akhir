@@ -72,6 +72,8 @@ def main() -> None:
     ap.add_argument("--split-dir", required=True)
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--vulpcl", default="src/VulPCL")
+    ap.add_argument("--num-walks", type=int, default=10,
+                    help="DeepWalk walks/node (paper 80; 10 ample at our ~680k-node global graph, far faster)")
     a = ap.parse_args()
     ind, out = Path(a.split_dir), Path(a.out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -138,8 +140,8 @@ def main() -> None:
     emb: dict[str, np.ndarray] = {}
     if G.number_of_nodes() > 0:
         nw = os.cpu_count() or 4                      # parallel walk-gen + w2v (was workers=1 = 1 core)
-        print(f"  deepwalk on {G.number_of_nodes()} nodes / {G.number_of_edges()} edges, workers={nw}")
-        dp = deepwalk(G, walk_length=10, num_walks=80, workers=nw)
+        print(f"  deepwalk on {G.number_of_nodes()} nodes / {G.number_of_edges()} edges, workers={nw} num_walks={a.num_walks}")
+        dp = deepwalk(G, walk_length=10, num_walks=a.num_walks, workers=nw)
         dp.train(window_size=5, iter=3, workers=nw)
         emb = dp.get_embedding()
     zero = np.zeros(DW_DIM, dtype=np.float32)

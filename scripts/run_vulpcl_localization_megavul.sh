@@ -40,6 +40,7 @@ fi
 
 echo "=== [3/6] adapter: hdf5 CPGs -> localization pkls (token + seq + msg + vocab) ==="
 python scripts/vulpcl_localization_adapter.py --hdf5 "$HDF5" --split-dir "$SPLIT" --out-dir "$PKL" --vulpcl "$VP" \
+  --num-walks "${VP_NUM_WALKS:-10}" \
   || { echo "ERR: adapter failed -> NOT training on stale pkls"; exit 1; }
 
 echo "=== [4/6] stage pkls/seq/vocab/msg at the paths the code expects ==="
