@@ -1,7 +1,8 @@
 """
 vulpcl_newjoern_adapter.py — build VulPCL categorization pkls from OUR megavul, REUSING our existing
 CPGs in data/graphs/megavul.hdf5 (joern 4.0.526, the SAME graphs our model uses) — NO joern re-parse.
-Produces VulPCL's 3 reps + pkl format their CodeBert_Blstm consumes, on our split + 26 classes.
+Produces VulPCL's 3 reps + pkl format their CodeBert_Blstm consumes, on our split + vuln-only 25 classes
+(no benign — matches VulPCL categorization §3.3.2 + LOSVER/LIVABLE fairness).
 
 FAITHFULNESS: model (CodeBert_Blstm) untouched. Only graph->features re-derived from modern-joern CPGs
 (their SVG/old-joern extractors can't read modern joern). Features APPROXIMATE VulPCL's — documented.
@@ -66,19 +67,24 @@ def main() -> None:
     from transformers import AutoTokenizer
     cb_tok = AutoTokenizer.from_pretrained("microsoft/codebert-base")
 
-    # split + 26-class label from our export (benign + sorted 25 CWE), keyed by id (== hdf5 row_id)
+    # VULN-ONLY label space (no benign) — matches VulPCL categorization (§3.3.2 relabels vuln funcs only)
+    # + LOSVER/LIVABLE fairness (vuln-only 25-class). keyed by id (== hdf5 row_id).
     frames = {s: pd.read_parquet(ind / f"{s}.parquet") for s in ("train", "val", "test")}
     allcwe = pd.concat(frames.values())
-    allcwe["cwe_name"] = allcwe["cwe_name"].fillna("others").replace("", "others").astype(str)
-    vuln = sorted(allcwe[allcwe["vul"] == 1]["cwe_name"].unique())
-    cwe_labels = ["benign"] + vuln
+    allcwe["cwe_name"] = allcwe["cwe_name"].astype(str).str.strip()
+    vuln = sorted(c for c in allcwe[allcwe["vul"] == 1]["cwe_name"].unique() if c.startswith("CWE-"))
+    cwe_labels = vuln                                   # 25 CWE, NO benign
     c2l = {c: i for i, c in enumerate(cwe_labels)}
     (out / "cwe_labels.json").write_text(json.dumps({"cwe_labels": cwe_labels, "num_classes": len(cwe_labels)}, indent=2))
     id2info: dict[int, tuple[str, int]] = {}
     for s in ("train", "val", "test"):
         for _, r in frames[s].iterrows():
-            cn = "benign" if int(r["vul"]) == 0 else str(r["cwe_name"])
-            id2info[int(r["id"])] = (s, c2l.get(cn, 0))
+            if int(r["vul"]) == 0:                      # drop benign
+                continue
+            cn = str(r["cwe_name"]).strip()
+            if cn not in c2l:                           # drop NaN/others/non-top CWE
+                continue
+            id2info[int(r["id"])] = (s, c2l[cn])
 
     # pass 1: read hdf5, build FCDS tokens + global CPAG edgelist (node = code string)
     recs = {s: [] for s in ("train", "val", "test")}

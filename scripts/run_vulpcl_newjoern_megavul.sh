@@ -52,7 +52,10 @@ cp -f "$PKL"/{train,val,test}_set_token.pkl "$DEST/"
 cp -f "$PKL/fcds_code_vocab.json" "$CAT/${PROJ}_code_vocab.json"
 git -C "$VP" checkout -- vul_categorization/module/CodeBert_Blstm.py vul_categorization/codebert_blstm.py 2>/dev/null || true
 sed -i "s/self.num_classes = 12/self.num_classes = $NC/" "$CAT/module/CodeBert_Blstm.py"
-sed -i "s/target_names=\[[^]]*\]/target_names=[str(i) for i in range($NC)]/" "$CAT/codebert_blstm.py"
+# classification_report + macro metrics: pin labels to all NC classes (data may miss some -> sklearn
+# else infers fewer labels than target_names and crashes / mis-averages). zero_division=0 for absent.
+sed -i "s/target_names=\[[^]]*\]/labels=list(range($NC)),target_names=[str(i) for i in range($NC)]/" "$CAT/codebert_blstm.py"
+sed -i "s/average='macro'/average='macro', labels=list(range($NC)), zero_division=0/g" "$CAT/codebert_blstm.py"
 # paper config: Adam, batch 8, epoch 20, dropout 0.5 (code ships 16/30 -> match the paper).
 sed -i "s/self.batch_size = 16/self.batch_size = 8/" "$CAT/module/CodeBert_Blstm.py"
 sed -i "s/self.num_epochs = 30/self.num_epochs = 20/" "$CAT/module/CodeBert_Blstm.py"
