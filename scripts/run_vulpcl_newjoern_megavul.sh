@@ -29,6 +29,9 @@ python -c "import torch,transformers,sklearn,pandas,networkx,gensim,fastparquet,
 DWE="$CAT/deepwalk_embed/deepwalk_embedding.py"
 sed -i 's/kwargs\["size"\] = embed_size/kwargs["vector_size"] = embed_size/' "$DWE"
 sed -i 's/kwargs\["iter"\] = iter/kwargs["epochs"] = iter/' "$DWE"
+# hs=1 (hierarchical softmax) over our 680k-node vocab = ~1hr, gensim feeder-bound. Switch to negative
+# sampling (gensim default negative=5) = 5-10x faster, near-equivalent embeddings, standard word2vec/DeepWalk.
+sed -i 's/kwargs\["hs"\] = 1/kwargs["hs"] = 0/' "$DWE"
 
 echo "=== [2/6] data: megavul.hdf5 (our CPGs, reused) + split parquets ==="
 if [[ ! -f "$HDF5" ]]; then
