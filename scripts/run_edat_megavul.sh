@@ -61,19 +61,35 @@ sed -i "s/batch_size = 2$/batch_size = ${EDAT_BS:-16}/" "$T"
 [[ -n "${EDAT_EPOCHS:-}" ]] && sed -i "s/num_epochs = 20$/num_epochs = ${EDAT_EPOCHS}/" "$T"
 echo "  patched paths:"; grep -nE "pretrained_model_path|_path = r|use_pgd = |batch_size = |num_epochs = " "$T" | head
 
-echo "=== [5/6] train (GraphCodeBERT + context + MTL + PGD) ==="
+echo "=== [5/7] train (skip if best model already exists) — GraphCodeBERT + context + MTL + PGD ==="
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
-( cd "$VD" && python multi_task_train_alternate.py 2>&1 | tee "$OUT/train.log" )
+EXIST=$(find "$VD" -maxdepth 2 -name "best_multi_task_model.pt" 2>/dev/null | head -1)
+if [[ -n "$EXIST" && -z "${EDAT_FORCE_TRAIN:-}" ]]; then
+  echo "  trained model exists ($EXIST) -> skip train (set EDAT_FORCE_TRAIN=1 to retrain)"
+else
+  ( cd "$VD" && python multi_task_train_alternate.py 2>&1 | tee "$OUT/train.log" )
+fi
 
-echo "=== [6/6] upload results ==="
+echo "=== [6/7] TEST eval (their multi_task_evaluate.py: VTP acc/F1 + LVD IFA/Top-k) ==="
+OUTDIR=$(find "$VD" -maxdepth 1 -type d -name "multi_task_alternate_output*" | head -1)
+[[ -n "$OUTDIR" ]] || { echo "ERR: no train output dir (train must run first)"; exit 1; }
+E="$VD/multi_task_evaluate.py"; BASE=$(basename "$OUTDIR")
+git -C "$ED" checkout -- "EDAT-MLT/多任务/graphcodebert-上下文/multi_task_evaluate.py" 2>/dev/null || true
+# point eval at OUR trained model + data (expert_num 6 / expert_dim 768 already match training).
+sed -i "s#output_dir = \"multi_task_alternate_output_classification\"#output_dir = \"$BASE\"#" "$E"
+sed -i 's#"multi_task_model_epoch_3.pt"#"best_multi_task_model.pt"#' "$E"
+sed -i "s#pretrained_model_path = r\"[^\"]*\"#pretrained_model_path = r\"microsoft/graphcodebert-base\"#" "$E"
+sed -i "s#classification_train_path = r\"[^\"]*\"#classification_train_path = r\"$OUTJ/train.jsonl\"#" "$E"
+sed -i "s#classification_test_path = r\"[^\"]*\"#classification_test_path = r\"$OUTJ/test.jsonl\"#" "$E"
+sed -i "s#line_level_test_path = r\"[^\"]*\"#line_level_test_path = r\"$OUTJ/test_line_level.jsonl\"#" "$E"
+( cd "$VD" && python multi_task_evaluate.py 2>&1 | tee "$OUT/eval.log" )
+
+echo "=== [7/7] ONE combined zip (best model + eval results + configs + plots + logs) ==="
 cd "$WORK"
 COMP="$(command -v pigz || echo gzip)"
-tar -I "$COMP" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" . 2>/dev/null && \
+cp -f "$OUTDIR/best_multi_task_model.pt" "$OUT/" 2>/dev/null || true       # skip bulky per-epoch .pt
+cp -f "$OUTDIR"/*.json "$OUTDIR"/*.png "$OUT/" 2>/dev/null || true          # eval json + configs + plot
+[[ -f "$OUT/train.log" ]] || cp -f "$(ls -t "$WORK"/baseline_runs/edat_megavul_*/train.log 2>/dev/null | head -1)" "$OUT/" 2>/dev/null || true
+tar -I "$COMP" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" . && \
   rclone copy "${RUN_ID}_results.tar.gz" "$REMOTE/results/baselines/" --progress 2>/dev/null || true
-# trained model / EDAT output dir (only if train produced one — else skip, no spurious rclone error)
-MODELDIR=$(find "$VD" -maxdepth 1 -type d -name "*output*" | head -1)
-if [[ -n "$MODELDIR" ]]; then
-  tar -I "$COMP" -cf "${RUN_ID}_model.tar.gz" -C "$VD" "$(basename "$MODELDIR")" 2>/dev/null && \
-    rclone copy "${RUN_ID}_model.tar.gz" "$REMOTE/results/baselines/" --progress 2>/dev/null || true
-fi
-echo "DONE: $RUN_ID"
+echo "DONE: $RUN_ID  (test metrics in $OUT/eval.log + evaluation_results.json)"
