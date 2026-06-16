@@ -233,8 +233,16 @@ cd "$LV/code"
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
 python main_sta.py --input_dir "$GG" 2>&1 | tee "$OUT/train.log"
 
-echo "=== [7/7] upload results ==="
+echo "=== [7/7] upload: results -> results/baselines, weights -> checkpoints/baselines ==="
 cd "$WORK"
-tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" .
+COMP="$(command -v pigz || echo gzip)"
+# results = log + metrics (metrics printed in train.log) -> results/baselines/
+tar -I "$COMP" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" .
 rclone copy "${RUN_ID}_results.tar.gz" "$REMOTE/results/baselines/" --progress
-echo "DONE: $RUN_ID"
+# weights = trained GGNN+BiLSTM model (newest *-model.bin) -> checkpoints/baselines/
+WBIN=$(find "$LV/code" -name "*-model.bin" -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)
+if [[ -n "$WBIN" ]]; then
+  tar -I "$COMP" -cf "${RUN_ID}_weights.tar.gz" -C "$(dirname "$WBIN")" "$(basename "$WBIN")"
+  rclone copy "${RUN_ID}_weights.tar.gz" "$REMOTE/checkpoints/baselines/" --progress
+fi
+echo "DONE: $RUN_ID  results -> results/baselines, weights -> checkpoints/baselines"
