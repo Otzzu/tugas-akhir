@@ -21,10 +21,11 @@ BASEPY=/venv/main/bin/python; [[ -x "$BASEPY" ]] || BASEPY="$(command -v python3
 [[ -d "$VENV" ]] || "$BASEPY" -m venv "$VENV"
 source "$VENV/bin/activate"
 # torch must be >=2.6 (transformers blocks torch.load of graphcodebert-base's .bin below that,
-# CVE-2025-32434) AND a CUDA build the pod's 12.8 driver accepts -> torch 2.6.0 + cu124 (runtime
-# 12.4 <= 12.8 = GPU works). Plain `pip install torch` pulls a too-new-CUDA wheel -> CPU fallback.
-python -c "import torch,transformers,sklearn,pandas,fastparquet,matplotlib,tree_sitter_c; v=tuple(map(int,torch.__version__.split('+')[0].split('.')[:2])); assert torch.cuda.is_available() and v>=(2,6)" 2>/dev/null || {
-  pip install -q --force-reinstall torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+# CVE-2025-32434) AND have kernels for the pod GPU. Blackwell (sm_120) needs cu128 -> torch 2.7.0 cu128
+# (supports Blackwell + Ada/Hopper, runtime 12.8 <= driver 12.8). The check runs a real GPU op so it
+# catches "no kernel image" (cuda.is_available() alone returns True even when kernels are missing).
+python -c "import torch,transformers,sklearn,pandas,fastparquet,matplotlib,tree_sitter_c; v=tuple(map(int,torch.__version__.split('+')[0].split('.')[:2])); assert torch.cuda.is_available() and v>=(2,6); torch.zeros(2,device='cuda').sum().item()" 2>/dev/null || {
+  pip install -q --force-reinstall torch==2.7.0 --index-url https://download.pytorch.org/whl/cu128
   pip install -q transformers scikit-learn numpy tqdm pandas fastparquet matplotlib tree-sitter tree-sitter-c
 }
 [[ -f "$VD/multi_task_train_alternate.py" ]] || { rm -rf "$ED"; git clone --depth 1 https://github.com/Karelye/EDAT-MLT.git "$ED"; }
