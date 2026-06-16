@@ -22,12 +22,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import pickle
 import re
 import sys
 from collections import Counter
 from pathlib import Path
+
+# gensim Word2Vec logs per-epoch progress at INFO -> makes the DeepWalk phase trackable (not silent)
+logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", level=logging.INFO)
 
 import h5py
 import numpy as np
