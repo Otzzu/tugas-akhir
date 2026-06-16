@@ -63,6 +63,9 @@ PY
 [[ -f my-languages.so ]] || { echo "ERR: parser my-languages.so build failed"; exit 1; }
 cd "$WORK"
 
+# single-GPU pod: repo hardcodes cuda:1 in both mains -> use cuda:0
+sed -i 's/cuda:1/cuda:0/g' "$VARIANT/teacher_main.py" "$VARIANT/student_graphcodebert_main.py"
+
 echo "=== [5/7] train CNN teacher (50ep bs128 5e-3) ==="
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
 ( cd "$VARIANT" && bash train_teacher.sh ) ; cp -f "$VARIANT"/train_cnn_teacher.log "$OUT/" 2>/dev/null || true
