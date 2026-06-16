@@ -59,7 +59,11 @@ sed -i 's/epoch_alternate_order = \[.*\]/epoch_alternate_order = ["classificatio
 # EDAT_BS=32 on a >=24GB GPU for the EXACT paper batch. code default 2 = impractically slow.
 sed -i "s/batch_size = 2$/batch_size = ${EDAT_BS:-16}/" "$T"
 [[ -n "${EDAT_EPOCHS:-}" ]] && sed -i "s/num_epochs = 20$/num_epochs = ${EDAT_EPOCHS}/" "$T"
-echo "  patched paths:"; grep -nE "pretrained_model_path|_path = r|use_pgd = |batch_size = |num_epochs = " "$T" | head
+# patience=3 was tuned for the shipped VTP-only [cls,cls] order; under true cls<->lvd alternation the
+# lvd epochs worsen the tracked classification val-loss -> waste patience -> premature stop (~12 ep,
+# undertrained cls). Run the paper's full 20 epochs: raise patience (EDAT_PATIENCE, default 20 = ~off).
+sed -i "s/^\(\s*\)patience = 3$/\1patience = ${EDAT_PATIENCE:-20}/" "$T"
+echo "  patched paths:"; grep -nE "pretrained_model_path|_path = r|use_pgd = |batch_size = |num_epochs = |patience = " "$T" | head
 
 echo "=== [5/7] train (skip if best model already exists) — GraphCodeBERT + context + MTL + PGD ==="
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
