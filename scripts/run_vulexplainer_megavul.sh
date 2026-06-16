@@ -51,7 +51,10 @@ cd "$VARIANT/parser"
 rm -f my-languages.so   # shipped .so is author's platform — rebuild for this pod
 # code ONLY uses the C# parser (parsers["c_sharp"]) -> build c-sharp ONLY. build.py's full 7-lang list
 # breaks on newer tree-sitter-php (parser moved to php/src/parser.c, not src/parser.c).
-[[ -d tree-sitter-c-sharp ]] || git clone --depth 1 https://github.com/tree-sitter/tree-sitter-c-sharp
+# grammar must be ABI<=14 for tree-sitter python 0.21 (supports 13-14); latest main = ABI 15 -> crash.
+# pin v0.21.0 (ABI 14). force re-clone so a stale ABI-15 clone from a prior run is replaced.
+rm -rf tree-sitter-c-sharp
+git clone --depth 1 --branch v0.21.0 https://github.com/tree-sitter/tree-sitter-c-sharp
 python - <<'PY'
 from tree_sitter import Language
 Language.build_library("my-languages.so", ["tree-sitter-c-sharp"])
