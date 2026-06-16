@@ -12,7 +12,7 @@ row_id, cwe, flaw_lines, raw_func, label. We match group.attrs['row_id'] to the 
 
 Each pkl item = [id, codebert_ids(512), fcds_ids(512), cpag_deepwalk(256x300 float), label_str]:
   PTSC -> codebert_ids: CodeBERT tokenizer on raw_func, 512.
-  FCDS -> fcds_ids: code tokens of statement-ish nodes (have code + a stmt _label), tokenized
+  FCDS -> fcds_ids: code tokens of statement-ish nodes (have code + a stmt labelV), tokenized
           (VulPCL-style splitter) -> FCDS vocab ids (built from TRAIN), 512.
   CPAG -> cpag_deepwalk: GLOBAL graph over code-token nodes (edges AST+DDG+CDG+CFG, all funcs) ->
           DeepWalk (walk_length=10, num_walks=80, dim=300, window=5, iter=3, == adc) -> per-code
@@ -106,7 +106,7 @@ def main() -> None:
                 split, label = id2info[rid]
                 nodes_list = json.loads(_decode(g["nodes_json"][()]))
                 edges_list = json.loads(_decode(g["edges_json"][()]))
-                nodes = {n.get("id"): (str(n.get("code", "")), n.get("_label", ""), n.get("lineNumber"))
+                nodes = {n.get("id"): (str(n.get("code", "")), n.get("labelV", ""), n.get("lineNumber"))
                          for n in nodes_list}
                 raw = _decode(g.attrs.get("raw_func", ""))
                 # FCDS tokens (statement nodes, by line)
@@ -118,8 +118,8 @@ def main() -> None:
                     fcds_counter.update(ft)
                 # global CPAG edges (code-string nodes)
                 for e in edges_list:
-                    if e.get("etype") in FCDS_EDGE_LABELS:
-                        s_, d_ = e.get("outNode"), e.get("inNode")
+                    if e.get("label") in FCDS_EDGE_LABELS:        # hdf5 edge schema = {src,dst,label}
+                        s_, d_ = e.get("src"), e.get("dst")
                         if s_ in nodes and d_ in nodes:
                             cs, cd = nodes[s_][0].strip(), nodes[d_][0].strip()
                             if cs and cd:
