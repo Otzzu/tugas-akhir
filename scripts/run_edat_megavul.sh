@@ -84,12 +84,17 @@ sed -i "s#classification_test_path = r\"[^\"]*\"#classification_test_path = r\"$
 sed -i "s#line_level_test_path = r\"[^\"]*\"#line_level_test_path = r\"$OUTJ/test_line_level.jsonl\"#" "$E"
 ( cd "$VD" && python multi_task_evaluate.py 2>&1 | tee "$OUT/eval.log" )
 
-echo "=== [7/7] ONE combined zip (best model + eval results + configs + plots + logs) ==="
+echo "=== [7/7] upload: results -> results/baselines, weights -> checkpoints/baselines ==="
 cd "$WORK"
 COMP="$(command -v pigz || echo gzip)"
-cp -f "$OUTDIR/best_multi_task_model.pt" "$OUT/" 2>/dev/null || true       # skip bulky per-epoch .pt
+# results = logs + eval metrics + configs + plots (NO model) -> results/baselines/
 cp -f "$OUTDIR"/*.json "$OUTDIR"/*.png "$OUT/" 2>/dev/null || true          # eval json + configs + plot
 [[ -f "$OUT/train.log" ]] || cp -f "$(ls -t "$WORK"/baseline_runs/edat_megavul_*/train.log 2>/dev/null | head -1)" "$OUT/" 2>/dev/null || true
 tar -I "$COMP" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" . && \
   rclone copy "${RUN_ID}_results.tar.gz" "$REMOTE/results/baselines/" --progress 2>/dev/null || true
-echo "DONE: $RUN_ID  (test metrics in $OUT/eval.log + evaluation_results.json)"
+# weights = best model -> checkpoints/baselines/
+if [[ -f "$OUTDIR/best_multi_task_model.pt" ]]; then
+  tar -I "$COMP" -cf "${RUN_ID}_weights.tar.gz" -C "$OUTDIR" best_multi_task_model.pt && \
+    rclone copy "${RUN_ID}_weights.tar.gz" "$REMOTE/checkpoints/baselines/" --progress 2>/dev/null || true
+fi
+echo "DONE: $RUN_ID  results -> results/baselines, weights -> checkpoints/baselines  (metrics in $OUT/eval.log)"

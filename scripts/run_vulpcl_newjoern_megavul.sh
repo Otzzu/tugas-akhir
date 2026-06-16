@@ -67,10 +67,18 @@ echo "=== [5/6] train (their CodeBert_Blstm, untouched) ==="
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
 ( cd "$CAT" && python codebert_blstm.py --p "$PROJ" --cwe "$CWE" 2>&1 | tee "$OUT/train.log" )
 
-echo "=== [6/6] upload pkls (preprocess) + results to Drive ==="
-COMP=(gzip); command -v pigz >/dev/null && COMP=(pigz)
-tar -cf - -C "$PKL" . | "${COMP[@]}" > "/tmp/${RUN_ID}_pkls.tar.gz"
+echo "=== [6/6] upload: pkls -> data/baselines, results -> results/baselines, weights -> checkpoints/baselines ==="
+COMP="$(command -v pigz || echo gzip)"
+# preprocessed pkls (reusable cache) -> data/baselines/
+tar -cf - -C "$PKL" . | "$COMP" > "/tmp/${RUN_ID}_pkls.tar.gz"
 rclone copy "/tmp/${RUN_ID}_pkls.tar.gz" "$REMOTE/data/baselines/" --progress 2>/dev/null || true
-tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" . && \
+# results = logs + metrics (NO model) -> results/baselines/
+tar -I "$COMP" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" . && \
   rclone copy "${RUN_ID}_results.tar.gz" "$REMOTE/results/baselines/" --progress 2>/dev/null || true
-echo "DONE: $RUN_ID"
+# weights = trained CodeBert_Blstm checkpoint -> checkpoints/baselines/
+WCKPT="$CAT/save_dict/$PROJ/$CWE/CodeBert_Blstm.ckpt"
+if [[ -f "$WCKPT" ]]; then
+  tar -I "$COMP" -cf "${RUN_ID}_weights.tar.gz" -C "$(dirname "$WCKPT")" CodeBert_Blstm.ckpt && \
+    rclone copy "${RUN_ID}_weights.tar.gz" "$REMOTE/checkpoints/baselines/" --progress 2>/dev/null || true
+fi
+echo "DONE: $RUN_ID  results -> results/baselines, weights -> checkpoints/baselines, pkls -> data/baselines"

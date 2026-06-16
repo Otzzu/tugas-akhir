@@ -68,10 +68,14 @@ OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
 echo "=== [6/7] soft-distill GraphCodeBERT student (train+test, 50ep bs8 2e-5 alpha0.7) ==="
 ( cd "$VARIANT" && bash soft_distillation.sh ) ; cp -f "$VARIANT"/train_soft_distil*.log "$OUT/" 2>/dev/null || true
 
-echo "=== [7/7] upload logs + student model ==="
+echo "=== [7/7] upload: results -> results/baselines, weights -> checkpoints/baselines ==="
 COMP="$(command -v pigz || echo gzip)"
-# trained student model dir (best checkpoint)
-[[ -d "$VARIANT/saved_models" ]] && cp -rf "$VARIANT/saved_models/checkpoint-best-acc" "$OUT/student_ckpt" 2>/dev/null || true
+# results = logs only (test metrics in train_soft_distil log) -> results/baselines/
 tar -I "$COMP" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" . && \
   rclone copy "${RUN_ID}_results.tar.gz" "$REMOTE/results/baselines/" --progress 2>/dev/null || true
-echo "DONE: $RUN_ID  (test metrics in $OUT/train_soft_distil*.log)"
+# weights = teacher + student best checkpoints -> checkpoints/baselines/
+if [[ -d "$VARIANT/saved_models/checkpoint-best-acc" ]]; then
+  tar -I "$COMP" -cf "${RUN_ID}_weights.tar.gz" -C "$VARIANT/saved_models" checkpoint-best-acc && \
+    rclone copy "${RUN_ID}_weights.tar.gz" "$REMOTE/checkpoints/baselines/" --progress 2>/dev/null || true
+fi
+echo "DONE: $RUN_ID  results -> results/baselines, weights -> checkpoints/baselines  (metrics in $OUT/train_soft_distil*.log)"
