@@ -51,6 +51,9 @@ sed -i "s#line_level_valid_path = r\"[^\"]*\"#line_level_valid_path = r\"$OUTJ/v
 sed -i "s#line_level_test_path = r\"[^\"]*\"#line_level_test_path = r\"$OUTJ/test_line_level.jsonl\"#" "$T"
 sed -i "s#use_pgd = False#use_pgd = True#" "$T"
 sed -i "s/pgd_epsilon = 0.03/pgd_epsilon = 0.02/" "$T"   # paper ϵ=0.02 (code ships 0.03)
+# shipped epoch_alternate_order = [classification, classification] -> VTP-only, LVD NEVER runs!
+# Set true MTL alternation so both tasks train (epoch cls, lvd, cls, lvd... = 10 VTP + 10 LVD / 20 ep).
+sed -i 's/epoch_alternate_order = \[.*\]/epoch_alternate_order = ["classification", "line_level"]/' "$T"
 # PAPER best config: AdamW(✓ already), batch 32, ϵ0.02, lr 1e-5, epoch 20, PGD on, GraphCodeBERT+ctx.
 # batch 32 OOMs a 16GB card (~24GB needed) + grad-accum not implemented -> default 16 here; set
 # EDAT_BS=32 on a >=24GB GPU for the EXACT paper batch. code default 2 = impractically slow.
