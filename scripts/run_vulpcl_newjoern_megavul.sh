@@ -42,7 +42,8 @@ if [[ ! -d megavul_ml1024 ]]; then
 fi
 
 echo "=== [3/6] adapter: hdf5 CPGs -> VulPCL pkls (PTSC + FCDS + CPAG DeepWalk) ==="
-python scripts/vulpcl_newjoern_adapter.py --hdf5 "$HDF5" --split-dir "$SPLIT" --out-dir "$PKL" --vulpcl "$VP"
+python scripts/vulpcl_newjoern_adapter.py --hdf5 "$HDF5" --split-dir "$SPLIT" --out-dir "$PKL" --vulpcl "$VP" \
+  || { echo "ERR: adapter failed -> NOT training on stale pkls"; exit 1; }
 NC=$(python -c "import json;print(json.load(open('$PKL/cwe_labels.json'))['num_classes'])")
 echo "  num_classes=$NC"
 

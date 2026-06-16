@@ -52,6 +52,13 @@ def _decode(v) -> str:
     return v.decode() if isinstance(v, (bytes, bytearray)) else str(v)
 
 
+def _ln(v) -> int:                       # hdf5 lineNumber may be str/int/None -> sortable int
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 10 ** 9
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--hdf5", required=True)
@@ -110,7 +117,7 @@ def main() -> None:
                          for n in nodes_list}
                 raw = _decode(g.attrs.get("raw_func", ""))
                 # FCDS tokens (statement nodes, by line)
-                sel = sorted(((ln if ln is not None else 1e9, code)
+                sel = sorted(((_ln(ln), code)
                               for (code, lab, ln) in nodes.values() if code and lab in STMT_LABELS),
                              key=lambda x: x[0])
                 ft = [t for _, code in sel for t in tok(code)]
