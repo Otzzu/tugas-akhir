@@ -49,10 +49,14 @@ echo "=== [4/7] build tree-sitter parser (.so) — C parsed via C# grammar (thei
 command -v gcc >/dev/null || (apt-get update -q && apt-get install -y -q build-essential)
 cd "$VARIANT/parser"
 rm -f my-languages.so   # shipped .so is author's platform — rebuild for this pod
-for r in go javascript python php java ruby c-sharp; do
-  [[ -d "tree-sitter-$r" ]] || git clone --depth 1 "https://github.com/tree-sitter/tree-sitter-$r"
-done
-python build.py
+# code ONLY uses the C# parser (parsers["c_sharp"]) -> build c-sharp ONLY. build.py's full 7-lang list
+# breaks on newer tree-sitter-php (parser moved to php/src/parser.c, not src/parser.c).
+[[ -d tree-sitter-c-sharp ]] || git clone --depth 1 https://github.com/tree-sitter/tree-sitter-c-sharp
+python - <<'PY'
+from tree_sitter import Language
+Language.build_library("my-languages.so", ["tree-sitter-c-sharp"])
+print("built my-languages.so (c_sharp)")
+PY
 [[ -f my-languages.so ]] || { echo "ERR: parser my-languages.so build failed"; exit 1; }
 cd "$WORK"
 
