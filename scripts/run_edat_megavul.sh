@@ -74,7 +74,7 @@ echo "=== [6/7] TEST eval (their multi_task_evaluate.py: VTP acc/F1 + LVD IFA/To
 OUTDIR=$(find "$VD" -maxdepth 1 -type d -name "multi_task_alternate_output*" | head -1)
 [[ -n "$OUTDIR" ]] || { echo "ERR: no train output dir (train must run first)"; exit 1; }
 E="$VD/multi_task_evaluate.py"; BASE=$(basename "$OUTDIR")
-git -C "$ED" checkout -- "EDAT-MLT/多任务/graphcodebert-上下文/multi_task_evaluate.py" 2>/dev/null || true
+git -C "$ED" checkout -- "EDAT-MLT/多任务/graphcodebert-上下文/multi_task_evaluate.py" "EDAT-MLT/多任务/graphcodebert-上下文/data.py" 2>/dev/null || true
 # point eval at OUR trained model + data (expert_num 6 / expert_dim 768 already match training).
 sed -i "s#output_dir = \"multi_task_alternate_output_classification\"#output_dir = \"$BASE\"#" "$E"
 sed -i 's#"multi_task_model_epoch_3.pt"#"best_multi_task_model.pt"#' "$E"
@@ -82,6 +82,9 @@ sed -i "s#pretrained_model_path = r\"[^\"]*\"#pretrained_model_path = r\"microso
 sed -i "s#classification_train_path = r\"[^\"]*\"#classification_train_path = r\"$OUTJ/train.jsonl\"#" "$E"
 sed -i "s#classification_test_path = r\"[^\"]*\"#classification_test_path = r\"$OUTJ/test.jsonl\"#" "$E"
 sed -i "s#line_level_test_path = r\"[^\"]*\"#line_level_test_path = r\"$OUTJ/test_line_level.jsonl\"#" "$E"
+# numpy>=2 compat: get_line_level_metrics does float() on a [N,1] array element -> ravel first (same values)
+sed -i 's#\[float(val) for val in list(line_score)\]#[float(val) for val in np.asarray(line_score).ravel()]#' "$VD/data.py"
+sed -i 's#\[float(val) for val in list(han_line_score)\]#[float(val) for val in np.asarray(han_line_score).ravel()]#' "$VD/data.py"
 ( cd "$VD" && python multi_task_evaluate.py 2>&1 | tee "$OUT/eval.log" )
 
 echo "=== [7/7] upload: results -> results/baselines, weights -> checkpoints/baselines ==="
@@ -92,9 +95,13 @@ cp -f "$OUTDIR"/*.json "$OUTDIR"/*.png "$OUT/" 2>/dev/null || true          # ev
 [[ -f "$OUT/train.log" ]] || cp -f "$(ls -t "$WORK"/baseline_runs/edat_megavul_*/train.log 2>/dev/null | head -1)" "$OUT/" 2>/dev/null || true
 tar -I "$COMP" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" . && \
   rclone copy "${RUN_ID}_results.tar.gz" "$REMOTE/results/baselines/" --progress 2>/dev/null || true
-# weights = best model -> checkpoints/baselines/
-if [[ -f "$OUTDIR/best_multi_task_model.pt" ]]; then
-  tar -I "$COMP" -cf "${RUN_ID}_weights.tar.gz" -C "$OUTDIR" best_multi_task_model.pt && \
+# weights = best model -> checkpoints/baselines/ (find anywhere under $VD; verbose)
+WMODEL=$(find "$VD" -name "best_multi_task_model.pt" 2>/dev/null | head -1)
+if [[ -n "$WMODEL" ]]; then
+  echo "  weights: $WMODEL -> checkpoints/baselines"
+  tar -I "$COMP" -cf "${RUN_ID}_weights.tar.gz" -C "$(dirname "$WMODEL")" best_multi_task_model.pt && \
     rclone copy "${RUN_ID}_weights.tar.gz" "$REMOTE/checkpoints/baselines/" --progress 2>/dev/null || true
+else
+  echo "  WARN: best_multi_task_model.pt not found under $VD -> no weights uploaded"
 fi
 echo "DONE: $RUN_ID  results -> results/baselines, weights -> checkpoints/baselines  (metrics in $OUT/eval.log)"
