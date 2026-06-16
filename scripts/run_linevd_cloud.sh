@@ -140,8 +140,8 @@ if [[ -z "$PREP_RESTORED" && -d "$PREP_MARK" ]] && ! rclone ls "$REMOTE/data/bas
     | "${COMP[@]}" > "/tmp/$PREP_CACHE"
   rclone copy "/tmp/$PREP_CACHE" "$REMOTE/data/baselines/" --progress && rm -f "/tmp/$PREP_CACHE"
 fi
-# eval/localization metrics are emitted by linevd's eval; copy storage outputs
-cp -rf storage/processed "$OUT/" 2>/dev/null || true
+# eval/localization metrics are in storage/outputs. do NOT copy storage/processed — that is the
+# reusable graph cache (GBs, already uploaded to data/baselines as the prepcache) not a result.
 cp -rf storage/outputs "$OUT/" 2>/dev/null || true
 cd "$WORK"
 
