@@ -49,8 +49,10 @@ sed -i "s#line_level_train_path = r\"[^\"]*\"#line_level_train_path = r\"$OUTJ/t
 sed -i "s#line_level_valid_path = r\"[^\"]*\"#line_level_valid_path = r\"$OUTJ/val_line_level.jsonl\"#" "$T"
 sed -i "s#line_level_test_path = r\"[^\"]*\"#line_level_test_path = r\"$OUTJ/test_line_level.jsonl\"#" "$T"
 sed -i "s#use_pgd = False#use_pgd = True#" "$T"
-# batch_size=2 (their default) + PGD = ~3h/epoch -> bump for throughput (lower to 8 if OOM).
-# LVD has ~340k per-line samples so it's still the slow task; reduce num_epochs if needed.
+sed -i "s/pgd_epsilon = 0.03/pgd_epsilon = 0.02/" "$T"   # paper ϵ=0.02 (code ships 0.03)
+# PAPER best config: AdamW(✓ already), batch 32, ϵ0.02, lr 1e-5, epoch 20, PGD on, GraphCodeBERT+ctx.
+# batch 32 OOMs a 16GB card (~24GB needed) + grad-accum not implemented -> default 16 here; set
+# EDAT_BS=32 on a >=24GB GPU for the EXACT paper batch. code default 2 = impractically slow.
 sed -i "s/batch_size = 2$/batch_size = ${EDAT_BS:-16}/" "$T"
 [[ -n "${EDAT_EPOCHS:-}" ]] && sed -i "s/num_epochs = 20$/num_epochs = ${EDAT_EPOCHS}/" "$T"
 echo "  patched paths:"; grep -nE "pretrained_model_path|_path = r|use_pgd = |batch_size = |num_epochs = " "$T" | head
