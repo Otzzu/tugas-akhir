@@ -53,6 +53,9 @@ cp -f "$PKL/fcds_code_vocab.json" "$CAT/${PROJ}_code_vocab.json"
 git -C "$VP" checkout -- vul_categorization/module/CodeBert_Blstm.py vul_categorization/codebert_blstm.py 2>/dev/null || true
 sed -i "s/self.num_classes = 12/self.num_classes = $NC/" "$CAT/module/CodeBert_Blstm.py"
 sed -i "s/target_names=\[[^]]*\]/target_names=[str(i) for i in range($NC)]/" "$CAT/codebert_blstm.py"
+# paper config: Adam, batch 8, epoch 20, dropout 0.5 (code ships 16/30 -> match the paper).
+sed -i "s/self.batch_size = 16/self.batch_size = 8/" "$CAT/module/CodeBert_Blstm.py"
+sed -i "s/self.num_epochs = 30/self.num_epochs = 20/" "$CAT/module/CodeBert_Blstm.py"
 sed -i "s/os.environ\['CUDA_VISIBLE_DEVICES'\] = '3'/os.environ['CUDA_VISIBLE_DEVICES'] = '0'/" "$CAT/codebert_blstm.py"
 sed -i "s/^\(\s*\)return out$/\1return self.linear2(out)/" "$CAT/module/CodeBert_Blstm.py"
 grep -q "self.linear2(out)" "$CAT/module/CodeBert_Blstm.py" || { echo "ERR: linear2 patch failed"; exit 1; }

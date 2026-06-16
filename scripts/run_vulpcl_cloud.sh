@@ -71,6 +71,9 @@ echo "=== [5/6] patch model num_classes + target_names to $NC (faithful: config 
 git -C "$VP" checkout -- vul_categorization/module/CodeBert_Blstm.py vul_categorization/codebert_blstm.py 2>/dev/null || true
 sed -i "s/self.num_classes = 12/self.num_classes = $NC/" "$CAT/module/CodeBert_Blstm.py"
 sed -i "s/target_names=\[[^]]*\]/target_names=[str(i) for i in range($NC)]/" "$CAT/codebert_blstm.py"
+# paper config: Adam, batch 8, epoch 20, dropout 0.5 (code ships 16/30 -> match the paper).
+sed -i "s/self.batch_size = 16/self.batch_size = 8/" "$CAT/module/CodeBert_Blstm.py"
+sed -i "s/self.num_epochs = 30/self.num_epochs = 20/" "$CAT/module/CodeBert_Blstm.py"
 # single-GPU pod: repo hardcodes GPU 3 -> use 0.
 sed -i "s/os.environ\['CUDA_VISIBLE_DEVICES'\] = '3'/os.environ['CUDA_VISIBLE_DEVICES'] = '0'/" "$CAT/codebert_blstm.py"
 # forward returns the 768-d concat with the classifier (linear2) commented out -> wire it so
