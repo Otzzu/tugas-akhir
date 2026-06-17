@@ -132,7 +132,21 @@ fi
 
 echo "=== [5/6] train + localize ==="
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
-PYTHONPATH=. python sastvd/scripts/train_best.py 2>&1 | tee "$OUT/train.log"
+# EVAL_ONLY=1 + WEIGHTS_TAR=<run>_weights.tar.gz -> restore the saved .ckpt and load it DIRECTLY
+# (PL restores hparams from the ckpt), skipping the raytune train. Needs the prep cache (restored
+# in step 4) so the test DataModule builds without re-parsing. Avoids the full retrain.
+EVAL_ONLY="${EVAL_ONLY:-}"; WEIGHTS_TAR="${WEIGHTS_TAR:-}"; export LINEVD_CKPT=""
+if [[ -n "$EVAL_ONLY" ]]; then
+  [[ -n "$WEIGHTS_TAR" ]] || { echo "ERR: EVAL_ONLY=1 needs WEIGHTS_TAR=<...>_weights.tar.gz"; exit 1; }
+  CKDIR="$WORK/linevd_eval_ckpt"; mkdir -p "$CKDIR"
+  rclone copy "$REMOTE/checkpoints/baselines/$WEIGHTS_TAR" "$CKDIR/" --progress
+  tar -I "${COMP[0]}" -xf "$CKDIR/$WEIGHTS_TAR" -C "$CKDIR" && rm -f "$CKDIR/$WEIGHTS_TAR"
+  export LINEVD_CKPT="$(find "$CKDIR" -name '*.ckpt' | head -1)"
+  [[ -n "$LINEVD_CKPT" ]] || { echo "ERR: no .ckpt found inside $WEIGHTS_TAR"; exit 1; }
+  echo "  EVAL_ONLY: loaded $LINEVD_CKPT (skip raytune train)"
+else
+  PYTHONPATH=. python sastvd/scripts/train_best.py 2>&1 | tee "$OUT/train.log"
+fi
 
 # train_best.py ONLY trains — the test + statement-localization metrics come from rqtest
 # (trainer.test on each best checkpoint -> get_relevant_metrics -> storage/outputs/rq_results_new/*.csv).
@@ -145,24 +159,32 @@ from glob import glob
 import pandas as pd
 import pytorch_lightning as pl
 import sastvd as svd, sastvd.linevd as lvd
-from ray.tune import Analysis
-from sastvd.scripts.rqtest import main
-raytune_dirs = glob(str(svd.processed_dir() / "raytune_*_-1"))
-tune_dirs = [i for j in [glob(f"{rd}/*") for rd in raytune_dirs] for i in j]
-df = pd.concat([Analysis(d).dataframe() for d in tune_dirs])
-if "config/splits" not in df.columns: df["config/splits"] = "default"
-if "config/embtype" not in df.columns: df["config/embtype"] = "codebert"
-configs = df[["config/gtype", "config/splits", "config/embtype"]].drop_duplicates().to_dict("records")
-for c in configs:
-    main(c, df)
-print("EVAL DONE -> outputs/rq_results_new")
-# --- dump per-statement (func_id,line,score,is_flaw) from the best-val checkpoint for OUR metric ---
-best = df.loc[df["val_auroc"].astype(float).idxmax()]
-dm = lvd.BigVulDatasetLineVDDataModule(batch_size=1024, nsampling_hops=2,
-        gtype=best["config/gtype"], splits=best["config/splits"], feat=best["config/embtype"])
-chkpts = sorted(glob(best["logdir"] + "/checkpoint_*"))
-model = lvd.LitGNN.load_from_checkpoint(chkpts[-1] + "/checkpoint", strict=False)
-pl.Trainer(gpus=1, default_root_dir="/tmp/").test(model, dm)
+ckpt = os.environ.get("LINEVD_CKPT")
+if ckpt:
+    # EVAL_ONLY: load the restored ckpt directly (hparams come from the ckpt) — no raytune needed
+    print("EVAL_ONLY: loading", ckpt)
+    model = lvd.LitGNN.load_from_checkpoint(ckpt, strict=False)
+    gt = getattr(model.hparams, "gtype", "pdg+raw")
+    emb = getattr(model.hparams, "embtype", "codebert")
+    sp = getattr(model.hparams, "splits", "default")
+    dm = lvd.BigVulDatasetLineVDDataModule(batch_size=1024, nsampling_hops=2, gtype=gt, splits=sp, feat=emb)
+    pl.Trainer(gpus=1, default_root_dir="/tmp/").test(model, dm)
+else:
+    from ray.tune import Analysis
+    from sastvd.scripts.rqtest import main
+    raytune_dirs = glob(str(svd.processed_dir() / "raytune_*_-1"))
+    tune_dirs = [i for j in [glob(f"{rd}/*") for rd in raytune_dirs] for i in j]
+    df = pd.concat([Analysis(d).dataframe() for d in tune_dirs])
+    if "config/splits" not in df.columns: df["config/splits"] = "default"
+    if "config/embtype" not in df.columns: df["config/embtype"] = "codebert"
+    for c in df[["config/gtype", "config/splits", "config/embtype"]].drop_duplicates().to_dict("records"):
+        main(c, df)
+    print("EVAL DONE -> outputs/rq_results_new")
+    best = df.loc[df["val_auroc"].astype(float).idxmax()]
+    dm = lvd.BigVulDatasetLineVDDataModule(batch_size=1024, nsampling_hops=2,
+            gtype=best["config/gtype"], splits=best["config/splits"], feat=best["config/embtype"])
+    model = lvd.LitGNN.load_from_checkpoint(sorted(glob(best["logdir"] + "/checkpoint_*"))[-1] + "/checkpoint", strict=False)
+    pl.Trainer(gpus=1, default_root_dir="/tmp/").test(model, dm)
 rows = []
 for fid, fn in enumerate(model.all_funcs):   # fn = [node_pred(softmax [N,2]), _VULN, pred_func, _LINE]
     sc, vu, _, ln = fn
