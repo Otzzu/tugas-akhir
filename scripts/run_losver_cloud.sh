@@ -34,6 +34,7 @@ echo "=== [2/7] deps + transformers-compat patch (POD env, transformers 4.48; no
 # some pod base images ship torch only (no transformers/sklearn) -> install if missing.
 python -c "import transformers" 2>/dev/null || pip install -q transformers
 python -c "import sklearn, pandas, numpy, tqdm" 2>/dev/null || pip install -q scikit-learn pandas numpy tqdm
+python -c "import pyarrow" 2>/dev/null || pip install -q pyarrow   # export_losver_jsonl reads .parquet
 pip install -q tensorboardX
 python scripts/losver_patch_compat.py --files \
   src/losver/classification/run_line_CWE.py \
