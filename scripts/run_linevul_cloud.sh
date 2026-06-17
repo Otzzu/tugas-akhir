@@ -35,6 +35,9 @@ pip install -q captum
 git -C src/LineVul checkout -- linevul/linevul_main.py 2>/dev/null || true
 sed -i '/is_attention = True if reasoning_method == "attention" else False/a\            __import__("os").environ.get("LINEVUL_LOC_CSV") and is_attention and __import__("pandas").DataFrame([(fid,ln,float(s[0]),int(s[1])) for fid,fn in enumerate(all_pos_score_label) for ln,s in enumerate(fn)], columns=["func_id","line_number","score","is_flaw"]).to_csv(__import__("os").environ["LINEVUL_LOC_CSV"], index=False)' \
   src/LineVul/linevul/linevul_main.py
+# newer transformers defaults to SDPA attention, which returns NO weights with output_attentions=True
+# -> attentions[0][0] IndexError in line_level_localization. Force the eager attention backend.
+sed -i '/config = RobertaConfig.from_pretrained(/a\    config._attn_implementation = "eager"' src/LineVul/linevul/linevul_main.py
 python -c "import torch; print('torch', torch.__version__, '| cuda op:', (torch.randn(2).cuda()+1).sum().item())"
 
 echo "=== [2/5] data ==="
