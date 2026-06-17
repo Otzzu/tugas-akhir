@@ -220,7 +220,8 @@ download_dataset() {
     local storage="inmemory"
     if [[ -n "$config" && -f "$config" ]]; then
         local cfg_storage
-        cfg_storage=$(grep -E '^\s+storage:\s+' "$config" | awk '{print $2}' | head -1 || true)
+        # POSIX classes (not \s) so BusyBox grep on minimal pods detects it too; tr strips CR (CRLF configs).
+        cfg_storage=$(grep -E '^[[:space:]]+storage:[[:space:]]+' "$config" | awk '{print $2}' | tr -d '\r' | head -1 || true)
         [[ -n "$cfg_storage" ]] && storage="$cfg_storage"
     fi
 
