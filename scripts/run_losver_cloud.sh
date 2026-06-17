@@ -24,6 +24,8 @@ export LOSVER_PRED_CSV="$OUT/losver_cls_preds.csv"
 
 echo "=== [1/7] LOSVER present (vendored; clone only if missing) ==="
 [[ -d src/losver ]] || git clone --depth 1 https://github.com/waroad/losver.git src/losver
+# reset patched files to pristine so re-running on a persistent pod re-applies seds cleanly (no double-patch)
+git -C src/losver checkout -- classification/run_line_CWE.py classification/run_weighted_CWE.py classification/run_base_CWE.py 2>/dev/null || true
 
 echo "=== [2/7] deps + transformers-compat patch (POD env, transformers 4.48; no venv) ==="
 # Run in the pod env (correct torch). LOSVER pins transformers 4.19 only for AdamW/WEIGHTS_NAME

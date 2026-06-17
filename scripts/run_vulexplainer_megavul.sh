@@ -68,6 +68,8 @@ PY
 [[ -f my-languages.so ]] || { echo "ERR: parser my-languages.so build failed"; exit 1; }
 cd "$WORK"
 
+# reset patched mains to pristine so re-running on a persistent pod re-applies seds cleanly (no double-patch)
+git -C "$VPROOT" checkout -- VulExplainer/VulExplainer_GraphCodeBERT/teacher_main.py VulExplainer/VulExplainer_GraphCodeBERT/student_graphcodebert_main.py 2>/dev/null || true
 # single-GPU pod: repo hardcodes cuda:1 in both mains -> use cuda:0
 sed -i 's/cuda:1/cuda:0/g' "$VARIANT/teacher_main.py" "$VARIANT/student_graphcodebert_main.py"
 # teacher + student dump preds to ./raw_prediction/ (CWD=$VARIANT) but never mkdir it -> crash at test
