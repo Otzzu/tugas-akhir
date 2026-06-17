@@ -13,6 +13,15 @@ RUN_ID="losver_megavul_ml1024_$(date +%Y%m%d_%H%M%S)"
 WORK="$PWD"
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
 
+# EVAL_ONLY=1 -> skip training: restore saved weights from checkpoints/baselines, run --do_test only,
+# dump test predictions, and recompute MACRO-F1 via compute_baseline_metrics (LOSVER logs only weighted).
+# Requires WEIGHTS_TAR=<run>_weights.tar.gz (name in checkpoints/baselines). [VERIFY on pod]
+EVAL_ONLY="${EVAL_ONLY:-}"
+WEIGHTS_TAR="${WEIGHTS_TAR:-}"
+if [[ -n "$EVAL_ONLY" && -z "$WEIGHTS_TAR" ]]; then echo "ERR: EVAL_ONLY=1 needs WEIGHTS_TAR=<...>_weights.tar.gz"; exit 1; fi
+TRAINFLAG="--do_train"; [[ -n "$EVAL_ONLY" ]] && TRAINFLAG=""
+export LOSVER_PRED_CSV="$OUT/losver_cls_preds.csv"
+
 echo "=== [1/7] LOSVER present (vendored; clone only if missing) ==="
 [[ -d src/losver ]] || git clone --depth 1 https://github.com/waroad/losver.git src/losver
 
@@ -52,18 +61,40 @@ python scripts/losver_patch_labels.py \
           src/losver/classification/run_base_CWE.py \
   --labels "$LABELS"
 
-echo "=== [6/7] train: localizer -> weighted classifier ==="
+# EVAL_ONLY: inject a test-predictions dump (y_true,y_pred) into test() so compute_baseline_metrics
+# can report MACRO-F1. Injected right after `preds = np.argmax(...)` (also hits unused evaluate(), harmless).
+if [[ -n "$EVAL_ONLY" ]]; then
+  sed -i '/preds = np.argmax(logits, axis=1)/a\    __import__("pandas").DataFrame({"y_true": list(labels), "y_pred": list(preds)}).to_csv(__import__("os").environ["LOSVER_PRED_CSV"], index=False)' \
+    src/losver/classification/run_weighted_CWE.py
+fi
+
+# EVAL_ONLY: restore saved localizer+classifier weights (tar holds localizer1/ + classifier1/ with
+# checkpoint-best-f1) into $OUT so --do_test loads them ($OUT/classifier -> code appends fold "1").
+if [[ -n "$EVAL_ONLY" ]]; then
+  echo "=== [6a/7] restore weights $WEIGHTS_TAR -> $OUT ==="
+  rclone copy "$REMOTE/checkpoints/baselines/$WEIGHTS_TAR" "$OUT/" --progress
+  tar -I "$(command -v pigz || echo gzip)" -xf "$OUT/$WEIGHTS_TAR" -C "$OUT" && rm -f "$OUT/$WEIGHTS_TAR"
+fi
+
+echo "=== [6/7] ${EVAL_ONLY:+eval-only }localizer -> weighted classifier ==="
 cd src/losver/classification
 U=../unixcoder-nine
 python run_line_CWE.py --output_dir="$OUT/localizer" --model_type roberta \
   --model_name_or_path=$U --tokenizer_name=$U \
   --train_data_file=CWE_train_unix_512.jsonl --eval_data_file=CWE_val_unix_512.jsonl --test_data_file=CWE_test_unix_512.jsonl \
-  --block_size=512 --seed=123456 --do_train --do_test 2>&1 | tee "$OUT/localizer.log"
+  --block_size=512 --seed=123456 $TRAINFLAG --do_test 2>&1 | tee "$OUT/localizer.log"
 python run_weighted_CWE.py --output_dir="$OUT/classifier" --model_type roberta \
   --model_name_or_path=$U --tokenizer_name=$U \
   --localized_location="$OUT/localizer" \
-  --block_size=512 --seed=123456 --do_train --do_test 2>&1 | tee "$OUT/classifier.log"
+  --block_size=512 --seed=123456 $TRAINFLAG --do_test 2>&1 | tee "$OUT/classifier.log"
 cd "$WORK"
+
+# EVAL_ONLY: recompute MACRO-F1 (+ weighted/micro + per-class report) from the dumped predictions.
+if [[ -n "$EVAL_ONLY" ]]; then
+  echo "=== [6b/7] recompute macro-F1 from dumped predictions ==="
+  PYTHONPATH=src python scripts/compute_baseline_metrics.py --name LOSVER \
+    --classification "$LOSVER_PRED_CSV" --out "$OUT/losver_recomputed_metrics.json" 2>&1 | tee "$OUT/recomputed_metrics.log"
+fi
 
 echo "=== [7/7] upload weights + results ==="
 # results MUST exclude model artifacts. LOSVER has TWO models (localizer/ + classifier/),
@@ -72,9 +103,10 @@ tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_results.tar.gz" \
   --exclude='*.bin' --exclude='*.pt' --exclude='*.safetensors' --exclude='*.ckpt' --exclude='optimizer*' \
   -C "$OUT" .
 rclone copy "${RUN_ID}_results.tar.gz" "$REMOTE/results/baselines/" --progress
-# weights = BOTH models (localizer + classifier), bundled together -> checkpoints/baselines
+# weights = BOTH models (localizer + classifier), bundled together -> checkpoints/baselines.
+# EVAL_ONLY just restored these from Drive -> skip re-upload (identical).
 mapfile -t WBINS < <(find "$OUT" -name "*.bin")
-if [[ ${#WBINS[@]} -gt 0 ]]; then
+if [[ -z "$EVAL_ONLY" && ${#WBINS[@]} -gt 0 ]]; then
   REL=(); for b in "${WBINS[@]}"; do REL+=("$(realpath --relative-to="$OUT" "$b")"); done
   tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_weights.tar.gz" -C "$OUT" "${REL[@]}"
   rclone copy "${RUN_ID}_weights.tar.gz" "$REMOTE/checkpoints/baselines/" --progress
