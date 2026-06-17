@@ -87,12 +87,18 @@ if [[ -n "$EVAL_ONLY" ]]; then
   # weights tar = the checkpoint-best-acc/ dir (cnnteacher.bin + soft_distil_model_*.bin)
   rclone copy "$REMOTE/checkpoints/baselines/$WEIGHTS_TAR" "$VARIANT/saved_models/" --progress
   tar -I "$(command -v pigz || echo gzip)" -xf "$VARIANT/saved_models/$WEIGHTS_TAR" -C "$VARIANT/saved_models" && rm -f "$VARIANT/saved_models/$WEIGHTS_TAR"
-  SBIN=$(find "$VARIANT/saved_models/checkpoint-best-acc" -name "soft_distil_model_*.bin" | head -1)
+  # prefer the alpha07 headline model (soft_distil_model_07) if present, else fall back to _08 / any
+  CK="$VARIANT/saved_models/checkpoint-best-acc"; SBIN=""
+  for c in soft_distil_model_07.bin soft_distil_model_08.bin; do [[ -f "$CK/$c" ]] && { SBIN="$CK/$c"; break; }; done
+  [[ -n "$SBIN" ]] || SBIN=$(find "$CK" -name "soft_distil_model_*.bin" | sort | head -1)
   [[ -n "$SBIN" ]] || { echo "ERR: no student soft_distil_model_*.bin in restored weights"; exit 1; }
   MNAME=$(basename "$SBIN")
-  echo "  student checkpoint: $MNAME"
+  # BEST_BETA is chosen on val at train time (not saved); --do_test alone leaves it undefined. Pass it.
+  # Both shipped runs ended at best_beta=0.9 -> default 0.9 (override with VULEXP_BETA).
+  BETA="${VULEXP_BETA:-0.9}"
+  echo "  student checkpoint: $MNAME ; beta=$BETA"
   echo "=== [6/7] student --do_test only (loads teacher + student, no training) ==="
-  ( cd "$VARIANT" && python student_graphcodebert_main.py --alpha 0.7 --output_dir=./saved_models \
+  ( cd "$VARIANT" && python student_graphcodebert_main.py --alpha 0.7 --beta "$BETA" --output_dir=./saved_models \
       --model_name="$MNAME" --tokenizer_name=microsoft/graphcodebert-base --model_name_or_path=microsoft/graphcodebert-base \
       --train_data_file=../../data/big_vul/train.csv --eval_data_file=../../data/big_vul/val.csv --test_data_file=../../data/big_vul/test.csv \
       --do_test --block_size 512 --eval_batch_size 8 --seed 123456 ) 2>&1 | tee "$OUT/eval_soft_distil.log"
