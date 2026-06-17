@@ -10,7 +10,7 @@
 # NOTE: VulExplainer parses C with the C# tree-sitter parser (DFG_csharp) — their design, kept as-is.
 # Paper config shipped in the .sh (teacher 50ep/bs128/5e-3, student 50ep/bs8/2e-5/alpha0.7) — unchanged.
 # Usage (pod, project root):  nohup bash scripts/run_vulexplainer_megavul.sh > vulexp.log 2>&1 &
-set -uo pipefail
+set -euo pipefail
 
 REMOTE="gdrive-mesach:tugas-akhir"
 DATA_TAR="megavul_ml1024_baselines_20260613.tar.gz"

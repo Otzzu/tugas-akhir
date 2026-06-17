@@ -14,7 +14,7 @@
 # (needs free space + bandwidth for the bloated download). Usage:
 #   bash scripts/repackage_baseline_drive.sh <results_tar_name>
 #   bash scripts/repackage_baseline_drive.sh linevul_megavul_ml1024_20260613_161040_results.tar.gz
-set -uo pipefail
+set -euo pipefail
 
 REMOTE="gdrive-mesach:tugas-akhir"
 ZIP="${1:?usage: repackage_baseline_drive.sh <results_tar_name>}"
