@@ -22,7 +22,7 @@ python -c "import torch; print('torch', torch.__version__, '| cuda op:', (torch.
 echo "=== [2/5] data ==="
 if [[ ! -d megavul_ml1024 ]]; then
   rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress
-  tar -xzf "$DATA_TAR"
+  tar -I "$(command -v pigz || echo gzip)" -xf "$DATA_TAR"
 fi
 D="$WORK/megavul_ml1024/linevul"
 
@@ -49,8 +49,12 @@ cd "$WORK"
 
 echo "=== [5/5] upload weights + results ==="
 # weights = best model .bin under OUT/checkpoint-best-f1; results = logs + any csv
+# results MUST exclude model artifacts (the .bin goes to checkpoints/baselines separately,
+# bundling it here bloats the results tar to ~800MB — see repackage_baseline_drive.sh).
 cp -f "$OUT"/*.log "$OUT"/ 2>/dev/null || true
-tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" .
+tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_results.tar.gz" \
+  --exclude='*.bin' --exclude='*.pt' --exclude='*.safetensors' --exclude='*.ckpt' --exclude='optimizer*' \
+  -C "$OUT" .
 rclone copy "${RUN_ID}_results.tar.gz" "$REMOTE/results/baselines/" --progress
 # weights separately (can be large)
 WBIN=$(find "$OUT" -name "*.bin" | head -1 || true)

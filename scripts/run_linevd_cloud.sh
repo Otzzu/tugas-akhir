@@ -48,7 +48,7 @@ python -c "import torch,dgl; print('torch',torch.__version__,'dgl',dgl.__version
 
 echo "=== [3/6] data + LineVD cache files (our split + flaw GT, no code edit) ==="
 if [[ ! -d megavul_ml1024 ]]; then
-  rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar -xzf "$DATA_TAR"
+  rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar -I "$(command -v pigz || echo gzip)" -xf "$DATA_TAR"
 fi
 cd src/linevd
 PYTHONPATH=. python "$WORK/scripts/linevd_prepare_megavul.py" --in-dir "$WORK/megavul_ml1024/linevd"
@@ -133,6 +133,27 @@ fi
 echo "=== [5/6] train + localize ==="
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
 PYTHONPATH=. python sastvd/scripts/train_best.py 2>&1 | tee "$OUT/train.log"
+
+# train_best.py ONLY trains — the test + statement-localization metrics come from rqtest
+# (trainer.test on each best checkpoint -> get_relevant_metrics -> storage/outputs/rq_results_new/*.csv).
+# rqtest.py is a while-True daemon; run ONE pass inline so the metrics actually get produced + uploaded.
+echo "=== [5b/6] eval: trainer.test on best checkpoints -> storage/outputs/rq_results_new ==="
+PYTHONPATH=. python - <<'PYEOF' 2>&1 | tee "$OUT/eval.log" || true
+from glob import glob
+import pandas as pd
+import sastvd as svd, sastvd.linevd as lvd
+from ray.tune import Analysis
+from sastvd.scripts.rqtest import main
+raytune_dirs = glob(str(svd.processed_dir() / "raytune_*_-1"))
+tune_dirs = [i for j in [glob(f"{rd}/*") for rd in raytune_dirs] for i in j]
+df = pd.concat([Analysis(d).dataframe() for d in tune_dirs])
+if "config/splits" not in df.columns: df["config/splits"] = "default"
+if "config/embtype" not in df.columns: df["config/embtype"] = "codebert"
+configs = df[["config/gtype", "config/splits", "config/embtype"]].drop_duplicates().to_dict("records")
+for c in configs:
+    main(c, df)
+print("EVAL DONE -> outputs/rq_results_new")
+PYEOF
 # Cache the prep on Drive if we built it this run (not if restored) so future pods skip it.
 if [[ -z "$PREP_RESTORED" && -d "$PREP_MARK" ]] && ! rclone ls "$REMOTE/data/baselines/$PREP_CACHE" >/dev/null 2>&1; then
   echo "  caching LineVD prep to Drive ..."

@@ -32,7 +32,7 @@ cd src/losver && python download_unixcoder.py && cd "$WORK"   # -> src/losver/un
 
 echo "=== [4/7] data + build LOSVER jsonl from our split (our flaw GT) ==="
 if [[ ! -d megavul_ml1024 ]]; then
-  rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar -xzf "$DATA_TAR"
+  rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar -I "$(command -v pigz || echo gzip)" -xf "$DATA_TAR"
 fi
 PYTHONPATH=src python scripts/export_losver_jsonl.py \
   --in-dir megavul_ml1024/linevd --out-dir megavul_ml1024/losver \
@@ -66,11 +66,17 @@ python run_weighted_CWE.py --output_dir="$OUT/classifier" --model_type roberta \
 cd "$WORK"
 
 echo "=== [7/7] upload weights + results ==="
-tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" .
+# results MUST exclude model artifacts. LOSVER has TWO models (localizer/ + classifier/),
+# each a UniXcoder .bin (~480MB) — bundling both here bloats results to >1GB.
+tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_results.tar.gz" \
+  --exclude='*.bin' --exclude='*.pt' --exclude='*.safetensors' --exclude='*.ckpt' --exclude='optimizer*' \
+  -C "$OUT" .
 rclone copy "${RUN_ID}_results.tar.gz" "$REMOTE/results/baselines/" --progress
-WBIN=$(find "$OUT" -name "*.bin" | head -1 || true)
-if [[ -n "$WBIN" ]]; then
-  tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_weights.tar.gz" -C "$OUT" "$(realpath --relative-to="$OUT" "$WBIN")"
+# weights = BOTH models (localizer + classifier), bundled together -> checkpoints/baselines
+mapfile -t WBINS < <(find "$OUT" -name "*.bin")
+if [[ ${#WBINS[@]} -gt 0 ]]; then
+  REL=(); for b in "${WBINS[@]}"; do REL+=("$(realpath --relative-to="$OUT" "$b")"); done
+  tar -I "$(command -v pigz || echo gzip)" -cf "${RUN_ID}_weights.tar.gz" -C "$OUT" "${REL[@]}"
   rclone copy "${RUN_ID}_weights.tar.gz" "$REMOTE/checkpoints/baselines/" --progress
 fi
 echo "DONE: $RUN_ID -> results/baselines/${RUN_ID}_results.tar.gz (+weights)"
