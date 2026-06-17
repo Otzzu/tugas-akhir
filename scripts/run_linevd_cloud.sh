@@ -175,7 +175,22 @@ if ckpt:
     emb = getattr(model.hparams, "embtype", "codebert")
     sp = getattr(model.hparams, "splits", "default")
     dm = lvd.BigVulDatasetLineVDDataModule(batch_size=1024, nsampling_hops=2, gtype=gt, splits=sp, feat=emb)
-    mk_trainer().test(model, dm)
+    # Manual test loop — bypass trainer.test/test_epoch_end (PL2.x removed it; their metric code also
+    # breaks on numpy LongTensor). test_step returns [logits, labels, preds]; preds = per-func list.
+    import torch as _th
+    try: dm.setup("test")
+    except Exception: pass
+    dev = "cuda" if _th.cuda.is_available() else "cpu"
+    model = model.to(dev).eval()
+    all_funcs = []
+    with _th.no_grad():
+        for batch in dm.test_dataloader():
+            try: batch = batch.to(dev)
+            except Exception: pass
+            out = model.test_step(batch, 0)
+            all_funcs += out[2]
+    model.all_funcs = all_funcs
+    print("manual test done, funcs:", len(all_funcs))
 else:
     from ray.tune import Analysis
     from sastvd.scripts.rqtest import main
