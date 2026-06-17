@@ -29,6 +29,9 @@ echo "=== [2/7] deps + transformers-compat patch (POD env, transformers 4.48; no
 # Run in the pod env (correct torch). LOSVER pins transformers 4.19 only for AdamW/WEIGHTS_NAME
 # (removed in newer transformers); we patch those to torch.optim instead of downgrading
 # (4.19 + modern torch breaks on torch._six). torch/sklearn/pandas/numpy/tqdm = project env.
+# some pod base images ship torch only (no transformers/sklearn) -> install if missing.
+python -c "import transformers" 2>/dev/null || pip install -q transformers
+python -c "import sklearn, pandas, numpy, tqdm" 2>/dev/null || pip install -q scikit-learn pandas numpy tqdm
 pip install -q tensorboardX
 python scripts/losver_patch_compat.py --files \
   src/losver/classification/run_line_CWE.py \
@@ -37,7 +40,7 @@ python scripts/losver_patch_compat.py --files \
 python -c "import torch; print('torch', torch.__version__, '| cuda op:', (torch.randn(2).cuda()+1).sum().item())"
 
 echo "=== [3/7] UniXcoder model ==="
-cd src/losver && python download_unixcoder.py && cd "$WORK"   # -> src/losver/unixcoder-nine
+( cd src/losver && python download_unixcoder.py )   # subshell -> parent CWD stays $WORK even on failure; -> src/losver/unixcoder-nine
 
 echo "=== [4/7] data + build LOSVER jsonl from our split (our flaw GT) ==="
 if [[ ! -d megavul_ml1024 ]]; then
