@@ -89,7 +89,20 @@ sed -i "s#line_level_test_path = r\"[^\"]*\"#line_level_test_path = r\"$OUTJ/tes
 # numpy>=2 compat: get_line_level_metrics does float() on a [N,1] array element -> ravel first (same values)
 sed -i 's#\[float(val) for val in list(line_score)\]#[float(val) for val in np.asarray(line_score).ravel()]#' "$VD/data.py"
 sed -i 's#\[float(val) for val in list(han_line_score)\]#[float(val) for val in np.asarray(han_line_score).ravel()]#' "$VD/data.py"
+# PER-FUNCTION localization dump: evaluate_line_level flattens scores GLOBALLY (pooled), losing func
+# boundaries -> EDAT's native IFA/Top-k are global, NOT head-to-head. Capture per-function rows
+# (func_id,line_number,score,is_flaw) so compute_baseline_metrics gives OUR per-function metrics.
+# [VERIFY on pod] 3-point inject: init list, per-sample extend before the flatten, write after loop.
+sed -i '/^    file_count = 0$/a\    _loc_rows = []' "$E"
+sed -i '/line_scores = torch.softmax(logits, dim=-1)\[:, :, 1\].cpu().numpy().flatten().tolist()/i\            __import__("os").environ.get("EDAT_LOC_CSV") and _loc_rows.extend([(file_count*100000+_b,_j,float(_v),int(line_labels[_b][_j].item())) for _b,_row in enumerate(torch.softmax(logits,dim=-1)[:,:,1].detach().cpu().numpy()) for _j,_v in enumerate(_row) if int(line_labels[_b][_j].item()) in (0,1)])' "$E"
+sed -i '/min_length = min(len(all_line_scores)/i\    __import__("os").environ.get("EDAT_LOC_CSV") and __import__("pandas").DataFrame(_loc_rows, columns=["func_id","line_number","score","is_flaw"]).to_csv(__import__("os").environ["EDAT_LOC_CSV"], index=False)' "$E"
+export EDAT_LOC_CSV="$OUT/edat_loc_scores.csv"
 ( cd "$VD" && python multi_task_evaluate.py 2>&1 | tee "$OUT/eval.log" )
+# recompute OUR per-function localization metrics (IFA/Top-k/R@LOC/Effort) from the dumped scores
+if [[ -f "$EDAT_LOC_CSV" ]]; then
+  PYTHONPATH="$WORK/src" python "$WORK/scripts/compute_baseline_metrics.py" --name EDAT-LVD \
+    --localization "$EDAT_LOC_CSV" --out "$OUT/edat_recomputed_localization.json" 2>&1 | tee "$OUT/recomputed_localization.log" || true
+fi
 
 echo "=== [7/7] upload: results -> results/baselines, weights -> checkpoints/baselines ==="
 cd "$WORK"
