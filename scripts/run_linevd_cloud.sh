@@ -201,7 +201,8 @@ fi
 # Cache the prep on Drive if we built it this run (not if restored) so future pods skip it.
 if [[ -z "$PREP_RESTORED" && -d "$PREP_MARK" ]] && ! rclone ls "$REMOTE/data/baselines/$PREP_CACHE" >/dev/null 2>&1; then
   echo "  caching LineVD prep to Drive ..."
-  tar -cf - storage/cache/codebert_method_level "$PREP_MARK" storage/processed/bigvul/d2v_False 2>/dev/null \
+  tar -cf - storage/cache/codebert_method_level "$PREP_MARK" \
+      storage/processed/bigvul/d2v_False storage/processed/bigvul/glove_False 2>/dev/null \
     | "${COMP[@]}" > "/tmp/$PREP_CACHE"
   rclone copy "/tmp/$PREP_CACHE" "$REMOTE/data/baselines/" --progress && rm -f "/tmp/$PREP_CACHE"
 fi
