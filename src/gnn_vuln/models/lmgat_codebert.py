@@ -84,7 +84,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  localization_encoder="gnn", use_flash_attention=False, compile_lm=False,
                  use_grad_checkpoint=True,
                  stmt_both_mode="concat", stmt_lm_alpha=0.5,
-                 cross_task_method="none", graph_pool="mean",
+                 cross_task_method="none", graph_pool="mean", graph_pool_proj_dim=0,
                  mmoe_task_encoder=False, cross_task_residual=True,
                  mmoe_loc_transformer=False, live_lm="func",
                  gnn_model="gat", num_relations=7, num_bases=None,
@@ -202,6 +202,14 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             self._pool_out_dim = num_layers * hidden_dim
         else:
             self._pool_out_dim = hidden_dim
+        # Optional projection on the graph-pool output to rebalance the GNN:LM ratio
+        # in the fused vector (e.g. jknet 4×hidden drowning the 768D LM 4:1). Projected
+        # before fusion so func_head / cross_task / supcon all see the balanced dim.
+        if graph_pool_proj_dim and graph_pool_proj_dim > 0:
+            self.graph_proj = nn.Linear(self._pool_out_dim, graph_pool_proj_dim)
+            self._pool_out_dim = graph_pool_proj_dim
+        else:
+            self.graph_proj = None
         _fused_dim = self._pool_out_dim + self._lm_dim
         self._mtl = func_head_type == "mtl"
         self._imtl = func_head_type == "imtl"
@@ -312,6 +320,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             h_graph = 0.8 * global_max_pool(h_jk, batch) + 0.6 * global_mean_pool(h_jk, batch)
         else:
             h_graph = global_mean_pool(h, batch)
+        if self.graph_proj is not None:
+            h_graph = self.graph_proj(h_graph)
         B = h_graph.size(0)
         # Per-node GNN features for localization (optionally unit-normed, symmetric to F6 per_token norm).
         h_loc = F.normalize(h, dim=-1) if self._normalize_gnn_output else h
@@ -479,6 +489,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             mmoe_task_encoder=getattr(cfg.model, "mmoe_task_encoder", False),
             cross_task_residual=getattr(cfg.model, "cross_task_residual", True),
             graph_pool=getattr(cfg.model, "graph_pool", "mean"),
+            graph_pool_proj_dim=getattr(cfg.model, "graph_pool_proj_dim", 0),
             mmoe_loc_transformer=getattr(cfg.model, "mmoe_loc_transformer", False),
             live_lm=getattr(cfg.model, "live_lm", "func"),
             gnn_model=getattr(cfg.model, "gnn_model", "gat"),
