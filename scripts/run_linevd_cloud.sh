@@ -31,7 +31,9 @@ if ! python -c "import torch,dgl" 2>/dev/null; then
   # dgl install drags nvidia-nvjitlink-cu12 to a version that breaks torch's .so lookup — refix
   pip install -q --upgrade --force-reinstall torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
 fi
-pip install -q pytorch-lightning networkx fastparquet pydantic   # pydantic: DGL graphbolt dep
+# PL<2.0: LitGNN uses test_step->test_epoch_end(outputs) + Trainer(gpus=) — both REMOVED in PL 2.x.
+# Force-reinstall in case the pod already has 2.x (model.all_funcs is built inside test_epoch_end).
+pip install -q "pytorch-lightning<2.0" networkx fastparquet pydantic   # pydantic: DGL graphbolt dep
 # torchmetrics 1.x eagerly imports torchvision; the pod's system torchvision (0.26+cu128,
 # built for torch 2.11) ABI-mismatches our torch 2.4.1 -> `torchvision::nms does not exist`.
 # Install the torch-2.4.1-matched build into the venv to shadow it. --no-deps keeps the pin.
