@@ -198,13 +198,14 @@ if [[ -f "$LINEVD_LOC_CSV" ]]; then
   PYTHONPATH="$WORK/src" python "$WORK/scripts/compute_baseline_metrics.py" --name LineVD \
     --localization "$LINEVD_LOC_CSV" --out "$OUT/linevd_recomputed_metrics.json" 2>&1 | tee "$OUT/recomputed_metrics.log" || true
 fi
-# Cache the prep on Drive if we built it this run (not if restored) so future pods skip it.
-if [[ -z "$PREP_RESTORED" && -d "$PREP_MARK" ]] && ! rclone ls "$REMOTE/data/baselines/$PREP_CACHE" >/dev/null 2>&1; then
-  echo "  caching LineVD prep to Drive ..."
+# Cache the prep on Drive so future runs skip the d2v/glove rebuild. Upload when: prep exists AND
+# (LINEVD_REFRESH_CACHE=1 to OVERWRITE a stale/incomplete cache, OR it was freshly built + not on Drive).
+if [[ -d "$PREP_MARK" ]] && { [[ -n "${LINEVD_REFRESH_CACHE:-}" ]] || { [[ -z "$PREP_RESTORED" ]] && ! rclone ls "$REMOTE/data/baselines/$PREP_CACHE" >/dev/null 2>&1; }; }; then
+  echo "  caching LineVD prep (codebert + d2v + glove) to Drive ..."
   tar -cf - storage/cache/codebert_method_level "$PREP_MARK" \
       storage/processed/bigvul/d2v_False storage/processed/bigvul/glove_False 2>/dev/null \
     | "${COMP[@]}" > "/tmp/$PREP_CACHE"
-  rclone copy "/tmp/$PREP_CACHE" "$REMOTE/data/baselines/" --progress && rm -f "/tmp/$PREP_CACHE"
+  rclone copyto "/tmp/$PREP_CACHE" "$REMOTE/data/baselines/$PREP_CACHE" --progress && rm -f "/tmp/$PREP_CACHE"
 fi
 # eval/localization metrics are in storage/outputs. do NOT copy storage/processed — that is the
 # reusable graph cache (GBs, already uploaded to data/baselines as the prepcache) not a result.
