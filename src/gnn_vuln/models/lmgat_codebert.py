@@ -84,7 +84,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  localization_encoder="gnn", use_flash_attention=False, compile_lm=False,
                  use_grad_checkpoint=True,
                  stmt_both_mode="concat", stmt_lm_alpha=0.5,
-                 cross_task_method="none", graph_pool="mean", graph_pool_proj_dim=0,
+                 cross_task_method="none", graph_pool="mean", graph_pool_proj_dim=0, jknet_mode="concat",
                  mmoe_task_encoder=False, cross_task_residual=True,
                  mmoe_loc_transformer=False, live_lm="func",
                  gnn_model="gat", num_relations=7, num_bases=None,
@@ -175,6 +175,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         assert graph_pool in ("mean", "max", "add", "meanmax", "meanmaxadd", "attention", "dualflow", "cnn", "jknet"), \
             f"graph_pool must be mean|max|add|meanmax|meanmaxadd|attention|dualflow|cnn|jknet, got {graph_pool!r}"
         self._graph_pool = graph_pool
+        self._jknet_mode = jknet_mode
         self.attn_pool = (
             AttentionalAggregation(gate_nn=nn.Linear(hidden_dim, 1))
             if graph_pool == "attention" else None
@@ -199,7 +200,8 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         if graph_pool == "meanmaxadd":
             self._pool_out_dim = 3 * hidden_dim
         elif graph_pool == "jknet":
-            self._pool_out_dim = num_layers * hidden_dim
+            # concat → [N, L*hidden]; max → element-wise max across layers → [N, hidden]
+            self._pool_out_dim = hidden_dim if jknet_mode == "max" else num_layers * hidden_dim
         else:
             self._pool_out_dim = hidden_dim
         # Optional projection on the graph-pool output to rebalance the GNN:LM ratio
@@ -314,9 +316,15 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             B_hint = int(batch.max().item()) + 1 if batch.numel() > 0 else 1
             h_graph = self.cnn_pool(h, batch, B_hint)
         elif self._graph_pool == "jknet":
-            # JK-Net: concat node hiddens from all layers → [N, L*hidden_dim], then meanmax pool.
+            # JK-Net layer aggregation (Xu et al. 2018): concat → [N, L*hidden_dim],
+            # or element-wise max across layers → [N, hidden_dim]. Then meanmax graph pool.
             layer_hiddens = getattr(self.encoder, "_layer_hiddens", [])
-            h_jk = torch.cat(layer_hiddens, dim=-1) if layer_hiddens else h
+            if not layer_hiddens:
+                h_jk = h
+            elif self._jknet_mode == "max":
+                h_jk = torch.stack(layer_hiddens, dim=0).amax(dim=0)
+            else:
+                h_jk = torch.cat(layer_hiddens, dim=-1)
             h_graph = 0.8 * global_max_pool(h_jk, batch) + 0.6 * global_mean_pool(h_jk, batch)
         else:
             h_graph = global_mean_pool(h, batch)
@@ -490,6 +498,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             cross_task_residual=getattr(cfg.model, "cross_task_residual", True),
             graph_pool=getattr(cfg.model, "graph_pool", "mean"),
             graph_pool_proj_dim=getattr(cfg.model, "graph_pool_proj_dim", 0),
+            jknet_mode=getattr(cfg.model, "jknet_mode", "concat"),
             mmoe_loc_transformer=getattr(cfg.model, "mmoe_loc_transformer", False),
             live_lm=getattr(cfg.model, "live_lm", "func"),
             gnn_model=getattr(cfg.model, "gnn_model", "gat"),
