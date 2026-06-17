@@ -219,6 +219,10 @@ done
 # sigmoid saturates (base->0) -> nan loss. Add an epsilon to the base to stabilize, keeping
 # LIVABLE's dual-branch long-tail loss intact (faithful — only numerical, not a loss change).
 sed -i 's/torch.pow((1-p)\*label + p \* (1-label), self.gamma)/torch.pow((1-p)*label + p * (1-label) + 1e-6, self.gamma)/' "$LV/code/trainer_sta.py"
+# Dump final-test predictions (y_true,y_pred) so compute_baseline_metrics can report weighted-F1 +
+# accuracy too (LIVABLE's evaluate_metrics logs only MACRO). Injected before the return in
+# evaluate_metrics; the last call (final test, line ~287) leaves the CSV = test preds.
+sed -i '/return np.mean(_loss).item()/i\        if __import__("os").environ.get("LIVABLE_PRED_CSV"): __import__("pandas").DataFrame({"y_true": all_targets, "y_pred": all_predictions}).to_csv(__import__("os").environ["LIVABLE_PRED_CSV"], index=False)' "$LV/code/trainer_sta.py"
 # Optimizer (--opt/--lr): repo ships AdamW(lr=1e-3) active; README pt6 says RAdam lr=1e-4 but that
 # FREEZES on our data (loss flat, acc 0). Default here = AdamW 1e-3 (trains). Patch the active line.
 case "$OPT" in
@@ -231,7 +235,15 @@ sed -i "s|^\(\s*\)optim = AdamW(model.parameters(), lr=1e-3, weight_decay=1e-6)|
 grep -qF "$OPTLINE" "$LV/code/main_sta.py" || { echo "ERR: optimizer patch failed"; exit 1; }
 cd "$LV/code"
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
+export LIVABLE_PRED_CSV="$OUT/livable_cls_preds.csv"   # final-test preds dumped by patched evaluate_metrics
 python main_sta.py --input_dir "$GG" 2>&1 | tee "$OUT/train.log"
+
+# recompute macro + weighted + accuracy from the dumped predictions (LIVABLE logs only macro)
+cd "$WORK"
+if [[ -f "$LIVABLE_PRED_CSV" ]]; then
+  PYTHONPATH=src python scripts/compute_baseline_metrics.py --name LIVABLE \
+    --classification "$LIVABLE_PRED_CSV" --out "$OUT/livable_recomputed_metrics.json" 2>&1 | tee "$OUT/recomputed_metrics.log"
+fi
 
 echo "=== [7/7] upload: results -> results/baselines, weights -> checkpoints/baselines ==="
 cd "$WORK"

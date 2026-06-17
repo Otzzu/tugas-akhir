@@ -19,6 +19,11 @@ VARIANT="$VPROOT/VulExplainer/VulExplainer_GraphCodeBERT"
 BIGVUL="$VPROOT/data/big_vul"; SPLIT="$WORK/megavul_ml1024/linevd"
 RUN_ID="vulexplainer_megavul_$(date +%Y%m%d_%H%M%S)"
 
+# EVAL_ONLY=1 -> skip teacher+student TRAIN: restore saved checkpoints, run student --do_test only,
+# dump preds, recompute macro+weighted+acc. Needs WEIGHTS_TAR=<run>_weights.tar.gz. [VERIFY on pod]
+EVAL_ONLY="${EVAL_ONLY:-}"; WEIGHTS_TAR="${WEIGHTS_TAR:-}"
+if [[ -n "$EVAL_ONLY" && -z "$WEIGHTS_TAR" ]]; then echo "ERR: EVAL_ONLY=1 needs WEIGHTS_TAR=<...>_weights.tar.gz"; exit 1; fi
+
 echo "=== [1/7] deps + VulExplainer repo ==="
 VENV="/workspace/vulexp_env"
 BASEPY=/venv/main/bin/python; [[ -x "$BASEPY" ]] || BASEPY="$(command -v python3 || command -v python)"
@@ -67,22 +72,50 @@ cd "$WORK"
 sed -i 's/cuda:1/cuda:0/g' "$VARIANT/teacher_main.py" "$VARIANT/student_graphcodebert_main.py"
 # teacher + student dump preds to ./raw_prediction/ (CWD=$VARIANT) but never mkdir it -> crash at test
 mkdir -p "$VARIANT/raw_prediction"
+# dump student test predictions (y_true,y_pred) so compute_baseline_metrics can report macro+weighted
+# F1 + accuracy (student test() logs only accuracy). Injected after `acc = accuracy_score(...)` in test().
+sed -i '/    acc = accuracy_score(y_trues, y_preds)/a\    __import__("pandas").DataFrame({"y_true": y_trues, "y_pred": y_preds}).to_csv(__import__("os").environ["VULEXP_PRED_CSV"], index=False)' \
+  "$VARIANT/student_graphcodebert_main.py"
 
-echo "=== [5/7] train CNN teacher (50ep bs128 5e-3) ==="
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
-( cd "$VARIANT" && bash train_teacher.sh ) ; cp -f "$VARIANT"/train_cnn_teacher.log "$OUT/" 2>/dev/null || true
-[[ -f "$VARIANT/saved_models/checkpoint-best-acc/cnnteacher.bin" ]] || { echo "ERR: teacher cnnteacher.bin not produced"; exit 1; }
+export VULEXP_PRED_CSV="$OUT/vulexp_cls_preds.csv"   # student test() dumps preds here (patched above)
 
-echo "=== [6/7] soft-distill GraphCodeBERT student (train+test, 50ep bs8 2e-5 alpha0.7) ==="
-( cd "$VARIANT" && bash soft_distillation.sh ) ; cp -f "$VARIANT"/train_soft_distil*.log "$OUT/" 2>/dev/null || true
+if [[ -n "$EVAL_ONLY" ]]; then
+  echo "=== [5/7] EVAL_ONLY: restore teacher+student weights $WEIGHTS_TAR ==="
+  # weights tar = the checkpoint-best-acc/ dir (cnnteacher.bin + soft_distil_model_*.bin)
+  rclone copy "$REMOTE/checkpoints/baselines/$WEIGHTS_TAR" "$VARIANT/saved_models/" --progress
+  tar -I "$(command -v pigz || echo gzip)" -xf "$VARIANT/saved_models/$WEIGHTS_TAR" -C "$VARIANT/saved_models" && rm -f "$VARIANT/saved_models/$WEIGHTS_TAR"
+  SBIN=$(find "$VARIANT/saved_models/checkpoint-best-acc" -name "soft_distil_model_*.bin" | head -1)
+  [[ -n "$SBIN" ]] || { echo "ERR: no student soft_distil_model_*.bin in restored weights"; exit 1; }
+  MNAME=$(basename "$SBIN")
+  echo "  student checkpoint: $MNAME"
+  echo "=== [6/7] student --do_test only (loads teacher + student, no training) ==="
+  ( cd "$VARIANT" && python student_graphcodebert_main.py --alpha 0.7 --output_dir=./saved_models \
+      --model_name="$MNAME" --tokenizer_name=microsoft/graphcodebert-base --model_name_or_path=microsoft/graphcodebert-base \
+      --train_data_file=../../data/big_vul/train.csv --eval_data_file=../../data/big_vul/val.csv --test_data_file=../../data/big_vul/test.csv \
+      --do_test --block_size 512 --eval_batch_size 8 --seed 123456 ) 2>&1 | tee "$OUT/eval_soft_distil.log"
+else
+  echo "=== [5/7] train CNN teacher (50ep bs128 5e-3) ==="
+  ( cd "$VARIANT" && bash train_teacher.sh ) ; cp -f "$VARIANT"/train_cnn_teacher.log "$OUT/" 2>/dev/null || true
+  [[ -f "$VARIANT/saved_models/checkpoint-best-acc/cnnteacher.bin" ]] || { echo "ERR: teacher cnnteacher.bin not produced"; exit 1; }
+
+  echo "=== [6/7] soft-distill GraphCodeBERT student (train+test, 50ep bs8 2e-5 alpha0.7) ==="
+  ( cd "$VARIANT" && bash soft_distillation.sh ) ; cp -f "$VARIANT"/train_soft_distil*.log "$OUT/" 2>/dev/null || true
+fi
+
+# recompute macro + weighted + accuracy from the dumped predictions (student logs only accuracy)
+if [[ -f "$VULEXP_PRED_CSV" ]]; then
+  PYTHONPATH=src python scripts/compute_baseline_metrics.py --name VulExplainer \
+    --classification "$VULEXP_PRED_CSV" --out "$OUT/vulexplainer_recomputed_metrics.json" 2>&1 | tee "$OUT/recomputed_metrics.log"
+fi
 
 echo "=== [7/7] upload: results -> results/baselines, weights -> checkpoints/baselines ==="
 COMP="$(command -v pigz || echo gzip)"
 # results = logs only (test metrics in train_soft_distil log) -> results/baselines/
 tar -I "$COMP" -cf "${RUN_ID}_results.tar.gz" -C "$OUT" . && \
   rclone copy "${RUN_ID}_results.tar.gz" "$REMOTE/results/baselines/" --progress 2>/dev/null || true
-# weights = teacher + student best checkpoints -> checkpoints/baselines/
-if [[ -d "$VARIANT/saved_models/checkpoint-best-acc" ]]; then
+# weights = teacher + student best checkpoints -> checkpoints/baselines/ (skip on EVAL_ONLY, just restored)
+if [[ -z "$EVAL_ONLY" && -d "$VARIANT/saved_models/checkpoint-best-acc" ]]; then
   tar -I "$COMP" -cf "${RUN_ID}_weights.tar.gz" -C "$VARIANT/saved_models" checkpoint-best-acc && \
     rclone copy "${RUN_ID}_weights.tar.gz" "$REMOTE/checkpoints/baselines/" --progress 2>/dev/null || true
 fi
