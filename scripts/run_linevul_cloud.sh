@@ -14,6 +14,16 @@ WORK="$PWD"
 OUT="$WORK/baseline_runs/$RUN_ID"
 mkdir -p "$OUT"
 
+# EVAL_ONLY=1 -> skip the 10-epoch train: restore the saved model + run only the localization step
+# (+ dump per-line scores). Needs WEIGHTS_TAR=<run>_weights.tar.gz (model.bin) in checkpoints/baselines.
+EVAL_ONLY="${EVAL_ONLY:-}"; WEIGHTS_TAR="${WEIGHTS_TAR:-}"
+if [[ -n "$EVAL_ONLY" ]]; then
+  [[ -n "$WEIGHTS_TAR" ]] || { echo "ERR: EVAL_ONLY=1 needs WEIGHTS_TAR=<...>_weights.tar.gz"; exit 1; }
+  mkdir -p "$OUT/checkpoint-best-f1"
+  rclone copy "$REMOTE/checkpoints/baselines/$WEIGHTS_TAR" "$OUT/" --progress
+  tar -I "$(command -v pigz || echo gzip)" -xf "$OUT/$WEIGHTS_TAR" -C "$OUT/checkpoint-best-f1" && rm -f "$OUT/$WEIGHTS_TAR"
+fi
+
 echo "=== [1/5] deps + LineVul repo ==="
 [[ -d src/LineVul ]] || git clone --depth 1 https://github.com/awsm-research/LineVul.git src/LineVul
 python -c "import transformers" 2>/dev/null || pip install -q transformers
@@ -34,8 +44,9 @@ if [[ ! -d megavul_ml1024 ]]; then
 fi
 D="$WORK/megavul_ml1024/linevul"
 
-echo "=== [3/5] train + classify ==="
 cd src/LineVul/linevul
+if [[ -z "$EVAL_ONLY" ]]; then
+echo "=== [3/5] train + classify ==="
 python linevul_main.py \
   --output_dir="$OUT" --model_type=roberta \
   --tokenizer_name=microsoft/codebert-base --model_name_or_path=microsoft/codebert-base \
@@ -44,6 +55,9 @@ python linevul_main.py \
   --epochs 10 --block_size 512 --train_batch_size 16 --eval_batch_size 16 \
   --learning_rate 2e-5 --max_grad_norm 1.0 --evaluate_during_training --seed 42 \
   2>&1 | tee "$OUT/train.log"
+else
+echo "=== [3/5] EVAL_ONLY: skip train (restored weights -> $OUT/checkpoint-best-f1) ==="
+fi
 
 echo "=== [4/5] localization (IFA / Top-K / Effort@20%R / Recall@K%LOC) ==="
 export LINEVUL_LOC_CSV="$OUT/linevul_loc_scores.csv"   # per-line attention scores dumped by the patch above

@@ -67,6 +67,15 @@ echo "  patched paths:"; grep -nE "pretrained_model_path|_path = r|use_pgd = |ba
 
 echo "=== [5/7] train (skip if best model already exists) — GraphCodeBERT + context + MTL + PGD ==="
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
+# EVAL_ONLY=1 + WEIGHTS_TAR=<run>_weights.tar.gz -> restore best_multi_task_model.pt from Drive into a
+# multi_task_alternate_output dir so train auto-skips (avoids the ~14hr MTL train) and eval runs straight.
+if [[ -n "${EVAL_ONLY:-}" ]]; then
+  [[ -n "${WEIGHTS_TAR:-}" ]] || { echo "ERR: EVAL_ONLY=1 needs WEIGHTS_TAR=<...>_weights.tar.gz"; exit 1; }
+  RESTORE_DIR="$VD/multi_task_alternate_output_classification"; mkdir -p "$RESTORE_DIR"
+  rclone copy "$REMOTE/checkpoints/baselines/$WEIGHTS_TAR" "$OUT/" --progress
+  tar -I "$(command -v pigz || echo gzip)" -xf "$OUT/$WEIGHTS_TAR" -C "$RESTORE_DIR" && rm -f "$OUT/$WEIGHTS_TAR"
+  echo "  restored best_multi_task_model.pt -> $RESTORE_DIR (train will skip)"
+fi
 EXIST=$(find "$VD" -maxdepth 2 -name "best_multi_task_model.pt" 2>/dev/null | head -1)
 if [[ -n "$EXIST" && -z "${EDAT_FORCE_TRAIN:-}" ]]; then
   echo "  trained model exists ($EXIST) -> skip train (set EDAT_FORCE_TRAIN=1 to retrain)"
