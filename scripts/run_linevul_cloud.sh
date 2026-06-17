@@ -14,9 +14,17 @@ WORK="$PWD"
 OUT="$WORK/baseline_runs/$RUN_ID"
 mkdir -p "$OUT"
 
-echo "=== [1/5] deps (POD env — torch already correct from setup_cloud; no venv) ==="
-# torch/transformers/pandas/sklearn/numpy/tqdm = project env. Only captum is extra.
+echo "=== [1/5] deps + LineVul repo ==="
+[[ -d src/LineVul ]] || git clone --depth 1 https://github.com/awsm-research/LineVul.git src/LineVul
+python -c "import transformers" 2>/dev/null || pip install -q transformers
+python -c "import sklearn, pandas, numpy, tqdm" 2>/dev/null || pip install -q scikit-learn pandas numpy tqdm
 pip install -q captum
+# reset + inject a per-line localization dump (func_id,line,score,is_flaw) for the attention reasoning
+# path so compute_baseline_metrics gives OUR IFA/Top-k/R@LOC/Effort (all_pos_score_label = per vuln
+# func list of [score, label]). Reset first so a re-run re-applies cleanly.
+git -C src/LineVul checkout -- linevul/linevul_main.py 2>/dev/null || true
+sed -i '/is_attention = True if reasoning_method == "attention" else False/a\            __import__("os").environ.get("LINEVUL_LOC_CSV") and is_attention and __import__("pandas").DataFrame([(fid,ln,float(s[0]),int(s[1])) for fid,fn in enumerate(all_pos_score_label) for ln,s in enumerate(fn)], columns=["func_id","line_number","score","is_flaw"]).to_csv(__import__("os").environ["LINEVUL_LOC_CSV"], index=False)' \
+  src/LineVul/linevul/linevul_main.py
 python -c "import torch; print('torch', torch.__version__, '| cuda op:', (torch.randn(2).cuda()+1).sum().item())"
 
 echo "=== [2/5] data ==="
@@ -38,6 +46,7 @@ python linevul_main.py \
   2>&1 | tee "$OUT/train.log"
 
 echo "=== [4/5] localization (IFA / Top-K / Effort@20%R / Recall@K%LOC) ==="
+export LINEVUL_LOC_CSV="$OUT/linevul_loc_scores.csv"   # per-line attention scores dumped by the patch above
 python linevul_main.py \
   --output_dir="$OUT" --model_type=roberta \
   --tokenizer_name=microsoft/codebert-base --model_name_or_path=microsoft/codebert-base \
@@ -46,6 +55,11 @@ python linevul_main.py \
   --effort_at_top_k 0.2 --top_k_recall_by_lines 0.01 --top_k_recall_by_pred_prob 0.2 \
   2>&1 | tee "$OUT/localization.log"
 cd "$WORK"
+# recompute OUR localization metrics (IFA/Top-k/R@LOC/Effort) from the dumped per-line scores
+if [[ -f "$LINEVUL_LOC_CSV" ]]; then
+  PYTHONPATH=src python scripts/compute_baseline_metrics.py --name LineVul \
+    --localization "$LINEVUL_LOC_CSV" --out "$OUT/linevul_recomputed_metrics.json" 2>&1 | tee "$OUT/recomputed_metrics.log"
+fi
 
 echo "=== [5/5] upload weights + results ==="
 # weights = best model .bin under OUT/checkpoint-best-f1; results = logs + any csv
