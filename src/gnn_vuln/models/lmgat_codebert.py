@@ -85,6 +85,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  use_grad_checkpoint=True,
                  stmt_both_mode="concat", stmt_lm_alpha=0.5,
                  cross_task_method="none", graph_pool="mean", graph_pool_proj_dim=0, jknet_mode="concat",
+                 jknet_readout="meanmax",
                  mmoe_task_encoder=False, cross_task_residual=True,
                  mmoe_loc_transformer=False, live_lm="func",
                  gnn_model="gat", num_relations=7, num_bases=None,
@@ -176,6 +177,9 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             f"graph_pool must be mean|max|add|meanmax|meanmaxadd|attention|dualflow|cnn|jknet, got {graph_pool!r}"
         self._graph_pool = graph_pool
         self._jknet_mode = jknet_mode
+        assert jknet_readout in ("meanmax", "max", "mean", "add"), \
+            f"jknet_readout must be meanmax|max|mean|add, got {jknet_readout!r}"
+        self._jknet_readout = jknet_readout
         self.attn_pool = (
             AttentionalAggregation(gate_nn=nn.Linear(hidden_dim, 1))
             if graph_pool == "attention" else None
@@ -325,7 +329,14 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                 h_jk = torch.stack(layer_hiddens, dim=0).amax(dim=0)
             else:
                 h_jk = torch.cat(layer_hiddens, dim=-1)
-            h_graph = 0.8 * global_max_pool(h_jk, batch) + 0.6 * global_mean_pool(h_jk, batch)
+            if self._jknet_readout == "max":
+                h_graph = global_max_pool(h_jk, batch)
+            elif self._jknet_readout == "mean":
+                h_graph = global_mean_pool(h_jk, batch)
+            elif self._jknet_readout == "add":
+                h_graph = global_add_pool(h_jk, batch)
+            else:
+                h_graph = 0.8 * global_max_pool(h_jk, batch) + 0.6 * global_mean_pool(h_jk, batch)
         else:
             h_graph = global_mean_pool(h, batch)
         if self.graph_proj is not None:
@@ -499,6 +510,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             graph_pool=getattr(cfg.model, "graph_pool", "mean"),
             graph_pool_proj_dim=getattr(cfg.model, "graph_pool_proj_dim", 0),
             jknet_mode=getattr(cfg.model, "jknet_mode", "concat"),
+            jknet_readout=getattr(cfg.model, "jknet_readout", "meanmax"),
             mmoe_loc_transformer=getattr(cfg.model, "mmoe_loc_transformer", False),
             live_lm=getattr(cfg.model, "live_lm", "func"),
             gnn_model=getattr(cfg.model, "gnn_model", "gat"),
