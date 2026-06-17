@@ -67,12 +67,11 @@ python scripts/losver_patch_labels.py \
           src/losver/classification/run_base_CWE.py \
   --labels "$LABELS"
 
-# EVAL_ONLY: inject a test-predictions dump (y_true,y_pred) into test() so compute_baseline_metrics
-# can report MACRO-F1. Injected right after `preds = np.argmax(...)` (also hits unused evaluate(), harmless).
-if [[ -n "$EVAL_ONLY" ]]; then
-  sed -i '/preds = np.argmax(logits, axis=1)/a\    __import__("pandas").DataFrame({"y_true": list(labels), "y_pred": list(preds)}).to_csv(__import__("os").environ["LOSVER_PRED_CSV"], index=False)' \
-    src/losver/classification/run_weighted_CWE.py
-fi
+# inject a test-predictions dump (y_true,y_pred) into test() so compute_baseline_metrics can report
+# MACRO-F1 (LOSVER's own test() logs only weighted). Runs in BOTH full-train and EVAL_ONLY modes.
+# Injected right after `preds = np.argmax(...)` (also hits unused evaluate(), harmless).
+sed -i '/preds = np.argmax(logits, axis=1)/a\    __import__("pandas").DataFrame({"y_true": list(labels), "y_pred": list(preds)}).to_csv(__import__("os").environ["LOSVER_PRED_CSV"], index=False)' \
+  src/losver/classification/run_weighted_CWE.py
 
 # EVAL_ONLY: restore saved localizer+classifier weights (tar holds localizer1/ + classifier1/ with
 # checkpoint-best-f1) into $OUT so --do_test loads them ($OUT/classifier -> code appends fold "1").
@@ -95,8 +94,8 @@ python run_weighted_CWE.py --output_dir="$OUT/classifier" --model_type roberta \
   --block_size=512 --seed=123456 $TRAINFLAG --do_test 2>&1 | tee "$OUT/classifier.log"
 cd "$WORK"
 
-# EVAL_ONLY: recompute MACRO-F1 (+ weighted/micro + per-class report) from the dumped predictions.
-if [[ -n "$EVAL_ONLY" ]]; then
+# recompute MACRO-F1 (+ weighted/micro + per-class report) from the dumped test predictions.
+if [[ -f "$LOSVER_PRED_CSV" ]]; then
   echo "=== [6b/7] recompute macro-F1 from dumped predictions ==="
   PYTHONPATH=src python scripts/compute_baseline_metrics.py --name LOSVER \
     --classification "$LOSVER_PRED_CSV" --out "$OUT/losver_recomputed_metrics.json" 2>&1 | tee "$OUT/recomputed_metrics.log"
