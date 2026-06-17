@@ -21,6 +21,7 @@ WEIGHTS_TAR="${WEIGHTS_TAR:-}"
 if [[ -n "$EVAL_ONLY" && -z "$WEIGHTS_TAR" ]]; then echo "ERR: EVAL_ONLY=1 needs WEIGHTS_TAR=<...>_weights.tar.gz"; exit 1; fi
 TRAINFLAG="--do_train"; [[ -n "$EVAL_ONLY" ]] && TRAINFLAG=""
 export LOSVER_PRED_CSV="$OUT/losver_cls_preds.csv"
+export LOSVER_LOC_CSV="$OUT/losver_loc_scores.csv"   # per-line localization scores (test split)
 
 echo "=== [1/7] LOSVER present (vendored; clone only if missing) ==="
 [[ -d src/losver ]] || git clone --depth 1 https://github.com/waroad/losver.git src/losver
@@ -72,6 +73,10 @@ python scripts/losver_patch_labels.py \
 # Injected right after `preds = np.argmax(...)` (also hits unused evaluate(), harmless).
 sed -i '/preds = np.argmax(logits, axis=1)/a\    __import__("pandas").DataFrame({"y_true": list(labels), "y_pred": list(preds)}).to_csv(__import__("os").environ["LOSVER_PRED_CSV"], index=False)' \
   src/losver/classification/run_weighted_CWE.py
+# inject a per-line localization-score dump (func_id,line_number,score,is_flaw) into the localizer
+# test() (TEST split only) so compute_baseline_metrics gives OUR IFA/Top-k/R@LOC/Effort.
+sed -i '/labels = np.array(labels, dtype=object)/a\    __import__("os").environ.get("LOSVER_LOC_CSV") and __import__("re").search(r"(test|val|train)", args.test_data_file).group(1)=="test" and __import__("pandas").DataFrame([(fid,ln,float(lg[ln]),int(lb[ln])) for fid,(lg,lb) in enumerate(zip(logits,labels)) for ln in range(len(lg))], columns=["func_id","line_number","score","is_flaw"]).to_csv(__import__("os").environ["LOSVER_LOC_CSV"], index=False)' \
+  src/losver/classification/run_line_CWE.py
 
 # EVAL_ONLY: restore saved localizer+classifier weights (tar holds localizer1/ + classifier1/ with
 # checkpoint-best-f1) into $OUT so --do_test loads them ($OUT/classifier -> code appends fold "1").
@@ -96,9 +101,10 @@ cd "$WORK"
 
 # recompute MACRO-F1 (+ weighted/micro + per-class report) from the dumped test predictions.
 if [[ -f "$LOSVER_PRED_CSV" ]]; then
-  echo "=== [6b/7] recompute macro-F1 from dumped predictions ==="
+  echo "=== [6b/7] recompute macro-F1 + localization from dumped predictions/scores ==="
+  LOC_ARG=(); [[ -f "$LOSVER_LOC_CSV" ]] && LOC_ARG=(--localization "$LOSVER_LOC_CSV")
   PYTHONPATH=src python scripts/compute_baseline_metrics.py --name LOSVER \
-    --classification "$LOSVER_PRED_CSV" --out "$OUT/losver_recomputed_metrics.json" 2>&1 | tee "$OUT/recomputed_metrics.log"
+    --classification "$LOSVER_PRED_CSV" "${LOC_ARG[@]}" --out "$OUT/losver_recomputed_metrics.json" 2>&1 | tee "$OUT/recomputed_metrics.log"
 fi
 
 echo "=== [7/7] upload weights + results ==="
