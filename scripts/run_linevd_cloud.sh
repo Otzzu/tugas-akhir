@@ -159,6 +159,11 @@ from glob import glob
 import pandas as pd
 import pytorch_lightning as pl
 import sastvd as svd, sastvd.linevd as lvd
+def mk_trainer():
+    try:  # PL >=1.6 / 2.x API (the repo's gpus=1 was removed in PL 2.x)
+        return pl.Trainer(accelerator="gpu", devices=1, logger=False, enable_checkpointing=False, default_root_dir="/tmp/")
+    except TypeError:
+        return pl.Trainer(gpus=1, default_root_dir="/tmp/")
 ckpt = os.environ.get("LINEVD_CKPT")
 if ckpt:
     # EVAL_ONLY: load the restored ckpt directly (hparams come from the ckpt) — no raytune needed
@@ -168,7 +173,7 @@ if ckpt:
     emb = getattr(model.hparams, "embtype", "codebert")
     sp = getattr(model.hparams, "splits", "default")
     dm = lvd.BigVulDatasetLineVDDataModule(batch_size=1024, nsampling_hops=2, gtype=gt, splits=sp, feat=emb)
-    pl.Trainer(gpus=1, default_root_dir="/tmp/").test(model, dm)
+    mk_trainer().test(model, dm)
 else:
     from ray.tune import Analysis
     from sastvd.scripts.rqtest import main
@@ -184,7 +189,7 @@ else:
     dm = lvd.BigVulDatasetLineVDDataModule(batch_size=1024, nsampling_hops=2,
             gtype=best["config/gtype"], splits=best["config/splits"], feat=best["config/embtype"])
     model = lvd.LitGNN.load_from_checkpoint(sorted(glob(best["logdir"] + "/checkpoint_*"))[-1] + "/checkpoint", strict=False)
-    pl.Trainer(gpus=1, default_root_dir="/tmp/").test(model, dm)
+    mk_trainer().test(model, dm)
 rows = []
 for fid, fn in enumerate(model.all_funcs):   # fn = [node_pred(softmax [N,2]), _VULN, pred_func, _LINE]
     sc, vu, _, ln = fn
