@@ -50,6 +50,7 @@ import json
 import random
 import re
 import shutil
+import time
 from pathlib import Path
 
 import torch
@@ -1563,7 +1564,19 @@ class CodeBERTGraphDataset(Dataset):
     def get(self, idx: int) -> Data:
         if self._storage == "inmemory":
             return self._graphs[idx]
-        g = torch.load(self._graphs_dir / f"{idx}.pt", weights_only=False)
+        _path = self._graphs_dir / f"{idx}.pt"
+        # Files are valid on disk (verified), but concurrent multi-worker reads on
+        # overlay/network filesystems can intermittently return truncated data
+        # (EOFError / zip central-directory errors). Retry a few times with backoff.
+        for _attempt in range(4):
+            try:
+                g = torch.load(_path, weights_only=False)
+                break
+            except (RuntimeError, EOFError, OSError) as _e:
+                if _attempt == 3:
+                    logger.error(f"lazy graph load failed after retries: {_path} ({_e})")
+                    raise
+                time.sleep(0.1 * (_attempt + 1))
         # Recompute func_token_lines when missing OR length-mismatched with
         # func_input_ids (corrupt patched datasets re-tokenized func_input_ids to a
         # new length but kept the old token->line map -> IndexError in stmt head).
