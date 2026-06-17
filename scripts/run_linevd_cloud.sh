@@ -137,10 +137,13 @@ PYTHONPATH=. python sastvd/scripts/train_best.py 2>&1 | tee "$OUT/train.log"
 # train_best.py ONLY trains — the test + statement-localization metrics come from rqtest
 # (trainer.test on each best checkpoint -> get_relevant_metrics -> storage/outputs/rq_results_new/*.csv).
 # rqtest.py is a while-True daemon; run ONE pass inline so the metrics actually get produced + uploaded.
-echo "=== [5b/6] eval: trainer.test on best checkpoints -> storage/outputs/rq_results_new ==="
+echo "=== [5b/6] eval: rqtest native metrics + per-stmt dump for OUR localization metric ==="
+export LINEVD_LOC_CSV="$OUT/linevd_loc_scores.csv"
 PYTHONPATH=. python - <<'PYEOF' 2>&1 | tee "$OUT/eval.log" || true
+import os
 from glob import glob
 import pandas as pd
+import pytorch_lightning as pl
 import sastvd as svd, sastvd.linevd as lvd
 from ray.tune import Analysis
 from sastvd.scripts.rqtest import main
@@ -153,7 +156,26 @@ configs = df[["config/gtype", "config/splits", "config/embtype"]].drop_duplicate
 for c in configs:
     main(c, df)
 print("EVAL DONE -> outputs/rq_results_new")
+# --- dump per-statement (func_id,line,score,is_flaw) from the best-val checkpoint for OUR metric ---
+best = df.loc[df["val_auroc"].astype(float).idxmax()]
+dm = lvd.BigVulDatasetLineVDDataModule(batch_size=1024, nsampling_hops=2,
+        gtype=best["config/gtype"], splits=best["config/splits"], feat=best["config/embtype"])
+chkpts = sorted(glob(best["logdir"] + "/checkpoint_*"))
+model = lvd.LitGNN.load_from_checkpoint(chkpts[-1] + "/checkpoint", strict=False)
+pl.Trainer(gpus=1, default_root_dir="/tmp/").test(model, dm)
+rows = []
+for fid, fn in enumerate(model.all_funcs):   # fn = [node_pred(softmax [N,2]), _VULN, pred_func, _LINE]
+    sc, vu, _, ln = fn
+    for j in range(len(ln)):
+        rows.append((fid, int(ln[j]), float(sc[j][1]), int(vu[j])))
+pd.DataFrame(rows, columns=["func_id", "line_number", "score", "is_flaw"]).to_csv(os.environ["LINEVD_LOC_CSV"], index=False)
+print("LOC DUMP DONE ->", os.environ["LINEVD_LOC_CSV"], len(rows), "rows")
 PYEOF
+# recompute OUR localization metrics (IFA/Top-k/R@LOC/Effort) from the per-statement dump
+if [[ -f "$LINEVD_LOC_CSV" ]]; then
+  PYTHONPATH="$WORK/src" python "$WORK/scripts/compute_baseline_metrics.py" --name LineVD \
+    --localization "$LINEVD_LOC_CSV" --out "$OUT/linevd_recomputed_metrics.json" 2>&1 | tee "$OUT/recomputed_metrics.log" || true
+fi
 # Cache the prep on Drive if we built it this run (not if restored) so future pods skip it.
 if [[ -z "$PREP_RESTORED" && -d "$PREP_MARK" ]] && ! rclone ls "$REMOTE/data/baselines/$PREP_CACHE" >/dev/null 2>&1; then
   echo "  caching LineVD prep to Drive ..."
