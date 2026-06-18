@@ -375,6 +375,7 @@ and ml5120 dataset on RTX 5090. Earlier H2/H3 runs with ml1024 never activated s
 | H10n  | `H10_nine.yaml` (node+func unixcoder-base-nine)                   | 1024  | 1024   | 5120    | 5+mixer         | `20260614_131244` | 43     |
 | H10fn | `H10_funcnine.yaml` (node base, func unixcoder-base-nine)         | 1024  | 1024   | 5120    | 5+mixer         | `20260614_155019` | 40     |
 | H10w0 | `H10_..._winmixer_w0.yaml` (num_workers 0 rerun)                  | 1024  | 1024   | 5120    | 5+mixer         | `20260617_143140` | 33     |
+| H10-vo | `vulnonly/H10_vulnonly.yaml` (25-class vuln-only)                | 1024  | 1024   | 5120    | 5+mixer         | `20260618_040527` | 39     |
 
 ## Classification
 
@@ -393,6 +394,7 @@ and ml5120 dataset on RTX 5090. Earlier H2/H3 runs with ml1024 never activated s
 | H10n      | **0.544** | 0.545    | 0.544 | 0.873     | 0.535 | 43     |
 | H10fn     | 0.518     | 0.545    | 0.543 | 0.873     | 0.518 | 40     |
 | H10w0     | 0.500     | 0.529    | 0.527 | 0.884     | 0.549 | 33     |
+| H10-vo    | 0.565     | 0.593    | 0.592 | 0.896     | 0.539 | 39     |
 
 ## Statement-Level Localization
 
@@ -411,6 +413,7 @@ and ml5120 dataset on RTX 5090. Earlier H2/H3 runs with ml1024 never activated s
 | H10n      | 0.946     | 0.814     | 0.971     | 0.204     | 0.432      | 0.049         |
 | H10fn     | 1.328     | 0.807     | 0.963     | 0.190     | 0.383      | 0.056         |
 | H10w0     | 1.001     | 0.867     | 0.980     | 0.230     | 0.444      | 0.037         |
+| H10-vo    | 2.333     | 0.761     | 0.931     | 0.200     | 0.431      | 0.050         |
 
 Both H2 and H3 use ml5120 dataset with fixed `lm_full_windowed` (mean-pool CLS across windows),
 so sliding window is genuinely active for functions exceeding 1024 tokens (~32% of MegaVul vuln functions).
@@ -440,6 +443,8 @@ H2/H3 both below G1 localization baseline (IFA 0.644) — mean aggregation blurs
 **H10fn (node unixcoder-base, func unixcoder-base-nine)** — F1 **0.518** (−0.016 vs base, −0.026 vs H10n) and worst localization of the three (IFA 1.328). Mixing base node embeddings with nine func tokens **hurts** — the win needs nine on both sides (H10n), not a split. Higher raw Prec/Rec (0.585/0.594) but lower macro F1 and confidence (0.518). Takeaway: use nine **consistently** (node+func) with an active func_lm, or stay fully on base — the mixed config is the worst of both.
 
 **Phase 8 winner: H10 — new best F1 (0.534) and Test Acc (0.538), beating H1 baseline (0.529/0.582 resp. — note H1 Acc still highest overall at 0.582) with the fewest epochs (26). H4 best AUC (0.927). H6 best localization IFA (1.034). H8 best Top-1 (0.912). H3 best Effort (0.041). H9 confirms CrossWindowAttn needs H8's overlapping windows — non-overlap (H9) regresses both tasks vs H8. H4/H10 candidates for Phase 11+ baseline depending on task priority (ranking vs macro-F1).**
+
+**H10-vo (25-class vuln-only)** — H10 (mixer LM-aggregation) on the vuln-only dataset for the apples-to-apples baseline compare. Test F1 **0.565** — among our vuln-only trio it ranks N48-vo **0.601** (GNN-only) > H10-vo **0.565** > O1-vo **0.552** (hybrid join), so the LM-aggregation model edges out the join here. Vs the vuln-only baselines: below LOSVER (0.580) and VulExplainer (0.576), above LIVABLE (0.047); Acc 0.593 ≈ VulExplainer 0.595. **Not directly comparable to the 26-class H-series above** (different label space, macro over 25 vs 26). Localization IFA 2.333 is the worst of the trio (N48-vo 0.474, O1-vo 1.95). Only N48-vo beats all baselines on macro-F1 — the GNN-only block remains our multiclass headline. 147.5M, 188s/ep, 2.04 hr on RTX 5090.
 
 ---
 
@@ -714,5 +719,6 @@ Base H4 = Test F1 0.520. **M2 (gradual) = best ULMFiT (F1 0.532, +0.012 vs H4)**
 | O4 O1 balanced proj      | RTX 5090        | 158.8M | 195s       | 1.08            | 25.3 GB   |
 | O1-w0 num_workers0       | RTX 5090        | 156.5M | 217s       | 2.84            | 20.1 GB   |
 | O1-vo 25-class           | RTX 5090        | 156.5M | 195s       | 1.31            | 24.4 GB   |
+| H10-vo 25-class          | RTX 5090        | 147.5M | 188s       | 2.04            | 20.1 GB   |
 | H10-w0 num_workers0      | RTX 5090        | 147.5M | 209s       | 1.92            | 18.6 GB   |
 
