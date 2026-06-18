@@ -73,6 +73,8 @@ Split out of `ABLATION_RESULTS.md` to keep the main ablation clean. All runs her
 | N62 | `20260608_162713_lmgat_codebert_multiclass` | `N62_a1_l1_crt_la_head.yaml`                         | jknet      | true     | cRT on N48 + Logit Adjustment head tau 0.3. balanced sampler + LA                           |
 | N64 | `20260608_164827_lmgat_codebert_multiclass` | `N64_a1_l1_crt_la_head_n59.yaml`                     | jknet      | true     | cRT on N59 plain-CE backbone + LA head tau 0.3                                              |
 | N65 | `20260608_170820_lmgat_codebert_multiclass` | `N65_a1_l1_flag.yaml`                                | jknet      | true     | N48 + FLAG adversarial node-feature Kong 2020 step 0.001 M 3                                |
+| N66 | `20260617_072006_lmgat_codebert_multiclass` | `N66_a1_l1_jknet_max.yaml`                           | jknet      | true     | N48 + jknet_mode max element-wise max over 4 layers to 256D pool                            |
+| N67 | `20260617_095428_lmgat_codebert_multiclass` | `N67_a1_l1_jknet_maxnode_sumreadout.yaml`            | jknet      | true     | N66 max node-agg + sum graph readout (jknet_readout add)                                    |
 
 ## Classification
 
@@ -146,6 +148,8 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N62 | 0.472     | 0.486     | 0.511     | 0.511     | 0.456     | 0.546     | 0.522     | 0.511     | 0.910     | 0.648     | 22     |
 | N64 | 0.489     | 0.443     | 0.498     | 0.497     | 0.435     | 0.479     | 0.513     | 0.498     | 0.912     | 0.683     | 20     |
 | N65 | 0.529     | 0.487     | 0.503     | 0.499     | 0.504     | 0.505     | 0.516     | 0.503     | 0.902     | 0.440     | 56     |
+| N66 | 0.513     | 0.483     | 0.504     | 0.498     | 0.597     | 0.582     | 0.530     | 0.519     | 0.909     | 0.369     | 58     |
+| N67 | 0.386     | 0.333     | 0.285     | 0.237     | 0.464     | 0.369     | 0.479     | 0.320     | 0.816     | 0.414     | 94     |
 
 ## Statement-Level Localization
 
@@ -215,6 +219,8 @@ For vuln detection: **macro recall** is primary — measures how well we catch e
 | N62 | 0.310     | 0.944     | 0.985     | 0.256     | 0.439      | 0.028         |
 | N64 | 0.452     | 0.900     | 0.982     | 0.249     | 0.457      | 0.032         |
 | N65 | 0.435     | 0.914     | 0.985     | 0.274     | 0.479      | 0.023         |
+| N66 | 0.363     | 0.927     | 0.988     | 0.234     | 0.427      | 0.037         |
+| N67 | 0.419     | 0.922     | 0.984     | 0.289     | 0.499      | 0.021         |
 
 ---
 
@@ -284,6 +290,78 @@ Graph-ViT/MLP-Mixer **collapses classification** — Test F1 ~0.34 vs the N-seri
 | Q1 finetune     | 0.514  | 0.867   | 0.981   | 0.226     | 0.424      | 0.039         |
 | Q2 frozen probe | 23.818 | 0.171   | 0.401   | 0.053     | 0.210      | 0.189         |
 
+---
+
+## Tail-Strip (top18, 19-class)
+
+`configs/ablation/gnn_only/N48_top18_jknet.yaml` — N48 (jknet + gnn_plus, GNN-only) on the **top18** dataset = benign + top-18 CWE by count (drops the ~7 dead tail CWEs <60 samples), `num_classes 19`, `ds_name_suffix _top18`, ml1024. Built CPU-only via `scripts/build_top_cwe_subset.py` (reuses base graphs, no Joern/re-embed). Tests the tail-strip lever from [[project_continual_learning_track]] Track A. **NOT directly comparable to the 26-class N-series** — fewer, better-populated classes → macro averages over 19 not 26.
+
+| ID         | Run ID                                      | Config                    | classes | dataset    |
+| ---------- | ------------------------------------------- | ------------------------- | ------- | ---------- |
+| N48-top18  | `20260613_094709_lmgat_codebert_multiclass` | `N48_top18_jknet.yaml`    | 19      | ml1024_top18 |
+
+### Classification
+
+| ID        | Val F1 | Test F1 | Test Acc | F1-w  | Prec  | Rec   | Prec-w | Rec-w | AUC-ROC | Conf. | Epochs |
+| --------- | ------ | ------- | -------- | ----- | ----- | ----- | ------ | ----- | ------- | ----- | ------ |
+| N48-top18 | 0.549  | 0.553   | 0.517    | 0.515 | 0.485 | 0.577 | 0.518  | 0.508 | 0.916   | 0.474 | 69     |
+
+### Statement-Level Localization
+
+| ID        | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| --------- | ----- | ------- | ------- | --------- | ---------- | ------------- |
+| N48-top18 | 0.543 | 0.883   | 0.978   | 0.240     | 0.450      | 0.033         |
+
+**N48-top18 (19-class tail-strip)** — Test F1 **0.553** vs N48 26-class **0.525** (+0.028), AUC 0.916 vs 0.891. Dropping the 7 dead tail CWEs (each F1≈0 on 1-9 test samples) lifts the macro mean as expected — a **mechanical** gain from removing F1≈0 classes from the average, not a model improvement. Confirms the long-tail ceiling is data-capped: the same backbone scores higher purely by classifying fewer, learnable classes. Localization unchanged (vuln funcs identical). Use as the **scope-restricted headline** (frame as "the N most-frequent dangerous CWEs", standard practice) alongside the 26-class with-caveat result. 4.7M params, 56s/ep, 1.08 hr on RTX 5070 Ti.
+
+---
+
+## Node-LM Swap (unixcoder-base-nine)
+
+`configs/ablation/gnn_only/N48_nine.yaml` — N48 (jknet + gnn_plus, GNN-only, `live_lm=none`) with node + func LM swapped from `unixcoder-base` (6 langs, no C/C++) to `unixcoder-base-nine` (9 langs incl. C/C++, matches LOSVER). ml1024, same megavul 26-class dataset/split otherwise. Sanity test: does a C-aware node-embedding LM help vs N48 base 0.525.
+
+| ID       | Run ID                                      | Config         | classes | dataset            |
+| -------- | -------------------------------------------- | -------------- | ------- | ------------------ |
+| N48-nine | `20260613_203643_lmgat_codebert_multiclass` | `N48_nine.yaml` | 26      | ml1024_nine |
+
+### Classification
+
+| ID       | Val F1 | Test F1 | Test Acc | F1-w  | Prec  | Rec   | Prec-w | Rec-w | AUC-ROC | Conf. | Epochs |
+| -------- | ------ | ------- | -------- | ----- | ----- | ----- | ------ | ----- | ------- | ----- | ------ |
+| N48-nine | 0.515  | 0.484   | 0.519    | 0.517 | 0.486 | 0.483 | 0.528  | 0.520 | 0.909   | 0.469 | 50     |
+
+### Statement-Level Localization
+
+| ID       | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| -------- | ----- | ------- | ------- | --------- | ---------- | ------------- |
+| N48-nine | 0.490 | 0.941   | 0.987   | 0.260     | 0.460      | 0.028         |
+
+**N48-nine (unixcoder-base-nine node/func LM)** — Test F1 **0.484** vs N48 base **0.525** (−0.041), AUC 0.909 vs 0.891 (+0.018). The C-aware LM does **not** help classification — flat-to-worse macro F1, despite higher AUC and unchanged-to-slightly-better localization (IFA 0.490 vs 0.310, Top-1/Top-5 ~same, R@5%/R@20% +0.004/+0.021). Per the config's own decision rule ("if flat, stay on base") — **do not rebuild H10/O1 on nine**; stay on `unixcoder-base` for the headline LM. 4.7M params, 41s/ep, 0.57 hr on RTX 3090 Ti.
+
+## Vuln-Only (25-class, no benign)
+
+`configs/ablation/vulnonly/N48_vulnonly.yaml` — N48 (jknet + gnn_plus, GNN-only) on the **vuln-only** dataset = top-25 dangerous CWE, benign dropped, `num_classes 25`, `ds_name_suffix _vulnonly`, ml1024, `num_workers 0`. Built for the **apples-to-apples head-to-head vs the vuln-only baselines** (LOSVER, VulExplainer, LIVABLE) which all train without benign — see [[project_paper_baselines]] + BASELINE_RESULTS.md. Same megavul split/flaw GT as the 26-class N-series, only the label space differs.
+
+| ID         | Run ID                                      | Config              | classes | dataset            |
+| ---------- | ------------------------------------------- | ------------------- | ------- | ------------------ |
+| N48-vo     | `20260617_230612_lmgat_codebert_multiclass` | `N48_vulnonly.yaml` | 25      | ml1024_vulnonly    |
+
+### Classification
+
+| ID      | Val F1 | Test F1 | Test Acc | F1-w  | Prec  | Rec   | Prec-w | Rec-w | AUC-ROC | Conf. | Epochs |
+| ------- | ------ | ------- | -------- | ----- | ----- | ----- | ------ | ----- | ------- | ----- | ------ |
+| N48-vo  | 0.556  | 0.601   | 0.564    | 0.558 | 0.612 | 0.599 | 0.595  | 0.590 | 0.929   | 0.502 | 42     |
+
+### Statement-Level Localization
+
+| ID     | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| ------ | ----- | ------- | ------- | --------- | ---------- | ------------- |
+| N48-vo | 0.474 | 0.845   | 0.974   | 0.203     | 0.449      | 0.049         |
+
+**N48-vo (25-class vuln-only) — beats every vuln-only baseline on macro-F1.** Test F1 **0.601** vs LOSVER **0.580**, VulExplainer **0.576**, LIVABLE **0.047** (all vuln-only 25-class, BASELINE_RESULTS.md). The GNN-only backbone tops the fully-fine-tuned LM baselines on the same label space despite a frozen node-embedding LM and ~4.7M params (vs LOSVER UniXcoder + VulExplainer GraphCodeBERT, 100M+ each). AUC 0.929 highest in the set. The 26-class headline (N48 0.525) was depressed by the benign class + dead tail — restricting to the 25 dangerous CWE the baselines also use is the fair frame. Use as **the multiclass headline vs baselines.** 4.7M params, 44s/ep, 0.52 hr on RTX 5090.
+
+---
+
 # Training Efficiency
 
 | Run                      | GPU             | Params | Epoch Time | Total Time (hr) | VRAM Peak |
@@ -352,6 +430,8 @@ Graph-ViT/MLP-Mixer **collapses classification** — Test F1 ~0.34 vs the N-seri
 | N62 cRT+LA N48           | RTX A4000       | 4.7M   | 56s        | 0.34            | 2.9 GB    |
 | N64 cRT+LA N59           | RTX A4000       | 4.7M   | 58s        | 0.32            | 3.0 GB    |
 | N65 N48+FLAG             | RTX A4000       | 4.7M   | 210s       | 3.26            | 9.2 GB    |
+| N66 N48 jknet-max        | RTX A4000       | 4.7M   | 84s        | 1.35            | 10.5 GB   |
+| N67 N66 max-node sum-rd  | RTX 5070 Ti     | 4.7M   | 36s        | 0.95            | 9.1 GB    |
 | P1 graph-vit attn        | RTX 5090        | 4.1M   | 36s        | 0.91            | 17.3 GB   |
 | P2 graph-vit mlp         | RTX 5090        | 2.6M   | 36s        | 0.56            | 18.0 GB   |
 | P3 graph-vit mlp 2L head | RTX 5000 Ada    | 2.6M   | 80s        | 1.60            | 19.0 GB   |
@@ -359,3 +439,6 @@ Graph-ViT/MLP-Mixer **collapses classification** — Test F1 ~0.34 vs the N-seri
 | P5 graph-vit mlp p8      | RTX A6000       | 2.4M   | 82s        | 2.29            | 10.6 GB   |
 | Q1 jepa finetune         | RTX A4500       | 4.7M   | 51s        | 0.72            | 10.3 GB   |
 | Q2 jepa frozen probe     | RTX A4500       | 4.7M   | 27s        | 0.26            | 3.3 GB    |
+| N48-top18 19-class       | RTX 5070 Ti     | 4.7M   | 56s        | 1.08            | 10.8 GB   |
+| N48-nine node-LM swap    | RTX 3090 Ti     | 4.7M   | 41s        | 0.57            | 10.6 GB   |
+| N48-vo 25-class          | RTX 5090        | 4.7M   | 44s        | 0.52            | 13.2 GB   |

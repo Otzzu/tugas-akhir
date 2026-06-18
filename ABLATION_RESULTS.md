@@ -360,18 +360,21 @@ H2 and H3 results are from reruns with fixed `lm_full_windowed` (mean-pool CLS a
 and ml5120 dataset on RTX 5090. Earlier H2/H3 runs with ml1024 never activated sliding window
 (fast path always triggered when func_max_length=max_length=1024).
 
-| ID  | Config                                                            | chunk | stride | max_len | Max windows     | Run ID            | Epochs |
-| --- | ----------------------------------------------------------------- | ----- | ------ | ------- | --------------- | ----------------- | ------ |
-| H1  | — (= G2)                                                          | —     | —      | 1024    | 1               | `20260520_132730` | 34     |
-| H2  | `H2_unixcoder_sliding_chunk1024_stride512.yaml`                   | 1024  | 512    | 5120    | 9               | `20260525_104032` | 30     |
-| H3  | `H3_unixcoder_sliding_chunk1024_stride1024.yaml`                  | 1024  | 1024   | 5120    | 5               | `20260525_125031` | 31     |
-| H4  | `H4_unixcoder_sliding_chunk1024_stride1024_winattn.yaml`          | 1024  | 1024   | 5120    | 5+attn          | `20260527_121315` | 22     |
-| H5  | `H5_unixcoder_sliding_chunk1024_stride512_winattn.yaml`           | 1024  | 512    | 5120    | 9+attn          | `20260528_062323` | 34     |
-| H6  | `H6_unixcoder_sliding_chunk1024_stride1024_winattn_hidden.yaml`   | 1024  | 1024   | 5120    | 5+attn+hidden   | `20260528_085945` | 31     |
-| H7  | `H7_unixcoder_sliding_chunk1024_stride512_winattn_centerw.yaml`   | 1024  | 512    | 5120    | 9+attn+cw       | `20260528_063142` | 34     |
-| H8  | `H8_unixcoder_sliding_chunk1024_stride512_winattn_crosswin.yaml`  | 1024  | 512    | 5120    | 9+attn+crosswin | `20260528_094016` | 41     |
-| H9  | `H9_unixcoder_sliding_chunk1024_stride1024_winattn_crosswin.yaml` | 1024  | 1024   | 5120    | 5+attn+crosswin | `20260610_122559` | 55     |
-| H10 | `H10_unixcoder_sliding_chunk1024_stride1024_winmixer.yaml`        | 1024  | 1024   | 5120    | 5+mixer         | `20260610_152801` | 26     |
+| ID    | Config                                                            | chunk | stride | max_len | Max windows     | Run ID            | Epochs |
+| ----- | ----------------------------------------------------------------- | ----- | ------ | ------- | --------------- | ----------------- | ------ |
+| H1    | — (= G2)                                                          | —     | —      | 1024    | 1               | `20260520_132730` | 34     |
+| H2    | `H2_unixcoder_sliding_chunk1024_stride512.yaml`                   | 1024  | 512    | 5120    | 9               | `20260525_104032` | 30     |
+| H3    | `H3_unixcoder_sliding_chunk1024_stride1024.yaml`                  | 1024  | 1024   | 5120    | 5               | `20260525_125031` | 31     |
+| H4    | `H4_unixcoder_sliding_chunk1024_stride1024_winattn.yaml`          | 1024  | 1024   | 5120    | 5+attn          | `20260527_121315` | 22     |
+| H5    | `H5_unixcoder_sliding_chunk1024_stride512_winattn.yaml`           | 1024  | 512    | 5120    | 9+attn          | `20260528_062323` | 34     |
+| H6    | `H6_unixcoder_sliding_chunk1024_stride1024_winattn_hidden.yaml`   | 1024  | 1024   | 5120    | 5+attn+hidden   | `20260528_085945` | 31     |
+| H7    | `H7_unixcoder_sliding_chunk1024_stride512_winattn_centerw.yaml`   | 1024  | 512    | 5120    | 9+attn+cw       | `20260528_063142` | 34     |
+| H8    | `H8_unixcoder_sliding_chunk1024_stride512_winattn_crosswin.yaml`  | 1024  | 512    | 5120    | 9+attn+crosswin | `20260528_094016` | 41     |
+| H9    | `H9_unixcoder_sliding_chunk1024_stride1024_winattn_crosswin.yaml` | 1024  | 1024   | 5120    | 5+attn+crosswin | `20260610_122559` | 55     |
+| H10   | `H10_unixcoder_sliding_chunk1024_stride1024_winmixer.yaml`        | 1024  | 1024   | 5120    | 5+mixer         | `20260610_152801` | 26     |
+| H10n  | `H10_nine.yaml` (node+func unixcoder-base-nine)                   | 1024  | 1024   | 5120    | 5+mixer         | `20260614_131244` | 43     |
+| H10fn | `H10_funcnine.yaml` (node base, func unixcoder-base-nine)         | 1024  | 1024   | 5120    | 5+mixer         | `20260614_155019` | 40     |
+| H10w0 | `H10_..._winmixer_w0.yaml` (num_workers 0 rerun)                  | 1024  | 1024   | 5120    | 5+mixer         | `20260617_143140` | 33     |
 
 ## Classification
 
@@ -387,6 +390,9 @@ and ml5120 dataset on RTX 5090. Earlier H2/H3 runs with ml1024 never activated s
 | H8        | 0.520     | 0.536    | 0.538 | 0.898     | 0.584 | 41     |
 | H9        | 0.490     | 0.520    | 0.539 | 0.897     | 0.479 | 55     |
 | H10       | **0.534** | 0.538    | 0.537 | 0.879     | 0.607 | 26     |
+| H10n      | **0.544** | 0.545    | 0.544 | 0.873     | 0.535 | 43     |
+| H10fn     | 0.518     | 0.545    | 0.543 | 0.873     | 0.518 | 40     |
+| H10w0     | 0.500     | 0.529    | 0.527 | 0.884     | 0.549 | 33     |
 
 ## Statement-Level Localization
 
@@ -402,6 +408,9 @@ and ml5120 dataset on RTX 5090. Earlier H2/H3 runs with ml1024 never activated s
 | H8        | 1.069     | **0.912** | 0.977     | 0.167     | 0.400      | 0.068         |
 | H9        | 1.391     | 0.905     | 0.974     | 0.146     | 0.387      | 0.072         |
 | H10       | 1.180     | 0.798     | 0.975     | 0.212     | 0.432      | 0.045         |
+| H10n      | 0.946     | 0.814     | 0.971     | 0.204     | 0.432      | 0.049         |
+| H10fn     | 1.328     | 0.807     | 0.963     | 0.190     | 0.383      | 0.056         |
+| H10w0     | 1.001     | 0.867     | 0.980     | 0.230     | 0.444      | 0.037         |
 
 Both H2 and H3 use ml5120 dataset with fixed `lm_full_windowed` (mean-pool CLS across windows),
 so sliding window is genuinely active for functions exceeding 1024 tokens (~32% of MegaVul vuln functions).
@@ -425,6 +434,10 @@ H2/H3 both below G1 localization baseline (IFA 0.644) — mean aggregation blurs
 **H9 (cross-window attention, stride=1024)** — H8 with non-overlap windows (5 vs 9). Classification drops vs H8 (F1 0.490 vs 0.520, −0.030) and localization too (IFA 1.391 vs 1.069, Top-1 0.905 vs 0.912) — CrossWindowAttn benefits from H8's overlapping windows giving each token richer cross-window context; non-overlap starves it of that signal. Worst F1 in phase 8 besides H2/H5.
 
 **H10 (MLP-Mixer over window CLS, stride=1024)** — replaces softmax window-attn pool with WindowMixerPool (token-mix + channel-mix over 5 fixed window CLS). New phase-8 best F1 (0.534, +0.005 vs H1 0.529) and best Test Acc (0.538) with fewest epochs (26, early-stopped) — non-overlap + fixed window count is exactly the regime MLP-Mixer needs (ordered, fixed-length token set). Localization regresses vs H1 (IFA 1.180 vs 1.410 is actually better than H1, but Top-1 0.798 vs H1 0.747 better too — yet both well below H3/H6/H8); mixer pool has no localization-side branch (cross_window_attn=false), so stmt_head gets no extra signal from the mixer.
+
+**H10n (node+func unixcoder-base-nine)** — new phase-8 best F1 **0.544** (+0.010 vs H10 base 0.534), best Acc 0.545, and best localization of the H10 family (IFA 0.946, Top-1 0.814) — both beat base. The C-aware nine LM **helps here** because H10's sliding window makes func_lm active, and nine is applied consistently to **both** node + func. This overturns the N48-nine verdict (node-only nine, func inert: 0.484, worse): nine pays off only when func_lm actually consumes it. AUC 0.873 is slightly below base (0.879). 211s/ep, 2.53 hr.
+
+**H10fn (node unixcoder-base, func unixcoder-base-nine)** — F1 **0.518** (−0.016 vs base, −0.026 vs H10n) and worst localization of the three (IFA 1.328). Mixing base node embeddings with nine func tokens **hurts** — the win needs nine on both sides (H10n), not a split. Higher raw Prec/Rec (0.585/0.594) but lower macro F1 and confidence (0.518). Takeaway: use nine **consistently** (node+func) with an active func_lm, or stay fully on base — the mixed config is the worst of both.
 
 **Phase 8 winner: H10 — new best F1 (0.534) and Test Acc (0.538), beating H1 baseline (0.529/0.582 resp. — note H1 Acc still highest overall at 0.582) with the fewest epochs (26). H4 best AUC (0.927). H6 best localization IFA (1.034). H8 best Top-1 (0.912). H3 best Effort (0.041). H9 confirms CrossWindowAttn needs H8's overlapping windows — non-overlap (H9) regresses both tasks vs H8. H4/H10 candidates for Phase 11+ baseline depending on task priority (ranking vs macro-F1).**
 
@@ -587,23 +600,55 @@ Base H4 = Test F1 0.520. **M2 (gradual) = best ULMFiT (F1 0.532, +0.012 vs H4)**
 
 `configs/ablation/phase13/` — join the best GNN-only block (N48: jknet pool + gnn_plus + elu + ffn + skip) with the best Phase 8 LM aggregation (H10: UniXcoder sliding-window stride1024 + WindowMixerPool, localization=both concat). Tests whether the two architectural winners stack. O1 = hidden_dim 768 (from H10) → jknet pool 4×768=3072D dominates the 768D LM 4:1 (GNN-dominant fusion). O2 (pending) = hidden_dim 256 (faithful N48) → 1024D GNN balanced vs 768D LM.
 
-| Run | Run ID | Config | hidden | jknet pool | fused | GNN:LM |
-|---|---|---|---|---|---|---|
-| O1 | `20260612_131926_lmgat_codebert_multiclass` | `O1_join_n48gnn_h10lm.yaml` | 768 | 3072D | 3840 | 4:1 |
+| Run        | Run ID                                      | Config                             | hidden | jknet pool | fused | GNN:LM |
+| ---------- | ------------------------------------------- | ---------------------------------- | ------ | ---------- | ----- | ------ |
+| O1         | `20260612_131926_lmgat_codebert_multiclass` | `O1_join_n48gnn_h10lm.yaml`        | 768    | 3072D      | 3840  | 4:1    |
+| O2         | `20260613_081400_lmgat_codebert_multiclass` | `O2_join_n48gnn_h10lm_dim256.yaml` | 256    | 1024D      | 1792  | 1.3:1  |
+| O1-nine    | `20260615_080653_lmgat_codebert_multiclass` | `O1_unixcoder_nine.yaml`           | 768    | 3072D      | 3840  | 4:1    |
+| O2-nine    | `20260615_113136_lmgat_codebert_multiclass` | `O2_unixcoder_nine.yaml`           | 256    | 1024D      | 1792  | 1.3:1  |
+| O1-nine-lm | `20260615_131334_lmgat_codebert_multiclass` | `O1_unixcoder_nine_lm.yaml`        | 768    | 3072D      | 3840  | 4:1    |
+| O3 (cRT)   | `20260617_061505_lmgat_codebert_multiclass` | `O3_crt_o1.yaml`                   | 768    | 3072D       | 3840  | 4:1    |
+| O4 (proj)  | `20260617_064203_lmgat_codebert_multiclass` | `O4_o1_balanced_proj.yaml`         | 768    | 768D (proj) | 1536  | 1:1    |
+| O1-w0      | `20260617_113601_lmgat_codebert_multiclass` | `O1_join_n48gnn_h10lm_w0.yaml`     | 768    | 3072D       | 3840  | 4:1    |
+| O1-vo      | `20260617_234136_lmgat_codebert_multiclass` | `vulnonly/O1_vulnonly.yaml`        | 768    | 3072D       | 3840  | 4:1    |
+
+**Nine variants** (O1-nine, O2-nine, O1-nine-lm) — same O1/O2 join, node+func LM swapped from `unixcoder-base` to `unixcoder-base-nine` (9 langs incl. C/C++). O1-nine/O2-nine swap **both** node + func LM; O1-nine-lm swaps **func_lm only** (node LM stays base, isolating the func-LM effect since H10's sliding-window encoder is the actual func_lm consumer). Tests whether the C-aware LM helps the join, after N48-nine (node-LM only) was flat-to-worse.
 
 ## Classification
 
-| Run | Val F1 | Test F1 | Test Acc | F1-w | Prec | Rec | Prec-w | Rec-w | AUC-ROC | Conf. | Epochs |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| O1 | 0.534 | 0.524 | 0.494 | 0.544 | 0.512 | 0.542 | 0.659 | 0.455 | 0.877 | 0.332 | 77 |
+| Run        | Val F1 | Test F1 | Test Acc | F1-w  | Prec  | Rec   | Prec-w | Rec-w | AUC-ROC | Conf. | Epochs |
+| ---------- | ------ | ------- | -------- | ----- | ----- | ----- | ------ | ----- | ------- | ----- | ------ |
+| O1         | 0.534  | 0.524   | 0.494    | 0.544 | 0.512 | 0.542 | 0.659  | 0.455 | 0.877   | 0.332 | 77     |
+| O2         | 0.513  | 0.477   | 0.520    | 0.518 | 0.519 | 0.555 | 0.559  | 0.556 | 0.890   | 0.554 | 25     |
+| O1-nine    | 0.518  | 0.464   | 0.527    | 0.526 | 0.511 | 0.521 | 0.572  | 0.538 | 0.887   | 0.495 | 40     |
+| O2-nine    | 0.498  | 0.494   | 0.512    | 0.512 | 0.464 | 0.501 | 0.541  | 0.521 | 0.877   | 0.553 | 30     |
+| O1-nine-lm | 0.537  | 0.509   | 0.535    | 0.536 | 0.510 | 0.549 | 0.547  | 0.540 | 0.910   | 0.550 | 31     |
+| O3 (cRT)   | 0.546  | 0.520   | 0.535    | 0.529 | 0.570 | 0.513 | 0.547  | 0.541 | 0.868   | 0.860 | 30     |
+| O4 (proj)  | 0.520  | 0.498   | 0.514    | 0.514 | 0.527 | 0.552 | 0.542  | 0.531 | 0.908   | 0.566 | 20     |
+| O1-w0      | 0.529  | 0.524   | 0.525    | 0.526 | 0.533 | 0.532 | 0.578  | 0.500 | 0.872   | 0.434 | 47     |
+| O1-vo      | 0.551  | 0.552   | 0.581    | 0.577 | 0.561 | 0.580 | 0.573  | 0.563 | 0.914   | 0.617 | 24     |
 
 ## Statement-Level Localization
 
-| Run | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
-|---|---|---|---|---|---|---|
-| O1 | 0.707 | 0.878 | 0.966 | 0.258 | 0.439 | 0.027 |
+| Run        | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| ---------- | ----- | ------- | ------- | --------- | ---------- | ------------- |
+| O1         | 0.707 | 0.878   | 0.966   | 0.258     | 0.439      | 0.027         |
+| O2         | 0.980 | 0.871   | 0.972   | 0.230     | 0.447      | 0.036         |
+| O1-nine    | 0.775 | 0.873   | 0.977   | 0.216     | 0.417      | 0.043         |
+| O2-nine    | 0.720 | 0.873   | 0.972   | 0.201     | 0.422      | 0.049         |
+| O1-nine-lm | 1.328 | 0.829   | 0.978   | 0.219     | 0.429      | 0.043         |
+| O3 (cRT)   | 0.706 | 0.880   | 0.966   | 0.259     | 0.439      | 0.027         |
+| O4 (proj)  | 0.608 | 0.871   | 0.978   | 0.236     | 0.397      | 0.034         |
+| O1-w0      | 0.580 | 0.845   | 0.972   | 0.237     | 0.438      | 0.035         |
+| O1-vo      | 1.950 | 0.888   | 0.959   | 0.234     | 0.428      | 0.037         |
 
 **O1 (N48 GNN block + H10 LM aggregation, GNN-dominant 768)** — Test F1 0.524, tied with N48 (0.525), **below H10 (0.534)**. The two bests **do NOT stack** — the join lands at the GNN level, not above. Likely cause: jknet at hidden 768 makes the GNN pool 3072D drown the 768D LM 4:1 in the fused vector, so classification tracks the GNN branch (N48-like) and loses H10's LM edge. **Best F1-w of all runs (0.544)** with very high weighted precision (0.659) — strong on head classes — but macro 0.524 means the tail is weaker, and Val 0.534 vs Test 0.524 shows an overfit gap. Motivates **O2 (hidden 256, balanced 1024:768 fusion)** to stop the GNN dominating. 156.5M params, 20.7 GB (matched the ~20-24 GB estimate), 9 hr / 77 ep on RTX 5000 Ada.
+
+**O2 (balanced fusion, hidden 256 = faithful N48)** — Test F1 **0.477**, **below O1 (0.524) and H10 (0.534)** — the balance hypothesis FAILED: shrinking the GNN to 256 (1024:768 fusion) did NOT beat O1's GNN-dominant 768. It DID improve the head-class metrics (Acc 0.520 vs O1 0.494, Rec 0.555, AUC 0.890 vs 0.877, Conf 0.554) and slashed cost (131M params, **9.9 GB** vs O1 20.7, 339s vs 422s) — but macro-F1 dropped 0.047, so the smaller GNN lost tail-class discrimination. Caveat: early-stopped at **25 epochs** (vs O1 77) — possibly undertrained; a longer-patience rerun might recover. Net: the O-series join does not beat H10 0.534 at either fusion balance — combining the two architectural winners is F1-neutral-to-negative, the LM aggregation (H10) alone is the better model. **O-series closed: join ≤ H10.**
+
+**O1-vo (vuln-only 25-class) — fair head-to-head vs vuln-only baselines.** Same O1 join (jknet 768 + H10 LM, localization=both concat) but benign dropped, `num_classes 25`, ml5120, `num_workers 0` — matched to the vuln-only baseline label space (LOSVER, VulExplainer, LIVABLE). Test F1 **0.552** (Acc 0.581, F1-w 0.577, AUC 0.914, Conf 0.617). Vs the vuln-only baselines: above VulExplainer macro **0.576**? no — **below** LOSVER 0.580 and VulExplainer 0.576 on macro, but **higher accuracy** (0.581 vs LOSVER 0.620 — LOSVER still leads acc) and the best confidence. Key contrast: the **GNN-only N48-vo scores 0.601 macro** (ABLATION_GNN_ONLY.md), so on vuln-only the join again **does not beat the GNN-only block** (0.552 < 0.601), same pattern as the 26-class O1≤N48. The hybrid's value is localization (LM line scores), not macro-F1 — N48-vo is the multiclass headline, O1-vo the localization-capable variant. Early stop at 24 epochs. 156.5M params, 195s/ep, 1.31 hr on RTX 5090.
+
+**Nine LM swap (O1-nine, O2-nine, O1-nine-lm)** — swapping the node+func LM to `unixcoder-base-nine` (C/C++ aware) does **not** help the join. O1-nine **0.464** vs O1 base **0.524** (−0.060) — the full node+func swap clearly hurts. O1-nine-lm **0.509** (func_lm-only swap, node stays base) is the least harmful of the trio and posts the **best AUC of the whole O-series (0.910)** plus highest val F1 (0.537), but still trails base O1 (0.524) and H10 (0.534) on macro-F1, with the worst localization IFA (1.328 vs base 0.707). O2-nine **0.494** edges out O2 base **0.477** (+0.017) at hidden 256, but O2 base was undertrained (25 ep) so this is not a clean win, and it stays below O1. Net: the C-aware LM is flat-to-worse everywhere — consistent with N48-nine — and the func-only swap (nine-lm) is strictly better than the full swap when nine is used at all. **Stay on `unixcoder-base`; do not adopt nine for the headline.**
 
 ---
 
@@ -647,6 +692,8 @@ Base H4 = Test F1 0.520. **M2 (gradual) = best ULMFiT (F1 0.532, +0.012 vs H4)**
 | H8 crosswin s512         | RTX PRO 6000 Bk | 149.3M | 332s       | 3.78            | 24.2 GB   |
 | H9 crosswin s1024        | RTX 5090        | 149.3M | 196s       | 3.00            | 21.4 GB   |
 | H10 winmixer s1024       | RTX 5090        | 147.5M | 192s       | 1.39            | 17.1 GB   |
+| H10n node+func nine      | RTX 5090        | 147.5M | 211s       | 2.53            | 20.9 GB   |
+| H10fn func nine only     | RTX 5090        | 147.5M | 211s       | 2.35            | 21.6 GB   |
 | I2 line frozen           | RTX 5090        | 161.7M | 95s        | 0.61            | 18.3 GB   |
 | I3 line live             | RTX 5090        | 161.7M | 205s       | 1.66            | 20.1 GB   |
 | I4 line ctx±5 frozen     | RTX 5090        | 161.7M | 84s        | 1.22            | 17.4 GB   |
@@ -659,3 +706,13 @@ Base H4 = Test F1 0.520. **M2 (gradual) = best ULMFiT (F1 0.532, +0.012 vs H4)**
 | M3 ulmfit combined       | RTX 5090        | 146.9M | 163s       | 1.81            | 21.6 GB   |
 | D4 pool cnn              | RTX 5090        | 130.8M | 92s        | 0.95            | 8.1 GB    |
 | O1 join n48gnn h10lm     | RTX 5000 Ada    | 156.5M | 422s       | 9.02            | 20.7 GB   |
+| O2 join dim256 balanced  | RTX 5000 Ada    | 131.3M | 339s       | 2.36            | 9.9 GB    |
+| O1-nine node+func nine   | RTX 5090        | 156.5M | 195s       | 2.17            | 22.8 GB   |
+| O2-nine node+func nine   | RTX 5090        | 131.3M | 173s       | 1.45            | 10.7 GB   |
+| O1-nine-lm func nine     | RTX 5090        | 156.5M | 195s       | 1.68            | 18.6 GB   |
+| O3 cRT on O1             | RTX 5090        | 156.5M | 50s        | 0.42            | 8.8 GB    |
+| O4 O1 balanced proj      | RTX 5090        | 158.8M | 195s       | 1.08            | 25.3 GB   |
+| O1-w0 num_workers0       | RTX 5090        | 156.5M | 217s       | 2.84            | 20.1 GB   |
+| O1-vo 25-class           | RTX 5090        | 156.5M | 195s       | 1.31            | 24.4 GB   |
+| H10-w0 num_workers0      | RTX 5090        | 147.5M | 209s       | 1.92            | 18.6 GB   |
+
