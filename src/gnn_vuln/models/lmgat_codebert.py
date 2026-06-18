@@ -85,7 +85,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
                  use_grad_checkpoint=True,
                  stmt_both_mode="concat", stmt_lm_alpha=0.5,
                  cross_task_method="none", graph_pool="mean", graph_pool_proj_dim=0, jknet_mode="concat",
-                 jknet_readout="meanmax",
+                 jknet_readout="meanmax", jknet_loc=False,
                  mmoe_task_encoder=False, cross_task_residual=True,
                  mmoe_loc_transformer=False, live_lm="func",
                  gnn_model="gat", num_relations=7, num_bases=None,
@@ -242,7 +242,11 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         else:
             self.func_head = FuncHead(_fused_dim, hidden_dim, num_classes, dropout)
         lm_dim = self._lm_dim if localization_encoder in ("lm", "both") else 0
-        self.stmt_head = StmtHead(hidden_dim, lm_dim=lm_dim, localization_encoder=localization_encoder,
+        # jknet_loc: feed the JK-concat node vector [N, L*hidden] to localization (multi-scale
+        # per-line), not just the last-layer node vector. Only meaningful for jknet concat mode.
+        self._jknet_loc = bool(jknet_loc) and graph_pool == "jknet" and jknet_mode != "max"
+        loc_gnn_dim = num_layers * hidden_dim if self._jknet_loc else hidden_dim
+        self.stmt_head = StmtHead(loc_gnn_dim, lm_dim=lm_dim, localization_encoder=localization_encoder,
                                   both_mode=stmt_both_mode, lm_alpha=stmt_lm_alpha)
         self._cross_task_method = cross_task_method
         self.cross_task = build_cross_task(
@@ -297,6 +301,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         h = self.encoder(x, edge_index, edge_attr, batch=batch, rwse=rwse)
         # MoE load-balance aux loss (0 if no MoE). Read by trainer, added to total.
         self.moe_aux_loss = getattr(self.encoder, "_moe_aux_loss", None)
+        h_jk = None   # JK-concat node vector, set in jknet branch; reused by jknet_loc
         if self._graph_pool == "attention":
             h_graph = self.attn_pool(h, batch)
         elif self._graph_pool == "meanmax":
@@ -343,7 +348,10 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             h_graph = self.graph_proj(h_graph)
         B = h_graph.size(0)
         # Per-node GNN features for localization (optionally unit-normed, symmetric to F6 per_token norm).
-        h_loc = F.normalize(h, dim=-1) if self._normalize_gnn_output else h
+        # jknet_loc → use the JK-concat node vector [N, L*hidden] (multi-scale per line) instead of
+        # the last-layer node vector h.
+        node_src = h_jk if (self._jknet_loc and h_jk is not None) else h
+        h_loc = F.normalize(node_src, dim=-1) if self._normalize_gnn_output else node_src
         # Intermediate-MTL: pool the mid-layer node hiddens for group head.
         # Group gradient only flows through layers 0..mid_layer; CWE gradient through all.
         h_mid_graph = None
@@ -511,6 +519,7 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             graph_pool_proj_dim=getattr(cfg.model, "graph_pool_proj_dim", 0),
             jknet_mode=getattr(cfg.model, "jknet_mode", "concat"),
             jknet_readout=getattr(cfg.model, "jknet_readout", "meanmax"),
+            jknet_loc=getattr(cfg.model, "jknet_loc", False),
             mmoe_loc_transformer=getattr(cfg.model, "mmoe_loc_transformer", False),
             live_lm=getattr(cfg.model, "live_lm", "func"),
             gnn_model=getattr(cfg.model, "gnn_model", "gat"),
