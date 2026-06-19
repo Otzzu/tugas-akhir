@@ -102,6 +102,28 @@ def f1_macro(results_dir: Path) -> float:
     return float(m["function_level"]["f1_macro"])
 
 
+def accuracy_of(results_dir: Path) -> float:
+    m = json.loads((results_dir / "metrics_summary.json").read_text())
+    return float(m["function_level"]["accuracy"])
+
+
+def combined_alast(tag_a: str, tag_b: str) -> tuple[float, float]:
+    """A_last (paper EWC-DR §5.1.5): metrics over ALL seen classes after the final task.
+    Merge task-A (old, 0..25) + task-B (new, 26..35) test predictions and compute
+    macro-F1 + accuracy over the union (all 36). The final model is one model that holds
+    both increments, so this is its overall performance on everything it should know."""
+    import csv
+    from sklearn.metrics import f1_score, accuracy_score
+    yt, yp = [], []
+    for tag in (tag_a, tag_b):
+        with open(RESULTS / tag / "predictions.csv", newline="") as f:
+            for row in csv.DictReader(f):
+                yt.append(int(float(row["y_true"])))
+                yp.append(int(float(row["y_pred"])))
+    return (float(f1_score(yt, yp, average="macro", zero_division=0)),
+            float(accuracy_score(yt, yp)))
+
+
 def newest_train_dir(after: float) -> Path:
     best, bt = None, after
     for d in RESULTS.glob("*_lmgat_codebert_multiclass"):
@@ -152,7 +174,8 @@ def main() -> None:
     # Baseline (Sebelum pembaruan): task-A 26-class model on task-A test.
     # task-B is N.A. — the 26-class model has no head for the new classes.
     taskA_before = eval_ckpt(TASKA_CKPT, TASKA_EVAL26, "rlcil_taskA_before")
-    rows = [("Sebelum pembaruan", taskA_before, None, None)]
+    a1_acc = accuracy_of(RESULTS / "rlcil_taskA_before")   # A_1: acc after task-A (initial), for A_avg
+    rows = [("Sebelum pembaruan", taskA_before, None, None, None, None, None)]
 
     # Each method: train on task-B (36-class), eval on task-B (new) and task-A (old).
     ckpt_map = []   # (label, run_id) — uploaded ckpts, for re-eval without retraining
@@ -163,7 +186,10 @@ def main() -> None:
         ckpt = next((CKPTS / rdir.name).glob("best_*.pt"))
         taskB = eval_ckpt(ckpt, TASKB_EVAL,    f"rlcil_taskB_{rdir.name}")   # 10 new classes
         taskA = eval_ckpt(ckpt, TASKA_EVAL36,  f"rlcil_taskA_{rdir.name}")   # 26 old classes
-        rows.append((label, taskA, taskB, taskA_before - taskA))
+        # A_last: combined over all 36 seen classes (paper metric); A_avg = mean(A_1, A_last_acc)
+        alast_f1, alast_acc = combined_alast(f"rlcil_taskA_{rdir.name}", f"rlcil_taskB_{rdir.name}")
+        a_avg = (a1_acc + alast_acc) / 2.0
+        rows.append((label, taskA, taskB, taskA_before - taskA, alast_f1, alast_acc, a_avg))
         upload_ckpt(rdir.name)                                        # upload trained model for re-eval
         ckpt_map.append((label, rdir.name))
 
@@ -178,6 +204,9 @@ def main() -> None:
         "Task-A = MegaVul 26 kelas lama. Task-B = 10 CWE baru (megavul_cil, id 26..35).",
         "Sebelum pembaruan task-B = N.A. (model 26 kelas belum punya head untuk kelas baru).",
         "Forgetting = Macro F1 task-A sebelum pembaruan dikurangi sesudah (makin kecil makin baik).",
+        "A_last = metrik pada SEMUA kelas terlihat (gabungan task-A + task-B, 36 kelas) setelah",
+        "task terakhir; A_avg = rata-rata akurasi setelah tiap task (A_1 task-A, A_2 = A_last).",
+        "A_last dan A_avg mengikuti protokol CIL paper EWC-DR; akurasi seperti paper, plus macro-F1.",
         "",
         "Urutan dan asal data:",
         "1. Task-A (MegaVul): N48 dilatih pada MegaVul top-25 CWE plus benign (26 kelas).",
@@ -185,13 +214,16 @@ def main() -> None:
         "3. Pelatihan kontinual: mulai dari bobot task-A (head 26->36), lanjut pada task-B.",
         "4. Split test seed 42 (80/10/10); importance EWC-DR dan buffer replay dari train task-A.",
         "",
-        "| Metode | Macro F1 task-A | Macro F1 task-B | Forgetting ↓ |",
-        "|---|---|---|---|",
+        "| Metode | F1 task-A | F1 task-B | A_last F1 (36) | A_last Acc (36) | A_avg Acc | Forgetting ↓ |",
+        "|---|---|---|---|---|---|---|",
     ]
-    for label, ta, tb, fg in rows:
-        tb_s = "—" if tb is None else f"{tb:.3f}"
-        fg_s = "—" if fg is None else f"{fg:+.3f}"
-        md.append(f"| {label} | {ta:.3f} | {tb_s} | {fg_s} |")
+    for label, ta, tb, fg, al_f1, al_acc, a_avg in rows:
+        tb_s   = "—" if tb is None else f"{tb:.3f}"
+        fg_s   = "—" if fg is None else f"{fg:+.3f}"
+        alf_s  = "—" if al_f1 is None else f"{al_f1:.3f}"
+        ala_s  = "—" if al_acc is None else f"{al_acc:.3f}"
+        aavg_s = "—" if a_avg is None else f"{a_avg:.3f}"
+        md.append(f"| {label} | {ta:.3f} | {tb_s} | {alf_s} | {ala_s} | {aavg_s} | {fg_s} |")
     md += [
         "",
         "Checkpoint terlatih (Drive checkpoints/, untuk re-evaluasi tanpa latih ulang):",
