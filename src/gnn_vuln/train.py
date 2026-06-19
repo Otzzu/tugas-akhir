@@ -153,6 +153,10 @@ class TrainingSession:
             logger.info("StmtHead: vectorized scatter mode enabled")
 
         ewc   = self._setup_ewc(model, train_loader, in_channels)
+        if ewc is not None and getattr(cfg.ewc, "compute_only", False):
+            logger.info("ewc.compute_only=true → importance cache saved, exiting before training.")
+            return
+        replay_loader, replay_weight = self._setup_replay()
 
         # torch.compile — fuses kernels, ~20-50% speedup (PyTorch 2.0+, CUDA only)
         if getattr(cfg.train, "compile_model", False) and device.type == "cuda":
@@ -234,6 +238,7 @@ class TrainingSession:
             supcon_fn=supcon_fn, supcon_weight=self._supcon_weight,
             self_supcon_weight=self._self_supcon_weight,
             use_amp=use_amp, amp_dtype=amp_dtype, scaler=scaler, ewc=ewc,
+            replay_loader=replay_loader, replay_weight=replay_weight,
             grad_accum_steps=grad_accum_steps,
             label_smoothing=getattr(cfg.train, "label_smoothing", 0.0),
             use_livable_real=self._use_livable_real,
@@ -622,6 +627,72 @@ class TrainingSession:
         model.__class__ = build_model(self.cfg, in_channels, self._active_heads).__class__
         ewc._star = {k: v.cpu() for k, v in ewc._star.items()}
         return ewc
+
+    def _setup_replay(self):
+        """Experience Replay (Chaudhry et al. 2019): build a cyclic loader over a
+        small per-class memory buffer of the task-A dataset. Returns (loader, weight)
+        or (None, 1.0) when disabled."""
+        cfg = self.cfg
+        rcfg = getattr(cfg, "replay", None)
+        if rcfg is None or not getattr(rcfg, "enabled", False):
+            return None, 1.0
+        from torch_geometric.loader import DataLoader
+        from torch_geometric.data import Batch
+        pretrained_lm = getattr(cfg.model, "pretrained_lm", "microsoft/codebert-base")
+        func_lm = getattr(cfg.model, "func_lm", "") or pretrained_lm
+        kwargs = dict(
+            root=str(cfg.data.processed_dir.parent), max_nodes=cfg.data.max_nodes,
+            embedder_device=str(self.device), mode=cfg.data.mode,
+            pretrained_lm=pretrained_lm, func_lm=func_lm,
+            add_func_tokens=getattr(cfg.model, "add_func_tokens", False),
+            func_lm_source=getattr(cfg.model, "func_lm_source", "raw"),
+            top_cwe=getattr(cfg.data, "top_cwe", 0),
+            cwe_list=getattr(cfg.data, "cwe_list", None),
+            cwe_groups=getattr(cfg.data, "cwe_groups", None),
+            filter_owasp=getattr(cfg.data, "filter_owasp", False),
+            filter_top25_dangerous=getattr(cfg.data, "filter_top25_dangerous", False),
+            max_per_class=getattr(cfg.data, "max_per_class", 0),
+            resample_seed=getattr(cfg.data, "resample_seed", 42),
+            func_max_length=getattr(cfg.model, "func_max_length", 512),
+            storage=getattr(cfg.data, "storage", "inmemory"),
+            precompute_line_cls=getattr(cfg.model, "precompute_line_cls", False),
+            ds_name_suffix=getattr(rcfg, "ds_name_suffix", ""),
+        )
+        ds = CodeBERTGraphDataset(source=getattr(rcfg, "source", ""), **kwargs)
+        train_idx, _, _ = ds.get_splits(seed=cfg.train.seed)
+        bpc = int(getattr(rcfg, "buffer_per_class", 0))
+        if bpc > 0:
+            import collections
+            import random as _random
+            rng = _random.Random(int(getattr(rcfg, "buffer_seed", 42)))
+            by_class: dict[int, list[int]] = collections.defaultdict(list)
+            for i in train_idx:
+                by_class[int(ds[i].y)].append(i)
+            buf: list[int] = []
+            for _c, idxs in by_class.items():
+                rng.shuffle(idxs)
+                buf.extend(idxs[:bpc])
+        else:
+            buf = list(train_idx)
+
+        _needs_func_tokens = getattr(cfg.model, "live_lm", "func") != "none"
+        _KEYS = ("func_input_ids", "func_attention_mask", "func_token_lines")
+        def _collate(batch):
+            if not _needs_func_tokens:
+                for g in batch:
+                    for k in _KEYS:
+                        if hasattr(g, k):
+                            delattr(g, k)
+            return Batch.from_data_list(batch)
+
+        loader = DataLoader(ds[buf], batch_size=cfg.train.batch_size, shuffle=True,
+                            collate_fn=_collate, num_workers=0)
+        logger.info(
+            f"Experience replay: buffer={len(buf)} from task-A "
+            f"'{getattr(rcfg, 'source', '')}{getattr(rcfg, 'ds_name_suffix', '')}' "
+            f"(per_class={bpc or 'all'}), weight={getattr(rcfg, 'weight', 1.0)}"
+        )
+        return loader, float(getattr(rcfg, "weight", 1.0))
 
     def _setup_amp(self):
         cfg = self.cfg

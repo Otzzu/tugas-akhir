@@ -310,10 +310,35 @@ class TrainConfig:
 
 
 @dataclass
+class EWCConfig:
+    """EWC-DR continual learning. Read by train.py:_setup_ewc."""
+    enabled: bool = False
+    weight: float = 1000.0
+    scope: str = "all"               # all | gnn | lm
+    importance_cache: str = ""       # precomputed Fisher/theta* (computed on task-A)
+    source_checkpoint: str = ""      # task-A trained weights
+    n_batches: int = 0               # FIM batches (0 = all)
+    compute_only: bool = False       # compute+save importance cache then exit (no training)
+
+
+@dataclass
+class ReplayConfig:
+    """Experience Replay (Chaudhry et al. 2019). Read by train.py:_setup_replay."""
+    enabled: bool = False
+    source: str = ""                 # task-A dataset to replay (e.g. megavul)
+    ds_name_suffix: str = ""         # task-A .pt suffix (e.g. _vulnonly)
+    buffer_per_class: int = 0        # samples per class in the memory buffer (0 = all train)
+    weight: float = 1.0              # replay loss weight
+    buffer_seed: int = 42
+
+
+@dataclass
 class Config:
     data: DataConfig = field(default_factory=DataConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
+    ewc: EWCConfig = field(default_factory=EWCConfig)
+    replay: ReplayConfig = field(default_factory=ReplayConfig)
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Config":
@@ -331,6 +356,12 @@ class Config:
         if "train" in raw:
             for k, v in raw["train"].items():
                 setattr(cfg.train, k, v)
+        if "ewc" in raw:
+            for k, v in raw["ewc"].items():
+                setattr(cfg.ewc, k, v)
+        if "replay" in raw:
+            for k, v in raw["replay"].items():
+                setattr(cfg.replay, k, v)
         return cfg
 
 

@@ -104,6 +104,8 @@ class Trainer:
         amp_dtype: torch.dtype = torch.float16,
         scaler: GradScaler | None = None,
         ewc=None,   # EWCDR | None
+        replay_loader=None,        # cyclic DataLoader over task-A memory buffer | None
+        replay_weight: float = 1.0,
         grad_accum_steps: int = 1,
         label_smoothing: float = 0.0,
         use_livable_real: bool = False,
@@ -142,6 +144,9 @@ class Trainer:
         self.amp_dtype          = amp_dtype
         self.scaler             = scaler
         self.ewc                = ewc
+        self.replay_loader      = replay_loader
+        self.replay_weight      = replay_weight
+        self._replay_iter       = iter(replay_loader) if replay_loader is not None else None
         self.grad_accum_steps   = max(1, grad_accum_steps)
         self.label_smoothing    = label_smoothing
         self.use_livable_real   = use_livable_real
@@ -244,6 +249,7 @@ class Trainer:
         batch,
         class_weight: torch.Tensor | None = None,
         x_override: torch.Tensor | None = None,
+        add_ewc: bool = True,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Single forward pass → (logit_func, total_loss).
@@ -427,11 +433,20 @@ class Trainer:
             sl = self.supcon_fn.self_supervised_loss(z_combined, z2)
             loss = loss + self.self_supcon_weight * sl
 
-        # EWC-DR continual learning regularization
-        if self.ewc is not None:
+        # EWC-DR continual learning regularization (skip on replay forwards to
+        # avoid double-counting the penalty within one optimization step).
+        if self.ewc is not None and add_ewc:
             loss = loss + self.ewc.penalty(self.model)
 
         return logit_func, loss
+
+    def _next_replay_batch(self):
+        """Next batch from the cyclic task-A memory buffer (experience replay)."""
+        try:
+            return next(self._replay_iter)
+        except StopIteration:
+            self._replay_iter = iter(self.replay_loader)
+            return next(self._replay_iter)
 
     # ── Training epoch ────────────────────────────────────────────────────────
 
@@ -486,6 +501,14 @@ class Trainer:
 
             with autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.use_amp):
                 _, loss = self._forward(batch, class_weight)
+
+            # Experience Replay (Chaudhry et al. 2019): mix a task-A memory batch
+            # into this step's loss. add_ewc=False so the EWC penalty is counted once.
+            if self.replay_loader is not None:
+                rb = self._next_replay_batch().to(self.device, non_blocking=True)
+                with autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.use_amp):
+                    _, r_loss = self._forward(rb, class_weight, add_ewc=False)
+                loss = loss + self.replay_weight * r_loss
 
             # EDAT adversarial training: perturb identifier embeddings,
             # add adversarial loss. Runs adversarial forward in FP32 (no AMP)

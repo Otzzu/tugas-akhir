@@ -512,7 +512,7 @@ def main() -> None:
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument(
         "--format", default="devign",
-        choices=["devign", "bigvul", "megavul", "diversevul", "csv", "merged", "titanvul"],
+        choices=["devign", "bigvul", "megavul", "diversevul", "csv", "merged", "titanvul", "relearn"],
     )
     parser.add_argument("--code-col", default="func")
     parser.add_argument("--label-col", default="target")
@@ -619,8 +619,8 @@ def main() -> None:
         df["func_graph_path"] = df["id"].map(lambda i: raw_df["func_graph_path"].iloc[i] if 0 <= i < len(raw_df) else "")
         df["func_graph_path"] = df["func_graph_path"].fillna("")
 
-    elif args.format in ("merged", "titanvul"):
-        # merged/titanvul: same schema as BigVul (func_before, func_after, vul, CWE ID)
+    elif args.format in ("merged", "titanvul", "relearn"):
+        # merged/titanvul/relearn: same schema as BigVul (func_before, func_after, vul, CWE ID)
         is_multi_class = not args.binary
         vocab_path = args.cwe_vocab or (args.out_dir / "cwe_vocab.json")
         existing_vocab = None
