@@ -112,7 +112,7 @@ def newest_train_dir(after: float) -> Path:
     for d in RESULTS.glob("*_lmgat_codebert_multiclass"):
         if d.name.startswith("rl_"):          # skip our eval output dirs
             continue
-        ms = d / "metrics_summary.json"
+        ms = d / "training_summary.json"      # train writes this; metrics_summary.json comes from evaluate
         if ms.exists() and ms.stat().st_mtime > after and ms.stat().st_mtime >= bt:
             best, bt = d, ms.stat().st_mtime
     if best is None:
@@ -180,9 +180,9 @@ def main() -> None:
         t0 = time.time()
         sh([sys.executable, "-m", "gnn_vuln.train", "--config", cfg])
         rdir = newest_train_dir(t0)
-        taskB = f1_macro(rdir)                                   # task-B test (from training)
         ckpt = next((CKPTS / rdir.name).glob("best_*.pt"))
-        taskA = eval_ckpt(ckpt, MEGAVUL_CFG, f"rl_taskA_{rdir.name}")
+        taskB = eval_ckpt(ckpt, RELEARN_CFG, f"rl_taskB_{rdir.name}")   # task-B test
+        taskA = eval_ckpt(ckpt, MEGAVUL_CFG, f"rl_taskA_{rdir.name}")   # task-A test
         rows.append((label, taskA, taskB, taskA_before - taskA))  # forgetting = drop on task-A
 
     # Write RELEARN_RESULTS.md
