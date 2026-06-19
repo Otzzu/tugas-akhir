@@ -651,18 +651,24 @@ class TrainingSession:
             pretrained_lm=pretrained_lm, func_lm=func_lm,
             add_func_tokens=getattr(cfg.model, "add_func_tokens", False),
             func_lm_source=getattr(cfg.model, "func_lm_source", "raw"),
-            top_cwe=getattr(cfg.data, "top_cwe", 0),
             cwe_list=getattr(cfg.data, "cwe_list", None),
             cwe_groups=getattr(cfg.data, "cwe_groups", None),
             filter_owasp=getattr(cfg.data, "filter_owasp", False),
-            filter_top25_dangerous=getattr(cfg.data, "filter_top25_dangerous", False),
-            max_per_class=getattr(cfg.data, "max_per_class", 0),
-            resample_seed=getattr(cfg.data, "resample_seed", 42),
             func_max_length=getattr(cfg.model, "func_max_length", 512),
             storage=getattr(cfg.data, "storage", "inmemory"),
             precompute_line_cls=getattr(cfg.model, "precompute_line_cls", False),
             ds_name_suffix=getattr(rcfg, "ds_name_suffix", ""),
         )
+        # Dataset-identity params: prefer replay-config overrides (task-A subset),
+        # else inherit cfg.data. Lets the replay buffer load task-A's megavul .pt even
+        # when task-B's data block differs (CIL: megavul_cil filter-off vs task-A filter_top25).
+        def _rd(k, default):
+            v = getattr(rcfg, k, None)
+            return v if v is not None else getattr(cfg.data, k, default)
+        kwargs["top_cwe"]                = _rd("top_cwe", 0)
+        kwargs["filter_top25_dangerous"] = _rd("filter_top25_dangerous", False)
+        kwargs["max_per_class"]          = _rd("max_per_class", 0)
+        kwargs["resample_seed"]          = _rd("resample_seed", 42)
         ds = CodeBERTGraphDataset(source=getattr(rcfg, "source", ""), **kwargs)
         train_idx, _, _ = ds.get_splits(seed=cfg.train.seed)
         bpc = int(getattr(rcfg, "buffer_per_class", 0))

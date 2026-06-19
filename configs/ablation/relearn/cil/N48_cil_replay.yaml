@@ -56,6 +56,11 @@ replay:
   buffer_per_class: 50
   weight: 1.0
   buffer_seed: 42
+  # task-A megavul subset (overrides cil data block so the buffer uses the trained-on .pt)
+  filter_top25_dangerous: true
+  max_per_class: 1600
+  top_cwe: 0
+  resample_seed: 42
 
 train:
   seed: 42

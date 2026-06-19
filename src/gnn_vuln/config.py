@@ -330,6 +330,14 @@ class ReplayConfig:
     buffer_per_class: int = 0        # samples per class in the memory buffer (0 = all train)
     weight: float = 1.0              # replay loss weight
     buffer_seed: int = 42
+    # Optional overrides for the replay (task-A) dataset params. None = inherit cfg.data.
+    # Needed when task-B's data block differs from task-A — e.g. CIL: task-B is
+    # megavul_cil (filter off, no cap) but the replay buffer must use task-A's megavul
+    # subset (filter_top25 + max_per_class). Set these to the task-A values.
+    top_cwe: int | None = None
+    filter_top25_dangerous: bool | None = None
+    max_per_class: int | None = None
+    resample_seed: int | None = None
 
 
 @dataclass
