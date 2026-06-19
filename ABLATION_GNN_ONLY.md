@@ -345,18 +345,21 @@ Graph-ViT/MLP-Mixer **collapses classification** — Test F1 ~0.34 vs the N-seri
 | ID         | Run ID                                      | Config              | classes | dataset            |
 | ---------- | ------------------------------------------- | ------------------- | ------- | ------------------ |
 | N48-vo     | `20260617_230612_lmgat_codebert_multiclass` | `N48_vulnonly.yaml` | 25      | ml1024_vulnonly    |
+| N48-vo-jk  | `20260618_152504_lmgat_codebert_multiclass` | `N48_vulnonly_jkloc.yaml` | 25      | ml1024_vulnonly    |
 
 ### Classification
 
 | ID      | Val F1 | Test F1 | Test Acc | F1-w  | Prec  | Rec   | Prec-w | Rec-w | AUC-ROC | Conf. | Epochs |
 | ------- | ------ | ------- | -------- | ----- | ----- | ----- | ------ | ----- | ------- | ----- | ------ |
 | N48-vo  | 0.556  | 0.601   | 0.564    | 0.558 | 0.612 | 0.599 | 0.595  | 0.590 | 0.929   | 0.502 | 42     |
+| N48-vo-jk | 0.535  | 0.552   | 0.568    | 0.565 | 0.598 | 0.564 | 0.603  | 0.583 | 0.921   | 0.489 | 42     |
 
 ### Statement-Level Localization
 
 | ID     | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
 | ------ | ----- | ------- | ------- | --------- | ---------- | ------------- |
 | N48-vo | 0.474 | 0.845   | 0.974   | 0.203     | 0.449      | 0.049         |
+| N48-vo-jk | 0.676 | 0.874   | 0.966   | 0.238     | 0.461      | 0.035         |
 
 **N48-vo (25-class vuln-only) — beats every vuln-only baseline on macro-F1.** Test F1 **0.601** vs LOSVER **0.580**, VulExplainer **0.576**, LIVABLE **0.047** (all vuln-only 25-class, BASELINE_RESULTS.md). The GNN-only backbone tops the fully-fine-tuned LM baselines on the same label space despite a frozen node-embedding LM and ~4.7M params (vs LOSVER UniXcoder + VulExplainer GraphCodeBERT, 100M+ each). AUC 0.929 highest in the set. The 26-class headline (N48 0.525) was depressed by the benign class + dead tail — restricting to the 25 dangerous CWE the baselines also use is the fair frame. Use as **the multiclass headline vs baselines.** 4.7M params, 44s/ep, 0.52 hr on RTX 5090.
 
@@ -442,3 +445,4 @@ Graph-ViT/MLP-Mixer **collapses classification** — Test F1 ~0.34 vs the N-seri
 | N48-top18 19-class       | RTX 5070 Ti     | 4.7M   | 56s        | 1.08            | 10.8 GB   |
 | N48-nine node-LM swap    | RTX 3090 Ti     | 4.7M   | 41s        | 0.57            | 10.6 GB   |
 | N48-vo 25-class          | RTX 5090        | 4.7M   | 44s        | 0.52            | 13.2 GB   |
+| N48-vo-jk 25-class       | RTX 5090        | 4.7M   | 44s        | 0.52            | 13.2 GB   |

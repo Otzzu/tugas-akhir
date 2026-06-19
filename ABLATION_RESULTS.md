@@ -616,6 +616,7 @@ Base H4 = Test F1 0.520. **M2 (gradual) = best ULMFiT (F1 0.532, +0.012 vs H4)**
 | O4 (proj)  | `20260617_064203_lmgat_codebert_multiclass` | `O4_o1_balanced_proj.yaml`         | 768    | 768D (proj) | 1536  | 1:1    |
 | O1-w0      | `20260617_113601_lmgat_codebert_multiclass` | `O1_join_n48gnn_h10lm_w0.yaml`     | 768    | 3072D       | 3840  | 4:1    |
 | O1-vo      | `20260617_234136_lmgat_codebert_multiclass` | `vulnonly/O1_vulnonly.yaml`        | 768    | 3072D       | 3840  | 4:1    |
+| O1-vo-jk   | `20260618_135742_lmgat_codebert_multiclass` | `vulnonly/O1_vulnonly_jkloc.yaml`  | 768    | 3072D       | 3840  | 4:1    |
 
 **Nine variants** (O1-nine, O2-nine, O1-nine-lm) — same O1/O2 join, node+func LM swapped from `unixcoder-base` to `unixcoder-base-nine` (9 langs incl. C/C++). O1-nine/O2-nine swap **both** node + func LM; O1-nine-lm swaps **func_lm only** (node LM stays base, isolating the func-LM effect since H10's sliding-window encoder is the actual func_lm consumer). Tests whether the C-aware LM helps the join, after N48-nine (node-LM only) was flat-to-worse.
 
@@ -632,6 +633,7 @@ Base H4 = Test F1 0.520. **M2 (gradual) = best ULMFiT (F1 0.532, +0.012 vs H4)**
 | O4 (proj)  | 0.520  | 0.498   | 0.514    | 0.514 | 0.527 | 0.552 | 0.542  | 0.531 | 0.908   | 0.566 | 20     |
 | O1-w0      | 0.529  | 0.524   | 0.525    | 0.526 | 0.533 | 0.532 | 0.578  | 0.500 | 0.872   | 0.434 | 47     |
 | O1-vo      | 0.551  | 0.552   | 0.581    | 0.577 | 0.561 | 0.580 | 0.573  | 0.563 | 0.914   | 0.617 | 24     |
+| O1-vo-jk   | 0.511  | 0.554   | 0.552    | 0.547 | 0.495 | 0.543 | 0.580  | 0.570 | 0.900   | 0.545 | 26     |
 
 ## Statement-Level Localization
 
@@ -646,6 +648,7 @@ Base H4 = Test F1 0.520. **M2 (gradual) = best ULMFiT (F1 0.532, +0.012 vs H4)**
 | O4 (proj)  | 0.608 | 0.871   | 0.978   | 0.236     | 0.397      | 0.034         |
 | O1-w0      | 0.580 | 0.845   | 0.972   | 0.237     | 0.438      | 0.035         |
 | O1-vo      | 1.950 | 0.888   | 0.959   | 0.234     | 0.428      | 0.037         |
+| O1-vo-jk   | 1.620 | 0.731   | 0.930   | 0.199     | 0.430      | 0.050         |
 
 **O1 (N48 GNN block + H10 LM aggregation, GNN-dominant 768)** — Test F1 0.524, tied with N48 (0.525), **below H10 (0.534)**. The two bests **do NOT stack** — the join lands at the GNN level, not above. Likely cause: jknet at hidden 768 makes the GNN pool 3072D drown the 768D LM 4:1 in the fused vector, so classification tracks the GNN branch (N48-like) and loses H10's LM edge. **Best F1-w of all runs (0.544)** with very high weighted precision (0.659) — strong on head classes — but macro 0.524 means the tail is weaker, and Val 0.534 vs Test 0.524 shows an overfit gap. Motivates **O2 (hidden 256, balanced 1024:768 fusion)** to stop the GNN dominating. 156.5M params, 20.7 GB (matched the ~20-24 GB estimate), 9 hr / 77 ep on RTX 5000 Ada.
 
@@ -719,6 +722,7 @@ Base H4 = Test F1 0.520. **M2 (gradual) = best ULMFiT (F1 0.532, +0.012 vs H4)**
 | O4 O1 balanced proj      | RTX 5090        | 158.8M | 195s       | 1.08            | 25.3 GB   |
 | O1-w0 num_workers0       | RTX 5090        | 156.5M | 217s       | 2.84            | 20.1 GB   |
 | O1-vo 25-class           | RTX 5090        | 156.5M | 195s       | 1.31            | 24.4 GB   |
+| O1-vo-jk 25-class        | RTX 5090        | 156.5M | 186s       | 1.35            | 20.4 GB   |
 | H10-vo 25-class          | RTX 5090        | 147.5M | 188s       | 2.04            | 20.1 GB   |
 | H10-w0 num_workers0      | RTX 5090        | 147.5M | 209s       | 1.92            | 18.6 GB   |
 
