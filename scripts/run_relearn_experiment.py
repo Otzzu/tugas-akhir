@@ -36,10 +36,51 @@ METHODS = [
 
 ENV = {**os.environ, "PYTHONPATH": "src"}
 
+# ── Drive setup (used only with --setup) ────────────────────────────────────
+DRIVE_ROOT = "gdrive-mesach:tugas-akhir"
+RELEARN_BUNDLE = "relearn_bundle.tar.gz"               # at DRIVE_ROOT/ (CPG + parquet)
+# Fill these with the exact archive names on Drive (leave "" to skip — provide the file yourself):
+MEGAVUL_PT_ARCHIVE = ""   # e.g. "lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_..._s1600r42_lazy.tar.gz" (DRIVE_ROOT/)
+TASKA_CKPT_ARCHIVE = ""   # e.g. "<run_id>_checkpoints.zip" at DRIVE_ROOT/checkpoints/  (unzips to checkpoints/<run_id>/best_*.pt)
+
 
 def sh(args: list[str]) -> None:
     print("\n+ " + " ".join(str(a) for a in args), flush=True)
     subprocess.run([str(a) for a in args], check=True, cwd=str(ROOT), env=ENV)
+
+
+def _rclone(src: str, dst: str) -> None:
+    sh(["rclone", "copy", src, dst, "--progress"])
+
+
+def _extract(archive: Path, into: Path = ROOT) -> None:
+    if archive.suffix == ".zip":
+        sh(["unzip", "-o", "-q", str(archive), "-d", str(into)])
+    else:  # .tar.gz / .tgz
+        sh(["bash", "-c", f'tar -I "$(command -v pigz || echo gzip)" -xf "{archive}" -C "{into}"'])
+
+
+def setup() -> None:
+    """Download + extract prerequisites from Drive (idempotent — skips if present)."""
+    # 1. relearn CPG bundle -> data/raw/relearn/ + parquet
+    if not (ROOT / "data" / "raw" / "relearn").exists():
+        _rclone(f"{DRIVE_ROOT}/{RELEARN_BUNDLE}", str(ROOT))
+        _extract(ROOT / RELEARN_BUNDLE)
+    else:
+        print("relearn CPG already present, skip download.")
+    # 2. MegaVul task-A .pt (importance + replay buffer)
+    if MEGAVUL_PT_ARCHIVE and not list((ROOT / "data" / "processed").glob("lm_dataset_megavul_multiclass*")):
+        _rclone(f"{DRIVE_ROOT}/{MEGAVUL_PT_ARCHIVE}", str(ROOT))
+        _extract(ROOT / MEGAVUL_PT_ARCHIVE)
+    elif not MEGAVUL_PT_ARCHIVE:
+        print("WARN: MEGAVUL_PT_ARCHIVE not set — ensure megavul .pt is present for importance + replay.")
+    # 3. task-A checkpoint
+    if TASKA_CKPT_ARCHIVE and not TASKA_CKPT.exists():
+        _rclone(f"{DRIVE_ROOT}/checkpoints/{TASKA_CKPT_ARCHIVE}", str(ROOT / "checkpoints"))
+        _extract(ROOT / "checkpoints" / TASKA_CKPT_ARCHIVE, ROOT / "checkpoints")
+        print(f"NOTE: ensure the extracted best_*.pt is at {TASKA_CKPT} (rename/symlink if needed).")
+    elif not TASKA_CKPT_ARCHIVE:
+        print(f"WARN: TASKA_CKPT_ARCHIVE not set — ensure {TASKA_CKPT} exists.")
 
 
 def f1_macro(results_dir: Path) -> float:
@@ -72,6 +113,14 @@ def eval_ckpt(ckpt: Path, config: Path, tag: str) -> float:
 
 
 def main() -> None:
+    import argparse
+    ap = argparse.ArgumentParser(description="Run the relearn (domain-IL) continual learning experiment")
+    ap.add_argument("--setup", action="store_true",
+                    help="download + extract prerequisites from Drive before running")
+    args = ap.parse_args()
+    if args.setup:
+        setup()
+
     if not TASKA_CKPT.exists():
         sys.exit(f"Missing task-A checkpoint: {TASKA_CKPT}")
 

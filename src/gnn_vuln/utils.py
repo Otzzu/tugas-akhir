@@ -157,6 +157,48 @@ def load_checkpoint(model: torch.nn.Module, path: str | Path, device: str = "cpu
     return {k: v for k, v in state.items() if k != "model_state_dict"}
 
 
+def load_checkpoint_expandable(model: torch.nn.Module, path: str | Path, device: str = "cpu") -> dict:
+    """
+    Load weights into a model whose classifier head may be LARGER than the
+    checkpoint's (class-incremental head expansion). Parameters with matching
+    shape are copied exactly. Parameters whose shape differs only by growth
+    (e.g. func_head.weight [26, F] -> [36, F]) get their overlapping leading
+    slice copied; the new rows keep their fresh initialization. Missing keys are
+    left at init. Use for CIL task-B init from a task-A checkpoint.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {path}")
+    state = torch.load(path, map_location=device, weights_only=False)
+    sd = state["model_state_dict"]
+    if any(k.startswith("_orig_mod.") for k in sd):
+        sd = {k.removeprefix("_orig_mod."): v for k, v in sd.items()}
+
+    msd = model.state_dict()
+    exact, expanded, skipped = 0, [], []
+    with torch.no_grad():
+        for name, dst in msd.items():
+            src = sd.get(name)
+            if src is None:
+                skipped.append(name)
+                continue
+            if src.shape == dst.shape:
+                dst.copy_(src)
+                exact += 1
+            elif src.dim() == dst.dim() and all(s <= d for s, d in zip(src.shape, dst.shape)):
+                sl = tuple(slice(0, s) for s in src.shape)   # copy overlapping leading block
+                dst[sl].copy_(src)
+                expanded.append((name, tuple(src.shape), tuple(dst.shape)))
+            else:
+                skipped.append(name)
+    model.load_state_dict(msd)
+    logger.info(
+        f"Expandable load ← {path}: {exact} exact, "
+        f"{len(expanded)} expanded {[e[0] for e in expanded]}, {len(skipped)} left-at-init"
+    )
+    return {k: v for k, v in state.items() if k != "model_state_dict"}
+
+
 def load_resume_checkpoint(
     path: str | Path,
     model: torch.nn.Module,

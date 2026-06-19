@@ -512,7 +512,7 @@ def main() -> None:
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument(
         "--format", default="devign",
-        choices=["devign", "bigvul", "megavul", "diversevul", "csv", "merged", "titanvul", "relearn"],
+        choices=["devign", "bigvul", "megavul", "diversevul", "csv", "merged", "titanvul", "relearn", "megavul_cil"],
     )
     parser.add_argument("--code-col", default="func")
     parser.add_argument("--label-col", default="target")
@@ -595,8 +595,9 @@ def main() -> None:
         df = load_diversevul(args.input)
         is_multi_class = False
 
-    elif args.format == "megavul":
+    elif args.format in ("megavul", "megavul_cil"):
         # MegaVul: has pre-built graphs in func_graph_path column
+        # megavul_cil = class-incremental task-B subset (non-top25 CWE), same prebuilt-graph path
         # Uses load_bigvul for CWE vocab + label assignment, then joins graph paths
         is_multi_class = not args.binary
         vocab_path = args.cwe_vocab or (args.out_dir / "cwe_vocab.json")
@@ -677,7 +678,7 @@ def main() -> None:
     _LANG_COL = next((c for c in ("lang", "language", "extension") if c in df.columns), None)
     _EXT_NORM = {"C": "C", "CPP": "C++", "C++": "C++"}  # BigVul lang column values
 
-    is_megavul = args.format == "megavul"
+    is_megavul = args.format in ("megavul", "megavul_cil")
     work: list[tuple] = []
     for local_idx, row in enumerate(df.itertuples(index=False)):
         class_id = int(row.label)
