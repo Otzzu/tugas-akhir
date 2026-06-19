@@ -44,7 +44,7 @@ model:
   func_head_type: linear
   jknet_mode: concat
   jknet_readout: meanmax
-  jknet_loc: true
+  jknet_loc: false            # match N48 base (localization on last-layer node vec)
   # sequential two-stage knobs
   seq_stage2_input: raw       # raw → [x, s_i] | loc → [h_loc, s_i]
   seq_susp_pool: false        # true → stage-2 pool weighted by suspicion (1 + k·s_i)
