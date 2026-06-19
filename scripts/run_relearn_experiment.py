@@ -44,6 +44,9 @@ RELEARN_BUNDLE = "relearn_bundle.tar.gz"               # at DRIVE_ROOT/ (CPG + p
 MEGAVUL_PT_DIR = "data/processed/megavul"              # Drive subdir holding the .pt tar
 MEGAVUL_PT_ARCHIVE = "lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42_lazy_20260513_153956.tar.gz"
 TASKA_CKPT_ARCHIVE = "20260606_163818_lmgat_codebert_multiclass_checkpoints.zip"   # DRIVE_ROOT/checkpoints/ -> checkpoints/<run_id>/best_*.pt
+# Prebuilt relearn .pt (vocab-aligned) — fill after the first upload to skip rebuilding on the pod.
+RELEARN_PT_DIR = "data/processed/relearn"
+RELEARN_PT_ARCHIVE = ""   # e.g. "lm_dataset_relearn_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42_lazy.tar.gz"
 
 
 def sh(args: list[str]) -> None:
@@ -70,6 +73,7 @@ def setup() -> None:
         _extract(ROOT / RELEARN_BUNDLE)
     else:
         print("relearn CPG already present, skip download.")
+    _align_relearn_vocab()   # canonical vocab BEFORE any .pt download so the guard keeps it
     # 2. MegaVul task-A .pt (importance + replay buffer) -> data/processed/
     proc = ROOT / "data" / "processed"
     if not list(proc.glob("lm_dataset_megavul_multiclass*")):
@@ -89,6 +93,12 @@ def setup() -> None:
         print(f"task-A ckpt {src.name} -> {TASKA_CKPT}")
     else:
         print("task-A ckpt already present, skip download.")
+    # 4. prebuilt relearn .pt (optional) — skips the GPU rebuild on the pod
+    if RELEARN_PT_ARCHIVE and not list(proc.glob("lm_dataset_relearn_multiclass*")):
+        _rclone(f"{DRIVE_ROOT}/{RELEARN_PT_DIR}/{RELEARN_PT_ARCHIVE}", str(proc))
+        _extract(proc / RELEARN_PT_ARCHIVE, proc)
+    elif not RELEARN_PT_ARCHIVE:
+        print("RELEARN_PT_ARCHIVE not set — relearn .pt will build from CPG on first use.")
 
 
 def f1_macro(results_dir: Path) -> float:
