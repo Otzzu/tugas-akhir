@@ -124,13 +124,14 @@ def eval_ckpt(ckpt: Path, config: Path, tag: str) -> float:
     return f1_macro(RESULTS / tag)
 
 
-def upload_ckpt(run_id: str, subdir: str) -> None:
-    """Zip trained best_*.pt → Drive checkpoints/<subdir>/ for re-eval without retraining."""
-    z = f"{run_id}_best.zip"
-    sh(["bash", "-c", f'cd "{ROOT}" && rm -f "{z}" && zip -q -r "{z}" checkpoints/{run_id}/best_*.pt'])
-    subprocess.run(["rclone", "copy", str(ROOT / z), f"{DRIVE_ROOT}/checkpoints/{subdir}/", "--progress"], check=False)
+def upload_ckpt(run_id: str) -> None:
+    """Zip the full checkpoints/<run_id>/ dir as <run_id>_checkpoints.zip → Drive checkpoints/
+    (standard convention, inner path checkpoints/<run_id>/) for re-eval or resume."""
+    z = f"{run_id}_checkpoints.zip"
+    sh(["bash", "-c", f'cd "{ROOT}" && rm -f "{z}" && zip -q -r "{z}" checkpoints/{run_id}'])
+    subprocess.run(["rclone", "copy", str(ROOT / z), f"{DRIVE_ROOT}/checkpoints/", "--progress"], check=False)
     (ROOT / z).unlink(missing_ok=True)
-    print(f"Uploaded {z} -> {DRIVE_ROOT}/checkpoints/{subdir}/")
+    print(f"Uploaded {z} -> {DRIVE_ROOT}/checkpoints/")
 
 
 def main() -> None:
@@ -163,7 +164,7 @@ def main() -> None:
         taskB = eval_ckpt(ckpt, TASKB_EVAL,    f"rlcil_taskB_{rdir.name}")   # 10 new classes
         taskA = eval_ckpt(ckpt, TASKA_EVAL36,  f"rlcil_taskA_{rdir.name}")   # 26 old classes
         rows.append((label, taskA, taskB, taskA_before - taskA))
-        upload_ckpt(rdir.name, "relearn_cil")                         # upload trained model for re-eval
+        upload_ckpt(rdir.name)                                        # upload trained model for re-eval
         ckpt_map.append((label, rdir.name))
 
     # Write RELEARN_CIL_RESULTS.md
@@ -193,10 +194,10 @@ def main() -> None:
         md.append(f"| {label} | {ta:.3f} | {tb_s} | {fg_s} |")
     md += [
         "",
-        "Checkpoint terlatih (Drive checkpoints/relearn_cil/, untuk re-evaluasi tanpa latih ulang):",
+        "Checkpoint terlatih (Drive checkpoints/, untuk re-evaluasi tanpa latih ulang):",
     ]
     for label, run_id in ckpt_map:
-        md.append(f"- {label}: `{run_id}_best.zip` (config: lihat configs/ablation/relearn/cil/)")
+        md.append(f"- {label}: `{run_id}_checkpoints.zip` (config: lihat configs/ablation/relearn/cil/)")
     OUT_MD.write_text("\n".join(md) + "\n", encoding="utf-8")
     print("\n" + OUT_MD.read_text())
 

@@ -130,14 +130,15 @@ def eval_ckpt(ckpt: Path, config: Path, tag: str) -> float:
     return f1_macro(RESULTS / tag)
 
 
-def upload_ckpt(run_id: str, subdir: str) -> None:
-    """Zip the trained best_*.pt and upload to Drive checkpoints/<subdir>/ so the model
-    can be re-evaluated later without retraining. Inner path checkpoints/<run_id>/best_*.pt."""
-    z = f"{run_id}_best.zip"
-    sh(["bash", "-c", f'cd "{ROOT}" && rm -f "{z}" && zip -q -r "{z}" checkpoints/{run_id}/best_*.pt'])
-    subprocess.run(["rclone", "copy", str(ROOT / z), f"{DRIVE_ROOT}/checkpoints/{subdir}/", "--progress"], check=False)
+def upload_ckpt(run_id: str) -> None:
+    """Zip the full checkpoints/<run_id>/ dir (best + last) as <run_id>_checkpoints.zip and
+    upload to Drive checkpoints/ — the standard checkpoint-zip convention (inner path
+    checkpoints/<run_id>/), so it re-evaluates or resumes like any other model checkpoint."""
+    z = f"{run_id}_checkpoints.zip"
+    sh(["bash", "-c", f'cd "{ROOT}" && rm -f "{z}" && zip -q -r "{z}" checkpoints/{run_id}'])
+    subprocess.run(["rclone", "copy", str(ROOT / z), f"{DRIVE_ROOT}/checkpoints/", "--progress"], check=False)
     (ROOT / z).unlink(missing_ok=True)
-    print(f"Uploaded {z} -> {DRIVE_ROOT}/checkpoints/{subdir}/")
+    print(f"Uploaded {z} -> {DRIVE_ROOT}/checkpoints/")
 
 
 def _align_relearn_vocab() -> None:
@@ -195,7 +196,7 @@ def main() -> None:
         taskB = eval_ckpt(ckpt, RELEARN_CFG, f"rl_taskB_{rdir.name}")   # task-B test
         taskA = eval_ckpt(ckpt, MEGAVUL_CFG, f"rl_taskA_{rdir.name}")   # task-A test
         rows.append((label, taskA, taskB, taskA_before - taskA))  # forgetting = drop on task-A
-        upload_ckpt(rdir.name, "relearn")                         # upload trained model for re-eval
+        upload_ckpt(rdir.name)                                    # upload trained model for re-eval
         ckpt_map.append((label, rdir.name))
 
     # Write RELEARN_RESULTS.md
@@ -224,10 +225,10 @@ def main() -> None:
         md.append(f"| {label} | {ta:.3f} | {tb:.3f} | {fg_s} |")
     md += [
         "",
-        "Checkpoint terlatih (Drive checkpoints/relearn/, untuk re-evaluasi tanpa latih ulang):",
+        "Checkpoint terlatih (Drive checkpoints/, untuk re-evaluasi tanpa latih ulang):",
     ]
     for label, run_id in ckpt_map:
-        md.append(f"- {label}: `{run_id}_best.zip` (config: lihat configs/ablation/relearn/)")
+        md.append(f"- {label}: `{run_id}_checkpoints.zip` (config: lihat configs/ablation/relearn/)")
     OUT_MD.write_text("\n".join(md) + "\n", encoding="utf-8")
     print("\n" + OUT_MD.read_text())
 
