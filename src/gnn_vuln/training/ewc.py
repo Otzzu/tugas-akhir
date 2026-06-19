@@ -154,6 +154,13 @@ class EWCDR:
             if name in self._omega:
                 omega = self._omega[name].to(device)
                 star  = self._star[name].to(device)
+                # Class-incremental head growth: task-A importance covers the old
+                # classes only (e.g. func_head [26, F]); the task-B model head is
+                # larger ([36, F]). Penalise just the overlapping old-class slice —
+                # new-class rows have no task-A importance and stay free to learn.
+                if param.shape != star.shape:
+                    sl = tuple(slice(0, s) for s in star.shape)
+                    param = param[sl]
                 loss  = loss + (omega * (param - star).pow(2)).sum()
         return 0.5 * self.ewc_weight * loss
 

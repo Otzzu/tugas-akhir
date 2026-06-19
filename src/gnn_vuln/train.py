@@ -613,12 +613,17 @@ class TrainingSession:
         _ewc_cache   = getattr(_ewc_cfg, "importance_cache",   "")
         _ewc_ckpt    = getattr(_ewc_cfg, "source_checkpoint",  "")
         _ewc_nbatch  = getattr(_ewc_cfg, "n_batches",          0)
+        # Always initialise from task-A weights first — continual learning starts
+        # from the previous task. Must happen BEFORE the cache early-return so task-B
+        # runs (cache already present) still load task-A weights. Expandable load
+        # handles CIL head growth (e.g. 26→36): old-class rows copied, new rows at init.
+        from gnn_vuln.utils import load_checkpoint_expandable as _lce
+        if _ewc_ckpt and Path(_ewc_ckpt).exists():
+            _lce(model, _ewc_ckpt, device=str(self.device))
         if _ewc_cache and Path(_ewc_cache).exists():
             return EWCDR.from_file(_ewc_cache, ewc_weight=_ewc_weight)
         if not _ewc_ckpt or not Path(_ewc_ckpt).exists():
             raise ValueError(f"EWC enabled but source_checkpoint not found: {_ewc_ckpt!r}")
-        from gnn_vuln.utils import load_checkpoint as _lc
-        _lc(model, _ewc_ckpt, device=str(self.device))
         ewc = EWCDR(model=model, dataloader=train_loader, device=self.device,
                     ewc_weight=_ewc_weight, scope=_ewc_scope, n_batches=_ewc_nbatch)
         if _ewc_cache:

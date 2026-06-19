@@ -1,0 +1,53 @@
+# CIL task-A evaluation config: 36-class model on MegaVul (task-A, 26 classes present).
+# Used to evaluate a class-incremental (36-class) checkpoint on the OLD task-A test set.
+# num_classes=36 matches the trained CIL checkpoint; the MegaVul data only carries labels
+# 0..25, so f1_macro is computed over the old classes (new-class mispredictions count against).
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  graph_pool: jknet
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 36
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  func_head_type: linear
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  device: cuda
+  use_amp: false
+  use_flash_attention: false
+  stmt_head_vectorized: true
+  num_workers: 0
