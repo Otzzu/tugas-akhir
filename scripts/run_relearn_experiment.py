@@ -130,6 +130,16 @@ def eval_ckpt(ckpt: Path, config: Path, tag: str) -> float:
     return f1_macro(RESULTS / tag)
 
 
+def upload_ckpt(run_id: str, subdir: str) -> None:
+    """Zip the trained best_*.pt and upload to Drive checkpoints/<subdir>/ so the model
+    can be re-evaluated later without retraining. Inner path checkpoints/<run_id>/best_*.pt."""
+    z = f"{run_id}_best.zip"
+    sh(["bash", "-c", f'cd "{ROOT}" && rm -f "{z}" && zip -q -r "{z}" checkpoints/{run_id}/best_*.pt'])
+    subprocess.run(["rclone", "copy", str(ROOT / z), f"{DRIVE_ROOT}/checkpoints/{subdir}/", "--progress"], check=False)
+    (ROOT / z).unlink(missing_ok=True)
+    print(f"Uploaded {z} -> {DRIVE_ROOT}/checkpoints/{subdir}/")
+
+
 def _align_relearn_vocab() -> None:
     """Force the relearn dataset to use task-A's CWE->id map. Each dataset's
     cwe_vocab.json ranks CWEs by its OWN frequency; the loader reindexes top-25
@@ -176,6 +186,7 @@ def main() -> None:
     rows = [("Sebelum pembaruan", taskA_before, taskB_before, None)]
 
     # Each method: train on task-B, then eval the trained model on task-A.
+    ckpt_map = []   # (label, run_id) — uploaded ckpts, for re-eval without retraining
     for label, cfg in METHODS:
         t0 = time.time()
         sh([sys.executable, "-m", "gnn_vuln.train", "--config", cfg])
@@ -184,6 +195,8 @@ def main() -> None:
         taskB = eval_ckpt(ckpt, RELEARN_CFG, f"rl_taskB_{rdir.name}")   # task-B test
         taskA = eval_ckpt(ckpt, MEGAVUL_CFG, f"rl_taskA_{rdir.name}")   # task-A test
         rows.append((label, taskA, taskB, taskA_before - taskA))  # forgetting = drop on task-A
+        upload_ckpt(rdir.name, "relearn")                         # upload trained model for re-eval
+        ckpt_map.append((label, rdir.name))
 
     # Write RELEARN_RESULTS.md
     md = [
@@ -209,6 +222,12 @@ def main() -> None:
     for label, ta, tb, fg in rows:
         fg_s = "—" if fg is None else f"{fg:+.3f}"
         md.append(f"| {label} | {ta:.3f} | {tb:.3f} | {fg_s} |")
+    md += [
+        "",
+        "Checkpoint terlatih (Drive checkpoints/relearn/, untuk re-evaluasi tanpa latih ulang):",
+    ]
+    for label, run_id in ckpt_map:
+        md.append(f"- {label}: `{run_id}_best.zip` (config: lihat configs/ablation/relearn/)")
     OUT_MD.write_text("\n".join(md) + "\n", encoding="utf-8")
     print("\n" + OUT_MD.read_text())
 

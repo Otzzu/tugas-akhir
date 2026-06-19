@@ -124,6 +124,15 @@ def eval_ckpt(ckpt: Path, config: Path, tag: str) -> float:
     return f1_macro(RESULTS / tag)
 
 
+def upload_ckpt(run_id: str, subdir: str) -> None:
+    """Zip trained best_*.pt → Drive checkpoints/<subdir>/ for re-eval without retraining."""
+    z = f"{run_id}_best.zip"
+    sh(["bash", "-c", f'cd "{ROOT}" && rm -f "{z}" && zip -q -r "{z}" checkpoints/{run_id}/best_*.pt'])
+    subprocess.run(["rclone", "copy", str(ROOT / z), f"{DRIVE_ROOT}/checkpoints/{subdir}/", "--progress"], check=False)
+    (ROOT / z).unlink(missing_ok=True)
+    print(f"Uploaded {z} -> {DRIVE_ROOT}/checkpoints/{subdir}/")
+
+
 def main() -> None:
     import argparse
     ap = argparse.ArgumentParser(description="Run the class-incremental (CIL) continual learning experiment")
@@ -145,6 +154,7 @@ def main() -> None:
     rows = [("Sebelum pembaruan", taskA_before, None, None)]
 
     # Each method: train on task-B (36-class), eval on task-B (new) and task-A (old).
+    ckpt_map = []   # (label, run_id) — uploaded ckpts, for re-eval without retraining
     for label, cfg in METHODS:
         t0 = time.time()
         sh([sys.executable, "-m", "gnn_vuln.train", "--config", cfg])
@@ -153,6 +163,8 @@ def main() -> None:
         taskB = eval_ckpt(ckpt, TASKB_EVAL,    f"rlcil_taskB_{rdir.name}")   # 10 new classes
         taskA = eval_ckpt(ckpt, TASKA_EVAL36,  f"rlcil_taskA_{rdir.name}")   # 26 old classes
         rows.append((label, taskA, taskB, taskA_before - taskA))
+        upload_ckpt(rdir.name, "relearn_cil")                         # upload trained model for re-eval
+        ckpt_map.append((label, rdir.name))
 
     # Write RELEARN_CIL_RESULTS.md
     md = [
@@ -179,6 +191,12 @@ def main() -> None:
         tb_s = "—" if tb is None else f"{tb:.3f}"
         fg_s = "—" if fg is None else f"{fg:+.3f}"
         md.append(f"| {label} | {ta:.3f} | {tb_s} | {fg_s} |")
+    md += [
+        "",
+        "Checkpoint terlatih (Drive checkpoints/relearn_cil/, untuk re-evaluasi tanpa latih ulang):",
+    ]
+    for label, run_id in ckpt_map:
+        md.append(f"- {label}: `{run_id}_best.zip` (config: lihat configs/ablation/relearn/cil/)")
     OUT_MD.write_text("\n".join(md) + "\n", encoding="utf-8")
     print("\n" + OUT_MD.read_text())
 
