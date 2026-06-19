@@ -618,7 +618,7 @@ class TrainingSession:
         if not _ewc_ckpt or not Path(_ewc_ckpt).exists():
             raise ValueError(f"EWC enabled but source_checkpoint not found: {_ewc_ckpt!r}")
         from gnn_vuln.utils import load_checkpoint as _lc
-        _lc(_ewc_ckpt, model, device=str(self.device))
+        _lc(model, _ewc_ckpt, device=str(self.device))
         ewc = EWCDR(model=model, dataloader=train_loader, device=self.device,
                     ewc_weight=_ewc_weight, scope=_ewc_scope, n_batches=_ewc_nbatch)
         if _ewc_cache:
