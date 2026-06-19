@@ -11,7 +11,8 @@ Prerequisites on the pod (see configs/ablation/relearn/*.yaml headers):
   - MegaVul 26-class .pt + relearn .pt build automatically on first use (GPU)
 
 Run (cloud, Linux):
-  PYTHONPATH=src python scripts/run_relearn_experiment.py
+  PYTHONPATH=src python scripts/run_relearn_experiment.py --setup   # download + extract from Drive, then run
+  PYTHONPATH=src python scripts/run_relearn_experiment.py           # prerequisites already on the pod
 """
 from __future__ import annotations
 import json, os, shutil, subprocess, sys, time
@@ -39,9 +40,10 @@ ENV = {**os.environ, "PYTHONPATH": "src"}
 # ── Drive setup (used only with --setup) ────────────────────────────────────
 DRIVE_ROOT = "gdrive-mesach:tugas-akhir"
 RELEARN_BUNDLE = "relearn_bundle.tar.gz"               # at DRIVE_ROOT/ (CPG + parquet)
-# Fill these with the exact archive names on Drive (leave "" to skip — provide the file yourself):
-MEGAVUL_PT_ARCHIVE = ""   # e.g. "lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_..._s1600r42_lazy.tar.gz" (DRIVE_ROOT/)
-TASKA_CKPT_ARCHIVE = ""   # e.g. "<run_id>_checkpoints.zip" at DRIVE_ROOT/checkpoints/  (unzips to checkpoints/<run_id>/best_*.pt)
+# Task-A = N48 26-class jknet (ABLATION_GNN_ONLY.md run 20260606_163818).
+MEGAVUL_PT_DIR = "data/processed/megavul"              # Drive subdir holding the .pt tar
+MEGAVUL_PT_ARCHIVE = "lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42_lazy_20260513_153956.tar.gz"
+TASKA_CKPT_ARCHIVE = "20260606_163818_lmgat_codebert_multiclass_checkpoints.zip"   # DRIVE_ROOT/checkpoints/ -> checkpoints/<run_id>/best_*.pt
 
 
 def sh(args: list[str]) -> None:
@@ -68,19 +70,25 @@ def setup() -> None:
         _extract(ROOT / RELEARN_BUNDLE)
     else:
         print("relearn CPG already present, skip download.")
-    # 2. MegaVul task-A .pt (importance + replay buffer)
-    if MEGAVUL_PT_ARCHIVE and not list((ROOT / "data" / "processed").glob("lm_dataset_megavul_multiclass*")):
-        _rclone(f"{DRIVE_ROOT}/{MEGAVUL_PT_ARCHIVE}", str(ROOT))
-        _extract(ROOT / MEGAVUL_PT_ARCHIVE)
-    elif not MEGAVUL_PT_ARCHIVE:
-        print("WARN: MEGAVUL_PT_ARCHIVE not set — ensure megavul .pt is present for importance + replay.")
-    # 3. task-A checkpoint
-    if TASKA_CKPT_ARCHIVE and not TASKA_CKPT.exists():
+    # 2. MegaVul task-A .pt (importance + replay buffer) -> data/processed/
+    proc = ROOT / "data" / "processed"
+    if not list(proc.glob("lm_dataset_megavul_multiclass*")):
+        proc.mkdir(parents=True, exist_ok=True)
+        _rclone(f"{DRIVE_ROOT}/{MEGAVUL_PT_DIR}/{MEGAVUL_PT_ARCHIVE}", str(proc))
+        _extract(proc / MEGAVUL_PT_ARCHIVE, proc)
+    else:
+        print("megavul .pt already present, skip download.")
+    # 3. task-A checkpoint -> checkpoints/n48_taskA/best_model.pt
+    if not TASKA_CKPT.exists():
         _rclone(f"{DRIVE_ROOT}/checkpoints/{TASKA_CKPT_ARCHIVE}", str(ROOT / "checkpoints"))
-        _extract(ROOT / "checkpoints" / TASKA_CKPT_ARCHIVE, ROOT / "checkpoints")
-        print(f"NOTE: ensure the extracted best_*.pt is at {TASKA_CKPT} (rename/symlink if needed).")
-    elif not TASKA_CKPT_ARCHIVE:
-        print(f"WARN: TASKA_CKPT_ARCHIVE not set — ensure {TASKA_CKPT} exists.")
+        _extract(ROOT / "checkpoints" / TASKA_CKPT_ARCHIVE, ROOT)   # inner path checkpoints/<run_id>/best_*.pt
+        run_id = TASKA_CKPT_ARCHIVE.replace("_checkpoints.zip", "")
+        src = next((ROOT / "checkpoints" / run_id).glob("best_*.pt"))
+        TASKA_CKPT.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, TASKA_CKPT)
+        print(f"task-A ckpt {src.name} -> {TASKA_CKPT}")
+    else:
+        print("task-A ckpt already present, skip download.")
 
 
 def f1_macro(results_dir: Path) -> float:
