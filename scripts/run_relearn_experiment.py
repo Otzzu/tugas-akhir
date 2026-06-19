@@ -120,6 +120,30 @@ def eval_ckpt(ckpt: Path, config: Path, tag: str) -> float:
     return f1_macro(RESULTS / tag)
 
 
+def _align_relearn_vocab() -> None:
+    """Force the relearn dataset to use task-A's CWE->id map. Each dataset's
+    cwe_vocab.json ranks CWEs by its OWN frequency; the loader reindexes top-25
+    contiguously preserving that order, so relearn and megavul would get DIFFERENT
+    label ids for the same CWE. The N48 checkpoint is locked to megavul's order, so
+    cross-task eval is only valid when relearn adopts the canonical task-A vocab.
+    Overwrites the vocab when it differs and clears any stale relearn .pt to rebuild."""
+    canon = CFG / "taskA_cwe_vocab.json"
+    dst = ROOT / "data" / "raw" / "relearn" / "cwe_vocab.json"
+    if not canon.exists() or not dst.parent.exists():
+        return
+    if dst.exists() and json.loads(dst.read_text()) == json.loads(canon.read_text()):
+        return
+    dst.write_text(canon.read_text(), encoding="utf-8")
+    cleared = 0
+    for p in (ROOT / "data" / "processed").glob("lm_dataset_relearn_multiclass*"):
+        if p.is_dir():
+            shutil.rmtree(p)
+        else:
+            p.unlink()
+        cleared += 1
+    print(f"Aligned relearn vocab to task-A canonical; cleared {cleared} stale relearn .pt entries for rebuild.")
+
+
 def main() -> None:
     import argparse
     ap = argparse.ArgumentParser(description="Run the relearn (domain-IL) continual learning experiment")
@@ -128,6 +152,7 @@ def main() -> None:
     args = ap.parse_args()
     if args.setup:
         setup()
+    _align_relearn_vocab()
 
     if not TASKA_CKPT.exists():
         sys.exit(f"Missing task-A checkpoint: {TASKA_CKPT}")
