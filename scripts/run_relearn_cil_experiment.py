@@ -84,6 +84,12 @@ def setup() -> None:
     else:
         print("cil .pt already present, skip download.")
     sh([sys.executable, "scripts/patch_cil_labels.py"])   # idempotent — no-op if already 36-class
+    # 2b. cil cwe_vocab.json — the dataset constructor requires it under data/raw/<source>
+    # even when loading the prebuilt .pt (existence guard runs before the process-skip).
+    cil_raw = ROOT / "data" / "raw" / "megavul_cil"
+    cil_raw.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(CIL / "megavul_cil_cwe_vocab.json", cil_raw / "cwe_vocab.json")
+    print(f"placed cil cwe_vocab.json -> {cil_raw / 'cwe_vocab.json'}")
     # 3. task-A checkpoint → checkpoints/n48_taskA/best_model.pt
     if not TASKA_CKPT.exists():
         _rclone(f"{DRIVE_ROOT}/checkpoints/{TASKA_CKPT_ARCHIVE}", str(ROOT / "checkpoints"))
