@@ -140,6 +140,8 @@ uv run train --config configs/lmgat/multiclass.yaml
 
 ## Cloud Training
 
+**Normal training runs on the pod ALWAYS use `scripts/train_cloud.sh`** — not bare `python -m gnn_vuln.train`. The wrapper handles dataset download, train, evaluate, and zip+upload of checkpoints + results to Drive in one go. Bare `python -m gnn_vuln.train` is only for reference or inside the custom multi-run orchestrators (e.g. `run_relearn_experiment.py`, which manage their own download/eval/upload).
+
 When asked for commands to run training in the cloud, **always give both**:
 1. The direct `PYTHONPATH=src python -m gnn_vuln.train` command (for reference)
 2. The `train_cloud.sh` command (for actual cloud use)
