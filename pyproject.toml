@@ -47,6 +47,13 @@ dev = [
     "pytest-cov>=5.0.0",
     "ruff>=0.4.0",
 ]
+api = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
+    "pyyaml>=6.0",
+]
 
 [project.scripts]
 train = "gnn_vuln.train:main"

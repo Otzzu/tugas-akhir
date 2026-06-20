@@ -1,0 +1,6 @@
+# runtime artifacts
+app.db
+app.db-journal
+jobs/
+__pycache__/
+.hf/
