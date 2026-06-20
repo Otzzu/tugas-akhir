@@ -221,8 +221,8 @@ def main() -> None:
         "|---|---|---|---|",
     ]
     for label, ta, tb, fg in rows:
-        fg_s = "—" if fg is None else f"{fg:+.3f}"
-        md.append(f"| {label} | {ta:.3f} | {tb:.3f} | {fg_s} |")
+        fg_s = "—" if fg is None else f"{fg:+.4f}"
+        md.append(f"| {label} | {ta:.4f} | {tb:.4f} | {fg_s} |")
     md += [
         "",
         "Checkpoint terlatih (Drive checkpoints/, untuk re-evaluasi tanpa latih ulang):",

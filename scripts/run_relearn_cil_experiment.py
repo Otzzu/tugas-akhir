@@ -224,12 +224,12 @@ def main() -> None:
         "|---|---|---|---|---|---|---|",
     ]
     for label, ta, tb, fg, al_f1, al_acc, a_avg in rows:
-        tb_s   = "—" if tb is None else f"{tb:.3f}"
-        fg_s   = "—" if fg is None else f"{fg:+.3f}"
-        alf_s  = "—" if al_f1 is None else f"{al_f1:.3f}"
-        ala_s  = "—" if al_acc is None else f"{al_acc:.3f}"
-        aavg_s = "—" if a_avg is None else f"{a_avg:.3f}"
-        md.append(f"| {label} | {ta:.3f} | {tb_s} | {alf_s} | {ala_s} | {aavg_s} | {fg_s} |")
+        tb_s   = "—" if tb is None else f"{tb:.4f}"
+        fg_s   = "—" if fg is None else f"{fg:+.4f}"
+        alf_s  = "—" if al_f1 is None else f"{al_f1:.4f}"
+        ala_s  = "—" if al_acc is None else f"{al_acc:.4f}"
+        aavg_s = "—" if a_avg is None else f"{a_avg:.4f}"
+        md.append(f"| {label} | {ta:.4f} | {tb_s} | {alf_s} | {ala_s} | {aavg_s} | {fg_s} |")
     md += [
         "",
         "Checkpoint terlatih (Drive checkpoints/, untuk re-evaluasi tanpa latih ulang):",
