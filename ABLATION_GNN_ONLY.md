@@ -365,6 +365,33 @@ Graph-ViT/MLP-Mixer **collapses classification** — Test F1 ~0.34 vs the N-seri
 
 ---
 
+## Sequential Two-Stage GNN (S1)
+
+`configs/ablation/seqgnn/` + `configs/ablation/vulnonly/` — two N48-style GNNs in sequence: stage-1 localizes (per-node suspicion) → stage-2 classifies on suspicion-augmented nodes `[x, s_i]`. Joint training (CE + MIL + rank). LOSVER analogue but jointly trained. 9.5M params (~2× N48).
+
+| Run   | Run ID                                      | Config                      | Classes | Dataset            |
+| ----- | ------------------------------------------- | --------------------------- | ------- | ------------------ |
+| S1    | `20260620_080752_lmgat_seqgnn_multiclass`   | `S1_seqgnn.yaml`            | 26      | ml1024             |
+| S1-vo | `20260620_073427_lmgat_seqgnn_multiclass`   | `S1_seqgnn_vulnonly.yaml`   | 25      | ml1024_vulnonly    |
+
+### Classification
+
+| Run   | Val F1 | Test F1 | Test Acc | F1-w  | Prec  | Rec   | Prec-w | Rec-w | AUC-ROC | Conf. | Epochs |
+| ----- | ------ | ------- | -------- | ----- | ----- | ----- | ------ | ----- | ------- | ----- | ------ |
+| S1    | 0.506  | 0.501   | 0.475    | 0.472 | 0.497 | 0.485 | 0.502  | 0.498 | 0.902   | 0.436 | 35     |
+| S1-vo | 0.546  | 0.600   | 0.591    | 0.591 | 0.581 | 0.630 | 0.616  | 0.605 | 0.929   | 0.495 | 45     |
+
+### Statement-Level Localization
+
+| Run   | IFA ↓ | Top-1 ↑ | Top-5 ↑ | R@5%LOC ↑ | R@20%LOC ↑ | Effort@20%R ↓ |
+| ----- | ----- | ------- | ------- | --------- | ---------- | ------------- |
+| S1    | 0.612 | 0.876   | 0.977   | 0.219     | 0.445      | 0.042         |
+| S1-vo | 0.330 | 0.858   | 0.988   | 0.216     | 0.458      | 0.043         |
+
+**S1 sequential ≈ N48 single-GNN — no gain from the extra stage.** 26-class: S1 **0.501** vs N48 **0.525** (slightly below). Vuln-only 25-class: S1-vo **0.600** vs N48-vo **0.601** (tied). The localize→classify staging + 2nd GNN (9.5M, ~2× params, ~2× VRAM) does not beat the single-GNN N48 on either label space — the suspicion feed adds cost without classification gain. Localization comparable (S1-vo IFA 0.330 best in the vuln-only set). Conclusion: a valid distinct architecture (two-stage, joint-trained, LOSVER analogue) but not a win over N48 here.
+
+---
+
 # Training Efficiency
 
 | Run                      | GPU             | Params | Epoch Time | Total Time (hr) | VRAM Peak |
@@ -446,3 +473,5 @@ Graph-ViT/MLP-Mixer **collapses classification** — Test F1 ~0.34 vs the N-seri
 | N48-nine node-LM swap    | RTX 3090 Ti     | 4.7M   | 41s        | 0.57            | 10.6 GB   |
 | N48-vo 25-class          | RTX 5090        | 4.7M   | 44s        | 0.52            | 13.2 GB   |
 | N48-vo-jk 25-class       | RTX 5090        | 4.7M   | 44s        | 0.52            | 13.2 GB   |
+| S1 26-class              | RTX 5090        | 9.5M   | 49s        | 0.48            | 18.5 GB   |
+| S1-vo 25-class           | RTX 5090        | 9.5M   | 31s        | 0.39            | 17.8 GB   |

@@ -6,6 +6,7 @@ Edit configs under configs/<model>/ to override defaults without changing code.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -15,7 +16,23 @@ import yaml
 # Root paths
 # ---------------------------------------------------------------------------
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+def _project_root() -> Path:
+    """Resolve the project root robustly for BOTH layouts:
+    - editable/src checkout: <root>/src/gnn_vuln/config.py → parents[2] has configs/.
+    - installed wheel (site-packages): __file__-relative is bogus, so honor
+      $GNN_VULN_ROOT, else fall back to the current working directory (the API/CLI
+      sets cwd to its app root). Prevents data/checkpoints resolving under site-packages."""
+    env = os.environ.get("GNN_VULN_ROOT")
+    if env:
+        return Path(env).resolve()
+    src_guess = Path(__file__).resolve().parents[2]
+    if (src_guess / "configs").is_dir() or (src_guess / "src").is_dir():
+        return src_guess
+    return Path.cwd()
+
+
+PROJECT_ROOT = _project_root()
 DATA_DIR = PROJECT_ROOT / "data"
 CHECKPOINT_DIR = PROJECT_ROOT / "checkpoints"
 RESULTS_DIR = PROJECT_ROOT / "results"
@@ -350,26 +367,51 @@ class Config:
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Config":
-        """Load config from a YAML file, merging with defaults."""
-        with open(path, encoding="utf-8") as f:
-            raw = yaml.safe_load(f) or {}
+        """Load config from a single YAML file, merging with defaults.
+
+        Backward compatible: the classic monolithic config (data/model/train in one
+        file) is just the one-file case. For split configs, see `from_yamls`."""
+        return cls.from_yamls([path])
+
+    @classmethod
+    def from_yamls(cls, paths) -> "Config":
+        """Compose a Config from one OR MORE YAML files. Each file may carry any subset
+        of the sections (data / model / train / ewc / replay); later files override
+        earlier ones, section by section.
+
+        This enables split configs — e.g. `from_yamls([data.yaml, model.yaml,
+        train.yaml])` — while a single merged file stays the one-element case, so all
+        existing callers (CLI training, train_cloud.sh) behave exactly as before."""
+        if isinstance(paths, (str, Path)):
+            paths = [paths]
+        merged: dict = {}
+        for p in paths:
+            with open(p, encoding="utf-8") as f:
+                raw = yaml.safe_load(f) or {}
+            for section, vals in raw.items():
+                if isinstance(vals, dict) and isinstance(merged.get(section), dict):
+                    merged[section].update(vals)
+                elif isinstance(vals, dict):
+                    merged[section] = dict(vals)
+                else:
+                    merged[section] = vals
+        return cls._from_raw(merged)
+
+    @classmethod
+    def _from_raw(cls, raw: dict) -> "Config":
+        """Apply a merged raw-dict (sections → field maps) onto the dataclass defaults."""
+        def _coerce(current, value):
+            # honor Path-typed fields when a YAML supplies them as strings
+            if isinstance(current, Path) and value is not None and not isinstance(value, Path):
+                return Path(value)
+            return value
 
         cfg = cls()
-        if "data" in raw:
-            for k, v in raw["data"].items():
-                setattr(cfg.data, k, v)
-        if "model" in raw:
-            for k, v in raw["model"].items():
-                setattr(cfg.model, k, v)
-        if "train" in raw:
-            for k, v in raw["train"].items():
-                setattr(cfg.train, k, v)
-        if "ewc" in raw:
-            for k, v in raw["ewc"].items():
-                setattr(cfg.ewc, k, v)
-        if "replay" in raw:
-            for k, v in raw["replay"].items():
-                setattr(cfg.replay, k, v)
+        for section in ("data", "model", "train", "ewc", "replay"):
+            if section in raw and isinstance(raw[section], dict):
+                target = getattr(cfg, section)
+                for k, v in raw[section].items():
+                    setattr(target, k, _coerce(getattr(target, k, None), v))
         return cfg
 
 

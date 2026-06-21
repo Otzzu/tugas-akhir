@@ -71,6 +71,12 @@ class LMGATSeqGNNVulnDetector(VulnDetectorBase):
             self.func_head = LinearFuncHead(self._pool_out_dim, num_classes, dropout=dropout)
         else:
             self.func_head = FuncHead(self._pool_out_dim, hidden_dim, num_classes, dropout)
+        # Inference-only capture of the pre-head function representation (h_graph),
+        # for drift detection / similarity search. Read when forward(return_repr=True).
+        self._cls_repr: torch.Tensor | None = None
+        self.func_head.register_forward_pre_hook(
+            lambda _m, _inp: None if _m.training else setattr(self, "_cls_repr", _inp[0].detach())
+        )
 
     # ── helpers ────────────────────────────────────────────────────────────────
     def _jknet_node(self, encoder: nn.Module, h: torch.Tensor) -> torch.Tensor:
@@ -96,7 +102,17 @@ class LMGATSeqGNNVulnDetector(VulnDetectorBase):
         return torch.sigmoid(raw).squeeze(-1)        # [N]
 
     # ── forward ──────────────────────────────────────────────────────────────────
-    def forward(self, x, edge_index, batch, node_line=None, edge_attr=None, **kwargs):
+    def forward(self, *args, return_repr: bool = False, **kwargs):
+        """Public entry. return_repr=True (inference only) appends the pre-head
+        function representation (h_graph) as the last tuple element, for drift
+        detection / similarity search. Training (default) returns as before."""
+        out = self._forward_impl(*args, **kwargs)
+        if return_repr:
+            tup = out if isinstance(out, tuple) else (out,)
+            return (*tup, self._cls_repr)
+        return out
+
+    def _forward_impl(self, x, edge_index, batch, node_line=None, edge_attr=None, **kwargs):
         # Stage 1: localize
         h1 = self.loc_encoder(x, edge_index, edge_attr, batch=batch)
         h_loc = self._jknet_node(self.loc_encoder, h1) if self._jknet_loc else h1

@@ -86,7 +86,9 @@ class TrainingSession:
 
     @classmethod
     def from_args(cls, args) -> "TrainingSession":
-        cfg = Config.from_yaml(args.config) if Path(args.config).exists() else load_default_config()
+        paths = args.config if isinstance(args.config, (list, tuple)) else [args.config]
+        cfg = (Config.from_yamls(paths)
+               if all(Path(p).exists() for p in paths) else load_default_config())
         set_seed(cfg.train.seed, deterministic=getattr(cfg.train, "deterministic", False))
         setup_logging(cfg.train.log_dir)
         return cls(cfg, resume=getattr(args, "resume", False))
@@ -299,8 +301,12 @@ class TrainingSession:
             logger.info(f"FLAG enabled: step_size={_flag_ss} steps={_flag_steps}")
 
         run_id, run_dir = self._setup_run_dir()
-        if config_path and Path(config_path).exists():
-            shutil.copy(config_path, run_dir / "config.yaml")
+        if config_path:
+            paths = config_path if isinstance(config_path, (list, tuple)) else [config_path]
+            for i, p in enumerate(paths):
+                if Path(p).exists():
+                    name = "config.yaml" if len(paths) == 1 else f"config_{i}_{Path(p).name}"
+                    shutil.copy(p, run_dir / name)
 
         cm = CheckpointManager(run_dir, cfg.model.architecture)
         stop_on_f1 = getattr(cfg.train, "early_stop_metric", "f1") == "f1"
@@ -957,7 +963,9 @@ def main() -> None:
     except (RuntimeError, ValueError):
         pass
     parser = argparse.ArgumentParser(description="Train GNN vulnerability detector")
-    parser.add_argument("--config", type=str, default="configs/lmgcn/binary.yaml")
+    parser.add_argument("--config", type=str, nargs="+", default=["configs/lmgcn/binary.yaml"],
+                        help="One config file (classic monolithic), or several split "
+                             "files (e.g. data.yaml model.yaml train.yaml) merged in order.")
     parser.add_argument("--resume", action="store_true",
                         help="Resume from latest last_*.pt for this arch/mode.")
     args = parser.parse_args()

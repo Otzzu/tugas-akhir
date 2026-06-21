@@ -31,5 +31,21 @@ class Settings:
     # server
     CORS_ORIGINS: list[str] = os.environ.get("API_CORS_ORIGINS", "*").split(",")
 
+    # object storage — large blobs (CPG graphs) live here, NOT in the DB.
+    # "fs" = local filesystem (dev, zero deps); "s3" = MinIO/AWS via boto3 (prod).
+    STORAGE_BACKEND: str = os.environ.get("STORAGE_BACKEND", "fs")
+    STORAGE_DIR: Path = Path(os.environ.get("STORAGE_DIR", str(API_DIR / "storage")))
+    S3_ENDPOINT: str = os.environ.get("S3_ENDPOINT", "")        # e.g. http://minio:9000
+    S3_ACCESS_KEY: str = os.environ.get("S3_ACCESS_KEY", "minioadmin")
+    S3_SECRET_KEY: str = os.environ.get("S3_SECRET_KEY", "minioadmin")
+    S3_REGION: str = os.environ.get("S3_REGION", "us-east-1")
+    S3_BUCKET_GRAPHS: str = os.environ.get("S3_BUCKET_GRAPHS", "graphs")
+    S3_BUCKET_DATASETS: str = os.environ.get("S3_BUCKET_DATASETS", "datasets")
+    S3_BUCKET_CHECKPOINTS: str = os.environ.get("S3_BUCKET_CHECKPOINTS", "checkpoints")
+
+    # async jobs (Celery) — broker + result backend (Redis by default).
+    CELERY_BROKER_URL: str = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+    CELERY_RESULT_BACKEND: str = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
+
 
 settings = Settings()

@@ -14,6 +14,10 @@ build/
 .venv/
 .uv/
 
+# embedded Joern clone (nested .git, large) + local materialize cache
+src/gnn_vuln/joern/
+data/.materialized/
+
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb_metadata/
@@ -34,6 +38,7 @@ Thumbs.db
 # Claude Code local config (commands, hooks — project-local, not for repo)
 .claude/
 .serena/
+.agents/
 
 # Env files
 .env
@@ -96,3 +101,4 @@ src/pnlp-mixer/
 src/GraphGPS/
 src/LineVul/cppcheck/
 /data/baselines/
+docs/

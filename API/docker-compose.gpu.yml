@@ -1,0 +1,38 @@
+# GPU overlay — mimics a real prod GPU run. Use ON TOP of the base compose:
+#
+#   docker compose -f API/docker-compose.yml -f API/docker-compose.gpu.yml up -d --build
+#
+# Builds the image with CUDA torch wheels (cu124) + reserves the host GPU for the api
+# and worker, and flips API_DEVICE to cuda. Requires the NVIDIA Container Toolkit
+# (already present — `docker info` shows the nvidia runtime). The CUDA torch image is
+# ~2-3GB larger than the CPU one (bundles the nvidia-cu* libs).
+services:
+  api:
+    build:
+      args:
+        TORCH_INDEX: https://download.pytorch.org/whl/cu124
+        PYG_FIND_LINKS: https://data.pyg.org/whl/torch-2.6.0+cu124.html
+    environment:
+      API_DEVICE: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  worker:
+    build:
+      args:
+        TORCH_INDEX: https://download.pytorch.org/whl/cu124
+        PYG_FIND_LINKS: https://data.pyg.org/whl/torch-2.6.0+cu124.html
+    environment:
+      API_DEVICE: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

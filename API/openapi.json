@@ -1,0 +1,1528 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "GNN Vulnerability Detection API",
+    "description": "Inference (code -> CWE + vulnerable lines) and continual-learning relearn.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/models": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "List Models",
+        "operationId": "list_models_models_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Models Models Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/datasets": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "List Datasets",
+        "operationId": "list_datasets_datasets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Datasets Datasets Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "datasets"
+        ],
+        "summary": "Ingest Dataset",
+        "description": "Build a training-ready dataset. Provide EXACTLY ONE of `rows` (ingest from raw\nfunctions) or `dataset_ids` (merge >=2 registered datasets). Returns a queued job;\npoll GET /datasets/jobs/{job_id}. When done, `dataset_id` is usable in /relearn.",
+        "operationId": "ingest_dataset_datasets_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetIngestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetJob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/configs": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "List Configs",
+        "description": "All configs, or only one kind (data | model | train | full) via ?kind=.",
+        "operationId": "list_configs_configs_get",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Configs Configs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/configs/{config_id}": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Get Config",
+        "operationId": "get_config_configs__config_id__get",
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Config Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Config Configs  Config Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inference": {
+      "post": {
+        "tags": [
+          "inference"
+        ],
+        "summary": "Inference",
+        "operationId": "inference_inference_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InferenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InferenceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/embed": {
+      "post": {
+        "tags": [
+          "inference"
+        ],
+        "summary": "Embed",
+        "description": "Return the final pre-head function embedding per input \u2014 no classification output.\nFor similarity search and drift detection. Runs the same CPG + model pass as\n/inference but yields the representation fed to the output head, not the prediction.",
+        "operationId": "embed_embed_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmbedRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inference/history": {
+      "get": {
+        "tags": [
+          "inference"
+        ],
+        "summary": "Inference History",
+        "description": "Recent persisted predictions (newest first).",
+        "operationId": "inference_history_inference_history_get",
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response Inference History Inference History Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/relearn": {
+      "get": {
+        "tags": [
+          "relearn"
+        ],
+        "summary": "Relearn List",
+        "operationId": "relearn_list_relearn_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array",
+                  "title": "Response Relearn List Relearn Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "relearn"
+        ],
+        "summary": "Relearn",
+        "operationId": "relearn_relearn_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RelearnRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelearnJob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/relearn/{job_id}": {
+      "get": {
+        "tags": [
+          "relearn"
+        ],
+        "summary": "Relearn Status",
+        "operationId": "relearn_status_relearn__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelearnJob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/datasets/jobs": {
+      "get": {
+        "tags": [
+          "datasets"
+        ],
+        "summary": "List Dataset Jobs",
+        "operationId": "list_dataset_jobs_datasets_jobs_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response List Dataset Jobs Datasets Jobs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/datasets/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "datasets"
+        ],
+        "summary": "Dataset Job Status",
+        "operationId": "dataset_job_status_datasets_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetJob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/eval": {
+      "get": {
+        "tags": [
+          "eval"
+        ],
+        "summary": "Evaluate",
+        "description": "General label-free evaluation of a model over its recent inference history.\n\nNo ground-truth labels needed \u2014 it summarizes the predictions the model already made\n(stored per inference): usage count (`n_history`), prediction mix\n(`prediction_distribution`), `mean_confidence`, and a nested **drift** signal.\n\nDrift compares the newest `window` predictions (current) against the `window` before\nthem (reference) using PSI on the class distribution + mean-confidence drop + pre-head\nembedding-centroid cosine shift. `drift.drift = true` is the trigger to relearn.\nExtensible to more eval facets later.",
+        "operationId": "evaluate_eval_get",
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Model Id"
+            }
+          },
+          {
+            "name": "window",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "description": "Comparison-window size for the drift signal. The endpoint pulls the most recent 2\u00d7window stored predictions and splits them into the newest `window` (current) vs the `window` before it (reference); drift compares the two. Older predictions are ignored. Smaller = more sensitive but noisier; larger = more stable but slower to react. The general stats also cover these 2\u00d7window rows, so n_history is capped at 2\u00d7window, not the lifetime total.",
+              "default": 200,
+              "title": "Window"
+            },
+            "description": "Comparison-window size for the drift signal. The endpoint pulls the most recent 2\u00d7window stored predictions and splits them into the newest `window` (current) vs the `window` before it (reference); drift compares the two. Older predictions are ignored. Smaller = more sensitive but noisier; larger = more stable but slower to react. The general stats also cover these 2\u00d7window rows, so n_history is capped at 2\u00d7window, not the lifetime total."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "DataConfigOverride": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "title": "Mode",
+            "description": "multiclass | binary",
+            "default": "multiclass"
+          },
+          "val_fraction": {
+            "type": "number",
+            "exclusiveMaximum": 1.0,
+            "minimum": 0.0,
+            "title": "Val Fraction",
+            "description": "0 = 100% train (fixed epochs, no early stop)",
+            "default": 0.1
+          },
+          "test_fraction": {
+            "type": "number",
+            "exclusiveMaximum": 1.0,
+            "minimum": 0.0,
+            "title": "Test Fraction",
+            "description": "Held-out test fraction (prod default 0)",
+            "default": 0.0
+          },
+          "max_nodes": {
+            "type": "integer",
+            "title": "Max Nodes",
+            "description": "Skip CPGs larger than this",
+            "default": 2500
+          },
+          "top_cwe": {
+            "type": "integer",
+            "title": "Top Cwe",
+            "description": "Keep only top-N CWE classes (0 = all)",
+            "default": 0
+          },
+          "max_per_class": {
+            "type": "integer",
+            "title": "Max Per Class",
+            "description": "Balance: max samples per class (0 = unlimited)",
+            "default": 0
+          },
+          "resample_seed": {
+            "type": "integer",
+            "title": "Resample Seed",
+            "description": "Seed for sampling / splits",
+            "default": 42
+          }
+        },
+        "type": "object",
+        "title": "DataConfigOverride",
+        "description": "Data-build config \u2014 frozen onto the dataset. All overridable; defaults are\nproduction-sensible (small val split, no test held out \u2014 test = forgetting eval\non old data + drift monitoring)."
+      },
+      "DatasetIngestRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Human-readable dataset name / label"
+          },
+          "rows": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DatasetRow"
+                },
+                "type": "array",
+                "maxItems": 5000,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows",
+            "description": "Raw functions to build the dataset from (ingest path)"
+          },
+          "dataset_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Ids",
+            "description": "Registered dataset ids to MERGE into a new dataset (merge path)"
+          },
+          "dedup": {
+            "type": "boolean",
+            "title": "Dedup",
+            "description": "Drop duplicate functions when merging",
+            "default": true
+          },
+          "data_config": {
+            "$ref": "#/components/schemas/DataConfigOverride"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "DatasetIngestRequest",
+        "description": "Provide EXACTLY ONE of `rows` (ingest from raw functions) or `dataset_ids`\n(merge >=2 already-registered datasets into a new one)."
+      },
+      "DatasetJob": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Id"
+          },
+          "num_rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Rows"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "name"
+        ],
+        "title": "DatasetJob"
+      },
+      "DatasetRow": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "Function source (the 'before' code)"
+          },
+          "cwe": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cwe",
+            "description": "CWE id, e.g. 'CWE-787' (multiclass label)"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label",
+            "description": "Explicit class id (alternative to cwe; 0 = benign)"
+          },
+          "func_after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Func After",
+            "description": "Patched function; flaw lines derived from the diff"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language",
+            "description": "Language name (default C)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "DatasetRow"
+      },
+      "DriftSignal": {
+        "properties": {
+          "drift": {
+            "type": "boolean",
+            "title": "Drift",
+            "description": "True if a significant shift is detected (PSI>=0.25 or confidence drop>=0.10)"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "n_reference": {
+            "type": "integer",
+            "title": "N Reference",
+            "description": "predictions in the reference (older) window"
+          },
+          "n_current": {
+            "type": "integer",
+            "title": "N Current",
+            "description": "predictions in the current (newest) window"
+          },
+          "class_psi": {
+            "type": "number",
+            "title": "Class Psi",
+            "description": "Population Stability Index on the predicted-class distribution"
+          },
+          "psi_interpretation": {
+            "type": "string",
+            "title": "Psi Interpretation",
+            "description": "stable (<0.1) | moderate (0.1-0.25) | significant (>=0.25)"
+          },
+          "confidence_reference": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Reference"
+          },
+          "confidence_current": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Current"
+          },
+          "confidence_delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Delta",
+            "description": "current minus reference mean confidence (negative = model less sure)"
+          },
+          "embedding_centroid_cosine_shift": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Centroid Cosine Shift",
+            "description": "cosine distance between the mean pre-head embedding of each window"
+          }
+        },
+        "type": "object",
+        "required": [
+          "drift",
+          "message",
+          "n_reference",
+          "n_current",
+          "class_psi",
+          "psi_interpretation"
+        ],
+        "title": "DriftSignal",
+        "description": "Label-free drift signal: the newest `window` predictions (current) vs the `window`\nbefore them (reference)."
+      },
+      "EmbedRequest": {
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "title": "Model Id",
+            "description": "Registered model id whose embedding space to use"
+          },
+          "codes": {
+            "items": {
+              "type": "string",
+              "maxLength": 200000
+            },
+            "type": "array",
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Codes",
+            "description": "List of C/C++/Java function source strings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_id",
+          "codes"
+        ],
+        "title": "EmbedRequest"
+      },
+      "EmbedResponse": {
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/EmbedResult"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_id",
+          "results"
+        ],
+        "title": "EmbedResponse"
+      },
+      "EmbedResult": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "cls_embedding": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cls Embedding",
+            "description": "Final pre-head function representation (the vector fed to the output head). For similarity search / drift detection."
+          },
+          "cls_embedding_dim": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cls Embedding Dim"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "ok"
+        ],
+        "title": "EmbedResult"
+      },
+      "EvalReport": {
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "n_history": {
+            "type": "integer",
+            "title": "N History",
+            "description": "predictions analysed (capped at 2\u00d7window, not the lifetime total)"
+          },
+          "mean_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Confidence"
+          },
+          "prediction_distribution": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Prediction Distribution",
+            "description": "count per predicted class over the analysed rows",
+            "default": {}
+          },
+          "drift": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DriftSignal"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null until there are >=4 stored predictions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_id",
+          "n_history"
+        ],
+        "title": "EvalReport",
+        "description": "General label-free evaluation of a model over its recent inference history."
+      },
+      "FunctionResult": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "cached": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cached"
+          },
+          "prediction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prediction"
+          },
+          "class_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Id"
+          },
+          "is_vulnerable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Vulnerable"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "class_probabilities": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Probabilities"
+          },
+          "suspicious_lines": {
+            "items": {
+              "$ref": "#/components/schemas/SuspiciousLine"
+            },
+            "type": "array",
+            "title": "Suspicious Lines",
+            "default": []
+          },
+          "cls_embedding_dim": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cls Embedding Dim",
+            "description": "Dimensionality of the stored pre-head function embedding (full vector persisted for drift detection / similarity search, not returned in this response)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "ok"
+        ],
+        "title": "FunctionResult"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "InferenceRequest": {
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "title": "Model Id",
+            "description": "Registered model id, e.g. 'graph_based', 'hybrid_graph_lm', 'sequential'"
+          },
+          "codes": {
+            "items": {
+              "type": "string",
+              "maxLength": 200000
+            },
+            "type": "array",
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Codes",
+            "description": "List of C/C++/Java function source strings"
+          },
+          "top_k_lines": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top K Lines",
+            "description": "Return only the top-k suspicious lines per function (all if null)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_id",
+          "codes"
+        ],
+        "title": "InferenceRequest"
+      },
+      "InferenceResponse": {
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/FunctionResult"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_id",
+          "results"
+        ],
+        "title": "InferenceResponse"
+      },
+      "RelearnJob": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "method": {
+            "type": "string",
+            "title": "Method"
+          },
+          "dataset_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dataset Ids"
+          },
+          "base_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Model Id"
+          },
+          "config_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Path"
+          },
+          "log_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Log Path"
+          },
+          "result_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Model Id"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "method",
+          "dataset_ids"
+        ],
+        "title": "RelearnJob"
+      },
+      "RelearnMethod": {
+        "type": "string",
+        "enum": [
+          "ER",
+          "EWC",
+          "EWC-ER",
+          "finetune",
+          "retrain"
+        ],
+        "title": "RelearnMethod"
+      },
+      "RelearnRequest": {
+        "properties": {
+          "method": {
+            "$ref": "#/components/schemas/RelearnMethod"
+          },
+          "dataset_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dataset Ids",
+            "description": "Task-B dataset id(s). More than one are joined before training."
+          },
+          "base_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Model Id",
+            "description": "Required for ER/EWC/EWC-ER/finetune \u2014 model to continue from. Its dataset, config and checkpoint are read from the registry. Ignored for 'retrain'."
+          },
+          "epochs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epochs",
+            "description": "Override training epochs"
+          },
+          "run_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Name",
+            "description": "Optional human label for the job"
+          }
+        },
+        "type": "object",
+        "required": [
+          "method",
+          "dataset_ids"
+        ],
+        "title": "RelearnRequest"
+      },
+      "SuspiciousLine": {
+        "properties": {
+          "line": {
+            "type": "integer",
+            "title": "Line"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "predicted_cwe": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Cwe"
+          },
+          "class_probabilities": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Probabilities"
+          }
+        },
+        "type": "object",
+        "required": [
+          "line",
+          "score"
+        ],
+        "title": "SuspiciousLine"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

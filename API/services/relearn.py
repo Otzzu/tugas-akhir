@@ -16,10 +16,11 @@ then registers the resulting checkpoint as a new model id.
 from __future__ import annotations
 
 import copy
+import io
 import json
 import os
 import subprocess
-import threading
+import tarfile
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -30,11 +31,13 @@ from sqlalchemy import select
 from API.core.config import settings
 from API.core.database import SessionLocal
 from API.models.tables import JobRecord
-from API.services import registry
+from API.services import registry, storage
 
 ROOT = settings.ROOT
 JOBS_DIR = settings.JOBS_DIR
-ENV = {"PYTHONPATH": "src"}
+DATA_ROOT = ROOT / "data"            # local materialization target (the trainer's root)
+ENV: dict[str, str] = {}             # gnn_vuln is an installed package — no path injection needed
+TRAIN_MODULE = "gnn_vuln.train"      # library trainer (installed package, single source of truth)
 
 _REQUIRES_BASE = {"ER", "EWC", "EWC-ER", "finetune"}
 _JOB_FIELDS = ("status", "method", "dataset_ids", "base_model_id",
@@ -63,41 +66,100 @@ def list_jobs() -> list[dict]:
         return [j.to_dict() for j in s.scalars(select(JobRecord)).all()]
 
 
+# ── dataset materialization (object store -> local disk) ────────────────────
+def materialize_dataset(dataset_id: str) -> Path:
+    """Stage a dataset bundle from object storage onto local disk (SageMaker File-Mode
+    pattern: download once, then train from local). Cached by dataset_id — datasets are
+    immutable, so the local copy never goes stale. Lays out the files exactly where the
+    trainer looks: <DATA_ROOT>/raw/<source>/cwe_vocab.json + <DATA_ROOT>/processed/<pt>."""
+    ds = registry.get_dataset(dataset_id)
+    source = ds["source"]
+    marker = DATA_ROOT / ".materialized" / dataset_id
+    local_vocab = DATA_ROOT / "raw" / source / "cwe_vocab.json"
+    # already staged (cached from a prior run) OR provided locally (seed/base datasets
+    # like megavul that the user unzips into data/ by hand — no object-store bundle).
+    if marker.exists() or local_vocab.exists():
+        return DATA_ROOT
+    key = f"{dataset_id}.tar.gz"
+    blob = storage.get_bytes(settings.S3_BUCKET_DATASETS, key)
+    if blob is None:
+        raise FileNotFoundError(
+            f"dataset '{dataset_id}' is neither in object storage "
+            f"({settings.S3_BUCKET_DATASETS}/{key}) nor local at {local_vocab}. "
+            f"Ingest it via POST /datasets, or unzip the prebuilt dataset into {DATA_ROOT}.")
+    raw_dir = DATA_ROOT / "raw" / source
+    proc_dir = DATA_ROOT / "processed"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    proc_dir.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
+        for m in tar.getmembers():
+            if not m.isfile():
+                continue
+            data = tar.extractfile(m).read()
+            if Path(m.name).name == "cwe_vocab.json":
+                (raw_dir / "cwe_vocab.json").write_bytes(data)
+            elif m.name.startswith("processed/"):
+                (proc_dir / Path(m.name).name).write_bytes(data)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(datetime.utcnow().isoformat())
+    return DATA_ROOT
+
+
+def _dataset_data_config(dataset_id: str) -> dict:
+    """The frozen data-build config that produced this dataset's .pt (via data_config_id).
+    Used so the relearn run reuses the EXACT featurization — same source/embedder/filters
+    → same processed .pt name → the materialized cache loads instead of rebuilding."""
+    ds = registry.get_dataset(dataset_id)
+    cid = ds.get("data_config_id")
+    if not cid:
+        return {}
+    try:
+        return yaml.safe_load(registry.get_config(cid)["content"]) or {}
+    except KeyError:
+        return {}
+
+
 # ── dataset join ────────────────────────────────────────────────────────────
 def _join_datasets(dataset_ids: list[str]) -> tuple[str, dict]:
-    """Single id → its source. Multiple → merge raw CPG dirs into a combined source."""
+    """Single id → its source. Multiple → merge at the PROCESSED .pt level via the
+    gnn_vuln.data.merge CLI (concatenate finished .pt + unify vocab; no raw CPG, no
+    rebuild). Works for datasets ingested via /datasets whose bundle has only the .pt."""
     if len(dataset_ids) == 1:
         d = registry.get_dataset(dataset_ids[0])
         return d["source"], d
 
-    import shutil
     metas = [registry.get_dataset(i) for i in dataset_ids]
     joined = "join_" + "_".join(dataset_ids)
-    raw_root = ROOT / "data" / "raw"
-    dst = raw_root / joined
-    if not dst.exists():
-        (dst / "benign").mkdir(parents=True, exist_ok=True)
-        (dst / "vulnerable").mkdir(parents=True, exist_ok=True)
-        vocab: dict[str, int] = {}
-        for m in metas:
-            src = raw_root / m["source"]
-            if not src.exists():
-                raise FileNotFoundError(
-                    f"Cannot join: raw CPG dir missing for '{m['source']}' ({src})."
-                )
-            for sub in ("benign", "vulnerable"):
-                for f in (src / sub).glob("*"):
-                    tgt = dst / sub / f"{m['source']}__{f.name}"
-                    if not tgt.exists():
-                        shutil.copy2(f, tgt)
-            vf = src / "cwe_vocab.json"
-            if vf.exists():
-                for k, v in json.loads(vf.read_text()).items():
-                    vocab.setdefault(k, v)
-        (dst / "cwe_vocab.json").write_text(json.dumps(vocab, indent=2))
+
+    sources: list[str] = []
+    for did, m in zip(dataset_ids, metas):
+        materialize_dataset(did)          # stage each dataset's .pt + vocab locally
+        sources.append(m["source"])
+
+    # minimal data-build config for the merge — raw/processed pinned to DATA_ROOT,
+    # embedder pulled from the first dataset's frozen build config so the merge reads
+    # and writes .pt with matching featurization.
+    cfg = copy.deepcopy(yaml.safe_load((ROOT / "API" / "configs" / "data_build.yaml").read_text()))
+    fmodel = _dataset_data_config(dataset_ids[0]).get("model", {})
+    cfg.setdefault("model", {}).update(
+        {k: fmodel[k] for k in
+         ("pretrained_lm", "func_lm", "func_lm_source", "add_func_tokens", "func_max_length")
+         if k in fmodel})
+    cfg["data"] = {**cfg.get("data", {}), "raw_dir": str(DATA_ROOT / "raw"),
+                   "processed_dir": str(DATA_ROOT / "processed"), "source": joined}
+    cfg_path = DATA_ROOT / "processed" / f"{joined}_merge.yaml"
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
+
+    subprocess.run(
+        ["python", "-m", "gnn_vuln.data.merge", "--config", str(cfg_path),
+         "--sources", *sources, "--out-source", joined, "--dedup"],
+        check=True, cwd=str(ROOT), env={**os.environ, **ENV})
+
+    vocab = json.loads((DATA_ROOT / "raw" / joined / "cwe_vocab.json").read_text())
     base = copy.deepcopy(metas[0])
     base["source"] = joined
-    base["num_classes"] = max(m.get("num_classes", 0) for m in metas)
+    base["num_classes"] = len(vocab)
     return joined, base
 
 
@@ -113,6 +175,7 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
         base_cfg = yaml.safe_load(registry.abspath(base["config"]).read_text())
         base_ckpt = registry.abspath(base["checkpoint"])
         base_ds = registry.get_dataset(base["dataset_id"])
+        materialize_dataset(base["dataset_id"])   # task-A data on disk (replay buffer + EWC importance)
     else:  # retrain — fresh weights; optional template for arch
         if base_model_id:
             base = registry.get_model(base_model_id)
@@ -122,20 +185,41 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
         base_ckpt = None
         base_ds = None
 
+    # stage datasets to local disk + reuse each dataset's FROZEN featurization config so
+    # the cached processed .pt is found (identical source/embedder/filters → identical name,
+    # no rebuild from raw needed).
+    for did in dataset_ids:
+        materialize_dataset(did)
+    frozen = _dataset_data_config(dataset_ids[0])
+    fdata, fmodel = frozen.get("data", {}), frozen.get("model", {})
+
     cfg = copy.deepcopy(base_cfg)
     cfg["data"] = {**cfg.get("data", {}), **{
-        "source": source, "mode": data_block.get("mode", "multiclass"),
-        "max_nodes": data_block.get("max_nodes", 2500),
-        "top_cwe": data_block.get("top_cwe", 0),
-        "filter_top25_dangerous": data_block.get("filter_top25_dangerous", False),
-        "max_per_class": data_block.get("max_per_class", 0),
-        "resample_seed": data_block.get("resample_seed", 42),
-        "storage": data_block.get("storage", "lazy"),
+        "source": source, "mode": fdata.get("mode", data_block.get("mode", "multiclass")),
+        "raw_dir": str(DATA_ROOT / "raw"), "processed_dir": str(DATA_ROOT / "processed"),
+        "max_nodes": fdata.get("max_nodes", data_block.get("max_nodes", 2500)),
+        "top_cwe": fdata.get("top_cwe", data_block.get("top_cwe", 0)),
+        "filter_top25_dangerous": fdata.get("filter_top25_dangerous",
+                                            data_block.get("filter_top25_dangerous", False)),
+        "filter_owasp": fdata.get("filter_owasp", False),
+        "max_per_class": fdata.get("max_per_class", data_block.get("max_per_class", 0)),
+        "resample_seed": fdata.get("resample_seed", data_block.get("resample_seed", 42)),
+        "storage": fdata.get("storage", data_block.get("storage", "inmemory")),
         "ds_name_suffix": data_block.get("ds_name_suffix", ""),
     }}
+    # reuse the dataset's embedder (featurization) so the .pt name matches the cached build
+    for k in ("pretrained_lm", "func_lm", "add_func_tokens", "func_max_length", "func_lm_source"):
+        if k in fmodel:
+            cfg["model"][k] = fmodel[k]
     cfg["model"]["num_classes"] = data_block.get("num_classes", cfg["model"].get("num_classes", 26))
+    # the installed wheel's default checkpoint/results/log dirs resolve to a bogus
+    # site-packages path; pin them to the app root so the trainer writes where we read.
+    t = cfg.setdefault("train", {})
+    t["checkpoint_dir"] = str(ROOT / "checkpoints")
+    t["results_dir"] = str(ROOT / "results")
+    t["log_dir"] = str(ROOT / "logs")
     if epochs:
-        cfg.setdefault("train", {})["epochs"] = epochs
+        t["epochs"] = epochs
 
     ckpt_dir = ROOT / "checkpoints" / f"api_base_{base_model_id}" if base_ckpt else None
     importance_cfg_path = None
@@ -184,8 +268,15 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
     return train_cfg_path, importance_cfg_path, meta
 
 
-# ── job runner ──────────────────────────────────────────────────────────────
-def _run_job(job: dict, train_cfg: Path, importance_cfg: Path | None, meta: dict) -> None:
+# ── job runner (invoked by the Celery task in API.tasks) ────────────────────
+def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
+    """Run the (optional EWC-importance pass +) training subprocess for a relearn job,
+    then register the resulting checkpoint as a new model. Called by the Celery worker."""
+    job = get_job(job_id)
+    if job is None:
+        return
+    train_cfg = Path(train_cfg)
+    importance_cfg = Path(importance_cfg) if importance_cfg else None
     log = Path(job["log_path"])
     try:
         job["status"] = "running"; _save_job(job)
@@ -193,21 +284,34 @@ def _run_job(job: dict, train_cfg: Path, importance_cfg: Path | None, meta: dict
         with open(log, "w", encoding="utf-8") as lf:
             if importance_cfg is not None:
                 lf.write(f"== EWC importance: {importance_cfg} ==\n"); lf.flush()
-                subprocess.run(["python", "-m", "gnn_vuln.train", "--config", str(importance_cfg)],
+                subprocess.run(["python", "-m", TRAIN_MODULE, "--config", str(importance_cfg)],
                                check=True, cwd=str(ROOT), env=env, stdout=lf, stderr=subprocess.STDOUT)
             lf.write(f"== train: {train_cfg} ==\n"); lf.flush()
-            subprocess.run(["python", "-m", "gnn_vuln.train", "--config", str(train_cfg)],
+            subprocess.run(["python", "-m", TRAIN_MODULE, "--config", str(train_cfg)],
                            check=True, cwd=str(ROOT), env=env, stdout=lf, stderr=subprocess.STDOUT)
         ckpts = sorted((ROOT / "checkpoints").glob("*_*"), key=lambda p: p.stat().st_mtime, reverse=True)
         run_dir = next((c for c in ckpts if not c.name.startswith("api_base_")), None)
         best = next(run_dir.glob("best_*.pt"), None) if run_dir else None
         if best:
             new_id = f"relearn_{job['method']}_{run_dir.name}"
+            # label predictions with CWE names: derive class_names from the materialized vocab
+            class_names: list = []
+            vocab_path = DATA_ROOT / "raw" / meta["source"] / "cwe_vocab.json"
+            if vocab_path.exists():
+                vocab = json.loads(vocab_path.read_text())
+                class_names = [""] * len(vocab)
+                for cwe, idx in vocab.items():
+                    if 0 <= idx < len(class_names):
+                        class_names[idx] = cwe
+            # object storage is the source of truth for the checkpoint (so a worker on
+            # another node can load it); the local path stays as a cache.
+            ckpt_uri = storage.put_bytes(settings.S3_BUCKET_CHECKPOINTS, f"{new_id}.pt", best.read_bytes())
             registry.register_model(new_id, {
                 "label": f"relearn {job['method']} ({', '.join(job['dataset_ids'])})",
                 "arch": meta["arch"], "config": str(train_cfg.relative_to(ROOT)),
-                "checkpoint": str(best.relative_to(ROOT)),
+                "checkpoint": str(best.relative_to(ROOT)), "storage_uri": ckpt_uri,
                 "dataset_id": job["dataset_ids"][0], "num_classes": meta["num_classes"],
+                "class_names": class_names,
                 "base_model_id": job.get("base_model_id"), "method": job["method"]})
             job["result_model_id"] = new_id
         job["status"] = "done"
@@ -230,5 +334,7 @@ def submit_relearn(method: str, dataset_ids: list[str], base_model_id: str | Non
     train_cfg, importance_cfg, meta = build_config(method, dataset_ids, base_model_id, epochs, job_dir)
     job["config_path"] = str(train_cfg.relative_to(ROOT))
     _save_job(job)
-    threading.Thread(target=_run_job, args=(job, train_cfg, importance_cfg, meta), daemon=True).start()
+    # run on the Celery worker (off the web server), consistent with dataset ingestion
+    from API.tasks import run_relearn
+    run_relearn.delay(job_id, str(train_cfg), str(importance_cfg) if importance_cfg else None, meta)
     return job

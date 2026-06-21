@@ -164,9 +164,17 @@ def predict(
             func_line_ids=getattr(data, "func_line_ids", None),
             func_line_cls_batch=getattr(data, "func_line_cls_batch", None),
             rwse=rwse,
+            return_repr=True,
         )
     else:
-        out = model(data.x, data.edge_index, batch, node_line, edge_attr, rwse=rwse)
+        out = model(data.x, data.edge_index, batch, node_line, edge_attr,
+                    rwse=rwse, return_repr=True)
+
+    # return_repr=True appends the pre-head function representation as the last
+    # element. Strip it before the length-based unpack below.
+    out = tuple(out)
+    cls_repr = out[-1]
+    out = out[:-1]
 
     # Unpack return tuple — mirrors trainer._forward (2/3/4/5-tuple model outputs)
     if len(out) == 5:
@@ -258,6 +266,13 @@ def predict(
                 for ln, sc in entries
             ]
 
+    # Function-level pre-head representation (vector fed to the classification
+    # head) for drift detection / similarity search. [1, D] → flat list of floats.
+    cls_embedding = (
+        cls_repr[0].float().cpu().tolist()
+        if cls_repr is not None else None
+    )
+
     return {
         "prediction": prediction,
         "class_id": class_id,
@@ -265,6 +280,7 @@ def predict(
         "confidence": round(confidence, 6),
         "class_probabilities": class_probabilities,
         "suspicious_lines": suspicious_lines,
+        "cls_embedding": cls_embedding,
     }
 
 
@@ -408,7 +424,7 @@ class VulnPredictor:
         max_nodes: int = 1000,
         top_k_lines: int | None = None,
     ) -> Optional[dict]:
-        """Parse + embed + predict from a CPG file."""
+        """Parse + embed + predict from a CPG file (lower-level; see predict_code)."""
         return predict_from_file(
             self.model, cpg_path,
             class_names=self.class_names,
@@ -421,3 +437,43 @@ class VulnPredictor:
             device=self.device,
             top_k_lines=top_k_lines,
         )
+
+    def predict_code(
+        self,
+        code: str,
+        joern_cli: str | Path,
+        max_nodes: int = 2500,
+        top_k_lines: int | None = None,
+    ) -> Optional[dict]:
+        """Predict directly from a function SOURCE STRING — the high-level entry point.
+
+        Hides the Joern CPG step: builds the Code Property Graph in a private temp dir,
+        embeds + runs the model, and returns the result dict (prediction, confidence,
+        class_probabilities, suspicious_lines, cls_embedding). Returns None if Joern
+        produced no CPG (unparseable / empty function). `joern_cli` = the joern-cli dir."""
+        import tempfile
+
+        from gnn_vuln.data.joern_runner import process_function
+
+        with tempfile.TemporaryDirectory() as td:
+            cpg = process_function(code, 0, Path(td), joern_cli_dir=Path(joern_cli))
+            if cpg is None:
+                return None
+            result = self.predict_from_file(cpg, max_nodes=max_nodes, top_k_lines=top_k_lines)
+            if result:  # attach the source text of each suspicious line (1-indexed)
+                src = code.splitlines()
+                for sl in result.get("suspicious_lines", []):
+                    ln = sl.get("line")
+                    if isinstance(ln, int) and 1 <= ln <= len(src):
+                        sl["code"] = src[ln - 1]
+            return result
+
+    def predict_codes(
+        self,
+        codes: list[str],
+        joern_cli: str | Path,
+        max_nodes: int = 2500,
+        top_k_lines: int | None = None,
+    ) -> list[Optional[dict]]:
+        """Batch predict_code — one result dict (or None on Joern failure) per input string."""
+        return [self.predict_code(c, joern_cli, max_nodes, top_k_lines) for c in codes]

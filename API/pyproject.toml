@@ -1,0 +1,38 @@
+[project]
+name = "vuln-api"
+version = "1.0.0"
+description = "Standalone FastAPI service over the gnn_vuln vulnerability-detection models."
+requires-python = ">=3.11"
+
+# This service depends on the model code ONLY as an installed package (gnn-vuln),
+# which transitively brings torch, torch-geometric, transformers, etc. It never
+# imports a source tree outside API/.
+dependencies = [
+    "gnn-vuln==0.1.0",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
+    "boto3>=1.34",
+    "celery[redis]>=5.3",       # async job queue for long-running ingestion / relearn
+]
+
+# The API is an application, not an importable package — don't try to build it.
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+# gnn-vuln resolves from PyPI like any third-party package (`pip install gnn-vuln`).
+# GPU torch (CUDA 12.4). Drop this for a CPU-only box.
+torch = { index = "pytorch-cu124" }
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+# NOTE: PyTorch Geometric sparse extensions (torch-scatter, torch-sparse) are not
+# pulled automatically. After `uv sync`, if your model needs them:
+#   uv run pip install torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-2.6.0+cu124.html

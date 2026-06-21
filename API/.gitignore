@@ -2,5 +2,6 @@
 app.db
 app.db-journal
 jobs/
+storage/          # filesystem object-store (dev STORAGE_BACKEND=fs)
 __pycache__/
 .hf/

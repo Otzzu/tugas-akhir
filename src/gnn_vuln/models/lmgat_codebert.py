@@ -262,6 +262,14 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
             if supcon_proj_dim > 0 else None
         )
         self._fused_for_supcon: torch.Tensor | None = None
+        # Inference-only capture of the function-level representation fed to the
+        # classification head (the vector right before the output head), for drift
+        # detection / similarity search. Populated only in eval mode; read when
+        # forward(return_repr=True). Training is untouched.
+        self._cls_repr: torch.Tensor | None = None
+        self.func_head.register_forward_pre_hook(
+            lambda _m, _inp: None if _m.training else setattr(self, "_cls_repr", _inp[0].detach())
+        )
 
     def _maybe_mixup(self, h_graph: torch.Tensor) -> torch.Tensor:
         """Manifold mixup on the pooled graph embedding (Balanced-Mixup / Remix).
@@ -278,7 +286,18 @@ class LMGATCodeBERTVulnDetector(VulnDetectorBase):
         self._mixup_lam = lam
         return lam * h_graph + (1.0 - lam) * h_graph[perm]
 
-    def forward(self, x, edge_index, batch, node_line=None, edge_attr=None,
+    def forward(self, *args, return_repr: bool = False, **kwargs):
+        """Public entry. With return_repr=True (inference only) the function-level
+        pre-head representation (vector fed to the classification head) is appended
+        as the last tuple element, for drift detection / similarity search. Default
+        (return_repr=False) returns exactly as before — training path unchanged."""
+        out = self._forward_impl(*args, **kwargs)
+        if return_repr:
+            tup = out if isinstance(out, tuple) else (out,)
+            return (*tup, self._cls_repr)
+        return out
+
+    def _forward_impl(self, x, edge_index, batch, node_line=None, edge_attr=None,
                 func_input_ids=None, func_attention_mask=None,
                 func_token_lines=None,
                 func_line_cls=None, func_line_ids=None, func_line_cls_batch=None,

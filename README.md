@@ -3,6 +3,11 @@
 > Deteksi kerentanan kode sumber menggunakan Graph Neural Network (GNN) dengan CodeBERT node embeddings.  
 > Final project untuk tugas akhir, dikelola dengan [uv](https://docs.astral.sh/uv/).
 
+> **Use it as a library** — `pip install gnn-vuln`, then `VulnPredictor.predict_code(code, joern_cli)`
+> returns the predicted CWE + suspicious lines + embedding for a function source string.
+> Full API reference (imports, inputs, outputs, the `python -m` pipeline/training CLIs):
+> **[src/gnn_vuln/README.md](src/gnn_vuln/README.md)**.
+
 ---
 
 ## Background

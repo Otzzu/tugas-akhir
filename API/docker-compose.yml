@@ -1,9 +1,35 @@
-# Production stack: FastAPI app + PostgreSQL.
-# Build context is the repo root so the image can COPY src/ configs/ checkpoints/.
+# Production stack: FastAPI app + Celery worker + Redis (broker) + PostgreSQL
+# (pgvector) + MinIO (object storage) + Adminer (DB UI).
+# Build context is the repo root so the image can build the gnn_vuln wheel.
 #   docker compose -f API/docker-compose.yml up --build
+#
+# UIs:  API docs http://localhost:8000/docs · MinIO console http://localhost:9001
+#       Adminer (DB browser) http://localhost:8080
+
+# Shared env for the API server and the Celery worker (same image + config).
+x-app-env: &app-env
+  DATABASE_URL: postgresql+psycopg://vuln:vuln@db:5432/vulndb
+  JOERN_CLI: /opt/joern/joern-cli
+  GNN_VULN_ROOT: /app             # library resolves data/checkpoints/logs under here
+  API_DEVICE: cpu                 # set to cuda + use a CUDA base image for GPU
+  API_CORS_ORIGINS: "*"
+  # object storage — CPG blobs + dataset bundles go to MinIO, not the DB
+  STORAGE_BACKEND: s3
+  S3_ENDPOINT: http://minio:9000
+  S3_ACCESS_KEY: minioadmin
+  S3_SECRET_KEY: minioadmin
+  S3_BUCKET_GRAPHS: graphs
+  S3_BUCKET_DATASETS: datasets
+  S3_BUCKET_CHECKPOINTS: checkpoints
+  # async jobs (Celery) — Redis broker + result backend
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/1
+
 services:
   db:
-    image: postgres:16-alpine
+    # pgvector image = stock Postgres 16 + the `vector` extension, ready for
+    # similarity search / drift detection over stored function embeddings.
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: vuln
       POSTGRES_PASSWORD: vuln
@@ -16,6 +42,38 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"     # S3 API
+      - "9001:9001"     # web console
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  adminer:
+    image: adminer
+    ports:
+      - "8080:8080"     # DB browser UI (server=db, user/pass/db=vuln/vuln/vulndb)
+    depends_on:
+      - db
+
   api:
     build:
       context: ..
@@ -23,17 +81,42 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql+psycopg://vuln:vuln@db:5432/vulndb
-      JOERN_CLI: /opt/joern/joern-cli
-      API_DEVICE: cpu                 # set to cuda + use a CUDA base image for GPU
-      API_CORS_ORIGINS: "*"
+      minio:
+        condition: service_started
+      redis:
+        condition: service_started
+    environment: *app-env
     ports:
       - "8000:8000"
     volumes:
       # mount trained checkpoints + datasets from the host (don't bake large artifacts into the image)
       - ../checkpoints:/app/checkpoints
       - ../data:/app/data
+      - ../API:/app/API              # live API source (edit + restart, no rebuild)
+      - jobsdata:/app/API/jobs       # shared with the worker — API writes input, worker reads it
+
+  worker:
+    # Celery worker — runs the heavy ingestion / relearn jobs off the web server.
+    # For GPU training, point this service at a CUDA image + set API_DEVICE=cuda.
+    build:
+      context: ..
+      dockerfile: API/Dockerfile
+    command: celery -A API.celery_app worker --loglevel=info --concurrency=1
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      redis:
+        condition: service_started
+    environment: *app-env
+    volumes:
+      - ../checkpoints:/app/checkpoints
+      - ../data:/app/data
+      - ../API:/app/API              # live API source (edit + restart, no rebuild)
+      - jobsdata:/app/API/jobs       # shared with the API — reads the input parquet it wrote
 
 volumes:
   pgdata:
+  miniodata:
+  jobsdata:

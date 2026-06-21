@@ -1,0 +1,37 @@
+# Keep the Docker build context small. The image installs gnn-vuln from PyPI (no local
+# wheel build), so only configs/ + API/ are needed — src/ is excluded entirely.
+.git
+.venv
+API/.venv
+src/
+**/__pycache__
+**/*.pyc
+**/*.pyo
+
+# Large runtime artifacts — bind-mounted at runtime, never baked into the image
+data/
+checkpoints/
+results/
+logs/
+runs/
+wandb/
+
+# Heavy non-code trees
+paper/
+docs/
+node_modules/
+.pytest_cache
+.ruff_cache
+.ipynb_checkpoints
+
+# Build / cache outputs
+dist/
+build/
+*.egg-info/
+*.pt
+*.tar.gz
+*.zip
+API/storage/
+API/app.db
+API/jobs/
+API/tests/

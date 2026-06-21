@@ -1,0 +1,29 @@
+# Self-contained dataset-build (featurization) config — INDEPENDENT of any
+# training config. Holds ONLY what the .pt builder reads: the node/func embedder
+# (how a dataset is featurized) plus neutral data defaults. Training
+# hyperparameters (loss, lr, epochs, sampler, class weights, early-stop) live in
+# the relearn/training config, never here. The /datasets endpoint overlays the
+# per-request data overrides (mode, max_nodes, sampling) on top of this.
+data:
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  cwe_list: null
+  cwe_groups: null
+  filter_owasp: false
+  filter_top25_dangerous: false
+  max_per_class: 0
+  resample_seed: 42
+  storage: inmemory
+
+# Embedder = featurization. Must match the models the dataset will be used with
+# (project standard: UniXcoder node + function tokens, 1024-token window).
+model:
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  func_lm_source: raw
+  add_func_tokens: true
+  func_max_length: 1024
+
+train:
+  device: cpu
