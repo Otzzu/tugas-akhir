@@ -1913,3 +1913,60 @@ Total: **176,674** | Benign: **154,205** | Vulnerable: **22,469**
 | 11       | security_misconfiguration           | 75     | 96         | 361     | 160      | 0        | 149    |
 | 12       | software_or_data_integrity_failures | 5      | 18         | 132     | 128      | 50       | 27     |
 | 13       | logging_and_alerting_failures       | 1      | 7          | 12      | 11       | 0        | 7      |
+
+---
+
+## Continual Learning Task-B Datasets (relearn + megavul_cil)
+
+C/C++ only (sesuai batasan). Derived from data/datasets/{relearn,megavul_cil}/train.parquet.
+
+### Domain-incremental: relearn (BigVul + TitanVul, 26-class aligned)
+
+Total 4546 | vuln 3653 | benign 893 | lang {'C': 3925, 'C++': 621}
+
+| Kelas | Jumlah |
+| --- | --- |
+| CWE-125 | 893 |
+| CWE-20 | 893 |
+| Tidak rentan | 893 |
+| CWE-787 | 470 |
+| CWE-200 | 351 |
+| CWE-416 | 318 |
+| CWE-476 | 212 |
+| CWE-120 | 193 |
+| CWE-284 | 126 |
+| CWE-22 | 53 |
+| CWE-79 | 46 |
+| CWE-122 | 23 |
+| CWE-78 | 20 |
+| CWE-94 | 13 |
+| CWE-770 | 13 |
+| CWE-863 | 9 |
+| CWE-77 | 5 |
+| CWE-862 | 4 |
+| CWE-502 | 3 |
+| CWE-352 | 3 |
+| CWE-918 | 1 |
+| CWE-639 | 1 |
+| CWE-89 | 1 |
+| CWE-121 | 1 |
+| CWE-434 | 1 |
+| Total | 4546 |
+
+### Class-incremental: megavul_cil (10 new CWE, ids 26..35)
+
+Total 5166 | lang {'C': 4220, 'C++': 946}
+
+| Kelas | Jumlah |
+| --- | --- |
+| CWE-119 | 1618 |
+| CWE-190 | 708 |
+| CWE-362 | 543 |
+| CWE-399 | 470 |
+| CWE-264 | 446 |
+| CWE-400 | 339 |
+| CWE-401 | 283 |
+| CWE-189 | 261 |
+| CWE-617 | 256 |
+| CWE-835 | 242 |
+| Total | 5166 |
