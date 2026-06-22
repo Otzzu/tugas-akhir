@@ -33,4 +33,14 @@ celery_app.conf.update(
     result_serializer="json",
     accept_content=["json"],
     result_expires=86_400,            # keep task results 1 day
+    # Per-task queues. GPU-bound tasks (relearn train, ingest node-embedding) share a queue
+    # drained by ONE concurrency=1 worker so they serialize on a single GPU (no OOM); the
+    # CPU-only merge runs on its own parallel worker. A second GPU box later = give `ingest`
+    # its own worker with `-Q ingest`, no code change.
+    task_default_queue="merge",
+    task_routes={
+        "run_relearn":    {"queue": "relearn"},
+        "ingest_dataset": {"queue": "ingest"},
+        "merge_datasets": {"queue": "merge"},
+    },
 )

@@ -38,36 +38,57 @@ flowchart LR
 
     subgraph svc[API service]
       api[FastAPI app]
-      worker[Celery worker]
+      wgpu[worker-gpu<br/>concurrency 1 · GPU]
+      wcpu[worker-cpu<br/>concurrency 2 · CPU]
     end
 
-    redis[(Redis<br/>broker)]
+    subgraph broker[Redis broker]
+      qr[[queue: relearn]]
+      qi[[queue: ingest]]
+      qm[[queue: merge]]
+    end
+
     pg[(PostgreSQL<br/>pgvector)]
     minio[(MinIO / S3<br/>object store)]
     joern[[Joern CLI<br/>+ JDK 21]]
     lib[[gnn_vuln library<br/>model + trainer]]
 
-    client -->|/inference /embed| api
-    client -->|/datasets /relearn| api
-    client -->|/eval| api
+    client -->|sync · /inference /embed /eval| api
+    client -->|async · /datasets /relearn| api
 
     api -->|metadata, pointers| pg
     api -->|CPG, datasets, checkpoints| minio
     api -->|sync: Joern + model forward| joern
     api --> lib
-    api -->|enqueue long jobs| redis
-    redis --> worker
-    worker -->|ingest / train subprocess| lib
-    worker --> joern
-    worker --> minio
-    worker --> pg
+
+    api -->|run_relearn| qr
+    api -->|ingest_dataset| qi
+    api -->|merge_datasets| qm
+
+    qr --> wgpu
+    qi --> wgpu
+    qm --> wcpu
+
+    wgpu -->|train / ingest subprocess| lib
+    wgpu --> joern
+    wgpu --> minio
+    wgpu --> pg
+    wcpu -->|merge subprocess| lib
+    wcpu --> minio
+    wcpu --> pg
 ```
 
 - **FastAPI app** — request/response. Synchronous, fast paths (inference, embed, eval) run
   inline; long jobs (dataset ingestion, relearn training) are **enqueued to Celery** and
   return a job id immediately.
-- **Celery worker** — separate process (own GPU) for the heavy work: Joern CPG generation,
-  `.pt` building, and the training subprocess. Broker = Redis.
+- **Celery workers** — separate processes for the heavy work, split by **per-task queue**
+  (broker = Redis):
+  - `worker-gpu` (`-Q relearn,ingest`, concurrency 1) — GPU-bound tasks (training subprocess,
+    ingest node-embedding). One at a time → they serialize on a single GPU (no OOM).
+  - `worker-cpu` (`-Q merge`, concurrency 2) — CPU-only `.pt` merge, runs in parallel and is
+    never blocked by a long train.
+  Routing lives in `celery_app.py` (`task_routes`). A second GPU box later = give `ingest` its
+  own worker with `-Q ingest`, no code change.
 - **PostgreSQL** (pgvector image) — metadata + pointers only (never blobs). pgvector is ready
   for ANN search over the stored embeddings.
 - **MinIO/S3** — object storage for the big binaries (CPG blobs, dataset `.pt` bundles, model checkpoints).
@@ -146,9 +167,10 @@ API/
 
 ## Run — dev (Docker, recommended)
 
-The stack (Postgres + Redis + MinIO + API + worker + Adminer) comes up with one command. API
-source is bind-mounted, so editing `API/*.py` + `docker compose restart api worker` applies
-without a rebuild (only `src/gnn_vuln` changes need `build`, because that goes into the wheel).
+The stack (Postgres + Redis + MinIO + API + worker-gpu + worker-cpu + Adminer) comes up with
+one command. API source is bind-mounted, so editing `API/*.py` + `docker compose restart api
+worker-gpu worker-cpu` applies without a rebuild (only `src/gnn_vuln` changes need `build`,
+because that goes into the installed package).
 
 ```bash
 docker compose -f API/docker-compose.yml up -d --build
@@ -164,9 +186,9 @@ Adminer `:8080` (server `db`, user/pass/db `vuln`/`vuln`/`vulndb`).
 docker compose -f API/docker-compose.yml -f API/docker-compose.gpu.yml up -d --build
 ```
 
-The overlay builds the image with CUDA torch (cu124), reserves the host GPU for api + worker,
-and sets `API_DEVICE=cuda`. Needs the NVIDIA Container Toolkit (`docker info` shows the
-`nvidia` runtime).
+The overlay builds the image with CUDA torch (cu124), reserves the host GPU for api +
+worker-gpu (worker-cpu stays `API_DEVICE=cpu`, no GPU), and sets `API_DEVICE=cuda`. Needs the
+NVIDIA Container Toolkit (`docker info` shows the `nvidia` runtime).
 
 ### Run the API standalone (its own venv)
 

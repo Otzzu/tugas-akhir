@@ -34,16 +34,12 @@ RUN uv pip install --system torch==${TORCH_VERSION} --index-url ${TORCH_INDEX} \
     && uv pip install --system torch-geometric==2.7.0 \
     && uv pip install --system torch-scatter torch-sparse -f ${PYG_FIND_LINKS}
 
-# Install gnn-vuln (from PyPI) + the API web deps. torch/pyg above already satisfy the
-# heavy transitive deps; the rest (transformers, numpy, ...) resolve from PyPI.
-COPY API/requirements.txt /app/API/requirements.txt
-RUN uv pip install --system -r /app/API/requirements.txt
-
-# ── Joern (CPG generation). Placed AFTER the heavy pip layers so bumping the
-# Joern version never invalidates the torch/deps cache. `curl -f` fails on 404
-# instead of silently leaving /opt/joern empty; the final `test -x` asserts the
+# ── Joern (CPG generation). Placed AFTER torch but BEFORE the requirements/gnn-vuln
+# layer: the pinned Joern version changes far less often than gnn-vuln, so a routine
+# dep bump reuses this cached ~1.7GB download instead of re-fetching it. `curl -f` fails
+# on 404 instead of silently leaving /opt/joern empty; the final `test -x` asserts the
 # CLI actually extracted. ──
-ARG JOERN_VERSION=v4.0.526   # match the local Joern used to build datasets
+ARG JOERN_VERSION=v4.0.526
 RUN curl -fL "https://github.com/joernio/joern/releases/download/${JOERN_VERSION}/joern-cli.zip" \
         -o /tmp/joern-cli.zip \
     && mkdir -p /opt/joern \
@@ -51,6 +47,11 @@ RUN curl -fL "https://github.com/joernio/joern/releases/download/${JOERN_VERSION
     && rm /tmp/joern-cli.zip \
     && chmod +x /opt/joern/joern-cli/joern* \
     && test -x /opt/joern/joern-cli/joern-parse
+
+# Install gnn-vuln (from PyPI) + the API web deps. torch/pyg above already satisfy the
+# heavy transitive deps; the rest (transformers, numpy, ...) resolve from PyPI.
+COPY API/requirements.txt /app/API/requirements.txt
+RUN uv pip install --system -r /app/API/requirements.txt
 
 # ── app: the thin service layer. The model/inference/training code lives in the installed
 # gnn_vuln package; checkpoints + data are bind-mounted at runtime (see docker-compose.yml).

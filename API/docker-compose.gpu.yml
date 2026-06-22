@@ -22,7 +22,7 @@ services:
               count: all
               capabilities: [gpu]
 
-  worker:
+  worker-gpu:
     build:
       args:
         TORCH_INDEX: https://download.pytorch.org/whl/cu124
@@ -36,3 +36,13 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  # Same cu124 image (shared build, built once), but CPU-only: no GPU reservation +
+  # API_DEVICE=cpu, so the merge worker never touches the single GPU.
+  worker-cpu:
+    build:
+      args:
+        TORCH_INDEX: https://download.pytorch.org/whl/cu124
+        PYG_FIND_LINKS: https://data.pyg.org/whl/torch-2.6.0+cu124.html
+    environment:
+      API_DEVICE: cpu

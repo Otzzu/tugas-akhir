@@ -95,13 +95,18 @@ services:
       - ../API:/app/API              # live API source (edit + restart, no rebuild)
       - jobsdata:/app/API/jobs       # shared with the worker — API writes input, worker reads it
 
-  worker:
-    # Celery worker — runs the heavy ingestion / relearn jobs off the web server.
-    # For GPU training, point this service at a CUDA image + set API_DEVICE=cuda.
+  # Celery workers — heavy jobs off the web server, split by per-task queue.
+  #   worker-gpu  -Q relearn,ingest  → GPU-bound tasks, ONE at a time (concurrency=1) so they
+  #                                    serialize on a single GPU (no OOM). GPU reservation +
+  #                                    API_DEVICE=cuda are added by docker-compose.gpu.yml.
+  #   worker-cpu  -Q merge           → CPU-only .pt merge, parallel (concurrency=2), never
+  #                                    blocked by a long train.
+  # Same image + volumes as api; only queues / concurrency / device differ.
+  worker-gpu:
     build:
       context: ..
       dockerfile: API/Dockerfile
-    command: celery -A API.celery_app worker --loglevel=info --concurrency=1
+    command: celery -A API.celery_app worker --loglevel=info -Q relearn,ingest --concurrency=1
     depends_on:
       db:
         condition: service_healthy
@@ -113,8 +118,27 @@ services:
     volumes:
       - ../checkpoints:/app/checkpoints
       - ../data:/app/data
-      - ../API:/app/API              # live API source (edit + restart, no rebuild)
-      - jobsdata:/app/API/jobs       # shared with the API — reads the input parquet it wrote
+      - ../API:/app/API
+      - jobsdata:/app/API/jobs
+
+  worker-cpu:
+    build:
+      context: ..
+      dockerfile: API/Dockerfile
+    command: celery -A API.celery_app worker --loglevel=info -Q merge --concurrency=2
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      redis:
+        condition: service_started
+    environment: *app-env
+    volumes:
+      - ../checkpoints:/app/checkpoints
+      - ../data:/app/data
+      - ../API:/app/API
+      - jobsdata:/app/API/jobs
 
 volumes:
   pgdata:
