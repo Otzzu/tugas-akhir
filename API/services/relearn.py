@@ -81,20 +81,19 @@ def materialize_dataset(dataset_id: str) -> Path:
     ds = registry.get_dataset(dataset_id)
     source = ds["source"]
     marker = DATA_ROOT / ".materialized" / dataset_id
-    local_vocab = DATA_ROOT / "raw" / source / "cwe_vocab.json"
-    # already staged (cached from a prior run) OR provided locally (seed/base datasets
-    # like megavul that the user unzips into data/ by hand — no object-store bundle).
-    if marker.exists() or local_vocab.exists():
-        return DATA_ROOT
+    if marker.exists():
+        return DATA_ROOT                      # already staged this dataset (per-dataset cache)
+    raw_dir = DATA_ROOT / "raw" / source
+    proc_dir = DATA_ROOT / "processed"
     key = f"{dataset_id}.tar.gz"
     blob = storage.get_bytes(settings.S3_BUCKET_DATASETS, key)
     if blob is None:
         raise FileNotFoundError(
-            f"dataset '{dataset_id}' is neither in object storage "
-            f"({settings.S3_BUCKET_DATASETS}/{key}) nor local at {local_vocab}. "
-            f"Ingest it via POST /datasets, or unzip the prebuilt dataset into {DATA_ROOT}.")
-    raw_dir = DATA_ROOT / "raw" / source
-    proc_dir = DATA_ROOT / "processed"
+            f"dataset '{dataset_id}' not in object storage ({settings.S3_BUCKET_DATASETS}/{key}). "
+            f"Object storage is the single source of truth — seed it via scripts/seed_from_drive.py "
+            f"or ingest via POST /datasets. The API does not read pre-placed local data.")
+    # Bundle = cwe_vocab.json (top) + processed/<files>; subdirs preserved so a lazy
+    # <name>_graphs/ stays intact (basename-only would flatten the per-graph files).
     raw_dir.mkdir(parents=True, exist_ok=True)
     proc_dir.mkdir(parents=True, exist_ok=True)
     with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
@@ -105,7 +104,12 @@ def materialize_dataset(dataset_id: str) -> Path:
             if Path(m.name).name == "cwe_vocab.json":
                 (raw_dir / "cwe_vocab.json").write_bytes(data)
             elif m.name.startswith("processed/"):
-                (proc_dir / Path(m.name).name).write_bytes(data)
+                rel = m.name[len("processed/"):]
+                if not rel:
+                    continue
+                target = proc_dir / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text(datetime.utcnow().isoformat())
     return DATA_ROOT

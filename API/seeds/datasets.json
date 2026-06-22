@@ -1,9 +1,17 @@
 {
   "megavul_26": {
-    "label": "MegaVul top-25 + benign (26-class)",
+    "label": "MegaVul top-25 + benign (26-class, ml1024 GNN-only)",
     "source": "megavul", "mode": "multiclass", "max_nodes": 2500, "top_cwe": 0,
     "filter_top25_dangerous": true, "max_per_class": 1600, "resample_seed": 42,
-    "storage": "lazy", "ds_name_suffix": "", "num_classes": 26
+    "storage": "lazy", "ds_name_suffix": "", "num_classes": 26,
+    "storage_uri": "s3://datasets/megavul_26.tar.gz"
+  },
+  "megavul_26_lm": {
+    "label": "MegaVul top-25 + benign (26-class, ml5120 for live-LM hybrid)",
+    "source": "megavul", "mode": "multiclass", "max_nodes": 2500, "top_cwe": 0,
+    "filter_top25_dangerous": true, "max_per_class": 1600, "resample_seed": 42,
+    "storage": "lazy", "ds_name_suffix": "", "num_classes": 26,
+    "storage_uri": "s3://datasets/megavul_26_lm.tar.gz"
   },
   "relearn": {
     "label": "BigVul + TitanVul relearn (26-class, vocab-aligned)",
