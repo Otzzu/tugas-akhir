@@ -129,11 +129,14 @@ def merge_datasets(self, job_id: str) -> dict:
         cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
         data_config_id = registry.upsert_config("data", out_source, cfg)
 
-        # 5) bundle the DATA ARTIFACTS only (.pt + label vocab) -> object storage
+        # 5) bundle the DATA ARTIFACTS only (this merge's .pt + label vocab) -> object storage.
+        # processed_dir is the SHARED data root holding EVERY dataset's .pt (incl multi-GB
+        # ones); tar ONLY the .pt this merge wrote — never the whole dir (gzip of GBs hangs).
+        pts = sorted(processed_dir.glob(f"lm_dataset_{out_source}_*.pt"))
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-            if processed_dir.exists():
-                tar.add(processed_dir, arcname="processed")
+            for pt in pts:
+                tar.add(pt, arcname=f"processed/{pt.name}")
             if vocab_path.exists():
                 tar.add(vocab_path, arcname="cwe_vocab.json")
         key = f"{dataset_id}.tar.gz"
