@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import time
 from datetime import datetime
@@ -850,8 +851,12 @@ class TrainingSession:
         import csv as _csv, json as _json
         res_dir = cfg.train.results_dir / cm.run_dir.name
         res_dir.mkdir(parents=True, exist_ok=True)
+        # Under the API (GNN_VULN_API_MODE=1) skip research-only artifacts — the per-epoch
+        # CSV log and the rendered curves plot are never consumed by the service and only
+        # waste compute + disk. split.json + training_summary.json (handoff) are still written.
+        _api_mode = os.environ.get("GNN_VULN_API_MODE") == "1"
 
-        if epoch_log:
+        if epoch_log and not _api_mode:
             log_path = res_dir / "training_log.csv"
             with open(log_path, "w", newline="") as f:
                 writer = _csv.DictWriter(f, fieldnames=epoch_log[0].keys())
@@ -935,8 +940,8 @@ class TrainingSession:
             (res_dir / "split.json").write_text(_json.dumps(_split), encoding="utf-8")
             logger.info(f"split.json → {res_dir / 'split.json'}")
 
-        # Training curves plot
-        if epoch_log:
+        # Training curves plot (research-only — skipped under the API)
+        if epoch_log and not _api_mode:
             try:
                 import matplotlib
                 matplotlib.use("Agg")

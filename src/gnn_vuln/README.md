@@ -168,6 +168,29 @@ python -m gnn_vuln.train         --config config.yaml
 
 ---
 
+## Evaluation outputs & `GNN_VULN_API_MODE`
+
+`Evaluator` separates **compute** from **persistence** so a caller can decide what hits disk:
+
+- `Evaluator.compute() -> EvalResult` — runs inference + metrics, returns everything in memory,
+  writes **nothing**.
+- `Evaluator.save_artifacts(res)` — research persistence: `predictions.csv`,
+  `localization_scores.csv`, `metrics_summary.json`, ROC / confusion / PR plots.
+- `Evaluator.save_summary(res)` — writes **only** `metrics_summary.json` (the small handoff).
+- `Evaluator.run()` = `compute()` + `save_artifacts()` (the research/CLI default).
+
+`python -m gnn_vuln.evaluate --checkpoint <pt>` runs the full research path. Pass
+`--metrics-only` (or set `GNN_VULN_API_MODE=1`) to write just `metrics_summary.json` — for a
+service that reads the metrics back and persists them elsewhere, with no bulky per-sample CSVs
+or plots on disk.
+
+`GNN_VULN_API_MODE=1` also tells **the trainer** to skip research-only outputs
+(`training_log.csv`, `training_curves.png`); the small handoffs `split.json` +
+`training_summary.json` are still written. Set it when embedding the library in a service; leave
+it unset for research runs that want the full artifacts for analysis.
+
+---
+
 ## Package layout
 
 ```

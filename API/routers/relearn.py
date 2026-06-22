@@ -12,6 +12,15 @@ router = APIRouter(tags=["relearn"])
 
 @router.post("/relearn", response_model=RelearnJob)
 def relearn(req: RelearnRequest) -> RelearnJob:
+    """Submit a continual-learning job (async).
+
+    Materializes the task-B dataset(s), trains a new model via the gnn_vuln library, evaluates
+    it on the task-B test split (metrics-only), and registers the result. The library runs in
+    API mode (`GNN_VULN_API_MODE`): no research artifacts — per-sample CSVs, ROC/confusion/PR
+    plots, training log/curves — touch the worker disk. The metrics, the realized
+    train/val/test split, and the training summary are persisted as per-model `model_artifacts`
+    (DB + object storage), then the local results dir is deleted. Poll `GET /relearn/{job_id}`.
+    """
     method = req.method.value
     if method in relearn_service._REQUIRES_BASE and not req.base_model_id:
         raise HTTPException(422, f"method '{method}' requires base_model_id")

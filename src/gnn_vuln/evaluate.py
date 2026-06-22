@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -387,7 +388,7 @@ def main() -> None:
         batch_size=cfg.train.batch_size,
     )
     evaluator.checkpoint_path = args.checkpoint
-    if args.metrics_only:
+    if args.metrics_only or os.environ.get("GNN_VULN_API_MODE") == "1":
         evaluator.save_summary(evaluator.compute())
     else:
         evaluator.run()

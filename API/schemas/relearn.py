@@ -56,4 +56,6 @@ class RelearnJob(BaseModel):
     message: Optional[str] = None
     metrics: Optional[dict] = Field(
         None, description="Compact eval summary on the task-B test split (function-level "
-        "classification + localization). Full metrics_summary is a model_artifact kind=metrics.")
+        "classification + localization). The full metrics_summary, the training_summary, and the "
+        "realized train/val/test split are stored as model_artifacts (kinds: metrics, "
+        "training_summary, train_split).")

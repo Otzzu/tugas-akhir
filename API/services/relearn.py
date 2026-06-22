@@ -19,6 +19,7 @@ import copy
 import io
 import json
 import os
+import shutil
 import subprocess
 import tarfile
 import uuid
@@ -36,7 +37,9 @@ from API.services import registry, storage
 ROOT = settings.ROOT
 JOBS_DIR = settings.JOBS_DIR
 DATA_ROOT = ROOT / "data"            # local materialization target (the trainer's root)
-ENV: dict[str, str] = {}             # gnn_vuln is an installed package — no path injection needed
+ENV: dict[str, str] = {"GNN_VULN_API_MODE": "1"}  # tell the lib it runs under the API: skip
+                                                   # research-only artifacts (training_log.csv,
+                                                   # training_curves.png); eval stays metrics-only
 TRAIN_MODULE = "gnn_vuln.train"      # library trainer (installed package, single source of truth)
 EVAL_MODULE = "gnn_vuln.evaluate"    # library evaluator — returns metrics_summary (cls + localization)
 COMPUTE_IMPORTANCE_ON_FINISH = True  # eagerly compute EWC importance for the newly trained model
@@ -394,6 +397,29 @@ def _store_split(model_id: str, run_dir: Path, log_file) -> dict | None:
         return None
 
 
+def _store_training_summary(model_id: str, run_dir: Path, log_file) -> dict | None:
+    """Best-effort: persist the library-written training_summary.json (epochs, best val, test
+    metrics, timing) to object storage + a model_artifact, with a compact subset on the DB row.
+    Research-only file the API used to ignore — now captured so nothing useful is lost on cleanup."""
+    try:
+        ts = ROOT / "results" / run_dir.name / "training_summary.json"
+        if not ts.exists():
+            log_file.write(f"WARN training_summary.json not found at {ts}\n"); log_file.flush()
+            return None
+        data = ts.read_bytes()
+        summary = json.loads(data)
+        uri = storage.put_bytes(settings.S3_BUCKET_CHECKPOINTS, f"{model_id}.training_summary.json", data)
+        keys = ("epochs_trained", "best_val_f1", "best_val_loss", "test_f1", "test_f1w",
+                "num_params", "total_time_s", "gpu", "peak_vram_gb")
+        compact = {k: summary[k] for k in keys if k in summary}
+        registry.add_artifact(model_id, "training_summary", uri, meta=compact)
+        return compact
+    except Exception as e:  # noqa: BLE001
+        log_file.write(f"WARN store training_summary failed for {model_id}: {type(e).__name__}: {e}\n")
+        log_file.flush()
+        return None
+
+
 # ── job runner (invoked by the Celery task in API.tasks) ────────────────────
 def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
     """Run the (optional EWC-importance pass +) training subprocess for a relearn job,
@@ -459,6 +485,10 @@ def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
                 with open(log, "a", encoding="utf-8") as lf:
                     job["metrics"] = _evaluate_and_store(new_id, train_cfg, best, run_dir, lf)
                     _store_split(new_id, run_dir, lf)
+                    _store_training_summary(new_id, run_dir, lf)
+                    # every useful artifact is now in DB + object storage → drop the local
+                    # results dir so nothing research-only lingers on the API worker disk
+                    shutil.rmtree(ROOT / "results" / run_dir.name, ignore_errors=True)
         job["status"] = "done"
     except subprocess.CalledProcessError as e:
         try:

@@ -123,10 +123,17 @@ embed + GNN/LM forward → prediction + pre-head embedding`. The embedding is ca
   three merge at the `.pt` level (no raw CPG, no re-embedding).
 - **Relearn** (`POST /relearn`, async) — `materialize task-A+B datasets to local disk →
 build merged config → [EWC] importance pass → gnn_vuln.train → register new model →
-gnn_vuln.evaluate (task-B test) → capture metrics + split`. Poll `GET /relearn/{id}`: returns
-  `result_model_id` + a compact `metrics` summary (function-level + localization); the full
-  `metrics_summary.json`, the EWC importance, and the realized train/val/test split are stored
+gnn_vuln.evaluate (task-B test, metrics-only) → capture metrics + split + training summary →
+drop the local results dir`. Poll `GET /relearn/{id}`: returns `result_model_id` + a compact
+  `metrics` summary (function-level + localization); the full `metrics_summary.json`, the
+  `training_summary.json`, the EWC importance, and the realized train/val/test split are stored
   as per-model `model_artifacts`.
+  - **No research artifacts on the worker** — train + eval run with `GNN_VULN_API_MODE=1`, so
+    the bulky/per-sample research outputs (`predictions.csv`, `localization_scores.csv`, ROC /
+    confusion / PR plots, `training_log.csv`, `training_curves.png`) are **never written**;
+    only the small JSON handoffs (`metrics_summary`, `split`, `training_summary`) are produced,
+    harvested to DB + object storage, then the local `results/<run>` dir is deleted. Object
+    storage + DB are the source of truth; local disk keeps only the dataset cache + checkpoint.
   - **Split control** (optional `split` field) — two modes, both recorded in the immutable
     config + a `train_split` artifact:
     - **Mode B (ratios)** — `{train_ratio, val_ratio, seed}`; the library splits (test =
