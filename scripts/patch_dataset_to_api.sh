@@ -10,9 +10,10 @@
 #       processed/<name>_meta.pt             (under processed/)
 #       processed/<name>_graphs/...          (subdir preserved)
 #
-# The API bundle is uploaded as <name>_api.tar.gz next to the source on Drive. Seed it into
-# the API by copying that object to MinIO as <dataset_id>.tar.gz (materialize downloads
-# s3://datasets/<dataset_id>.tar.gz and extracts it; subdirs are preserved).
+# The API bundle is uploaded as <name>_api.tar.gz into a DEDICATED folder for API-format
+# datasets on Drive: api_datasets/<source>/  (kept separate from the cloud-format datasets
+# under data/processed/<source>/). Seed it into the API by copying that object to MinIO as
+# <dataset_id>.tar.gz (materialize downloads s3://datasets/<dataset_id>.tar.gz, subdirs preserved).
 #
 # Run on a cloud/Linux pod with rclone configured (gdrive-mesach):
 #   ./scripts/patch_dataset_to_api.sh \
@@ -38,7 +39,8 @@ done
 [[ -z "$DATASET" || -z "$SOURCE" ]] && { echo "usage: --dataset <name> --source <source> [--vocab <path>]" >&2; exit 1; }
 [[ -z "$VOCAB" ]] && VOCAB="data/raw/${SOURCE}/cwe_vocab.json"
 
-REMOTE_SUBDIR="${GDRIVE_REMOTE}/data/processed/${SOURCE}"
+REMOTE_SUBDIR="${GDRIVE_REMOTE}/data/processed/${SOURCE}"   # cloud-format datasets (download source)
+API_REMOTE="${GDRIVE_REMOTE}/api_datasets/${SOURCE}"        # API-format patched datasets (dedicated upload target)
 mkdir -p "$PROC"
 
 # ── 1. Locate + download the cloud lazy tar (prefer _lazy_ marker, else legacy name) ───
@@ -66,9 +68,9 @@ OUT="${DATASET}_api.tar.gz"
 tar -C "$STAGE" -I "$COMP" -cf "${PROC}/${OUT}" cwe_vocab.json processed
 rm -rf "$STAGE"
 echo "  built ${PROC}/${OUT} ($(du -h "${PROC}/${OUT}" | cut -f1))"
-echo "[4/4] Uploading -> ${REMOTE_SUBDIR}/${OUT}"
-rclone copy "${PROC}/${OUT}" "$REMOTE_SUBDIR" --progress
+echo "[4/4] Uploading -> ${API_REMOTE}/${OUT}"
+rclone copy "${PROC}/${OUT}" "$API_REMOTE" --progress
 rm -f "${PROC}/${OUT}"
 
-echo "Done. API-format bundle -> ${REMOTE_SUBDIR}/${OUT}"
+echo "Done. API-format bundle -> ${API_REMOTE}/${OUT}"
 echo "Seed it: copy that object to MinIO as s3://datasets/<dataset_id>.tar.gz (materialize extracts it, subdirs preserved)."
