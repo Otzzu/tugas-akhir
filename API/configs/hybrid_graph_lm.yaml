@@ -25,6 +25,8 @@ data:
   filter_owasp: false
   max_per_class: 1600
   resample_seed: 42
+  train_ratio: 0.9          # API prod split 90/10/0 — no test set, val drives early stopping
+  val_ratio: 0.1
   storage: lazy
 
 model:
