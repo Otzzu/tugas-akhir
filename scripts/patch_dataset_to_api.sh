@@ -43,6 +43,17 @@ REMOTE_SUBDIR="${GDRIVE_REMOTE}/data/processed/${SOURCE}"   # cloud-format datas
 API_REMOTE="${GDRIVE_REMOTE}/api_datasets/${SOURCE}"        # API-format patched datasets (dedicated upload target)
 mkdir -p "$PROC"
 
+# Free the downloaded tar, staging dir, and built bundle on ANY exit (success or error) so the
+# pod disk is reclaimed before the next step. A lazy dataset extracts to several GB.
+STAGE="" ; OUT="" ; remote_tar=""
+cleanup() {
+    [[ -n "$STAGE" ]] && rm -rf "$STAGE"
+    [[ -n "$remote_tar" ]] && rm -f "${PROC}/${remote_tar}"
+    [[ -n "$OUT" ]] && rm -f "${PROC}/${OUT}"
+    true
+}
+trap cleanup EXIT
+
 # ── 1. Locate + download the cloud lazy tar (prefer _lazy_ marker, else legacy name) ───
 echo "[1/4] Locating cloud bundle for $DATASET under $REMOTE_SUBDIR ..."
 remote_tar=$(rclone lsf "$REMOTE_SUBDIR" 2>/dev/null | grep "^${DATASET}_lazy_.*\.tar\.gz$" | sort | tail -1 || true)
@@ -53,7 +64,7 @@ rclone copy "${REMOTE_SUBDIR}/${remote_tar}" "$PROC" --progress
 
 # ── 2. Extract cloud tar (top-level meta+graphs) straight into staging/processed/ ─────
 echo "[2/4] Repackaging into API format ..."
-STAGE="$(mktemp -d)"
+STAGE="$(mktemp -d -p "$PROC")"   # on the data disk, not /tmp (lazy extract is several GB)
 mkdir -p "${STAGE}/processed"
 tar -I "$COMP" -xf "${PROC}/${remote_tar}" -C "${STAGE}/processed"
 rm -f "${PROC}/${remote_tar}"
@@ -73,4 +84,5 @@ rclone copy "${PROC}/${OUT}" "$API_REMOTE" --progress
 rm -f "${PROC}/${OUT}"
 
 echo "Done. API-format bundle -> ${API_REMOTE}/${OUT}"
+echo "Cleaned local temp + bundle. Disk free on data dir: $(df -h "$PROC" | awk 'NR==2{print $4}')"
 echo "Seed it: copy that object to MinIO as s3://datasets/<dataset_id>.tar.gz (materialize extracts it, subdirs preserved)."
