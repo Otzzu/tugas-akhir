@@ -832,10 +832,13 @@ class TrainingSession:
         test_acc, test_conf = test_m["acc"], test_m["conf"]
         test_f1, test_f1w = test_m["f1_macro"], test_m["f1_weighted"]
         test_prec, test_rec = test_m["precision_macro"], test_m["recall_macro"]
-        logger.info(
-            f"Test  acc={test_acc:.4f} | f1={test_f1:.4f} | f1w={test_f1w:.4f} | "
-            f"prec={test_prec:.4f} | rec={test_rec:.4f} | conf={test_conf:.4f}"
-        )
+        if len(getattr(test_loader, "dataset", []) or []) == 0:
+            logger.info("Empty test split (train_ratio + val_ratio = 1.0) — test metrics skipped.")
+        else:
+            logger.info(
+                f"Test  acc={test_acc:.4f} | f1={test_f1:.4f} | f1w={test_f1w:.4f} | "
+                f"prec={test_prec:.4f} | rec={test_rec:.4f} | conf={test_conf:.4f}"
+            )
         total_time = int(time.time() - train_start)
         h, rem = divmod(total_time, 3600)
         m, s = divmod(rem, 60)

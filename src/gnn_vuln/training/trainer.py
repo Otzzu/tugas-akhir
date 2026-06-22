@@ -664,6 +664,11 @@ class Trainer:
             loss_sum = loss_sum + loss.detach() * batch.num_graphs
             conf_sum = conf_sum + probs.max(dim=-1).values.sum()
 
+        if not preds_buf:                 # empty loader (e.g. test split at ratio 0) — no crash
+            z = 0.0
+            return {"loss": z, "acc": z, "conf": z, "f1_macro": z, "f1_weighted": z,
+                    "precision_macro": z, "recall_macro": z, "precision_weighted": z,
+                    "recall_weighted": z, "per_class": {}}
         # Single CPU sync for all accumulated tensors
         all_preds  = torch.cat(preds_buf).cpu().tolist()
         all_labels = torch.cat(labels_buf).cpu().tolist()
