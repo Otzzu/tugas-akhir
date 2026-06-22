@@ -46,7 +46,7 @@ ENV = {**os.environ, "PYTHONPATH": "src"}
 DRIVE_ROOT = "gdrive-mesach:tugas-akhir"
 MEGAVUL_PT_DIR = "data/processed/megavul"
 MEGAVUL_PT_ARCHIVE = "lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42_lazy_20260513_153956.tar.gz"
-CIL_PT_DIR = "data/processed/megavul_cil"
+CIL_PT_DIR = "data/processed/relearn"   # both continual task-B datasets live under relearn/ on Drive
 CIL_PT_ARCHIVE = "lm_dataset_megavul_cil_multiclass_unixcoder-base_ft_ml1024_lazy.tar.gz"
 TASKA_CKPT_ARCHIVE = "20260606_163818_lmgat_codebert_multiclass_checkpoints.zip"
 
