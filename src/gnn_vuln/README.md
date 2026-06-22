@@ -137,6 +137,10 @@ cfg.data.split_file    # ""   — path to {"train":[id],"val":[],"test":[]} keye
 `python -m gnn_vuln.train` writes `<results_dir>/<run>/split.json` — the realized train/val/test
 parquet_ids — next to `training_summary.json`, so the exact split is always recoverable.
 
+A **0-ratio test split** (e.g. `0.9 / 0.1` → no test) is supported: training + validation run
+as usual and the end-of-training **test evaluation is skipped** (no crash, no test metrics).
+Use it for a production model that should train on all labelled data without a holdout.
+
 ---
 
 ## Data pipeline & training — module CLIs (`python -m`)
