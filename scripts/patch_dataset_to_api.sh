@@ -37,7 +37,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 [[ -z "$DATASET" || -z "$SOURCE" ]] && { echo "usage: --dataset <name> --source <source> [--vocab <path>]" >&2; exit 1; }
-[[ -z "$VOCAB" ]] && VOCAB="data/raw/${SOURCE}/cwe_vocab.json"
+# --vocab is OPTIONAL override. If omitted, the bundle's cwe_vocab.json is generated from the
+# .pt's own class_names (correct 26-class map that the API relearn reads back for class_names).
 
 REMOTE_SUBDIR="${GDRIVE_REMOTE}/data/processed/${SOURCE}"   # cloud-format datasets (download source)
 API_REMOTE="${GDRIVE_REMOTE}/api_datasets/${SOURCE}"        # API-format patched datasets (dedicated upload target)
@@ -69,10 +70,25 @@ mkdir -p "${STAGE}/processed"
 tar -I "$COMP" -xf "${PROC}/${remote_tar}" -C "${STAGE}/processed"
 rm -f "${PROC}/${remote_tar}"
 
-# ── 3. Add the vocab at top level (API bundle requires cwe_vocab.json) ────────────────
-[[ ! -f "$VOCAB" ]] && { echo "ERR: vocab not found: $VOCAB (pass --vocab)" >&2; exit 1; }
-cp "$VOCAB" "${STAGE}/cwe_vocab.json"
-echo "  vocab: $VOCAB ($(python3 -c "import json;print(len(json.load(open('$VOCAB'))))" 2>/dev/null || echo '?') classes)"
+# ── 3. cwe_vocab.json — generate from the .pt's OWN class_names (the 26-class map the API
+#       relearn reads back), unless an explicit --vocab override is given ──────────────────
+if [[ -n "$VOCAB" && -f "$VOCAB" ]]; then
+    cp "$VOCAB" "${STAGE}/cwe_vocab.json"
+    echo "  vocab: $VOCAB (explicit override, $(python3 -c "import json;print(len(json.load(open('$VOCAB'))))" 2>/dev/null || echo '?') classes)"
+else
+    META=$(ls "${STAGE}/processed"/*_meta.pt 2>/dev/null | head -1)
+    [[ -z "$META" ]] && { echo "ERR: no _meta.pt in bundle to read class_names from" >&2; exit 1; }
+    python3 - "$META" "${STAGE}/cwe_vocab.json" <<'PY'
+import sys, json, torch
+meta, out = sys.argv[1], sys.argv[2]
+m = torch.load(meta, weights_only=False, map_location="cpu")
+cn = m.get("class_names")
+if not cn:
+    sys.exit("ERR: meta has no class_names")
+json.dump({c: i for i, c in enumerate(cn)}, open(out, "w"), indent=2)
+print(f"  vocab: generated from {meta.split('/')[-1]} ({len(cn)} classes)")
+PY
+fi
 
 # ── 4. Build the API bundle + upload to Drive ─────────────────────────────────────────
 OUT="${DATASET}_api.tar.gz"

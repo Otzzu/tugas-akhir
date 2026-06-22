@@ -22,8 +22,8 @@ from __future__ import annotations
 import argparse, json, os, tarfile, tempfile, zipfile
 from pathlib import Path
 
-ROOT  = Path(__file__).resolve().parents[1]
-SEEDS = ROOT / "API" / "seeds"
+API_DIR = Path(__file__).resolve().parents[1]   # this file lives in API/scripts/
+SEEDS   = API_DIR / "seeds"
 
 ENDPOINT = os.environ.get("S3_ENDPOINT", "http://localhost:9000")
 KEY      = os.environ.get("S3_ACCESS_KEY", "minioadmin")
