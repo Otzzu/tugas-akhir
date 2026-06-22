@@ -461,7 +461,14 @@ def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
                     _store_split(new_id, run_dir, lf)
         job["status"] = "done"
     except subprocess.CalledProcessError as e:
-        job["status"] = "failed"; job["message"] = f"training failed (exit {e.returncode}); see log"
+        try:
+            lines = [ln for ln in log.read_text(errors="replace").splitlines() if ln.strip()]
+            tail = "\n".join(lines[-12:])[-600:]
+        except Exception:
+            tail = ""
+        job["status"] = "failed"
+        job["message"] = (f"training failed (exit {e.returncode}):\n{tail}" if tail
+                          else f"training failed (exit {e.returncode}); see log")
     except Exception as e:  # noqa: BLE001
         job["status"] = "failed"; job["message"] = f"{type(e).__name__}: {e}"
     _save_job(job)

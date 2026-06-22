@@ -46,6 +46,17 @@ def _run(cmd: list[str], log) -> None:
     subprocess.run(cmd, check=True, cwd=str(ROOT), stdout=log, stderr=subprocess.STDOUT)
 
 
+def _log_tail(path, n: int = 12, maxlen: int = 600) -> str:
+    """Last meaningful lines of a job log — folded into the job's `message` so the real
+    subprocess error reaches the user via GET /datasets/jobs/{id}, no log-spelunking."""
+    try:
+        from pathlib import Path as _P
+        lines = [ln for ln in _P(path).read_text(errors="replace").splitlines() if ln.strip()]
+        return "\n".join(lines[-n:])[-maxlen:]
+    except Exception:
+        return ""
+
+
 @celery_app.task(name="run_relearn", bind=True)
 def run_relearn(self, job_id: str, train_cfg: str, importance_cfg: str | None, meta: dict) -> dict:
     """Execute a relearn training job (built by relearn.submit_relearn) off the web server."""
@@ -77,7 +88,8 @@ def merge_datasets(self, job_id: str) -> dict:
     raw_dir = data_root / "raw"
     processed_dir = data_root / "processed"
 
-    log = open(log_path or (job_dir / "merge.log"), "w", encoding="utf-8")
+    lp = log_path or (job_dir / "merge.log")
+    log = open(lp, "w", encoding="utf-8")
     try:
         _set_status(job_id, status="running")
 
@@ -143,7 +155,10 @@ def merge_datasets(self, job_id: str) -> dict:
         return {"job_id": job_id, "status": "done", "dataset_id": dataset_id}
 
     except subprocess.CalledProcessError as e:
-        _set_status(job_id, status="failed", message=f"merge step failed (exit {e.returncode}); see log")
+        log.flush()
+        tail = _log_tail(lp)
+        msg = f"merge step failed (exit {e.returncode})"
+        _set_status(job_id, status="failed", message=f"{msg}:\n{tail}" if tail else f"{msg}; see log")
         return {"job_id": job_id, "status": "failed"}
     except Exception as e:  # noqa: BLE001
         _set_status(job_id, status="failed", message=f"{type(e).__name__}: {e}")
@@ -171,7 +186,8 @@ def ingest_dataset(self, job_id: str) -> dict:
     mode = dc.get("mode", "multiclass")
     source = registry._config_slug(dataset_id)  # stable slug for the .pt name
 
-    log = open(log_path or (job_dir / "ingest.log"), "w", encoding="utf-8")
+    lp = log_path or (job_dir / "ingest.log")
+    log = open(lp, "w", encoding="utf-8")
     try:
         _set_status(job_id, status="running")
 
@@ -259,7 +275,10 @@ def ingest_dataset(self, job_id: str) -> dict:
         return {"job_id": job_id, "status": "done", "dataset_id": dataset_id}
 
     except subprocess.CalledProcessError as e:
-        _set_status(job_id, status="failed", message=f"pipeline step failed (exit {e.returncode}); see log")
+        log.flush()
+        tail = _log_tail(lp)
+        msg = f"pipeline step failed (exit {e.returncode})"
+        _set_status(job_id, status="failed", message=f"{msg}:\n{tail}" if tail else f"{msg}; see log")
         return {"job_id": job_id, "status": "failed"}
     except Exception as e:  # noqa: BLE001
         _set_status(job_id, status="failed", message=f"{type(e).__name__}: {e}")
