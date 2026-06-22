@@ -38,6 +38,7 @@ JOBS_DIR = settings.JOBS_DIR
 DATA_ROOT = ROOT / "data"            # local materialization target (the trainer's root)
 ENV: dict[str, str] = {}             # gnn_vuln is an installed package — no path injection needed
 TRAIN_MODULE = "gnn_vuln.train"      # library trainer (installed package, single source of truth)
+COMPUTE_IMPORTANCE_ON_FINISH = True  # eagerly compute EWC importance for the newly trained model
 
 _REQUIRES_BASE = {"ER", "EWC", "EWC-ER", "finetune"}
 _JOB_FIELDS = ("status", "method", "dataset_ids", "base_model_id",
@@ -249,23 +250,64 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
                              "top_cwe": base_ds.get("top_cwe", 0),
                              "resample_seed": base_ds.get("resample_seed", 42)}
         if method in ("EWC", "EWC-ER") and not Path(cache).exists():
-            imp = copy.deepcopy(cfg)
-            imp["data"] = {**imp["data"], **{
-                "source": base_ds["source"],
-                "filter_top25_dangerous": base_ds.get("filter_top25_dangerous", False),
-                "max_per_class": base_ds.get("max_per_class", 0), "top_cwe": base_ds.get("top_cwe", 0),
-                "ds_name_suffix": base_ds.get("ds_name_suffix", "")}}
-            imp["model"]["num_classes"] = base_ds.get("num_classes", cfg["model"]["num_classes"])
-            imp["ewc"] = {**cfg["ewc"], "weight": 1000.0, "compute_only": True}
-            imp.pop("replay", None)
-            importance_cfg_path = job_dir / "importance.yaml"
-            importance_cfg_path.write_text(yaml.safe_dump(imp, sort_keys=False))
+            # durable read-back: a prior relearn may have stored importance for this base model
+            art = registry.get_artifact(base_model_id, "ewc_importance")
+            blob = (storage.get_bytes(settings.S3_BUCKET_CHECKPOINTS,
+                                      f"{base_model_id}.ewc_importance.pt") if art else None)
+            if blob is not None:
+                Path(cache).parent.mkdir(parents=True, exist_ok=True)
+                Path(cache).write_bytes(blob)   # cfg["ewc"]["importance_cache"] already points here
+            else:  # not stored → compute before relearn (current behavior, the protection)
+                imp = copy.deepcopy(cfg)
+                imp["data"] = {**imp["data"], **{
+                    "source": base_ds["source"],
+                    "filter_top25_dangerous": base_ds.get("filter_top25_dangerous", False),
+                    "max_per_class": base_ds.get("max_per_class", 0), "top_cwe": base_ds.get("top_cwe", 0),
+                    "ds_name_suffix": base_ds.get("ds_name_suffix", "")}}
+                imp["model"]["num_classes"] = base_ds.get("num_classes", cfg["model"]["num_classes"])
+                imp["ewc"] = {**cfg["ewc"], "weight": 1000.0, "compute_only": True}
+                imp.pop("replay", None)
+                importance_cfg_path = job_dir / "importance.yaml"
+                importance_cfg_path.write_text(yaml.safe_dump(imp, sort_keys=False))
 
     train_cfg_path = job_dir / "train.yaml"
     train_cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
     meta = {"source": source, "num_classes": cfg["model"]["num_classes"],
-            "arch": cfg["model"]["architecture"]}
+            "arch": cfg["model"]["architecture"],
+            "base_model_id": base_model_id,
+            "importance_cache": str(cache) if method != "retrain" else None}
     return train_cfg_path, importance_cfg_path, meta
+
+
+# ── durable EWC-importance artifact ─────────────────────────────────────────
+def _store_importance(model_id: str, cache_path: str | Path) -> None:
+    """Upload a computed importance cache to object storage + register it for model_id."""
+    data = Path(cache_path).read_bytes()
+    uri = storage.put_bytes(settings.S3_BUCKET_CHECKPOINTS, f"{model_id}.ewc_importance.pt", data)
+    registry.add_artifact(model_id, "ewc_importance", uri)
+
+
+def _compute_and_store_importance(model_id: str, train_cfg_path: Path, checkpoint_path: Path,
+                                  out_cache_path: Path, log_file) -> None:
+    """Best-effort: compute EWC importance for a freshly trained model so a future relearn
+    using it as base is instant. Never raises — eager importance is optional."""
+    try:
+        cfg = copy.deepcopy(yaml.safe_load(Path(train_cfg_path).read_text()))
+        cfg["ewc"] = {"enabled": True, "weight": 1000.0, "scope": "all",
+                      "source_checkpoint": str(checkpoint_path),
+                      "importance_cache": str(out_cache_path), "n_batches": 0, "compute_only": True}
+        cfg.pop("replay", None)
+        out_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        imp_cfg = Path(train_cfg_path).parent / "importance_finish.yaml"
+        imp_cfg.write_text(yaml.safe_dump(cfg, sort_keys=False))
+        log_file.write(f"== EWC importance (eager, finish): {imp_cfg} ==\n"); log_file.flush()
+        subprocess.run(["python", "-m", TRAIN_MODULE, "--config", str(imp_cfg)],
+                       check=True, cwd=str(ROOT), env={**os.environ, **ENV},
+                       stdout=log_file, stderr=subprocess.STDOUT)
+        _store_importance(model_id, out_cache_path)
+    except Exception as e:  # noqa: BLE001
+        log_file.write(f"WARN eager importance failed for {model_id}: {type(e).__name__}: {e}\n")
+        log_file.flush()
 
 
 # ── job runner (invoked by the Celery task in API.tasks) ────────────────────
@@ -281,11 +323,20 @@ def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
     try:
         job["status"] = "running"; _save_job(job)
         env = {**os.environ, **ENV}
+        base_model_id = meta.get("base_model_id")
+        importance_cache = meta.get("importance_cache")
         with open(log, "w", encoding="utf-8") as lf:
             if importance_cfg is not None:
                 lf.write(f"== EWC importance: {importance_cfg} ==\n"); lf.flush()
                 subprocess.run(["python", "-m", TRAIN_MODULE, "--config", str(importance_cfg)],
                                check=True, cwd=str(ROOT), env=env, stdout=lf, stderr=subprocess.STDOUT)
+                # persist the just-computed fallback importance for the BASE model (best-effort)
+                if base_model_id and importance_cache and Path(importance_cache).exists():
+                    try:
+                        _store_importance(base_model_id, importance_cache)
+                    except Exception as e:  # noqa: BLE001
+                        lf.write(f"WARN persist base importance failed: {type(e).__name__}: {e}\n")
+                        lf.flush()
             lf.write(f"== train: {train_cfg} ==\n"); lf.flush()
             subprocess.run(["python", "-m", TRAIN_MODULE, "--config", str(train_cfg)],
                            check=True, cwd=str(ROOT), env=env, stdout=lf, stderr=subprocess.STDOUT)
@@ -314,6 +365,11 @@ def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
                 "class_names": class_names,
                 "base_model_id": job.get("base_model_id"), "method": job["method"]})
             job["result_model_id"] = new_id
+            # eager: compute + store importance for the NEW model so a future relearn is instant
+            if COMPUTE_IMPORTANCE_ON_FINISH:
+                out_cache = ROOT / "checkpoints" / f"api_base_{new_id}" / "ewc_importance.pt"
+                with open(log, "a", encoding="utf-8") as lf:
+                    _compute_and_store_importance(new_id, train_cfg, best, out_cache, lf)
         job["status"] = "done"
     except subprocess.CalledProcessError as e:
         job["status"] = "failed"; job["message"] = f"training failed (exit {e.returncode}); see log"

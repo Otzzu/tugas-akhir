@@ -23,9 +23,10 @@ import time
 import urllib.request
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
-TASK_B = sys.argv[2] if len(sys.argv) > 2 else "megavul_26"
-BASE_MODEL = "graph_based"
-METHODS = ["finetune", "EWC", "ER", "EWC-ER"]
+TASK_B = sys.argv[2] if len(sys.argv) > 2 else "megavul_mini"  # small 26-class subset (fast)
+BASE_MODEL = "graph_based_mini"  # mini base → EWC/ER replay over megavul_mini (no OOM)
+METHODS = sys.argv[3].split(",") if len(sys.argv) > 3 else \
+    ["retrain", "finetune", "EWC", "ER", "EWC-ER"]
 EPOCHS = 1
 
 

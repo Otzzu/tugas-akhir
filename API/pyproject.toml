@@ -8,7 +8,7 @@ requires-python = ">=3.11"
 # which transitively brings torch, torch-geometric, transformers, etc. It never
 # imports a source tree outside API/.
 dependencies = [
-    "gnn-vuln==0.1.0",
+    "gnn-vuln==0.1.1",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "pydantic>=2.0",

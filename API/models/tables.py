@@ -55,6 +55,23 @@ class ModelRecord(Base):
         }
 
 
+class ModelArtifact(Base):
+    """Generic per-model artifact pointer (first use: EWC importance). One row per
+    (model_id, kind); the blob lives in object storage, this keeps the storage_uri."""
+    __tablename__ = "model_artifacts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    model_id: Mapped[str] = mapped_column(String(128), index=True)   # -> models.id
+    kind: Mapped[str] = mapped_column(String(32))                    # ewc_importance | future kinds
+    storage_uri: Mapped[str] = mapped_column(Text)                   # s3://checkpoints/<...>
+    meta: Mapped[dict | None] = mapped_column(JSON, default=dict, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "model_id": self.model_id, "kind": self.kind,
+                "storage_uri": self.storage_uri, "meta": self.meta or {},
+                "created_at": self.created_at.isoformat() if self.created_at else None}
+
+
 class DatasetRecord(Base):
     __tablename__ = "datasets"
     id: Mapped[str] = mapped_column(String(128), primary_key=True)

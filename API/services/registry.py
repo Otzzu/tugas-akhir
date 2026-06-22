@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from API.core.config import settings
 from API.core.database import SessionLocal
-from API.models.tables import ModelRecord, DatasetRecord, ConfigRecord
+from API.models.tables import ModelRecord, DatasetRecord, ConfigRecord, ModelArtifact
 
 ROOT = settings.ROOT
 _DATA_FIELDS = ("max_nodes", "top_cwe", "filter_top25_dangerous", "max_per_class",
@@ -145,6 +145,34 @@ def register_dataset(dataset_id: str, meta: dict) -> None:
         d.params = {k: meta[k] for k in _DATA_FIELDS if k in meta}
         s.merge(d)
         s.commit()
+
+
+def add_artifact(model_id: str, kind: str, storage_uri: str, meta: dict | None = None) -> None:
+    """UPSERT a replaceable per-model artifact by (model_id, kind)."""
+    with SessionLocal() as s:
+        a = s.scalar(select(ModelArtifact).where(
+            ModelArtifact.model_id == model_id, ModelArtifact.kind == kind))
+        if a is None:
+            a = ModelArtifact(model_id=model_id, kind=kind)
+        a.storage_uri = storage_uri
+        a.meta = meta or {}
+        s.add(a)
+        s.commit()
+
+
+def get_artifact(model_id: str, kind: str) -> dict | None:
+    with SessionLocal() as s:
+        a = s.scalar(select(ModelArtifact).where(
+            ModelArtifact.model_id == model_id, ModelArtifact.kind == kind))
+        return a.to_dict() if a else None
+
+
+def list_artifacts(model_id: str | None = None) -> list[dict]:
+    with SessionLocal() as s:
+        q = select(ModelArtifact)
+        if model_id:
+            q = q.where(ModelArtifact.model_id == model_id)
+        return [a.to_dict() for a in s.scalars(q).all()]
 
 
 def abspath(p: str | Path) -> Path:
