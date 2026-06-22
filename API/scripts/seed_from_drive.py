@@ -1,42 +1,53 @@
 """
-seed_from_drive.py — fetch the trained seed models + datasets from public Google Drive and
-push them into the API's object storage (MinIO), so the API serves them with ZERO local
-dependency. Checkpoints + dataset bundles become the single source of truth in MinIO;
-`materialize_dataset` / `_materialize_checkpoint` download them on demand into the worker cache.
+seed_from_drive.py — populate the API's object storage (MinIO) with the trained seed models
+and their datasets, so the API serves them with ZERO local dependency.
 
-Per model it uploads:
+Datasets are pulled as the API-format bundles already prepared on Drive by
+scripts/patch_dataset_to_api.sh (cwe_vocab.json + processed/<files>, subdirs preserved) and
+copied straight into MinIO — no repackaging here. Checkpoints come from the public Drive file
+ids and are unzipped to best_*.pt.
+
   - checkpoint zip (checkpoints/<run>/best_*.pt)  -> s3://checkpoints/<model_id>.pt
-  - lazy dataset bundle (cloud format: <name>_meta.pt + <name>_graphs/, no vocab) is repackaged
-    into the API bundle (cwe_vocab.json at top + processed/<name>_meta.pt + processed/<name>_graphs/)
-    -> s3://datasets/<dataset_id>.tar.gz   (subdirs preserved; cwe_vocab generated from class_names)
+  - API dataset bundle (gdrive api_datasets/<source>/<name>_api.tar.gz)  -> s3://datasets/<dataset_id>.tar.gz
 
-MinIO endpoint/creds come from env (defaults match docker-compose, reachable from the host):
+MinIO endpoint/creds from env (defaults match docker-compose, reachable from the host):
   S3_ENDPOINT=http://localhost:9000  S3_ACCESS_KEY=minioadmin  S3_SECRET_KEY=minioadmin
+Datasets need rclone on PATH with the gdrive-mesach remote configured.
 
 Usage (host, from project root, stack up):
-  uv run --with gdown --with boto3 python scripts/seed_from_drive.py --models all
-  uv run --with gdown --with boto3 python scripts/seed_from_drive.py --models graph_based,sequential
-  uv run --with gdown --with boto3 python scripts/seed_from_drive.py --models all --checkpoints-only
+  uv run --with gdown --with boto3 python API/scripts/seed_from_drive.py --models all
+  uv run --with gdown --with boto3 python API/scripts/seed_from_drive.py --models graph_based,sequential
+  uv run --with gdown --with boto3 python API/scripts/seed_from_drive.py --models all --checkpoints-only
 """
 from __future__ import annotations
-import argparse, json, os, tarfile, tempfile, zipfile
+import argparse, os, subprocess, tarfile, tempfile, zipfile
 from pathlib import Path
-
-API_DIR = Path(__file__).resolve().parents[1]   # this file lives in API/scripts/
-SEEDS   = API_DIR / "seeds"
 
 ENDPOINT = os.environ.get("S3_ENDPOINT", "http://localhost:9000")
 KEY      = os.environ.get("S3_ACCESS_KEY", "minioadmin")
 SECRET   = os.environ.get("S3_SECRET_KEY", "minioadmin")
 BUCKET_CKPT = os.environ.get("S3_BUCKET_CHECKPOINTS", "checkpoints")
 BUCKET_DATA = os.environ.get("S3_BUCKET_DATASETS", "datasets")
+GDRIVE = "gdrive-mesach:tugas-akhir"
 
-# model_id -> public Drive file ids + the API dataset_id its dataset registers as.
-# graph_based + sequential share one dataset (ml1024 GNN-only); hybrid uses ml5120 (live LM).
+# model_id -> checkpoint Drive file id + API dataset bundle path on Drive + the dataset_id it
+# registers as. graph_based + sequential share the ml1024 bundle; hybrid uses the ml5120 one.
 DRIVE = {
-    "graph_based":     {"ckpt": "1zM7YQnIhNO01vh_tmCZlDr3O7JZ0AMky", "data": "1iOSIyE6nBzSh9iDq3mCXUpiVRKZPCXnS", "dataset_id": "megavul_26"},
-    "hybrid_graph_lm": {"ckpt": "1_zkdNfydWa7KHOwdMhdzS93U_EldysIo", "data": "1qFX4L7EK0TGEgHDJ5zv7q4UimdJ_2sz7", "dataset_id": "megavul_26_lm"},
-    "sequential":      {"ckpt": "1yvUXUjCgMfHtH0KTUye7J1VFIqPRlkpl", "data": "1iOSIyE6nBzSh9iDq3mCXUpiVRKZPCXnS", "dataset_id": "megavul_26"},
+    "graph_based": {
+        "ckpt": "1zM7YQnIhNO01vh_tmCZlDr3O7JZ0AMky",
+        "data": f"{GDRIVE}/api_datasets/megavul/lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42_api.tar.gz",
+        "dataset_id": "megavul_26",
+    },
+    "hybrid_graph_lm": {
+        "ckpt": "1_zkdNfydWa7KHOwdMhdzS93U_EldysIo",
+        "data": f"{GDRIVE}/api_datasets/megavul/lm_dataset_megavul_multiclass_unixcoder-base_ft_ml5120_f40f2e964_s1600r42_api.tar.gz",
+        "dataset_id": "megavul_26_lm",
+    },
+    "sequential": {
+        "ckpt": "1yvUXUjCgMfHtH0KTUye7J1VFIqPRlkpl",
+        "data": f"{GDRIVE}/api_datasets/megavul/lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42_api.tar.gz",
+        "dataset_id": "megavul_26",
+    },
 }
 
 
@@ -44,22 +55,10 @@ def _gdown(file_id: str, out: Path) -> None:
     try:
         import gdown
     except ImportError:
-        raise SystemExit("gdown missing. Run with:  uv run --with gdown --with boto3 python scripts/seed_from_drive.py ...")
+        raise SystemExit("gdown missing. Run with:  uv run --with gdown --with boto3 python API/scripts/seed_from_drive.py ...")
     gdown.download(id=file_id, output=str(out), quiet=False)
     if not out.exists() or out.stat().st_size == 0:
         raise SystemExit(f"download failed (empty) for id={file_id}")
-
-
-def _unpack(archive: Path, into: Path) -> None:
-    into.mkdir(parents=True, exist_ok=True)
-    if zipfile.is_zipfile(archive):
-        with zipfile.ZipFile(archive) as z:
-            z.extractall(into)
-    elif tarfile.is_tarfile(archive):
-        with tarfile.open(archive) as t:
-            t.extractall(into)
-    else:
-        raise SystemExit(f"unknown archive type: {archive}")
 
 
 def _s3():
@@ -67,7 +66,7 @@ def _s3():
         import boto3
         from botocore.client import Config as BotoConfig
     except ImportError:
-        raise SystemExit("boto3 missing. Run with:  uv run --with gdown --with boto3 python scripts/seed_from_drive.py ...")
+        raise SystemExit("boto3 missing. Run with:  uv run --with gdown --with boto3 python API/scripts/seed_from_drive.py ...")
     s3 = boto3.client("s3", endpoint_url=ENDPOINT, aws_access_key_id=KEY,
                       aws_secret_access_key=SECRET, config=BotoConfig(signature_version="s3v4"))
     have = {b["Name"] for b in s3.list_buckets().get("Buckets", [])}
@@ -81,7 +80,13 @@ def seed_checkpoint(s3, mid: str, file_id: str, tmp: Path) -> None:
     arc = tmp / f"{mid}_ckpt.bin"
     _gdown(file_id, arc)
     ex = tmp / f"{mid}_ckpt_x"
-    _unpack(arc, ex)
+    ex.mkdir(parents=True, exist_ok=True)
+    if zipfile.is_zipfile(arc):
+        with zipfile.ZipFile(arc) as z: z.extractall(ex)
+    elif tarfile.is_tarfile(arc):
+        with tarfile.open(arc) as t: t.extractall(ex)
+    else:
+        raise SystemExit(f"checkpoint archive for {mid} is neither zip nor tar")
     best = next(ex.rglob("best_*.pt"), None) or next(ex.rglob("*.pt"), None)
     if best is None:
         raise SystemExit(f"no best_*.pt inside checkpoint archive for {mid}")
@@ -89,39 +94,28 @@ def seed_checkpoint(s3, mid: str, file_id: str, tmp: Path) -> None:
     print(f"  checkpoint -> s3://{BUCKET_CKPT}/{mid}.pt  (from {best.name})")
 
 
-def seed_dataset(s3, dataset_id: str, class_names: list[str], file_id: str,
-                 tmp: Path, done: set) -> None:
+def seed_dataset(s3, dataset_id: str, drive_path: str, tmp: Path, done: set) -> None:
     if dataset_id in done:
         print(f"  dataset    -> s3://{BUCKET_DATA}/{dataset_id}.tar.gz already uploaded this run")
         return
-    arc = tmp / f"data_{dataset_id}.bin"
-    _gdown(file_id, arc)
-    # cloud bundle = top-level <name>_meta.pt + <name>_graphs/ (no vocab). Extract into
-    # stage/processed/ so they sit under processed/, then add the generated vocab at top.
-    stage = tmp / f"stage_{dataset_id}"
-    (stage / "processed").mkdir(parents=True, exist_ok=True)
-    _unpack(arc, stage / "processed")
-    (stage / "cwe_vocab.json").write_text(
-        json.dumps({c: i for i, c in enumerate(class_names)}, indent=2), encoding="utf-8")
-    # repackage into the API materialize bundle: cwe_vocab.json (top) + processed/<...>
-    bundle = tmp / f"{dataset_id}.tar.gz"
-    with tarfile.open(bundle, "w:gz") as t:
-        t.add(stage / "cwe_vocab.json", arcname="cwe_vocab.json")
-        t.add(stage / "processed", arcname="processed")
+    # copy the ready-made API bundle from Drive, then push it to MinIO unchanged.
+    subprocess.run(["rclone", "copy", drive_path, str(tmp), "--progress"], check=True)
+    bundle = tmp / Path(drive_path).name
+    if not bundle.exists():
+        raise SystemExit(f"rclone did not produce {bundle} (check {drive_path})")
     s3.upload_file(str(bundle), BUCKET_DATA, f"{dataset_id}.tar.gz")
-    print(f"  dataset    -> s3://{BUCKET_DATA}/{dataset_id}.tar.gz  ({bundle.stat().st_size/1e6:.1f} MB)")
+    print(f"  dataset    -> s3://{BUCKET_DATA}/{dataset_id}.tar.gz  ({bundle.stat().st_size/1e6:.1f} MB, from {Path(drive_path).name})")
     done.add(dataset_id)
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Seed trained models + datasets from public Drive into MinIO")
+    ap = argparse.ArgumentParser(description="Seed trained models + datasets from Drive into MinIO")
     ap.add_argument("--models", default="all",
                     help="'all' or comma-separated: graph_based,hybrid_graph_lm,sequential")
     ap.add_argument("--checkpoints-only", action="store_true",
                     help="upload only checkpoints (inference-ready), skip the dataset bundles")
     args = ap.parse_args()
 
-    models_meta = json.loads((SEEDS / "models.json").read_text())
     sel = list(DRIVE) if args.models == "all" else [m.strip() for m in args.models.split(",") if m.strip()]
     bad = [m for m in sel if m not in DRIVE]
     if bad:
@@ -137,7 +131,7 @@ def main() -> None:
             print(f"\n== {mid} (dataset_id={d['dataset_id']}) ==")
             seed_checkpoint(s3, mid, d["ckpt"], tmp)
             if not args.checkpoints_only:
-                seed_dataset(s3, d["dataset_id"], models_meta[mid]["class_names"], d["data"], tmp, done)
+                seed_dataset(s3, d["dataset_id"], d["data"], tmp, done)
 
     print("\nDone. Object storage is the source of truth. Bring up the API; seed_if_empty "
           "registers from API/seeds/*.json and inference/relearn materialize from MinIO (no local data).")
