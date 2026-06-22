@@ -173,16 +173,17 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
         if not base_model_id:
             raise ValueError(f"method '{method}' requires base_model_id")
         base = registry.get_model(base_model_id)
-        base_cfg = yaml.safe_load(registry.abspath(base["config"]).read_text())
-        base_ckpt = registry.abspath(base["checkpoint"])
+        base_cfg = yaml.safe_load(registry.config_text(base))
+        from API.services.inference import _materialize_checkpoint
+        base_ckpt = _materialize_checkpoint(base)   # local cache; pulls from MinIO if absent
         base_ds = registry.get_dataset(base["dataset_id"])
         materialize_dataset(base["dataset_id"])   # task-A data on disk (replay buffer + EWC importance)
     else:  # retrain — fresh weights; optional template for arch
         if base_model_id:
             base = registry.get_model(base_model_id)
-            base_cfg = yaml.safe_load(registry.abspath(base["config"]).read_text())
+            base_cfg = yaml.safe_load(registry.config_text(base))
         else:
-            base_cfg = yaml.safe_load((ROOT / "configs/ablation/gnn_only/N48_a1_l1_jknet.yaml").read_text())
+            base_cfg = yaml.safe_load((settings.API_DIR / "configs" / "graph_based.yaml").read_text())
         base_ckpt = None
         base_ds = None
 

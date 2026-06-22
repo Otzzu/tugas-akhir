@@ -2,6 +2,9 @@
 app.db
 app.db-journal
 jobs/
-storage/          # filesystem object-store (dev STORAGE_BACKEND=fs)
+# filesystem object-store (dev STORAGE_BACKEND=fs)
+storage/
+# configs staged from DB snapshots at load time
+_config_cache/
 __pycache__/
 .hf/

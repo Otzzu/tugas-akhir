@@ -1,9 +1,11 @@
 # Keep the Docker build context small. The image installs gnn-vuln from PyPI (no local
-# wheel build), so only configs/ + API/ are needed — src/ is excluded entirely.
+# wheel build), so only API/ is needed — src/ and the repo configs/ tree are excluded
+# (model configs travel with each model as a DB snapshot; bundled defaults live in API/configs).
 .git
 .venv
 API/.venv
 src/
+/configs/
 **/__pycache__
 **/*.pyc
 **/*.pyo
@@ -35,3 +37,4 @@ API/storage/
 API/app.db
 API/jobs/
 API/tests/
+API/_config_cache/

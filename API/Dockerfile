@@ -52,10 +52,10 @@ RUN curl -fL "https://github.com/joernio/joern/releases/download/${JOERN_VERSION
     && chmod +x /opt/joern/joern-cli/joern* \
     && test -x /opt/joern/joern-cli/joern-parse
 
-# ── app: the thin service layer + configs. The model/inference/training code lives
-# in the installed gnn_vuln package; checkpoints + data are bind-mounted at runtime
-# (see docker-compose.yml), not baked into the image. ──
-COPY configs /app/configs
+# ── app: the thin service layer. The model/inference/training code lives in the installed
+# gnn_vuln package; checkpoints + data are bind-mounted at runtime (see docker-compose.yml).
+# Model configs are NOT baked from the repo tree — they travel with each model as an immutable
+# DB snapshot (configs table). The few bundled defaults live under API/configs/. ──
 COPY API /app/API
 
 EXPOSE 8000

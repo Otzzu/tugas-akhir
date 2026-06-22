@@ -64,9 +64,7 @@ def get_predictor(model_id: str) -> VulnPredictor:
         if model_id not in _predictors:
             m = registry.get_model(model_id)
             ckpt = _materialize_checkpoint(m)         # local cache; pulls from object storage if absent
-            cfg = registry.abspath(m["config"])
-            if not cfg.exists():
-                raise FileNotFoundError(f"Config missing for '{model_id}': {cfg}")
+            cfg = registry.materialize_config(m)      # from DB snapshot (no repo files needed)
             predictor = VulnPredictor.from_checkpoint(str(ckpt), str(cfg), device=settings.DEVICE)
             names = m.get("class_names")
             if names:

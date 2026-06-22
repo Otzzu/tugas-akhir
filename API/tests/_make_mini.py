@@ -29,8 +29,8 @@ from API.services import registry, storage
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 300
 ROOT = settings.ROOT / "data"
 DEV = settings.DEVICE
-N48_CONFIG = "configs/ablation/gnn_only/N48_a1_l1_jknet.yaml"
-N48_CKPT = "checkpoints/n48_taskA/best_model.pt"
+N48_CONFIG = "API/configs/graph_based.yaml"
+N48_CKPT = "checkpoints/graph_based.pt"
 
 
 def _mini_cfg() -> Config:

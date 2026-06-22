@@ -175,6 +175,53 @@ def list_artifacts(model_id: str | None = None) -> list[dict]:
         return [a.to_dict() for a in s.scalars(q).all()]
 
 
+_CFG_CACHE = settings.API_DIR / "_config_cache"
+
+
+def config_text(meta: dict) -> str:
+    """Config YAML text for a model. Source of truth = the immutable DB snapshot
+    (configs.content, content-addressed); falls back to the registered file path for dev
+    boxes that still have the repo tree. Lets a DEPLOYED image load a model with no source
+    configs baked in — the config travels with the model in the DB, not the filesystem."""
+    cid = meta.get("config_id")
+    if cid:
+        try:
+            c = get_config(cid)
+            if c.get("content"):
+                return c["content"]
+        except KeyError:
+            pass
+    cfg = meta.get("config")
+    if cfg and abspath(cfg).exists():
+        return abspath(cfg).read_text(encoding="utf-8")
+    raise FileNotFoundError(
+        f"Config unavailable: no DB snapshot (config_id={cid!r}) and no file at {cfg!r}")
+
+
+def materialize_config(meta: dict) -> Path:
+    """Local YAML path holding a model's config — staged from the DB snapshot (cached by
+    config_id, immutable) so loading needs no repo file. File fallback for dev. Mirrors how
+    checkpoints/datasets materialize from object storage."""
+    cid = meta.get("config_id")
+    if cid:
+        c = None
+        try:
+            c = get_config(cid)
+        except KeyError:
+            pass
+        if c and c.get("content"):
+            _CFG_CACHE.mkdir(parents=True, exist_ok=True)
+            f = _CFG_CACHE / f"{re.sub(r'[^0-9A-Za-z._-]+', '_', cid)}.yaml"
+            if not f.exists():
+                f.write_text(c["content"], encoding="utf-8")
+            return f
+    cfg = meta.get("config")
+    if cfg and abspath(cfg).exists():
+        return abspath(cfg)
+    raise FileNotFoundError(
+        f"Config unavailable for '{meta.get('id')}': config_id={cid!r}, file={cfg!r}")
+
+
 def abspath(p: str | Path) -> Path:
     p = Path(p)
     return p if p.is_absolute() else (ROOT / p)
