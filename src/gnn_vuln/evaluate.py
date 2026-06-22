@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -26,6 +27,27 @@ from gnn_vuln.evaluation.plots import ResultPlotter
 from gnn_vuln.metrics import LocalizationMetrics
 from gnn_vuln.models.registry import build_model
 from gnn_vuln.utils import get_device, load_checkpoint, setup_logging
+
+
+# ---------------------------------------------------------------------------
+# Eval result — pure compute output; persistence is the caller's choice
+# ---------------------------------------------------------------------------
+
+@dataclass
+class EvalResult:
+    """Everything `Evaluator.compute()` produces, in memory. The API consumes
+    `.summary` directly (no disk); the research/CLI path persists it via
+    `Evaluator.save_artifacts()`."""
+    summary: dict
+    y_true: "np.ndarray"
+    y_pred: "np.ndarray"
+    y_prob: "np.ndarray"
+    confidence: "np.ndarray"
+    correct_mask: "np.ndarray"
+    target_names: list
+    loc_results: list
+    func_metrics: dict
+    loc_metrics: LocalizationMetrics
 
 
 # ---------------------------------------------------------------------------
@@ -67,10 +89,10 @@ class Evaluator:
     # Main entry
     # ------------------------------------------------------------------
 
-    def run(self) -> dict:
-        """Run full evaluation. Returns metrics_summary dict."""
-        self.results_dir.mkdir(parents=True, exist_ok=True)
-
+    def compute(self) -> EvalResult:
+        """Run inference + metrics. Returns an EvalResult in memory and writes
+        NOTHING — the caller decides whether/where to persist (API: consume
+        `.summary`; research: `save_artifacts`)."""
         logger.info("Running inference…")
         extractor = LocalizationExtractor(self.model, self._loader, self.device)
         y_true, y_pred, y_prob, confidence, loc_results = extractor.run()
@@ -84,9 +106,16 @@ class Evaluator:
 
         self._print_report(y_true, y_pred, target_names, func_metrics, loc_metrics,
                            loc_results, y_true, confidence, correct_mask)
-        summary = self._save_all(y_true, y_pred, y_prob, confidence, correct_mask,
-                                 target_names, loc_results, func_metrics, loc_metrics)
-        return summary
+        summary = self._build_summary(func_metrics, loc_metrics)
+        return EvalResult(summary, y_true, y_pred, y_prob, confidence, correct_mask,
+                          target_names, loc_results, func_metrics, loc_metrics)
+
+    def run(self) -> dict:
+        """Full evaluation + persist all research artifacts to results_dir
+        (research/CLI behavior). Returns metrics_summary dict."""
+        r = self.compute()
+        self.save_artifacts(r)
+        return r.summary
 
     # ------------------------------------------------------------------
     # Function-level metrics
@@ -189,37 +218,11 @@ class Evaluator:
             return None
         return v
 
-    def _save_all(self, y_true, y_pred, y_prob, confidence, correct_mask,
-                  target_names, loc_results, func_metrics, loc_metrics: LocalizationMetrics) -> dict:
-        rd = self.results_dir
-
-        # predictions.csv
-        pred_df = pd.DataFrame({"y_true": y_true, "y_pred": y_pred,
-                                 "confidence": confidence, "correct": correct_mask})
-        for i, name in enumerate(target_names):
-            pred_df[f"prob_{name}"] = y_prob[:, i]
-        pred_df.to_csv(rd / "predictions.csv", index=False)
-        logger.info(f"predictions.csv → {rd/'predictions.csv'}")
-
-        # localization_scores.csv
-        loc_rows: list[dict] = []
-        for func_idx, (r, yt, yp) in enumerate(zip(loc_results, y_true, y_pred)):
-            src_lines = self._get_src_lines(func_idx)
-            for ln, sc, lab in zip(r["line_numbers"], r["line_scores"], r["line_labels"]):
-                code = src_lines[ln - 1].strip() if 0 < ln <= len(src_lines) else ""
-                loc_rows.append({"func_idx": func_idx, "y_true": int(yt), "y_pred": int(yp),
-                                  "line_number": int(ln), "score": round(float(sc), 6),
-                                  "is_flaw_line": int(lab), "code": code})
-        if loc_rows:
-            pd.DataFrame(loc_rows).to_csv(rd / "localization_scores.csv", index=False)
-            logger.info(f"localization_scores.csv → {rd/'localization_scores.csv'}")
-        else:
-            logger.warning("No localization data collected (node_line not in dataset).")
-
-        # metrics_summary.json
+    def _build_summary(self, func_metrics, loc_metrics: LocalizationMetrics) -> dict:
+        """Build the metrics_summary dict — pure, no I/O. Used by compute()."""
         d = loc_metrics.to_dict()
         n_gt = loc_metrics.num_funcs_with_flaw_gt
-        summary = {
+        return {
             "function_level": {k: self._safe(v) for k, v in func_metrics.items()},
             "localization": {
                 "top_1_accuracy":         self._safe(d["top_1_accuracy"]),
@@ -239,8 +242,42 @@ class Evaluator:
             },
             "ifa_distribution": d["ifa_per_func"],
         }
+
+    def save_artifacts(self, res: EvalResult) -> dict:
+        """Persist research artifacts (predictions.csv, localization_scores.csv,
+        metrics_summary.json, plots, copied config) to results_dir. Research/CLI
+        ONLY — the API consumes res.summary directly and never calls this, so the
+        bulky per-sample CSVs and plots are simply never written in the API path."""
+        rd = self.results_dir
+        rd.mkdir(parents=True, exist_ok=True)
+        y_true, y_pred, y_prob, target_names = res.y_true, res.y_pred, res.y_prob, res.target_names
+
+        # predictions.csv
+        pred_df = pd.DataFrame({"y_true": y_true, "y_pred": y_pred,
+                                 "confidence": res.confidence, "correct": res.correct_mask})
+        for i, name in enumerate(target_names):
+            pred_df[f"prob_{name}"] = y_prob[:, i]
+        pred_df.to_csv(rd / "predictions.csv", index=False)
+        logger.info(f"predictions.csv → {rd/'predictions.csv'}")
+
+        # localization_scores.csv
+        loc_rows: list[dict] = []
+        for func_idx, (r, yt, yp) in enumerate(zip(res.loc_results, y_true, y_pred)):
+            src_lines = self._get_src_lines(func_idx)
+            for ln, sc, lab in zip(r["line_numbers"], r["line_scores"], r["line_labels"]):
+                code = src_lines[ln - 1].strip() if 0 < ln <= len(src_lines) else ""
+                loc_rows.append({"func_idx": func_idx, "y_true": int(yt), "y_pred": int(yp),
+                                  "line_number": int(ln), "score": round(float(sc), 6),
+                                  "is_flaw_line": int(lab), "code": code})
+        if loc_rows:
+            pd.DataFrame(loc_rows).to_csv(rd / "localization_scores.csv", index=False)
+            logger.info(f"localization_scores.csv → {rd/'localization_scores.csv'}")
+        else:
+            logger.warning("No localization data collected (node_line not in dataset).")
+
+        # metrics_summary.json
         with open(rd / "metrics_summary.json", "w") as f:
-            json.dump(summary, f, indent=2)
+            json.dump(res.summary, f, indent=2)
         logger.info(f"metrics_summary.json → {rd/'metrics_summary.json'}")
 
         # Plots
@@ -248,10 +285,10 @@ class Evaluator:
         plotter.plot_roc_curve(y_true, y_prob, self.class_names or target_names)
         plotter.plot_confusion_matrix(y_true, y_pred, target_names)
         plotter.plot_pr_curve(y_true, y_prob, self.class_names or target_names)
-        if n_gt > 0:
-            k_vals, recall_vals = loc_metrics.recall_at_loc_curve
+        if res.loc_metrics.num_funcs_with_flaw_gt > 0:
+            k_vals, recall_vals = res.loc_metrics.recall_at_loc_curve
             plotter.plot_recall_at_loc_curve(k_vals, recall_vals)
-            plotter.plot_ifa_distribution(d["ifa_per_func"])
+            plotter.plot_ifa_distribution(res.loc_metrics.to_dict()["ifa_per_func"])
 
         # Copy config + training files from checkpoint dir to results dir
         ckpt_dir = Path(self.checkpoint_path).parent
@@ -263,7 +300,17 @@ class Evaluator:
                 logger.info(f"Copied {fname} → {rd/fname}")
 
         logger.info(f"All results saved to {rd}/")
-        return summary
+        return res.summary
+
+    def save_summary(self, res: EvalResult) -> dict:
+        """API path: write ONLY metrics_summary.json (the tiny handoff the caller
+        reads back). No per-sample CSVs, no plots — those are research artifacts the
+        API never uses, so nothing bulky lands on disk."""
+        self.results_dir.mkdir(parents=True, exist_ok=True)
+        with open(self.results_dir / "metrics_summary.json", "w") as f:
+            json.dump(res.summary, f, indent=2)
+        logger.info(f"metrics_summary.json → {self.results_dir/'metrics_summary.json'} (metrics-only)")
+        return res.summary
 
 
 # ---------------------------------------------------------------------------
@@ -274,6 +321,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate a trained vulnerability detector")
     parser.add_argument("--checkpoint", required=True, help="Path to best_*.pt checkpoint")
     parser.add_argument("--config", default=None, help="Config YAML (auto-detected if omitted)")
+    parser.add_argument("--metrics-only", action="store_true",
+                        help="Write only metrics_summary.json, skip per-sample CSVs + plots (API path).")
     args = parser.parse_args()
 
     config_path = Path(args.config) if args.config else Path(args.checkpoint).parent / "config.yaml"
@@ -338,7 +387,10 @@ def main() -> None:
         batch_size=cfg.train.batch_size,
     )
     evaluator.checkpoint_path = args.checkpoint
-    evaluator.run()
+    if args.metrics_only:
+        evaluator.save_summary(evaluator.compute())
+    else:
+        evaluator.run()
 
 
 if __name__ == "__main__":

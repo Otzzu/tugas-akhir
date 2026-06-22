@@ -352,7 +352,7 @@ def _evaluate_and_store(model_id: str, train_cfg_path: Path, checkpoint_path: Pa
     try:
         log_file.write(f"== evaluate (task-B test): {checkpoint_path} ==\n"); log_file.flush()
         subprocess.run(["python", "-m", EVAL_MODULE, "--checkpoint", str(checkpoint_path),
-                        "--config", str(train_cfg_path)],
+                        "--config", str(train_cfg_path), "--metrics-only"],
                        check=True, cwd=str(ROOT), env={**os.environ, **ENV},
                        stdout=log_file, stderr=subprocess.STDOUT)
         msj = ROOT / "results" / run_dir.name / "metrics_summary.json"
