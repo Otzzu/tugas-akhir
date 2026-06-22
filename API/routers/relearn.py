@@ -22,7 +22,8 @@ def relearn(req: RelearnRequest) -> RelearnJob:
         raise HTTPException(404, f"Unknown base_model_id '{req.base_model_id}'")
     try:
         job = relearn_service.submit_relearn(
-            method, req.dataset_ids, req.base_model_id, req.epochs, req.run_name)
+            method, req.dataset_ids, req.base_model_id, req.epochs, req.run_name,
+            split=req.split.model_dump(exclude_none=True) if req.split else None)
     except (ValueError, FileNotFoundError, KeyError) as e:
         raise HTTPException(422, str(e))
     return RelearnJob(**job)

@@ -102,9 +102,19 @@ embed + GNN/LM forward → prediction + pre-head embedding`. The embedding is ca
   three merge at the `.pt` level (no raw CPG, no re-embedding).
 - **Relearn** (`POST /relearn`, async) — `materialize task-A+B datasets to local disk →
 build merged config → [EWC] importance pass → gnn_vuln.train → register new model →
-gnn_vuln.evaluate (task-B test) → capture metrics`. Poll `GET /relearn/{id}`: returns
+gnn_vuln.evaluate (task-B test) → capture metrics + split`. Poll `GET /relearn/{id}`: returns
   `result_model_id` + a compact `metrics` summary (function-level + localization); the full
-  `metrics_summary.json` and the EWC importance are stored as per-model `model_artifacts`.
+  `metrics_summary.json`, the EWC importance, and the realized train/val/test split are stored
+  as per-model `model_artifacts`.
+  - **Split control** (optional `split` field) — two modes, both recorded in the immutable
+    config + a `train_split` artifact:
+    - **Mode B (ratios)** — `{train_ratio, val_ratio, seed}`; the library splits (test =
+      1 − train − val). E.g. `{0.9, 0.1, 42}` = prod 90/10/0 (no test → no eval metrics);
+      omit `split` = default 80/10/10 seed 42 (report).
+    - **Mode A (explicit)** — `{train, val, test}` parquet-id lists; written to a `split_file`
+      that overrides ratios (bring-your-own split, e.g. to match a baseline or reproduce a run).
+    Metrics need a test split + flaw-line GT to be complete; a 90/10/0 (test-empty) model is
+    intentionally not evaluated.
 - **Eval** (`GET /eval`) — general label-free report over stored predictions: usage count,
   prediction mix, mean confidence, plus a nested drift signal (PSI on class distribution +
   mean-confidence delta + embedding-centroid cosine shift). The drift signal _triggers_ a
@@ -197,9 +207,10 @@ blob lives in object storage.
   can load a model it never trained (the container FS is ephemeral; only the buckets are
   durable + shared). Seed models carry `storage_uri` too, and their **config loads from the
   immutable DB snapshot** (not a repo file) — so the deployed image bakes no `configs/` tree.
-- **Per-model artifacts** (EWC importance, eval metrics) → `model_artifacts` keeps a pointer
-  (`model_id, kind, storage_uri`); the blob lives in the `checkpoints` bucket
-  (`<id>.ewc_importance.pt`, `<id>.metrics_summary.json`). One row per `(model_id, kind)`.
+- **Per-model artifacts** (EWC importance, eval metrics, realized split) → `model_artifacts`
+  keeps a pointer (`model_id, kind, storage_uri`); the blob lives in the `checkpoints` bucket
+  (`<id>.ewc_importance.pt`, `<id>.metrics_summary.json`, `<id>.train_split.json`). One row
+  per `(model_id, kind)`.
 - **Inference results** (prediction + confidence + suspicious lines + **pre-head embedding**)
   → `inference_results`. The embedding is small + structured, so it stays in the DB (pgvector
   ANN index at search time). Query `GET /inference/history`.

@@ -1433,6 +1433,17 @@
             ],
             "title": "Run Name",
             "description": "Optional human label for the job"
+          },
+          "split": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SplitSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional split control. Mode A: explicit {train,val,test} parquet_id lists. Mode B: {train_ratio,val_ratio,seed} for the library to split. Omit = default 80/10/10 seed 42."
           }
         },
         "type": "object",
@@ -1441,6 +1452,87 @@
           "dataset_ids"
         ],
         "title": "RelearnRequest"
+      },
+      "SplitSpec": {
+        "properties": {
+          "train_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Train Ratio"
+          },
+          "val_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Val Ratio"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
+          "train": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Train"
+          },
+          "val": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Val"
+          },
+          "test": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test"
+          }
+        },
+        "type": "object",
+        "title": "SplitSpec"
       },
       "SuspiciousLine": {
         "properties": {

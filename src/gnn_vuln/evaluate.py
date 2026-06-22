@@ -311,7 +311,11 @@ def main() -> None:
         storage=getattr(cfg.data, "storage", "inmemory"),
         ds_name_suffix=getattr(cfg.data, "ds_name_suffix", ""),
     )
-    _, _, test_idx = dataset.get_splits(seed=cfg.train.seed)
+    _, _, test_idx = dataset.get_splits(
+        train_ratio=getattr(cfg.data, "train_ratio", 0.8),
+        val_ratio=getattr(cfg.data, "val_ratio", 0.1),
+        seed=cfg.train.seed,
+    )
 
     in_channels = dataset[0].x.size(1)
     model = build_model(cfg, in_channels).to(device)

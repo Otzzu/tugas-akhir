@@ -2,7 +2,7 @@ from API.schemas.inference import (
     InferenceRequest, InferenceResponse, FunctionResult, SuspiciousLine,
     EmbedRequest, EmbedResponse, EmbedResult, EvalReport, DriftSignal,
 )
-from API.schemas.relearn import RelearnRequest, RelearnJob, RelearnMethod
+from API.schemas.relearn import RelearnRequest, RelearnJob, RelearnMethod, SplitSpec
 from API.schemas.dataset import (
     DatasetIngestRequest, DatasetRow, DataConfigOverride, DatasetJob,
 )
@@ -10,6 +10,6 @@ from API.schemas.dataset import (
 __all__ = [
     "InferenceRequest", "InferenceResponse", "FunctionResult", "SuspiciousLine",
     "EmbedRequest", "EmbedResponse", "EmbedResult", "EvalReport", "DriftSignal",
-    "RelearnRequest", "RelearnJob", "RelearnMethod",
+    "RelearnRequest", "RelearnJob", "RelearnMethod", "SplitSpec",
     "DatasetIngestRequest", "DatasetRow", "DataConfigOverride", "DatasetJob",
 ]

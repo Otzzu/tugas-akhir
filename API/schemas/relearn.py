@@ -15,6 +15,17 @@ class RelearnMethod(str, Enum):
     retrain = "retrain"
 
 
+class SplitSpec(BaseModel):
+    # Mode B — library generates the split from ratios (test = 1 - train - val):
+    train_ratio: Optional[float] = None
+    val_ratio: Optional[float] = None
+    seed: Optional[int] = None
+    # Mode A — caller supplies the exact split, keyed on parquet_id (overrides ratios):
+    train: Optional[list[int]] = None
+    val: Optional[list[int]] = None
+    test: Optional[list[int]] = None
+
+
 class RelearnRequest(BaseModel):
     method: RelearnMethod
     dataset_ids: list[str] = Field(
@@ -27,6 +38,10 @@ class RelearnRequest(BaseModel):
     )
     epochs: Optional[int] = Field(None, description="Override training epochs")
     run_name: Optional[str] = Field(None, description="Optional human label for the job")
+    split: Optional[SplitSpec] = Field(
+        None,
+        description="Optional split control. Mode A: explicit {train,val,test} parquet_id lists. "
+        "Mode B: {train_ratio,val_ratio,seed} for the library to split. Omit = default 80/10/10 seed 42.")
 
 
 class RelearnJob(BaseModel):

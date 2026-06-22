@@ -121,6 +121,22 @@ cfg.train.epochs       # 100
 `from_yamls` lets you split data / model / train configs into separate files; a single file
 is just the one-element case (identical behaviour).
 
+### Train/val/test split
+
+The split (`dataset.get_splits`, used by both train + evaluate) is seeded + deterministic.
+Control it via config:
+
+```python
+cfg.data.train_ratio   # 0.8  — seeded split; test ratio = 1 - train - val
+cfg.data.val_ratio     # 0.1  — e.g. 0.9 / 0.1 → 90/10/0 (no test holdout, prod)
+cfg.train.seed         # 42   — shuffle seed (reproducible across runs/Python versions)
+cfg.data.split_file    # ""   — path to {"train":[id],"val":[],"test":[]} keyed on parquet_id;
+                       #        OVERRIDES the ratios (bring-your-own / match-a-baseline split)
+```
+
+`python -m gnn_vuln.train` writes `<results_dir>/<run>/split.json` — the realized train/val/test
+parquet_ids — next to `training_summary.json`, so the exact split is always recoverable.
+
 ---
 
 ## Data pipeline & training — module CLIs (`python -m`)
@@ -133,7 +149,7 @@ Each step is a runnable module. All accept **one** config file or **several** sp
 | `python -m gnn_vuln.data.prepare --input <parquet> --format bigvul --out-dir <dir> --joern-cli <joern>` | raw rows (parquet) | per-function CPGs + `cwe_vocab.json`      |
 | `python -m gnn_vuln.data.build_pt --config <yaml…> --split train`                                       | CPG dir            | processed `.pt` (UniXcoder node features) |
 | `python -m gnn_vuln.data.merge --config <yaml…> --sources <s1> <s2> … --out-source <name> [--dedup]`     | built `.pt`s       | one merged `.pt` (label space unified)    |
-| `python -m gnn_vuln.train --config <yaml…>`                                                             | `.pt` + config     | trained checkpoint + metrics              |
+| `python -m gnn_vuln.train --config <yaml…>`                                                             | `.pt` + config     | checkpoint + training_summary + split.json |
 
 `prepare` flags: `--binary`, `--top-cwe N`, `--sample-per-class N`, `--workers N`.
 Installed console scripts: `train`, `evaluate` (= `python -m gnn_vuln.train` / `.evaluate`).

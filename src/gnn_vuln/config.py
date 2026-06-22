@@ -84,6 +84,9 @@ class DataConfig:
     # overrides seeded get_splits — used to match a baseline's exact split (e.g. LIVABLE Big-Vul
     # survivors). parquet_id == the "id" column of the source parquet. Empty = default 80/10/10.
     split_file: str = ""
+    # train/val ratios fed to get_splits (test = 1 - train - val). split_file (explicit) overrides them.
+    train_ratio: float = 0.8
+    val_ratio: float = 0.1
 
 
 @dataclass

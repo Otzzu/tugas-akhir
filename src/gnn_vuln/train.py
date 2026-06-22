@@ -572,7 +572,11 @@ class TrainingSession:
         else:
             if _precompute_line_cls:
                 dataset.precompute_line_cls_all(str(self.device), context_lines=_line_context_lines)
-            train_idx, val_idx, test_idx = dataset.get_splits(seed=cfg.train.seed)
+            train_idx, val_idx, test_idx = dataset.get_splits(
+                train_ratio=getattr(cfg.data, "train_ratio", 0.8),
+                val_ratio=getattr(cfg.data, "val_ratio", 0.1),
+                seed=cfg.train.seed,
+            )
             if _use_balanced:
                 from gnn_vuln.training.sampler import SupConBalancedSampler
                 _all_labels = dataset.get_all_labels()
@@ -594,6 +598,11 @@ class TrainingSession:
                 DataLoader(dataset[val_idx],   batch_size=bs, **dl_kw),
                 DataLoader(dataset[test_idx],  batch_size=bs, **dl_kw),
             )
+        # Stash split for split.json (val/test only exist on the seeded-split branch)
+        self._split_dataset = dataset
+        self._split_train_idx = train_idx
+        self._split_val_idx = locals().get("val_idx")
+        self._split_test_idx = locals().get("test_idx")
         return dataset, loaders, train_idx
 
     def _setup_class_weights(self, dataset, train_idx):
@@ -676,7 +685,11 @@ class TrainingSession:
         kwargs["max_per_class"]          = _rd("max_per_class", 0)
         kwargs["resample_seed"]          = _rd("resample_seed", 42)
         ds = CodeBERTGraphDataset(source=getattr(rcfg, "source", ""), **kwargs)
-        train_idx, _, _ = ds.get_splits(seed=cfg.train.seed)
+        train_idx, _, _ = ds.get_splits(
+            train_ratio=getattr(cfg.data, "train_ratio", 0.8),
+            val_ratio=getattr(cfg.data, "val_ratio", 0.1),
+            seed=cfg.train.seed,
+        )
         bpc = int(getattr(rcfg, "buffer_per_class", 0))
         if bpc > 0:
             import collections
@@ -900,6 +913,24 @@ class TrainingSession:
                 **({"mtl_diagnostics": mtl_summary} if mtl_summary else {}),
             }, f, indent=2)
         logger.info(f"training_summary.json → {summary_path}")
+
+        # split.json — map dataset indices to parquet_ids (seeded-split runs only)
+        _sd = getattr(self, "_split_dataset", None)
+        _train_idx = getattr(self, "_split_train_idx", None)
+        _val_idx   = getattr(self, "_split_val_idx", None)
+        _test_idx  = getattr(self, "_split_test_idx", None)
+        if _sd is not None and _val_idx is not None and _test_idx is not None:
+            _pids = _sd.get_all_parquet_ids().tolist()
+            _split = {
+                "seed": cfg.train.seed,
+                "train_ratio": getattr(cfg.data, "train_ratio", 0.8),
+                "val_ratio": getattr(cfg.data, "val_ratio", 0.1),
+                "train": [_pids[i] for i in _train_idx],
+                "val":   [_pids[i] for i in _val_idx],
+                "test":  [_pids[i] for i in _test_idx],
+            }
+            (res_dir / "split.json").write_text(_json.dumps(_split), encoding="utf-8")
+            logger.info(f"split.json → {res_dir / 'split.json'}")
 
         # Training curves plot
         if epoch_log:

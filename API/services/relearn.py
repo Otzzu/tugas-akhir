@@ -168,7 +168,8 @@ def _join_datasets(dataset_ids: list[str]) -> tuple[str, dict]:
 
 # ── config generation ───────────────────────────────────────────────────────
 def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
-                 epochs: int | None, job_dir: Path) -> tuple[Path, Path | None, dict]:
+                 epochs: int | None, job_dir: Path,
+                 split: dict | None = None) -> tuple[Path, Path | None, dict]:
     source, data_block = _join_datasets(dataset_ids)
 
     if method in _REQUIRES_BASE:
@@ -273,6 +274,22 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
                 importance_cfg_path = job_dir / "importance.yaml"
                 importance_cfg_path.write_text(yaml.safe_dump(imp, sort_keys=False))
 
+    # split control: Mode A (explicit lists → split_file) overrides Mode B (ratios/seed)
+    if split:
+        if split.get("train") or split.get("val") or split.get("test"):
+            split_in = job_dir / "split_input.json"
+            split_in.write_text(json.dumps({"train": split.get("train") or [],
+                                            "val": split.get("val") or [],
+                                            "test": split.get("test") or []}))
+            cfg["data"]["split_file"] = str(split_in)
+        elif any(k in split for k in ("train_ratio", "val_ratio", "seed")):
+            if split.get("train_ratio") is not None:
+                cfg["data"]["train_ratio"] = split["train_ratio"]
+            if split.get("val_ratio") is not None:
+                cfg["data"]["val_ratio"] = split["val_ratio"]
+            if split.get("seed") is not None:
+                cfg["train"]["seed"] = split["seed"]
+
     train_cfg_path = job_dir / "train.yaml"
     train_cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
     meta = {"source": source, "num_classes": cfg["model"]["num_classes"],
@@ -354,6 +371,29 @@ def _evaluate_and_store(model_id: str, train_cfg_path: Path, checkpoint_path: Pa
         return None
 
 
+# ── realized-split artifact (the train/val/test the library actually used) ───
+def _store_split(model_id: str, run_dir: Path, log_file) -> dict | None:
+    """Best-effort: persist the library-written split.json (realized train/val/test) to object
+    storage + a model_artifact. Returns the compact meta on success, None otherwise. Never raises."""
+    try:
+        sj = ROOT / "results" / run_dir.name / "split.json"
+        if not sj.exists():
+            log_file.write(f"WARN split.json not found at {sj}\n"); log_file.flush()
+            return None
+        data = sj.read_bytes()
+        split = json.loads(data)
+        uri = storage.put_bytes(settings.S3_BUCKET_CHECKPOINTS, f"{model_id}.train_split.json", data)
+        meta = {"seed": split.get("seed"),
+                "train_ratio": split.get("train_ratio"), "val_ratio": split.get("val_ratio"),
+                "counts": {k: len(split.get(k) or []) for k in ("train", "val", "test")}}
+        registry.add_artifact(model_id, "train_split", uri, meta=meta)
+        return meta
+    except Exception as e:  # noqa: BLE001
+        log_file.write(f"WARN store split failed for {model_id}: {type(e).__name__}: {e}\n")
+        log_file.flush()
+        return None
+
+
 # ── job runner (invoked by the Celery task in API.tasks) ────────────────────
 def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
     """Run the (optional EWC-importance pass +) training subprocess for a relearn job,
@@ -418,6 +458,7 @@ def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
             if EVALUATE_ON_FINISH:
                 with open(log, "a", encoding="utf-8") as lf:
                     job["metrics"] = _evaluate_and_store(new_id, train_cfg, best, run_dir, lf)
+                    _store_split(new_id, run_dir, lf)
         job["status"] = "done"
     except subprocess.CalledProcessError as e:
         job["status"] = "failed"; job["message"] = f"training failed (exit {e.returncode}); see log"
@@ -427,7 +468,8 @@ def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
 
 
 def submit_relearn(method: str, dataset_ids: list[str], base_model_id: str | None,
-                   epochs: int | None, run_name: str | None) -> dict:
+                   epochs: int | None, run_name: str | None,
+                   split: dict | None = None) -> dict:
     job_id = datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:6]
     job_dir = JOBS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -435,7 +477,8 @@ def submit_relearn(method: str, dataset_ids: list[str], base_model_id: str | Non
            "dataset_ids": dataset_ids, "base_model_id": base_model_id,
            "config_path": None, "log_path": str(job_dir / "run.log"),
            "result_model_id": None, "message": run_name}
-    train_cfg, importance_cfg, meta = build_config(method, dataset_ids, base_model_id, epochs, job_dir)
+    train_cfg, importance_cfg, meta = build_config(
+        method, dataset_ids, base_model_id, epochs, job_dir, split)
     job["config_path"] = str(train_cfg.relative_to(ROOT))
     _save_job(job)
     # run on the Celery worker (off the web server), consistent with dataset ingestion
