@@ -100,6 +100,7 @@ class JobRecord(Base):
     log_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     result_model_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metrics: Mapped[dict | None] = mapped_column(JSON, nullable=True)   # compact eval summary (task-B test)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -107,7 +108,8 @@ class JobRecord(Base):
         return {"job_id": self.job_id, "status": self.status, "method": self.method,
                 "dataset_ids": self.dataset_ids or [], "base_model_id": self.base_model_id,
                 "config_path": self.config_path, "log_path": self.log_path,
-                "result_model_id": self.result_model_id, "message": self.message}
+                "result_model_id": self.result_model_id, "message": self.message,
+                "metrics": self.metrics}
 
 
 class DatasetJobRecord(Base):

@@ -101,8 +101,10 @@ embed + GNN/LM forward → prediction + pre-head embedding`. The embedding is ca
   /relearn` with multiple `dataset_ids` → the same `.pt`-level merge inline at train time. All
   three merge at the `.pt` level (no raw CPG, no re-embedding).
 - **Relearn** (`POST /relearn`, async) — `materialize task-A+B datasets to local disk →
-build merged config → [EWC] importance pass → gnn_vuln.train → register new model`. Poll
-  `GET /relearn/{id}`.
+build merged config → [EWC] importance pass → gnn_vuln.train → register new model →
+gnn_vuln.evaluate (task-B test) → capture metrics`. Poll `GET /relearn/{id}`: returns
+  `result_model_id` + a compact `metrics` summary (function-level + localization); the full
+  `metrics_summary.json` and the EWC importance are stored as per-model `model_artifacts`.
 - **Eval** (`GET /eval`) — general label-free report over stored predictions: usage count,
   prediction mix, mean confidence, plus a nested drift signal (PSI on class distribution +
   mean-confidence delta + embedding-centroid cosine shift). The drift signal _triggers_ a
@@ -115,13 +117,14 @@ build merged config → [EWC] importance pass → gnn_vuln.train → register ne
 ```
 API/
   core/        config.py (settings/env), database.py (engine, session, init+seed)
-  models/      tables.py — ORM: configs, models, datasets, relearn_jobs, dataset_jobs,
-               graph_cache, inference_results
+  models/      tables.py — ORM: configs, models, model_artifacts, datasets, relearn_jobs,
+               dataset_jobs, graph_cache, inference_results
   schemas/     pydantic request/response (inference+embed+drift, relearn, dataset)
   services/    registry, seed, storage (object store), graph_cache,
                inference (predict+embed), relearn (+materialize), datasets, eval (general+drift)
   routers/     meta, inference (+/embed), relearn, datasets, eval (/eval)
-  configs/     data_build.yaml — self-contained dataset-build (featurization) config
+  configs/     data_build.yaml + graph_based/hybrid_graph_lm/sequential.yaml — bundled seed
+               configs, snapshotted to the DB at register (image bakes no repo configs/ tree)
   seeds/       models.json, datasets.json — DB seed on first boot
   celery_app.py, tasks.py   — Celery app + async tasks (ingest_dataset, merge_datasets, run_relearn)
   main.py      app wiring (lifespan init_db + seed, CORS, routers)
@@ -166,11 +169,14 @@ uv run uvicorn API.main:app --host 0.0.0.0 --port 8000
 
 Env: `DATABASE_URL`, `JOERN_CLI`, `GNN_VULN_ROOT` (data/checkpoint root), `API_DEVICE`
 (`cpu`|`cuda`), `API_CORS_ORIGINS`, `API_MAX_NODES`, `STORAGE_BACKEND` (`fs`|`s3`) +
-`S3_*` + `S3_BUCKET_GRAPHS`/`S3_BUCKET_DATASETS`, `CELERY_BROKER_URL`,
+`S3_*` + `S3_BUCKET_GRAPHS`/`S3_BUCKET_DATASETS`/`S3_BUCKET_CHECKPOINTS`, `CELERY_BROKER_URL`,
 `CELERY_RESULT_BACKEND`.
 
-Checkpoints: edit `API/seeds/models.json` to point the three model ids at real `.pt` files
-(mounted under `/app/checkpoints`); models trained via `/relearn` register themselves.
+Seed models: `API/seeds/models.json` points each model id at `checkpoints/<id>.pt` (local
+cache) + `s3://checkpoints/<id>.pt` (`storage_uri`); the config travels as an immutable DB
+snapshot (bundled defaults in `API/configs/`), so no repo `configs/` tree is needed. Provide
+each `.pt` either on local disk (`/app/checkpoints`) **or** in the `checkpoints` bucket —
+inference materializes it on demand. Models trained via `/relearn` register themselves.
 
 ---
 
@@ -189,7 +195,11 @@ blob lives in object storage.
   `models.checkpoint` is the local cache path. A relearned model uploads its `.pt` after
   training; inference materializes it back to disk on demand — so a worker on another node
   can load a model it never trained (the container FS is ephemeral; only the buckets are
-  durable + shared). Seed models ship as local files (no `storage_uri`) and load directly.
+  durable + shared). Seed models carry `storage_uri` too, and their **config loads from the
+  immutable DB snapshot** (not a repo file) — so the deployed image bakes no `configs/` tree.
+- **Per-model artifacts** (EWC importance, eval metrics) → `model_artifacts` keeps a pointer
+  (`model_id, kind, storage_uri`); the blob lives in the `checkpoints` bucket
+  (`<id>.ewc_importance.pt`, `<id>.metrics_summary.json`). One row per `(model_id, kind)`.
 - **Inference results** (prediction + confidence + suspicious lines + **pre-head embedding**)
   → `inference_results`. The embedding is small + structured, so it stays in the DB (pgvector
   ANN index at search time). Query `GET /inference/history`.

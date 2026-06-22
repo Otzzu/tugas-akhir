@@ -38,11 +38,13 @@ JOBS_DIR = settings.JOBS_DIR
 DATA_ROOT = ROOT / "data"            # local materialization target (the trainer's root)
 ENV: dict[str, str] = {}             # gnn_vuln is an installed package — no path injection needed
 TRAIN_MODULE = "gnn_vuln.train"      # library trainer (installed package, single source of truth)
+EVAL_MODULE = "gnn_vuln.evaluate"    # library evaluator — returns metrics_summary (cls + localization)
 COMPUTE_IMPORTANCE_ON_FINISH = True  # eagerly compute EWC importance for the newly trained model
+EVALUATE_ON_FINISH = True            # run the library evaluator on the new model (task-B test split)
 
 _REQUIRES_BASE = {"ER", "EWC", "EWC-ER", "finetune"}
 _JOB_FIELDS = ("status", "method", "dataset_ids", "base_model_id",
-               "config_path", "log_path", "result_model_id", "message")
+               "config_path", "log_path", "result_model_id", "message", "metrics")
 
 
 # ── job persistence (DB) ────────────────────────────────────────────────────
@@ -311,6 +313,47 @@ def _compute_and_store_importance(model_id: str, train_cfg_path: Path, checkpoin
         log_file.flush()
 
 
+# ── evaluation metrics (task-B test split, via the library evaluator) ────────
+def _compact_metrics(summary: dict) -> dict:
+    """Headline numbers from metrics_summary for the job record (full blob stays in storage)."""
+    fl = summary.get("function_level", {}) or {}
+    loc = summary.get("localization", {}) or {}
+    pick = lambda d, ks: {k: d[k] for k in ks if k in d}  # noqa: E731
+    return {
+        "function_level": pick(fl, ("f1_macro", "f1_weighted", "accuracy",
+                                    "auc_roc_macro_ovr", "confidence_mean", "num_test_samples")),
+        "localization": pick(loc, ("ifa_mean", "top_1_accuracy", "top_5_accuracy",
+                                   "recall_at_5pct_loc", "recall_at_20pct_loc")),
+    }
+
+
+def _evaluate_and_store(model_id: str, train_cfg_path: Path, checkpoint_path: Path,
+                        run_dir: Path, log_file) -> dict | None:
+    """Best-effort: run the library evaluator on the new model (task-B test split), persist the
+    full metrics_summary to object storage + a model_artifact, return a compact summary for the
+    job record. Uses the library's official return path (gnn_vuln.evaluate). Never raises."""
+    try:
+        log_file.write(f"== evaluate (task-B test): {checkpoint_path} ==\n"); log_file.flush()
+        subprocess.run(["python", "-m", EVAL_MODULE, "--checkpoint", str(checkpoint_path),
+                        "--config", str(train_cfg_path)],
+                       check=True, cwd=str(ROOT), env={**os.environ, **ENV},
+                       stdout=log_file, stderr=subprocess.STDOUT)
+        msj = ROOT / "results" / run_dir.name / "metrics_summary.json"
+        if not msj.exists():
+            log_file.write(f"WARN metrics_summary.json not found at {msj}\n"); log_file.flush()
+            return None
+        summary = json.loads(msj.read_text())
+        uri = storage.put_bytes(settings.S3_BUCKET_CHECKPOINTS,
+                                f"{model_id}.metrics_summary.json", msj.read_bytes())
+        compact = _compact_metrics(summary)
+        registry.add_artifact(model_id, "metrics", uri, meta=compact)
+        return compact
+    except Exception as e:  # noqa: BLE001
+        log_file.write(f"WARN evaluate failed for {model_id}: {type(e).__name__}: {e}\n")
+        log_file.flush()
+        return None
+
+
 # ── job runner (invoked by the Celery task in API.tasks) ────────────────────
 def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
     """Run the (optional EWC-importance pass +) training subprocess for a relearn job,
@@ -371,6 +414,10 @@ def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
                 out_cache = ROOT / "checkpoints" / f"api_base_{new_id}" / "ewc_importance.pt"
                 with open(log, "a", encoding="utf-8") as lf:
                     _compute_and_store_importance(new_id, train_cfg, best, out_cache, lf)
+            # capture eval metrics (task-B test) via the library evaluator → DB + storage
+            if EVALUATE_ON_FINISH:
+                with open(log, "a", encoding="utf-8") as lf:
+                    job["metrics"] = _evaluate_and_store(new_id, train_cfg, best, run_dir, lf)
         job["status"] = "done"
     except subprocess.CalledProcessError as e:
         job["status"] = "failed"; job["message"] = f"training failed (exit {e.returncode}); see log"

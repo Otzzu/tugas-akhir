@@ -1350,6 +1350,19 @@
               }
             ],
             "title": "Message"
+          },
+          "metrics": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metrics",
+            "description": "Compact eval summary on the task-B test split (function-level classification + localization). Full metrics_summary is a model_artifact kind=metrics."
           }
         },
         "type": "object",

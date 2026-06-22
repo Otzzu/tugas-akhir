@@ -39,3 +39,6 @@ class RelearnJob(BaseModel):
     log_path: Optional[str] = None
     result_model_id: Optional[str] = None
     message: Optional[str] = None
+    metrics: Optional[dict] = Field(
+        None, description="Compact eval summary on the task-B test split (function-level "
+        "classification + localization). Full metrics_summary is a model_artifact kind=metrics.")
