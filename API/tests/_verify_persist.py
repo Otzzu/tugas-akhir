@@ -120,14 +120,17 @@ def main() -> int:
             ds_rec = s.get(DatasetRecord, m.dataset_id) if m.dataset_id else None
             if not ds_rec:
                 problems.append(f"model {m.id} has no resolvable dataset_id ({m.dataset_id})")
-            # a SEEDED model (checkpoint present) MUST have its dataset bundle in MinIO — relearn
-            # ER/EWC materialize the base model's dataset for the replay buffer + EWC importance.
-            if (disk or in_minio is True) and ds_rec:
+            # a model whose checkpoint is in MinIO (= actually seeded by the script; the API loads
+            # from MinIO, not the baked disk copy) MUST also have its dataset bundle in MinIO —
+            # relearn ER/EWC materialize the base model's dataset for the replay buffer + EWC
+            # importance. Models with only a disk checkpoint (the image's default) are not actively
+            # seeded and are skipped, so a cheap single-model seed does not false-alarm.
+            if in_minio is True and ds_rec:
                 ds_bk = _parse_uri((ds_rec.params or {}).get("storage_uri", ""))
                 if not (ds_bk and _obj_exists(s3, *ds_bk)):
                     problems.append(
-                        f"model {m.id} is seeded but its dataset {m.dataset_id} bundle is missing "
-                        f"in MinIO — relearn ER/EWC on it will fail (seed without --checkpoints-only)")
+                        f"model {m.id} checkpoint is in MinIO but its dataset {m.dataset_id} bundle "
+                        f"is missing — relearn ER/EWC on it will fail (re-seed without --checkpoints-only)")
             if m.method and not disk and not in_minio:
                 problems.append(f"relearned model {m.id} checkpoint missing on disk AND in MinIO")
             if m.method and bk and not in_minio:
