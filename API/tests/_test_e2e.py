@@ -213,7 +213,10 @@ def main():
     if last_relearned:
         print(f"14) POST /inference on relearned model ({last_relearned})")
         rres = call("POST", "/inference", {"model_id": last_relearned, **codes})
-        check(any(r.get("ok") for r in rres.get("results", [])), "relearned model serves inference")
+        ok14 = any(r.get("ok") for r in rres.get("results", []))
+        if not ok14:   # surface the actual failure (HTTP error body or per-function errors)
+            print("   response:", json.dumps(rres)[:600])
+        check(ok14, "relearned model serves inference")
 
     print("\n== done ==")
     if _fails:
