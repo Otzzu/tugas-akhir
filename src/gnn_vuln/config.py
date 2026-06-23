@@ -60,6 +60,11 @@ class DataConfig:
     # Source subdirectory under data/raw/ — isolates datasets and appears in
     # the processed .pt filename so bigvul and merged never collide.
     source: str = "bigvul"
+    # Continual-learning label alignment (caller-driven, e.g. the API relearn flow). When set to
+    # a CWE-name -> class-id map, graphs labelled in THIS dataset's own vocab are remapped onto
+    # this target vocab at load time, so a task-B dataset aligns to the base model's class space:
+    # known CWEs keep their canonical id, brand-new CWEs land on the extended ids. None = no remap.
+    target_vocab: dict[str, int] | None = None
     # Optional separate val/test source dirs (e.g. bigvul_val, bigvul_test).
     # When both are set, official splits are used instead of internal 70/15/15.
     # Leave empty for datasets without separate val/test parquets.

@@ -346,6 +346,7 @@ def main() -> None:
         embedder_device=cfg.train.device,
         mode=cfg.data.mode,
         source=getattr(cfg.data, "source", "bigvul"),
+        target_vocab=getattr(cfg.data, "target_vocab", None),
         pretrained_lm=pretrained_lm,
         func_lm=func_lm,
         add_func_tokens=add_func_tokens,
