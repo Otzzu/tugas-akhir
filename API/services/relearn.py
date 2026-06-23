@@ -176,7 +176,8 @@ def _join_datasets(dataset_ids: list[str]) -> tuple[str, dict]:
 # ── config generation ───────────────────────────────────────────────────────
 def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
                  epochs: int | None, job_dir: Path,
-                 split: dict | None = None) -> tuple[Path, Path | None, dict]:
+                 split: dict | None = None,
+                 scratch_config_id: str | None = None) -> tuple[Path, Path | None, dict]:
     source, data_block = _join_datasets(dataset_ids)
 
     if method in _REQUIRES_BASE:
@@ -188,10 +189,12 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
         base_ckpt = _materialize_checkpoint(base)   # local cache; pulls from MinIO if absent
         base_ds = registry.get_dataset(base["dataset_id"])
         materialize_dataset(base["dataset_id"])   # task-A data on disk (replay buffer + EWC importance)
-    else:  # retrain — fresh weights; optional template for arch
+    else:  # retrain / train-from-scratch — fresh weights; arch+train from a chosen config
         if base_model_id:
             base = registry.get_model(base_model_id)
             base_cfg = yaml.safe_load(registry.config_text(base))
+        elif scratch_config_id:
+            base_cfg = yaml.safe_load(registry.require_model_config(scratch_config_id)["content"])
         else:
             base_cfg = yaml.safe_load((settings.API_DIR / "configs" / "graph_based.yaml").read_text())
         base_ckpt = None
@@ -224,6 +227,21 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
         if k in fmodel:
             cfg["model"][k] = fmodel[k]
     cfg["model"]["num_classes"] = data_block.get("num_classes", cfg["model"].get("num_classes", 26))
+    # continual-learning label alignment — when continuing a base model, remap task-B labels onto
+    # the base model's class space so ids never clash: known CWEs keep their canonical id, brand-new
+    # CWEs (class-incremental) extend the head. The library applies the remap at load via
+    # data.target_vocab; num_classes grows to fit. /train (no base) skips this (fresh class space).
+    if base_model_id:
+        base_names = base.get("class_names") or []
+        if base_names:
+            tv = {n: i for i, n in enumerate(base_names)}
+            vpath = DATA_ROOT / "raw" / source / "cwe_vocab.json"
+            if vpath.exists():
+                for name in json.loads(vpath.read_text(encoding="utf-8")):
+                    if name not in tv:
+                        tv[name] = len(tv)          # new CWE -> extended id (head grows)
+            cfg["data"]["target_vocab"] = tv
+            cfg["model"]["num_classes"] = len(tv)
     # the installed wheel's default checkpoint/results/log dirs resolve to a bogus
     # site-packages path; pin them to the app root so the trainer writes where we read.
     t = cfg.setdefault("train", {})
@@ -525,4 +543,25 @@ def submit_relearn(method: str, dataset_ids: list[str], base_model_id: str | Non
     # run on the Celery worker (off the web server), consistent with dataset ingestion
     from API.tasks import run_relearn
     run_relearn.delay(job_id, str(train_cfg), str(importance_cfg) if importance_cfg else None, meta)
+    return job
+
+
+def submit_train(config_id: str, dataset_ids: list[str], epochs: int | None,
+                 run_name: str | None, split: dict | None = None) -> dict:
+    """Train a fresh model from scratch (no base model) on dataset_ids, taking the architecture
+    and train hyperparameters from `config_id` (kind=model or full). Shares the relearn worker
+    pipeline via method='retrain' — fresh weights, no EWC importance and no replay buffer."""
+    job_id = datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:6]
+    job_dir = JOBS_DIR / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    job = {"job_id": job_id, "status": "queued", "method": "retrain",
+           "dataset_ids": dataset_ids, "base_model_id": None, "config_id": config_id,
+           "config_path": None, "log_path": str(job_dir / "run.log"),
+           "result_model_id": None, "message": run_name}
+    train_cfg, importance_cfg, meta = build_config(
+        "retrain", dataset_ids, None, epochs, job_dir, split, scratch_config_id=config_id)
+    job["config_path"] = str(train_cfg.relative_to(ROOT))
+    _save_job(job)
+    from API.tasks import run_relearn
+    run_relearn.delay(job_id, str(train_cfg), None, meta)
     return job

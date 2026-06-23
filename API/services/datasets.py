@@ -12,6 +12,22 @@ import uuid
 from API.core.config import settings
 from API.core.database import SessionLocal
 from API.models.tables import DatasetJobRecord
+from API.services import registry
+
+
+def _resolve_data_config(req) -> dict:
+    """Build params for the dataset. With data_config_id set, pull them from that registered
+    config's data section (GUARDED to kind=data or full); otherwise use the inline data_config.
+    Returns a DataConfigOverride-shaped dict so the rest of the pipeline is unchanged."""
+    from API.schemas.dataset import DataConfigOverride
+    if getattr(req, "data_config_id", None):
+        sec = registry.config_section(req.data_config_id, "data")   # raises on a kind mismatch
+        dc = DataConfigOverride().model_dump()
+        for k in dc:
+            if k in sec:
+                dc[k] = sec[k]
+        return dc
+    return req.data_config.model_dump()
 
 
 def _slug(name: str) -> str:
@@ -48,7 +64,7 @@ def create_ingest_job(req) -> dict:
     input_path = job_dir / "input.parquet"
     n_rows = _rows_to_parquet(req.rows, input_path)
 
-    data_config = {**req.data_config.model_dump(), "name": req.name,
+    data_config = {**_resolve_data_config(req), "name": req.name,
                    "dataset_id": dataset_id, "input_path": str(input_path),
                    "job_dir": str(job_dir)}
 
@@ -73,7 +89,7 @@ def create_merge_job(req) -> dict:
     job_dir = settings.JOBS_DIR / "datasets" / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
-    data_config = {**req.data_config.model_dump(), "name": req.name,
+    data_config = {**_resolve_data_config(req), "name": req.name,
                    "dataset_id": dataset_id, "dataset_ids": list(req.dataset_ids),
                    "dedup": req.dedup, "job_dir": str(job_dir)}
 

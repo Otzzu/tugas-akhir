@@ -19,7 +19,7 @@ from API.core.database import init_db
 from API.core.observability import (
     logging_middleware, setup_logging, unhandled_exception_handler,
 )
-from API.routers import meta, inference, relearn, datasets, eval as eval_router
+from API.routers import meta, inference, relearn, train, datasets, eval as eval_router
 
 
 @asynccontextmanager
@@ -47,5 +47,6 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 app.include_router(meta.router)
 app.include_router(inference.router)
 app.include_router(relearn.router)
+app.include_router(train.router)
 app.include_router(datasets.router)
 app.include_router(eval_router.router)

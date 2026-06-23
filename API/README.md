@@ -24,7 +24,8 @@ it as a package — it never reaches into the model source tree. See
 | `POST /inference` | function source → CWE + confidence + suspicious lines (per-line scores)                 |
 | `POST /embed`     | function source → final pre-head embedding (similarity search / drift), no output head  |
 | `POST /datasets`  | raw rows → Joern CPG → `.pt`, **or** merge existing `dataset_ids` → new dataset, in object storage |
-| `POST /relearn`   | continual-learning job (finetune / EWC / ER / EWC-ER / retrain) → new model             |
+| `POST /relearn`   | continual-learning job — CONTINUE a base model (finetune / EWC / ER / EWC-ER) → new model |
+| `POST /train`     | train a NEW model from scratch — `config_id` (kind=model or full) + `dataset_ids` → new model |
 | `GET /eval`       | general label-free model eval over stored predictions (usage, mix, confidence + drift)  |
 | `GET …`           | `/health` `/models` `/datasets` `/configs` `/inference/history` + job status            |
 
@@ -116,12 +117,19 @@ embed + GNN/LM forward → prediction + pre-head embedding`. The embedding is ca
 - **Ingest** (`POST /datasets` with `rows`, async) — `rows → parquet → gnn_vuln.data.prepare
 (Joern CPG + cwe_vocab) → data-build config → gnn_vuln.data.build_pt (.pt) → tar(.pt + vocab)
 → MinIO → register dataset_id (+ immutable data_config_id)`. Poll `GET /datasets/jobs/{id}`.
+  Pass `data_config_id` (kind=data) to reuse a registered config's build params instead of inline `data_config`.
 - **Combining datasets** — three ways: (A) send all rows in one ingest; (B) `POST /datasets`
   with `dataset_ids: [X, Y]` → materialize each `.pt` → `gnn_vuln.data.merge` (concat graphs +
   unify the label space + remap + best-effort dedup) → a NEW reusable `dataset_id`; (C) `POST
   /relearn` with multiple `dataset_ids` → the same `.pt`-level merge inline at train time. All
   three merge at the `.pt` level (no raw CPG, no re-embedding).
-- **Relearn** (`POST /relearn`, async) — `materialize task-A+B datasets to local disk →
+- **Train from scratch** (`POST /train`, async) — a NEW model with fresh weights from
+  `config_id` (kind=model or full, guarded) + `dataset_ids`. Shares the relearn worker pipeline
+  (`build_config` with `method=retrain` → `gnn_vuln.train` → evaluate → register), just with no
+  base checkpoint, no EWC importance, no replay. Poll `GET /train/{id}`. Continuing an existing
+  model is `/relearn`, not this.
+- **Relearn** (`POST /relearn`, async — CONTINUES a base model; for a fresh model use `/train`) —
+  `materialize task-A+B datasets to local disk →
 build merged config → [EWC] importance pass → gnn_vuln.train → register new model →
 gnn_vuln.evaluate (task-B test, metrics-only) → capture metrics + split + training summary →
 drop the local results dir`. Poll `GET /relearn/{id}`: returns `result_model_id` + a compact
@@ -250,10 +258,21 @@ Configs, datasets and models are **append-only — never overwritten**:
 
 - **Configs** → `configs` table, id = `{kind}:{name}@{sha256(content)[:10]}`, where
   `kind ∈ data | model | train | full`. Same content reuses the id (dedup); an edit mints a
-  **new** id. `GET /configs?kind=data`. So any reference always resolves to the exact content
+  **new** id. `GET /configs?kind=model`. So any reference always resolves to the exact content
   it was trained with — reproducibility without a separate snapshot.
+- **Separation by owner** — config is split by who owns it, not bundled. A **model** owns a
+  `kind=model` config = architecture + train hyperparameters + output mode, **without** the
+  data-build params; that is what `model.config_id` points to and all a `/inference` needs. A
+  **dataset** owns a `kind=data` config = the build recipe (source, filters, split, featurization);
+  that is `dataset.data_config_id`. A training run **composes** the two: `model` (arch + train) +
+  the task-B dataset's `data`. `kind=full` (data+model+train in one file) is only for
+  self-contained from-scratch training, not the API's compositional flow.
+- **Kind-guarded reuse** — each endpoint takes a config of the kind it needs, guarded.
+  `POST /datasets` accepts a `data_config_id` (kind=data) to reuse build params instead of inline
+  `data_config`, and a model's `config_id` is loaded only if it is kind=model (or full). A
+  mismatched kind — e.g. a data config where a model config is required — is rejected.
 - **Datasets / models** get a fresh id per ingest/run. A dataset links its `data_config_id`
-  (kind=data); a relearned model links `config_id` + `base_model_id` + `method`.
+  (kind=data); a model links `config_id` (kind=model) + `base_model_id` + `method`.
 
 Why no graph DB (Neo4j)? We only store/fetch the whole CPG by hash and render client-side — no
 server-side traversal — so object storage + Postgres suffice.

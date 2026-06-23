@@ -35,6 +35,10 @@ class DatasetIngestRequest(BaseModel):
     dataset_ids: Optional[list[str]] = Field(None, min_length=2, description="Registered dataset ids to MERGE into a new dataset (merge path)")
     dedup: bool = Field(True, description="Drop duplicate functions when merging")
     data_config: DataConfigOverride = Field(default_factory=DataConfigOverride)
+    data_config_id: Optional[str] = Field(
+        None,
+        description="Reuse a registered config's data-build params instead of inline data_config. "
+        "Guarded: the id must be kind=data (or full). When set, it overrides data_config.")
 
 
 class DatasetJob(BaseModel):

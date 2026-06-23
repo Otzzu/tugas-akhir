@@ -12,7 +12,6 @@ class RelearnMethod(str, Enum):
     ewc = "EWC"
     ewc_er = "EWC-ER"
     finetune = "finetune"
-    retrain = "retrain"
 
 
 class SplitSpec(BaseModel):
@@ -33,8 +32,8 @@ class RelearnRequest(BaseModel):
     )
     base_model_id: Optional[str] = Field(
         None,
-        description="Required for ER/EWC/EWC-ER/finetune — model to continue from. Its dataset, "
-        "config and checkpoint are read from the registry. Ignored for 'retrain'.",
+        description="Required — the model to continue from. Its dataset, config (kind=model) and "
+        "checkpoint are read from the registry. To train a fresh model instead, use POST /train.",
     )
     epochs: Optional[int] = Field(None, description="Override training epochs")
     run_name: Optional[str] = Field(None, description="Optional human label for the job")

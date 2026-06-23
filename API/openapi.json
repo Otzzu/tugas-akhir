@@ -389,6 +389,7 @@
           "relearn"
         ],
         "summary": "Relearn",
+        "description": "Submit a continual-learning job (async).\n\nMaterializes the task-B dataset(s), trains a new model via the gnn_vuln library, evaluates\nit on the task-B test split (metrics-only), and registers the result. The library runs in\nAPI mode (`GNN_VULN_API_MODE`): no research artifacts \u2014 per-sample CSVs, ROC/confusion/PR\nplots, training log/curves \u2014 touch the worker disk. The metrics, the realized\ntrain/val/test split, and the training summary are persisted as per-model `model_artifacts`\n(DB + object storage), then the local results dir is deleted. Poll `GET /relearn/{job_id}`.",
         "operationId": "relearn_relearn_post",
         "requestBody": {
           "content": {
@@ -449,6 +450,114 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RelearnJob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/train": {
+      "get": {
+        "tags": [
+          "train"
+        ],
+        "summary": "Train List",
+        "operationId": "train_list_train_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array",
+                  "title": "Response Train List Train Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "train"
+        ],
+        "summary": "Train",
+        "description": "Train a NEW model from scratch (async).\n\nArchitecture + train hyperparameters come from `config_id` (kind=model or full); data from\n`dataset_ids`. Runs on the same worker pipeline as /relearn but with fresh weights \u2014 no EWC\nimportance, no replay buffer. Registers the trained model and stores its metrics + split +\ntraining summary as model_artifacts. Poll `GET /train/{job_id}`. To CONTINUE an existing\nmodel instead of starting fresh, use `/relearn`.",
+        "operationId": "train_train_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainJob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/train/{job_id}": {
+      "get": {
+        "tags": [
+          "train"
+        ],
+        "summary": "Train Status",
+        "operationId": "train_status_train__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainJob"
                 }
               }
             }
@@ -715,6 +824,18 @@
           },
           "data_config": {
             "$ref": "#/components/schemas/DataConfigOverride"
+          },
+          "data_config_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Config Id",
+            "description": "Reuse a registered config's data-build params instead of inline data_config. Guarded: the id must be kind=data (or full). When set, it overrides data_config."
           }
         },
         "type": "object",
@@ -1362,7 +1483,7 @@
               }
             ],
             "title": "Metrics",
-            "description": "Compact eval summary on the task-B test split (function-level classification + localization). Full metrics_summary is a model_artifact kind=metrics."
+            "description": "Compact eval summary on the task-B test split (function-level classification + localization). The full metrics_summary, the training_summary, and the realized train/val/test split are stored as model_artifacts (kinds: metrics, training_summary, train_split)."
           }
         },
         "type": "object",
@@ -1380,8 +1501,7 @@
           "ER",
           "EWC",
           "EWC-ER",
-          "finetune",
-          "retrain"
+          "finetune"
         ],
         "title": "RelearnMethod"
       },
@@ -1408,7 +1528,7 @@
               }
             ],
             "title": "Base Model Id",
-            "description": "Required for ER/EWC/EWC-ER/finetune \u2014 model to continue from. Its dataset, config and checkpoint are read from the registry. Ignored for 'retrain'."
+            "description": "Required \u2014 the model to continue from. Its dataset, config (kind=model) and checkpoint are read from the registry. To train a fresh model instead, use POST /train."
           },
           "epochs": {
             "anyOf": [
@@ -1587,6 +1707,160 @@
           "score"
         ],
         "title": "SuspiciousLine"
+      },
+      "TrainJob": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "dataset_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dataset Ids"
+          },
+          "config_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Id"
+          },
+          "config_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Path"
+          },
+          "log_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Log Path"
+          },
+          "result_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Model Id"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "metrics": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metrics",
+            "description": "Compact eval summary on the test split (function-level classification + localization). Full artifacts are stored as model_artifacts, same as /relearn."
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "dataset_ids"
+        ],
+        "title": "TrainJob"
+      },
+      "TrainRequest": {
+        "properties": {
+          "config_id": {
+            "type": "string",
+            "title": "Config Id",
+            "description": "Config to instantiate \u2014 kind=model (architecture + train hyperparameters) or kind=full. Guarded: a kind=data config is rejected."
+          },
+          "dataset_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Dataset Ids",
+            "description": "Dataset id(s) to train on. More than one are joined first."
+          },
+          "epochs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epochs",
+            "description": "Override training epochs"
+          },
+          "run_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Name",
+            "description": "Optional human label for the job"
+          },
+          "split": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SplitSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional split control (same modes as /relearn). Omit = default 80/10/10 seed 42."
+          }
+        },
+        "type": "object",
+        "required": [
+          "config_id",
+          "dataset_ids"
+        ],
+        "title": "TrainRequest",
+        "description": "Train a brand-new model from scratch. The architecture + train hyperparameters come from\n`config_id`; the data from `dataset_ids`. (Continuing an existing model is `/relearn`.)"
       },
       "ValidationError": {
         "properties": {

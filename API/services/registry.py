@@ -63,6 +63,31 @@ def list_configs(kind: str | None = None) -> dict:
         return {c.id: c.to_dict() for c in s.scalars(q).all()}
 
 
+# Which config sections each kind is allowed to supply. A kind=data config serves the data-build
+# spec; a kind=model config serves the architecture; kind=full (self-contained, fresh-train)
+# serves anything. So a `data_config_id` accepts kind=data or full, never a model config.
+_KIND_SECTIONS = {
+    "data":  {"data"},
+    "model": {"model"},
+    "full":  {"data", "model", "train"},
+}
+
+
+def config_section(config_id: str, expect: str) -> dict:
+    """Return the `expect` section ('data' | 'model' | 'train') of a registered config, GUARDED
+    by kind: only a config whose kind is meant to carry that section may be used here. So a
+    `data_config_id` must be kind=data (or full) — a kind=model config is rejected. Raises
+    ValueError on a kind mismatch, KeyError on an unknown id."""
+    c = get_config(config_id)
+    kind = c.get("kind", "full")
+    if expect not in _KIND_SECTIONS.get(kind, {"data", "model", "train"}):
+        raise ValueError(
+            f"config '{config_id}' (kind '{kind}') cannot supply a '{expect}' section")
+    content = yaml.safe_load(c.get("content") or "") or {}
+    sec = content.get(expect, {}) if isinstance(content, dict) else {}
+    return sec if isinstance(sec, dict) else {}
+
+
 def _canonical(content) -> str:
     """Stable YAML text so logically-equal configs hash identically (sorted keys)."""
     obj = yaml.safe_load(content) if isinstance(content, str) else content
@@ -115,8 +140,18 @@ def get_dataset(dataset_id: str) -> dict:
 
 
 def register_model(model_id: str, meta: dict) -> None:
-    cfg_id = register_config({"path": meta["config"], "arch": meta["arch"],
-                              "id": meta.get("config_id")})
+    # The model's config is kind=model: architecture + train hyperparameters + the output mode,
+    # WITHOUT the data-build params (source, filters, split, max_nodes). Those belong to the
+    # dataset's kind=data config. Inference needs only this; relearn composes it with the task-B
+    # dataset's data config at run time. (`mode` is kept under data because the library's model
+    # builder + predictor read cfg.data.mode; the rest of the data block is the dataset's job.)
+    src = abspath(meta["config"]) if meta.get("config") else None
+    full = yaml.safe_load(src.read_text(encoding="utf-8")) if (src and src.exists()) else {}
+    nm = Path(meta["config"]).stem if meta.get("config") else model_id
+    model_cfg = {k: full[k] for k in ("model", "train") if isinstance(full.get(k), dict)}
+    if isinstance(full.get("data"), dict) and "mode" in full["data"]:
+        model_cfg["data"] = {"mode": full["data"]["mode"]}
+    cfg_id = upsert_config("model", nm, model_cfg, path=meta.get("config", ""), arch=meta["arch"])
     with SessionLocal() as s:
         m = s.get(ModelRecord, model_id) or ModelRecord(id=model_id)
         m.label = meta.get("label", "")
@@ -135,13 +170,26 @@ def register_model(model_id: str, meta: dict) -> None:
 
 
 def register_dataset(dataset_id: str, meta: dict) -> None:
+    cid = meta.get("data_config_id")
+    if not cid:
+        # seed JSON carries no config content, so synthesize a kind=data config from its build
+        # params — every dataset then references one (ingested datasets already register theirs
+        # in tasks.py). storage_uri is a pointer, not a build param, so it's left out.
+        data_block = {k: meta[k] for k in _DATA_FIELDS if k in meta and k != "storage_uri"}
+        # featurization (embedder + func_max_length) is part of how the .pt was built, so it
+        # belongs in the data config's model block — relearn reads it back to match the cached .pt.
+        model_block = {"num_classes": int(meta.get("num_classes", 2)), **(meta.get("featurization") or {})}
+        content = {"data": {"source": meta["source"], "mode": meta.get("mode", "multiclass"),
+                            **data_block},
+                   "model": model_block}
+        cid = upsert_config("data", meta["source"], content)
     with SessionLocal() as s:
         d = s.get(DatasetRecord, dataset_id) or DatasetRecord(id=dataset_id)
         d.label = meta.get("label", "")
         d.source = meta["source"]
         d.mode = meta.get("mode", "multiclass")
         d.num_classes = int(meta.get("num_classes", 2))
-        d.data_config_id = meta.get("data_config_id")
+        d.data_config_id = cid
         d.params = {k: meta[k] for k in _DATA_FIELDS if k in meta}
         s.merge(d)
         s.commit()
@@ -178,6 +226,25 @@ def list_artifacts(model_id: str | None = None) -> list[dict]:
 _CFG_CACHE = settings.API_DIR / "_config_cache"
 
 
+def _require_model_config(c: dict, cid: str) -> None:
+    """Guard a model's config_id — it must be a kind=model config (or full as a fresh-train
+    fallback), NEVER a kind=data or kind=train config, which lack the architecture a model
+    needs. Mirrors config_section's guard on the dataset/train side."""
+    if c.get("kind") not in ("model", "full"):
+        raise ValueError(
+            f"config_id '{cid}' is kind '{c.get('kind')}', but a model needs a kind=model "
+            f"(or full) config")
+
+
+def require_model_config(config_id: str) -> dict:
+    """Public guard for a caller-supplied config_id (e.g. /train) — fetch it and ensure it is
+    usable to instantiate a model (kind=model, or full). Raises ValueError on a kind=data/train
+    config, KeyError if the id is unknown."""
+    c = get_config(config_id)
+    _require_model_config(c, config_id)
+    return c
+
+
 def config_text(meta: dict) -> str:
     """Config YAML text for a model. Source of truth = the immutable DB snapshot
     (configs.content, content-addressed); falls back to the registered file path for dev
@@ -187,10 +254,12 @@ def config_text(meta: dict) -> str:
     if cid:
         try:
             c = get_config(cid)
+        except KeyError:
+            c = None
+        if c is not None:
+            _require_model_config(c, cid)   # raises on a kind=data/train config
             if c.get("content"):
                 return c["content"]
-        except KeyError:
-            pass
     cfg = meta.get("config")
     if cfg and abspath(cfg).exists():
         return abspath(cfg).read_text(encoding="utf-8")
@@ -209,6 +278,8 @@ def materialize_config(meta: dict) -> Path:
             c = get_config(cid)
         except KeyError:
             pass
+        if c is not None:
+            _require_model_config(c, cid)   # raises on a kind=data/train config
         if c and c.get("content"):
             _CFG_CACHE.mkdir(parents=True, exist_ok=True)
             f = _CFG_CACHE / f"{re.sub(r'[^0-9A-Za-z._-]+', '_', cid)}.yaml"

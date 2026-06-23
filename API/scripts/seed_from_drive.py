@@ -50,6 +50,12 @@ DRIVE = {
     },
 }
 
+# Dataset-only seeds (no model) — already API-format bundles on Drive, copied straight to MinIO.
+# megavul_mini = small 26-class subsample for demos + the relearn task-A test path.
+EXTRA_DATASETS = {
+    "megavul_mini": f"{GDRIVE}/data/processed/megavul_mini/megavul_mini.tar.gz",
+}
+
 
 def _gdown(file_id: str, out: Path) -> None:
     try:
@@ -132,6 +138,11 @@ def main() -> None:
             seed_checkpoint(s3, mid, d["ckpt"], tmp)
             if not args.checkpoints_only:
                 seed_dataset(s3, d["dataset_id"], d["data"], tmp, done)
+
+        if not args.checkpoints_only and args.models == "all":
+            for did, path in EXTRA_DATASETS.items():
+                print(f"\n== dataset {did} ==")
+                seed_dataset(s3, did, path, tmp, done)
 
     print("\nDone. Object storage is the source of truth. Bring up the API; seed_if_empty "
           "registers from API/seeds/*.json and inference/relearn materialize from MinIO (no local data).")
