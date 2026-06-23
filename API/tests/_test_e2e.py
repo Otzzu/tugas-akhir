@@ -115,9 +115,9 @@ def main():
         check(bool(rec), f"dataset {ds_id} registered in DB")
         check(uri.startswith("s3://"), f"dataset bundle in object storage ({uri})")
 
-        print("11/12) GET /configs?kind=data + /configs/{id}")
+        print("11/12) GET /configs + /configs/{id}")
         dcid = rec.get("data_config_id")
-        cfgs = call("GET", "/configs?kind=data")
+        cfgs = call("GET", "/configs")
         check(bool(dcid) and dcid in cfgs, f"immutable data-config registered ({dcid})")
         if dcid:
             one = call("GET", "/configs/" + urllib.parse.quote(dcid, safe=""))

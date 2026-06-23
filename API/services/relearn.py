@@ -549,8 +549,8 @@ def submit_relearn(method: str, dataset_ids: list[str], base_model_id: str | Non
 def submit_train(config_id: str, dataset_ids: list[str], epochs: int | None,
                  run_name: str | None, split: dict | None = None) -> dict:
     """Train a fresh model from scratch (no base model) on dataset_ids, taking the architecture
-    and train hyperparameters from `config_id` (kind=model or full). Shares the relearn worker
-    pipeline via method='retrain' — fresh weights, no EWC importance and no replay buffer."""
+    and train hyperparameters from `config_id`. Shares the relearn worker pipeline via
+    method='retrain' — fresh weights, no EWC importance and no replay buffer."""
     job_id = datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:6]
     job_dir = JOBS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)

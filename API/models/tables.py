@@ -10,13 +10,12 @@ from API.core.database import Base
 
 
 class ConfigRecord(Base):
-    """Content-addressed, IMMUTABLE config. id = '{kind}:{name}@{hash}'. Editing a config
-    never rewrites a row — same content reuses the id (dedup), different content gets a new
-    id, mirroring how datasets/models are append-only. `kind` distinguishes the type so a
-    caller (and each endpoint) knows what it is. `content` is the canonical YAML snapshot."""
+    """Content-addressed, IMMUTABLE config. id = '{name}@{hash}'. One config per entity covers
+    the whole flow (data + model + train); there is no kind taxonomy. Editing never rewrites a
+    row — same content reuses the id (dedup), different content gets a new id, mirroring how
+    datasets/models are append-only. `content` is the canonical YAML snapshot."""
     __tablename__ = "configs"
     id: Mapped[str] = mapped_column(String(200), primary_key=True)
-    kind: Mapped[str] = mapped_column(String(16), default="full")   # data | model | train | full
     name: Mapped[str] = mapped_column(String(256), default="")
     arch: Mapped[str] = mapped_column(String(64), default="")
     path: Mapped[str] = mapped_column(Text, default="")             # original source path (informational)
@@ -25,7 +24,7 @@ class ConfigRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     def to_dict(self) -> dict:
-        return {"id": self.id, "kind": self.kind, "name": self.name, "arch": self.arch,
+        return {"id": self.id, "name": self.name, "arch": self.arch,
                 "path": self.path, "content": self.content, "content_hash": self.content_hash}
 
 
@@ -79,7 +78,7 @@ class DatasetRecord(Base):
     source: Mapped[str] = mapped_column(String(128))
     mode: Mapped[str] = mapped_column(String(32), default="multiclass")
     num_classes: Mapped[int] = mapped_column(Integer, default=2)
-    data_config_id: Mapped[str | None] = mapped_column(String(200), nullable=True)  # -> configs.id (kind=data)
+    data_config_id: Mapped[str | None] = mapped_column(String(200), nullable=True)  # -> configs.id
     params: Mapped[dict] = mapped_column(JSON, default=dict)   # max_nodes, filter_top25_dangerous, ...
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

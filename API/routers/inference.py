@@ -20,7 +20,8 @@ def inference(req: InferenceRequest) -> InferenceResponse:
     if not req.codes:
         raise HTTPException(422, "codes must be a non-empty list")
     try:
-        raw = inference_service.infer_codes(req.model_id, req.codes, req.top_k_lines)
+        raw = inference_service.infer_codes(
+            req.model_id, req.codes, req.config.top_k_lines if req.config else None)
     except FileNotFoundError as e:
         raise HTTPException(503, str(e))
     return InferenceResponse(model_id=req.model_id,

@@ -8,7 +8,7 @@ Checks, and FAILS (non-zero exit) if any expected artifact is missing:
   - inference_results rows exist and carry the pre-head embedding (DB).
   - graph_cache rows point at objects that actually exist in the `graphs` bucket (MinIO).
   - each registered dataset's `storage_uri` object actually exists in the `datasets`
-    bucket (MinIO), and its data_config_id resolves to a kind=data config (DB).
+    bucket (MinIO), and its data_config_id resolves to a config (DB).
   - relearned models are registered with a checkpoint on disk (DB + fs).
 """
 from __future__ import annotations
@@ -93,16 +93,13 @@ def main() -> int:
                 problems.append(f"dataset {d.id} storage_uri object missing in MinIO: {uri}")
             if d.data_config_id:
                 cfg = s.get(ConfigRecord, d.data_config_id)
-                print(f"        data_config -> {'FOUND' if cfg else 'MISSING'} (kind={cfg.kind if cfg else '?'})")
+                print(f"        data_config -> {'FOUND' if cfg else 'MISSING'}")
                 if not cfg:
                     problems.append(f"dataset {d.id} data_config_id {d.data_config_id} not in configs table")
 
-        # 4) configs by kind
+        # 4) configs
         cfgs = list(s.scalars(select(ConfigRecord)))
-        kinds: dict[str, int] = {}
-        for c in cfgs:
-            kinds[c.kind] = kinds.get(c.kind, 0) + 1
-        print(f"\n[DB] configs: {len(cfgs)}  by kind={kinds}")
+        print(f"\n[DB] configs: {len(cfgs)}")
 
         # 5) models (seed + relearned)
         ms = list(s.scalars(select(ModelRecord)))

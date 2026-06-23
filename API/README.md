@@ -25,7 +25,7 @@ it as a package — it never reaches into the model source tree. See
 | `POST /embed`     | function source → final pre-head embedding (similarity search / drift), no output head  |
 | `POST /datasets`  | raw rows → Joern CPG → `.pt`, **or** merge existing `dataset_ids` → new dataset, in object storage |
 | `POST /relearn`   | continual-learning job — CONTINUE a base model (finetune / EWC / ER / EWC-ER) → new model |
-| `POST /train`     | train a NEW model from scratch — `config_id` (kind=model or full) + `dataset_ids` → new model |
+| `POST /train`     | train a NEW model from scratch — `config_id` + `dataset_ids` → new model |
 | `GET /eval`       | general label-free model eval over stored predictions (usage, mix, confidence + drift)  |
 | `GET …`           | `/health` `/models` `/datasets` `/configs` `/inference/history` + job status            |
 
@@ -117,14 +117,15 @@ embed + GNN/LM forward → prediction + pre-head embedding`. The embedding is ca
 - **Ingest** (`POST /datasets` with `rows`, async) — `rows → parquet → gnn_vuln.data.prepare
 (Joern CPG + cwe_vocab) → data-build config → gnn_vuln.data.build_pt (.pt) → tar(.pt + vocab)
 → MinIO → register dataset_id (+ immutable data_config_id)`. Poll `GET /datasets/jobs/{id}`.
-  Pass `data_config_id` (kind=data) to reuse a registered config's build params instead of inline `data_config`.
+  Pass `data_config_id` to reuse a registered config as the base (prior); the `config` object then
+  overrides its fields. Omit `data_config_id` to use `config` alone.
 - **Combining datasets** — three ways: (A) send all rows in one ingest; (B) `POST /datasets`
   with `dataset_ids: [X, Y]` → materialize each `.pt` → `gnn_vuln.data.merge` (concat graphs +
   unify the label space + remap + best-effort dedup) → a NEW reusable `dataset_id`; (C) `POST
   /relearn` with multiple `dataset_ids` → the same `.pt`-level merge inline at train time. All
   three merge at the `.pt` level (no raw CPG, no re-embedding).
 - **Train from scratch** (`POST /train`, async) — a NEW model with fresh weights from
-  `config_id` (kind=model or full, guarded) + `dataset_ids`. Shares the relearn worker pipeline
+  `config_id` + `dataset_ids`. Shares the relearn worker pipeline
   (`build_config` with `method=retrain` → `gnn_vuln.train` → evaluate → register), just with no
   base checkpoint, no EWC importance, no replay. Poll `GET /train/{id}`. Continuing an existing
   model is `/relearn`, not this.
@@ -142,11 +143,15 @@ drop the local results dir`. Poll `GET /relearn/{id}`: returns `result_model_id`
     only the small JSON handoffs (`metrics_summary`, `split`, `training_summary`) are produced,
     harvested to DB + object storage, then the local `results/<run>` dir is deleted. Object
     storage + DB are the source of truth; local disk keeps only the dataset cache + checkpoint.
-  - **Split control** (optional `split` field) — two modes, both recorded in the immutable
+  - **Request body** separates the **config** part from the job spec. Run-config overrides
+    (`epochs`, `split`) live under a `config` object; `method`, `dataset_ids`, `base_model_id`,
+    `run_name` stay top-level. `/train` and `/inference` follow the same shape (`config` =
+    `{epochs, split}` for train, `{top_k_lines}` for inference). Omit `config` to inherit as-is.
+  - **Split control** (optional `config.split`) — two modes, both recorded in the immutable
     config + a `train_split` artifact:
     - **Mode B (ratios)** — `{train_ratio, val_ratio, seed}`; the library splits (test =
       1 − train − val). E.g. `{0.9, 0.1, 42}` = prod 90/10/0 (no test → no eval metrics);
-      omit `split` = default 80/10/10 seed 42 (report).
+      omit `config.split` = default 80/10/10 seed 42 (report).
     - **Mode A (explicit)** — `{train, val, test}` parquet-id lists; written to a `split_file`
       that overrides ratios (bring-your-own split, e.g. to match a baseline or reproduce a run).
     Metrics need a test split + flaw-line GT to be complete; a 90/10/0 (test-empty) model is
@@ -256,23 +261,18 @@ blob lives in object storage.
 
 Configs, datasets and models are **append-only — never overwritten**:
 
-- **Configs** → `configs` table, id = `{kind}:{name}@{sha256(content)[:10]}`, where
-  `kind ∈ data | model | train | full`. Same content reuses the id (dedup); an edit mints a
-  **new** id. `GET /configs?kind=model`. So any reference always resolves to the exact content
-  it was trained with — reproducibility without a separate snapshot.
-- **Separation by owner** — config is split by who owns it, not bundled. A **model** owns a
-  `kind=model` config = architecture + train hyperparameters + output mode, **without** the
-  data-build params; that is what `model.config_id` points to and all a `/inference` needs. A
-  **dataset** owns a `kind=data` config = the build recipe (source, filters, split, featurization);
-  that is `dataset.data_config_id`. A training run **composes** the two: `model` (arch + train) +
-  the task-B dataset's `data`. `kind=full` (data+model+train in one file) is only for
-  self-contained from-scratch training, not the API's compositional flow.
-- **Kind-guarded reuse** — each endpoint takes a config of the kind it needs, guarded.
-  `POST /datasets` accepts a `data_config_id` (kind=data) to reuse build params instead of inline
-  `data_config`, and a model's `config_id` is loaded only if it is kind=model (or full). A
-  mismatched kind — e.g. a data config where a model config is required — is rejected.
-- **Datasets / models** get a fresh id per ingest/run. A dataset links its `data_config_id`
-  (kind=data); a model links `config_id` (kind=model) + `base_model_id` + `method`.
+- **Configs** → `configs` table, id = `{name}@{sha256(content)[:10]}`. **One config per entity**
+  covers the whole flow (data + model + train) — there is no kind taxonomy. Same content reuses
+  the id (dedup); an edit mints a **new** id. So any reference always resolves to the exact
+  content it was trained with — reproducibility without a separate snapshot.
+- **One config, used by all flows** — a **model** stores its full config (`model.config_id`):
+  `/inference` loads it, and `/relearn` uses it as the base, overriding the data section with the
+  task-B dataset. A **dataset** stores its build config (`dataset.data_config_id` = source,
+  filters, split, featurization), reused by `/datasets` (`data_config_id`) and by relearn to match
+  the cached `.pt`. `/train` instantiates a model from any `config_id` + `dataset_ids`. The
+  endpoints pull the section they need from a config (`config_section`), no kind gate.
+- **Datasets / models** get a fresh id per ingest/run. A dataset links its `data_config_id`;
+  a model links `config_id` + `base_model_id` + `method`.
 
 Why no graph DB (Neo4j)? We only store/fetch the whole CPG by hash and render client-side — no
 server-side traversal — so object storage + Postgres suffice.
@@ -293,8 +293,7 @@ erDiagram
     models }o--|| object_store : "storage_uri -> checkpoints bucket"
 
     configs {
-      string id PK "kind:name@hash"
-      string kind "data|model|train|full"
+      string id PK "name@hash"
       string name
       text content "canonical YAML"
       string content_hash

@@ -30,9 +30,11 @@ def relearn(req: RelearnRequest) -> RelearnJob:
     if req.base_model_id and req.base_model_id not in registry.load_models():
         raise HTTPException(404, f"Unknown base_model_id '{req.base_model_id}'")
     try:
+        cfg = req.config
         job = relearn_service.submit_relearn(
-            method, req.dataset_ids, req.base_model_id, req.epochs, req.run_name,
-            split=req.split.model_dump(exclude_none=True) if req.split else None)
+            method, req.dataset_ids, req.base_model_id,
+            cfg.epochs if cfg else None, req.run_name,
+            split=cfg.split.model_dump(exclude_none=True) if (cfg and cfg.split) else None)
     except (ValueError, FileNotFoundError, KeyError) as e:
         raise HTTPException(422, str(e))
     return RelearnJob(**job)

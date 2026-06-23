@@ -127,7 +127,7 @@ def merge_datasets(self, job_id: str) -> dict:
         # 4) register the data-build config (content-addressed, immutable)
         cfg.setdefault("model", {})["num_classes"] = num_classes
         cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
-        data_config_id = registry.upsert_config("data", out_source, cfg)
+        data_config_id = registry.upsert_config(out_source, cfg)
 
         # 5) bundle the DATA ARTIFACTS only (this merge's .pt + label vocab) -> object storage.
         # processed_dir is the SHARED data root holding EVERY dataset's .pt (incl multi-GB
@@ -244,8 +244,8 @@ def ingest_dataset(self, job_id: str) -> dict:
         cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
 
         # register the data-build config as an immutable, content-addressed row so the
-        # dataset references it by id (kind=data). Editing it later mints a new id.
-        data_config_id = registry.upsert_config("data", source, cfg)
+        # dataset references it by id. Editing it later mints a new id.
+        data_config_id = registry.upsert_config(source, cfg)
 
         # 3) CPG -> .pt via the library entrypoint
         _run(["python", "-m", "gnn_vuln.data.build_pt", "--config", str(cfg_path), "--split", "train"], log)

@@ -16,18 +16,19 @@ from API.services import registry
 
 
 def _resolve_data_config(req) -> dict:
-    """Build params for the dataset. With data_config_id set, pull them from that registered
-    config's data section (GUARDED to kind=data or full); otherwise use the inline data_config.
-    Returns a DataConfigOverride-shaped dict so the rest of the pipeline is unchanged."""
+    """Build params for the dataset, layered: DataConfigOverride defaults, then the data_config_id
+    config's data section (if given) as the base, then the EXPLICITLY-set inline data_config
+    fields on top. So data_config_id is the template and inline data_config overrides it field by
+    field. Returns a DataConfigOverride-shaped dict so the rest of the pipeline is unchanged."""
     from API.schemas.dataset import DataConfigOverride
+    dc = DataConfigOverride().model_dump()
     if getattr(req, "data_config_id", None):
-        sec = registry.config_section(req.data_config_id, "data")   # raises on a kind mismatch
-        dc = DataConfigOverride().model_dump()
+        sec = registry.config_section(req.data_config_id, "data")   # base from the referenced config
         for k in dc:
             if k in sec:
                 dc[k] = sec[k]
-        return dc
-    return req.data_config.model_dump()
+    dc.update(req.config.model_dump(exclude_unset=True))             # explicit inline overrides win
+    return dc
 
 
 def _slug(name: str) -> str:

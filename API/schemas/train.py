@@ -5,21 +5,21 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from API.schemas.relearn import SplitSpec
+from API.schemas.relearn import RunConfig
 
 
 class TrainRequest(BaseModel):
     """Train a brand-new model from scratch. The architecture + train hyperparameters come from
     `config_id`; the data from `dataset_ids`. (Continuing an existing model is `/relearn`.)"""
     config_id: str = Field(
-        ..., description="Config to instantiate — kind=model (architecture + train hyperparameters) "
-        "or kind=full. Guarded: a kind=data config is rejected.")
+        ..., description="Registered config to instantiate the model (architecture + train "
+        "hyperparameters). The dataset(s) provide the data.")
     dataset_ids: list[str] = Field(
         ..., min_length=1, description="Dataset id(s) to train on. More than one are joined first.")
-    epochs: Optional[int] = Field(None, description="Override training epochs")
     run_name: Optional[str] = Field(None, description="Optional human label for the job")
-    split: Optional[SplitSpec] = Field(
-        None, description="Optional split control (same modes as /relearn). Omit = default 80/10/10 seed 42.")
+    config: Optional[RunConfig] = Field(
+        None,
+        description="Config overrides on config_id for this run (epochs, split). Omit = use config_id as-is.")
 
 
 class TrainJob(BaseModel):

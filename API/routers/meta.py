@@ -49,9 +49,9 @@ def list_datasets() -> dict:
 
 
 @router.get("/configs")
-def list_configs(kind: str | None = None) -> dict:
-    """All configs, or only one kind (data | model | train | full) via ?kind=."""
-    return registry.list_configs(kind)
+def list_configs() -> dict:
+    """All registered configs (content-addressed, immutable; one config per entity)."""
+    return registry.list_configs()
 
 
 @router.get("/configs/{config_id}")

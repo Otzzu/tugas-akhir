@@ -6,14 +6,19 @@ from typing import Annotated, Optional
 from pydantic import BaseModel, Field
 
 
+class InferenceConfig(BaseModel):
+    """Inference-time options, kept separate from the call essentials (model_id + codes)."""
+    top_k_lines: Optional[int] = Field(
+        None, description="Return only the top-k suspicious lines per function (all if null)")
+
+
 class InferenceRequest(BaseModel):
     model_id: str = Field(..., description="Registered model id, e.g. 'graph_based', 'hybrid_graph_lm', 'sequential'")
     codes: Annotated[list[Annotated[str, Field(max_length=200000)]], Field(min_length=1, max_length=64)] = Field(
         ..., description="List of C/C++/Java function source strings"
     )
-    top_k_lines: Optional[int] = Field(
-        None, description="Return only the top-k suspicious lines per function (all if null)"
-    )
+    config: Optional[InferenceConfig] = Field(
+        None, description="Inference options (top_k_lines). Omit = defaults.")
 
 
 class SuspiciousLine(BaseModel):

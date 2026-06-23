@@ -34,11 +34,14 @@ class DatasetIngestRequest(BaseModel):
     rows: Optional[list[DatasetRow]] = Field(None, min_length=1, max_length=5000, description="Raw functions to build the dataset from (ingest path)")
     dataset_ids: Optional[list[str]] = Field(None, min_length=2, description="Registered dataset ids to MERGE into a new dataset (merge path)")
     dedup: bool = Field(True, description="Drop duplicate functions when merging")
-    data_config: DataConfigOverride = Field(default_factory=DataConfigOverride)
     data_config_id: Optional[str] = Field(
         None,
-        description="Reuse a registered config's data-build params instead of inline data_config. "
-        "Guarded: the id must be kind=data (or full). When set, it overrides data_config.")
+        description="Base data-build config to reuse (prior). The `config` object below overrides "
+        "its fields. Omit to use `config` alone.")
+    config: DataConfigOverride = Field(
+        default_factory=DataConfigOverride,
+        description="Data-build params — inline config when data_config_id is absent, or field "
+        "overrides on top of data_config_id when it is set.")
 
 
 class DatasetJob(BaseModel):

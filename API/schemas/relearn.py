@@ -25,6 +25,16 @@ class SplitSpec(BaseModel):
     test: Optional[list[int]] = None
 
 
+class RunConfig(BaseModel):
+    """Config overrides applied on top of the inherited config for ONE run — kept separate from
+    the job spec (method, datasets, base_model). Omit any field to keep the inherited value."""
+    epochs: Optional[int] = Field(None, description="Override training epochs")
+    split: Optional[SplitSpec] = Field(
+        None,
+        description="Optional split control. Mode A: explicit {train,val,test} parquet_id lists. "
+        "Mode B: {train_ratio,val_ratio,seed} for the library to split. Omit = default 80/10/10 seed 42.")
+
+
 class RelearnRequest(BaseModel):
     method: RelearnMethod
     dataset_ids: list[str] = Field(
@@ -32,15 +42,14 @@ class RelearnRequest(BaseModel):
     )
     base_model_id: Optional[str] = Field(
         None,
-        description="Required — the model to continue from. Its dataset, config (kind=model) and "
-        "checkpoint are read from the registry. To train a fresh model instead, use POST /train.",
+        description="Required — the model to continue from. Its dataset, config and checkpoint "
+        "are read from the registry. To train a fresh model instead, use POST /train.",
     )
-    epochs: Optional[int] = Field(None, description="Override training epochs")
     run_name: Optional[str] = Field(None, description="Optional human label for the job")
-    split: Optional[SplitSpec] = Field(
+    config: Optional[RunConfig] = Field(
         None,
-        description="Optional split control. Mode A: explicit {train,val,test} parquet_id lists. "
-        "Mode B: {train_ratio,val_ratio,seed} for the library to split. Omit = default 80/10/10 seed 42.")
+        description="Config overrides on the base model's config for this run (epochs, split). "
+        "Everything else here is job spec, not config. Omit = use the base config as-is.")
 
 
 class RelearnJob(BaseModel):

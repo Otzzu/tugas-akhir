@@ -14,8 +14,8 @@ router = APIRouter(tags=["train"])
 def train(req: TrainRequest) -> TrainJob:
     """Train a NEW model from scratch (async).
 
-    Architecture + train hyperparameters come from `config_id` (kind=model or full); data from
-    `dataset_ids`. Runs on the same worker pipeline as /relearn but with fresh weights — no EWC
+    Architecture + train hyperparameters come from `config_id`; data from `dataset_ids`. Runs on
+    the same worker pipeline as /relearn but with fresh weights — no EWC
     importance, no replay buffer. Registers the trained model and stores its metrics + split +
     training summary as model_artifacts. Poll `GET /train/{job_id}`. To CONTINUE an existing
     model instead of starting fresh, use `/relearn`.
@@ -24,10 +24,12 @@ def train(req: TrainRequest) -> TrainJob:
         if d not in registry.load_datasets():
             raise HTTPException(404, f"Unknown dataset_id '{d}'")
     try:
-        registry.require_model_config(req.config_id)   # guard: kind=model or full, never data
+        registry.get_config(req.config_id)             # ensure the config exists (KeyError -> 422)
+        cfg = req.config
         job = relearn_service.submit_train(
-            req.config_id, req.dataset_ids, req.epochs, req.run_name,
-            split=req.split.model_dump(exclude_none=True) if req.split else None)
+            req.config_id, req.dataset_ids,
+            cfg.epochs if cfg else None, req.run_name,
+            split=cfg.split.model_dump(exclude_none=True) if (cfg and cfg.split) else None)
     except (ValueError, FileNotFoundError, KeyError) as e:
         raise HTTPException(422, str(e))
     return TrainJob(**job)
