@@ -125,7 +125,8 @@ embed + GNN/LM forward → prediction + pre-head embedding`. The embedding is ca
   /relearn` with multiple `dataset_ids` → the same `.pt`-level merge inline at train time. All
   three merge at the `.pt` level (no raw CPG, no re-embedding).
 - **Train from scratch** (`POST /train`, async) — a NEW model with fresh weights from
-  `config_id` + `dataset_ids`. Shares the relearn worker pipeline
+  `config_id` + `dataset_ids`. `config.model_type` optionally overrides the architecture from
+  `config_id` (else the config's architecture is used). Shares the relearn worker pipeline
   (`build_config` with `method=retrain` → `gnn_vuln.train` → evaluate → register), just with no
   base checkpoint, no EWC importance, no replay. Poll `GET /train/{id}`. Continuing an existing
   model is `/relearn`, not this.

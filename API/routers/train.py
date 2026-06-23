@@ -29,7 +29,8 @@ def train(req: TrainRequest) -> TrainJob:
         job = relearn_service.submit_train(
             req.config_id, req.dataset_ids,
             cfg.epochs if cfg else None, req.run_name,
-            split=cfg.split.model_dump(exclude_none=True) if (cfg and cfg.split) else None)
+            split=cfg.split.model_dump(exclude_none=True) if (cfg and cfg.split) else None,
+            model_type=cfg.model_type if cfg else None)
     except (ValueError, FileNotFoundError, KeyError) as e:
         raise HTTPException(422, str(e))
     return TrainJob(**job)

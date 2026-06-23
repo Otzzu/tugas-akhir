@@ -177,7 +177,8 @@ def _join_datasets(dataset_ids: list[str]) -> tuple[str, dict]:
 def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
                  epochs: int | None, job_dir: Path,
                  split: dict | None = None,
-                 scratch_config_id: str | None = None) -> tuple[Path, Path | None, dict]:
+                 scratch_config_id: str | None = None,
+                 scratch_model_type: str | None = None) -> tuple[Path, Path | None, dict]:
     source, data_block = _join_datasets(dataset_ids)
 
     if method in _REQUIRES_BASE:
@@ -242,6 +243,8 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
                         tv[name] = len(tv)          # new CWE -> extended id (head grows)
             cfg["data"]["target_vocab"] = tv
             cfg["model"]["num_classes"] = len(tv)
+    if scratch_model_type:
+        cfg["model"]["architecture"] = scratch_model_type   # /train architecture override on config_id
     # the installed wheel's default checkpoint/results/log dirs resolve to a bogus
     # site-packages path; pin them to the app root so the trainer writes where we read.
     t = cfg.setdefault("train", {})
@@ -547,7 +550,8 @@ def submit_relearn(method: str, dataset_ids: list[str], base_model_id: str | Non
 
 
 def submit_train(config_id: str, dataset_ids: list[str], epochs: int | None,
-                 run_name: str | None, split: dict | None = None) -> dict:
+                 run_name: str | None, split: dict | None = None,
+                 model_type: str | None = None) -> dict:
     """Train a fresh model from scratch (no base model) on dataset_ids, taking the architecture
     and train hyperparameters from `config_id`. Shares the relearn worker pipeline via
     method='retrain' — fresh weights, no EWC importance and no replay buffer."""
@@ -559,7 +563,8 @@ def submit_train(config_id: str, dataset_ids: list[str], epochs: int | None,
            "config_path": None, "log_path": str(job_dir / "run.log"),
            "result_model_id": None, "message": run_name}
     train_cfg, importance_cfg, meta = build_config(
-        "retrain", dataset_ids, None, epochs, job_dir, split, scratch_config_id=config_id)
+        "retrain", dataset_ids, None, epochs, job_dir, split,
+        scratch_config_id=config_id, scratch_model_type=model_type)
     job["config_path"] = str(train_cfg.relative_to(ROOT))
     _save_job(job)
     from API.tasks import run_relearn

@@ -139,10 +139,12 @@ def main() -> None:
             if not args.checkpoints_only:
                 seed_dataset(s3, d["dataset_id"], d["data"], tmp, done)
 
-        if not args.checkpoints_only and args.models == "all":
-            for did, path in EXTRA_DATASETS.items():
-                print(f"\n== dataset {did} ==")
-                seed_dataset(s3, did, path, tmp, done)
+        # small test/demo datasets — always seeded (cheap, small), independent of --models or
+        # --checkpoints-only, so a single-model cheap seed still has megavul_mini for the
+        # /train + /relearn smoke tests.
+        for did, path in EXTRA_DATASETS.items():
+            print(f"\n== dataset {did} ==")
+            seed_dataset(s3, did, path, tmp, done)
 
     print("\nDone. Object storage is the source of truth. Bring up the API; seed_if_empty "
           "registers from API/seeds/*.json and inference/relearn materialize from MinIO (no local data).")

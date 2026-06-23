@@ -1717,6 +1717,48 @@
         ],
         "title": "SuspiciousLine"
       },
+      "TrainConfig": {
+        "properties": {
+          "epochs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epochs",
+            "description": "Override training epochs"
+          },
+          "split": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SplitSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional split control. Mode A: explicit {train,val,test} parquet_id lists. Mode B: {train_ratio,val_ratio,seed} for the library to split. Omit = default 80/10/10 seed 42."
+          },
+          "model_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Type",
+            "description": "Override the architecture from config_id (e.g. lmgat_codebert, lmgat_seqgnn). Omit = use the architecture in config_id."
+          }
+        },
+        "type": "object",
+        "title": "TrainConfig",
+        "description": "Run-config overrides for /train \u2014 RunConfig (epochs, split) plus an optional architecture\noverride applied on top of config_id."
+      },
       "TrainJob": {
         "properties": {
           "job_id": {
@@ -1842,13 +1884,13 @@
           "config": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/RunConfig"
+                "$ref": "#/components/schemas/TrainConfig"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "Config overrides on config_id for this run (epochs, split). Omit = use config_id as-is."
+            "description": "Config overrides on config_id (epochs, split, model_type). Omit = use config_id as-is."
           }
         },
         "type": "object",

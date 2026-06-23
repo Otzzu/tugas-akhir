@@ -8,6 +8,15 @@ from pydantic import BaseModel, Field
 from API.schemas.relearn import RunConfig
 
 
+class TrainConfig(RunConfig):
+    """Run-config overrides for /train — RunConfig (epochs, split) plus an optional architecture
+    override applied on top of config_id."""
+    model_type: Optional[str] = Field(
+        None,
+        description="Override the architecture from config_id (e.g. lmgat_codebert, lmgat_seqgnn). "
+        "Omit = use the architecture in config_id.")
+
+
 class TrainRequest(BaseModel):
     """Train a brand-new model from scratch. The architecture + train hyperparameters come from
     `config_id`; the data from `dataset_ids`. (Continuing an existing model is `/relearn`.)"""
@@ -17,9 +26,9 @@ class TrainRequest(BaseModel):
     dataset_ids: list[str] = Field(
         ..., min_length=1, description="Dataset id(s) to train on. More than one are joined first.")
     run_name: Optional[str] = Field(None, description="Optional human label for the job")
-    config: Optional[RunConfig] = Field(
+    config: Optional[TrainConfig] = Field(
         None,
-        description="Config overrides on config_id for this run (epochs, split). Omit = use config_id as-is.")
+        description="Config overrides on config_id (epochs, split, model_type). Omit = use config_id as-is.")
 
 
 class TrainJob(BaseModel):
