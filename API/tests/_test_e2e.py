@@ -145,20 +145,27 @@ def main():
         check(bool(rec.get("data_config_id")) and str(rec.get("storage_uri", "")).startswith("s3://"),
               "dataset A has data_config + object-storage bundle")
 
-    # 10) ingest B reusing megavul_mini's data_config as base + a config override (layering)
+    # 10) ingest B reusing megavul_mini's data_config as base + a config override (layering).
+    #     The ingest() helper asserts it finishes — that IS the layering test.
     print("10) POST /datasets ingest B (data_config_id base + config override)")
-    ds_b = ingest("e2e_b", rows, data_config_id=mini_dcid, config={"max_per_class": 5})
+    ingest("e2e_b", rows, data_config_id=mini_dcid, config={"max_per_class": 5})
 
-    # 11) MERGE A + B
-    print("11) POST /datasets MERGE [A, B]")
+    # 11) MERGE different-vocab datasets — ds_a (C/C++, few classes) + megavul_mini (26 classes).
+    #     This exercises VOCAB RESOLUTION: the merge must unify the two label spaces (map ds_a's
+    #     CWEs onto the shared vocab), so the merged class count is the UNION, not either alone.
+    print("11) POST /datasets MERGE [A, megavul_mini] (vocab resolve)")
     ds_merged = None
-    if ds_a and ds_b:
-        mj = call("POST", "/datasets", {"name": "e2e_merged", "dataset_ids": [ds_a, ds_b]})
+    mini_nc = int(mini.get("num_classes") or 0)
+    if ds_a:
+        mj = call("POST", "/datasets", {"name": "e2e_merged", "dataset_ids": [ds_a, "megavul_mini"]})
         mjid = mj.get("job_id"); print("   merge job:", mjid, mj.get("status"), mj.get("_body") or "")
         if mjid:
             mdone = poll(f"/datasets/jobs/{mjid}")
             ds_merged = mdone.get("dataset_id")
             check(mdone.get("status") == "done" and bool(ds_merged), f"merge done -> {ds_merged}")
+            if ds_merged:
+                merged_nc = int(call("GET", "/datasets").get(ds_merged, {}).get("num_classes") or 0)
+                check(merged_nc >= mini_nc, f"merge resolved vocab to the union ({merged_nc} >= mini {mini_nc})")
         else:
             check(False, f"merge job not created ({mj})")
 
@@ -176,23 +183,26 @@ def main():
     print("   GET /train (list)")
     check(isinstance(call("GET", "/train"), list), "train jobs listed")
 
-    # 13) /relearn — ALL FOUR CL methods, base = freshly trained model, task-B = dataset A (alignment)
+    # 13) /relearn — ALL FOUR CL methods, base = graph_based (model 1), task-B = megavul_mini.
+    #     ER/EWC materialize the BASE model's dataset (graph_based's = megavul_26) for the replay
+    #     buffer + EWC importance, so model 1's dataset MUST be seeded — run the seed WITHOUT
+    #     --checkpoints-only. task-B labels are aligned onto graph_based's class space.
+    _ = trained  # /train result already asserted above; relearn uses the seeded model 1 as base
     last_relearned = None
-    if trained and ds_a:
-        for method in ("finetune", "ER", "EWC", "EWC-ER"):
-            print(f"13) POST /relearn ({method}, base=trained, task-B=A)")
-            rj = call("POST", "/relearn", {"method": method, "base_model_id": trained,
-                                           "dataset_ids": [ds_a], "run_name": f"e2e_{method}",
-                                           "config": {"epochs": 1}})
-            rid = rj.get("job_id"); print(f"   relearn[{method}] job:", rid, rj.get("status"), rj.get("_body") or "")
-            if not rid:
-                check(False, f"relearn[{method}] not created ({rj})"); continue
-            rmid = poll(f"/relearn/{rid}").get("result_model_id")
-            check(bool(rmid) and rmid in call("GET", "/models"), f"relearn[{method}] registered model ({rmid})")
-            last_relearned = rmid or last_relearned
-        print("   GET /relearn (list)")
-        check(isinstance(call("GET", "/relearn"), list) and len(call("GET", "/relearn")) >= 4,
-              "relearn jobs listed (>=4)")
+    for method in ("finetune", "ER", "EWC", "EWC-ER"):
+        print(f"13) POST /relearn ({method}, base=graph_based, task-B=megavul_mini)")
+        rj = call("POST", "/relearn", {"method": method, "base_model_id": "graph_based",
+                                       "dataset_ids": ["megavul_mini"], "run_name": f"e2e_{method}",
+                                       "config": {"epochs": 1}})
+        rid = rj.get("job_id"); print(f"   relearn[{method}] job:", rid, rj.get("status"), rj.get("_body") or "")
+        if not rid:
+            check(False, f"relearn[{method}] not created ({rj})"); continue
+        rmid = poll(f"/relearn/{rid}").get("result_model_id")
+        check(bool(rmid) and rmid in call("GET", "/models"), f"relearn[{method}] registered model ({rmid})")
+        last_relearned = rmid or last_relearned
+    print("   GET /relearn (list)")
+    check(isinstance(call("GET", "/relearn"), list) and len(call("GET", "/relearn")) >= 4,
+          "relearn jobs listed (>=4)")
 
     # 14) inference on a relearned model — full loop closes
     if last_relearned:

@@ -195,7 +195,7 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
             base = registry.get_model(base_model_id)
             base_cfg = yaml.safe_load(registry.config_text(base))
         elif scratch_config_id:
-            base_cfg = yaml.safe_load(registry.require_model_config(scratch_config_id)["content"])
+            base_cfg = yaml.safe_load(registry.get_config(scratch_config_id).get("content") or "")
         else:
             base_cfg = yaml.safe_load((settings.API_DIR / "configs" / "graph_based.yaml").read_text())
         base_ckpt = None

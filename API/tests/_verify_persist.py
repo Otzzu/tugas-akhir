@@ -2,7 +2,7 @@
 directly (not just HTTP 200s). Run inside the api/worker container (it has DB access +
 boto3 + the S3 creds):
 
-    docker compose -f API/docker-compose.yml exec api python /app/API/_verify_persist.py
+    docker compose -f API/docker-compose.yml exec api python /app/API/tests/_verify_persist.py
 
 Checks, and FAILS (non-zero exit) if any expected artifact is missing:
   - inference_results rows exist and carry the pre-head embedding (DB).
@@ -90,12 +90,13 @@ def main() -> int:
             print(f"     {d.id}  source={d.source}  data_config_id={d.data_config_id}")
             print(f"        storage_uri={uri or '—'} {tag}  minio={'OK' if in_minio else ('MISSING' if in_minio is False else 'n/a')}")
             if bk and not in_minio:
-                problems.append(f"dataset {d.id} storage_uri object missing in MinIO: {uri}")
-            if d.data_config_id:
-                cfg = s.get(ConfigRecord, d.data_config_id)
-                print(f"        data_config -> {'FOUND' if cfg else 'MISSING'}")
-                if not cfg:
-                    problems.append(f"dataset {d.id} data_config_id {d.data_config_id} not in configs table")
+                print("        WARNING: bundle not in MinIO (ok if this dataset wasn't seeded; "
+                      "checked per seeded-model below)")
+            # integrity invariant: every dataset MUST reference a resolvable config
+            cfg = s.get(ConfigRecord, d.data_config_id) if d.data_config_id else None
+            print(f"        data_config -> {'FOUND' if cfg else 'MISSING'} ({d.data_config_id})")
+            if not cfg:
+                problems.append(f"dataset {d.id} has no resolvable data_config_id ({d.data_config_id})")
 
         # 4) configs
         cfgs = list(s.scalars(select(ConfigRecord)))
@@ -110,8 +111,23 @@ def main() -> int:
             bk = _parse_uri(m.storage_uri or "")
             in_minio = _obj_exists(s3, *bk) if bk else None
             note = "" if m.method is None else f"  method={m.method} base={m.base_model_id}"
-            print(f"     {m.id}  ckpt_disk={'OK' if disk else 'MISSING'}  "
+            print(f"     {m.id}  cfg={m.config_id}  dataset={m.dataset_id}  "
+                  f"ckpt_disk={'OK' if disk else 'MISSING'}  "
                   f"minio={'OK' if in_minio else ('MISSING' if in_minio is False else 'n/a')}{note}")
+            # integrity invariant: every model MUST reference a resolvable config AND dataset
+            if not m.config_id or not s.get(ConfigRecord, m.config_id):
+                problems.append(f"model {m.id} has no resolvable config_id ({m.config_id})")
+            ds_rec = s.get(DatasetRecord, m.dataset_id) if m.dataset_id else None
+            if not ds_rec:
+                problems.append(f"model {m.id} has no resolvable dataset_id ({m.dataset_id})")
+            # a SEEDED model (checkpoint present) MUST have its dataset bundle in MinIO — relearn
+            # ER/EWC materialize the base model's dataset for the replay buffer + EWC importance.
+            if (disk or in_minio is True) and ds_rec:
+                ds_bk = _parse_uri((ds_rec.params or {}).get("storage_uri", ""))
+                if not (ds_bk and _obj_exists(s3, *ds_bk)):
+                    problems.append(
+                        f"model {m.id} is seeded but its dataset {m.dataset_id} bundle is missing "
+                        f"in MinIO — relearn ER/EWC on it will fail (seed without --checkpoints-only)")
             if m.method and not disk and not in_minio:
                 problems.append(f"relearned model {m.id} checkpoint missing on disk AND in MinIO")
             if m.method and bk and not in_minio:
