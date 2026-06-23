@@ -46,6 +46,9 @@ def call(method: str, path: str, body=None, timeout=600):
             return json.loads(r.read().decode())
     except urllib.error.HTTPError as e:
         return {"_http_error": e.code, "_body": e.read().decode()[:500]}
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        # transient (API busy under a heavy worker job) — return so poll() keeps retrying
+        return {"_error": str(e)}
 
 
 def poll(path: str, every=8, limit=400):
@@ -183,26 +186,28 @@ def main():
     print("   GET /train (list)")
     check(isinstance(call("GET", "/train"), list), "train jobs listed")
 
-    # 13) /relearn — ALL FOUR CL methods, base = graph_based (model 1), task-B = megavul_mini.
-    #     ER/EWC materialize the BASE model's dataset (graph_based's = megavul_26) for the replay
-    #     buffer + EWC importance, so model 1's dataset MUST be seeded — run the seed WITHOUT
-    #     --checkpoints-only. task-B labels are aligned onto graph_based's class space.
-    _ = trained  # /train result already asserted above; relearn uses the seeded model 1 as base
+    # 13) /relearn — ALL FOUR CL methods. base = the freshly /train-ed model (its dataset is the
+    #     small megavul_mini), so ER/EWC materialize megavul_mini + build the replay buffer / EWC
+    #     importance over it — feasible on a CPU box. task-B = dataset A (C/C++) exercises label
+    #     alignment onto the base's class space.
+    #     NOTE: relearning the real model 1 (graph_based, dataset = megavul_26 ~3.8GB) works but
+    #     ER/EWC over it overload a CPU-only box — run that on a GPU host, not in this smoke test.
     last_relearned = None
-    for method in ("finetune", "ER", "EWC", "EWC-ER"):
-        print(f"13) POST /relearn ({method}, base=graph_based, task-B=megavul_mini)")
-        rj = call("POST", "/relearn", {"method": method, "base_model_id": "graph_based",
-                                       "dataset_ids": ["megavul_mini"], "run_name": f"e2e_{method}",
-                                       "config": {"epochs": 1}})
-        rid = rj.get("job_id"); print(f"   relearn[{method}] job:", rid, rj.get("status"), rj.get("_body") or "")
-        if not rid:
-            check(False, f"relearn[{method}] not created ({rj})"); continue
-        rmid = poll(f"/relearn/{rid}").get("result_model_id")
-        check(bool(rmid) and rmid in call("GET", "/models"), f"relearn[{method}] registered model ({rmid})")
-        last_relearned = rmid or last_relearned
-    print("   GET /relearn (list)")
-    check(isinstance(call("GET", "/relearn"), list) and len(call("GET", "/relearn")) >= 4,
-          "relearn jobs listed (>=4)")
+    if trained and ds_a:
+        for method in ("finetune", "ER", "EWC", "EWC-ER"):
+            print(f"13) POST /relearn ({method}, base=trained-on-mini, task-B=A)")
+            rj = call("POST", "/relearn", {"method": method, "base_model_id": trained,
+                                           "dataset_ids": [ds_a], "run_name": f"e2e_{method}",
+                                           "config": {"epochs": 1}})
+            rid = rj.get("job_id"); print(f"   relearn[{method}] job:", rid, rj.get("status"), rj.get("_body") or "")
+            if not rid:
+                check(False, f"relearn[{method}] not created ({rj})"); continue
+            rmid = poll(f"/relearn/{rid}").get("result_model_id")
+            check(bool(rmid) and rmid in call("GET", "/models"), f"relearn[{method}] registered model ({rmid})")
+            last_relearned = rmid or last_relearned
+        print("   GET /relearn (list)")
+        check(isinstance(call("GET", "/relearn"), list) and len(call("GET", "/relearn")) >= 4,
+              "relearn jobs listed (>=4)")
 
     # 14) inference on a relearned model — full loop closes
     if last_relearned:
