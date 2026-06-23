@@ -480,15 +480,26 @@ def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
         best = next(run_dir.glob("best_*.pt"), None) if run_dir else None
         if best:
             new_id = f"relearn_{job['method']}_{run_dir.name}"
-            # label predictions with CWE names: derive class_names from the materialized vocab
+            # class_names must match num_classes. When continual alignment is applied the model
+            # lives in the base/target class space (run-config data.target_vocab), NOT the task-B
+            # dataset's own (smaller) vocab — using the latter would desync names vs the head and
+            # raise IndexError at inference. Fall back to the task-B vocab only when not aligned
+            # (e.g. /train from scratch).
             class_names: list = []
-            vocab_path = DATA_ROOT / "raw" / meta["source"] / "cwe_vocab.json"
-            if vocab_path.exists():
-                vocab = json.loads(vocab_path.read_text())
-                class_names = [""] * len(vocab)
-                for cwe, idx in vocab.items():
-                    if 0 <= idx < len(class_names):
-                        class_names[idx] = cwe
+            tv = ((yaml.safe_load(train_cfg.read_text(encoding="utf-8")) or {}).get("data", {}) or {}).get("target_vocab")
+            if tv:
+                class_names = [""] * (max(int(v) for v in tv.values()) + 1)
+                for cwe, idx in tv.items():
+                    if 0 <= int(idx) < len(class_names):
+                        class_names[int(idx)] = cwe
+            else:
+                vocab_path = DATA_ROOT / "raw" / meta["source"] / "cwe_vocab.json"
+                if vocab_path.exists():
+                    vocab = json.loads(vocab_path.read_text())
+                    class_names = [""] * len(vocab)
+                    for cwe, idx in vocab.items():
+                        if 0 <= idx < len(class_names):
+                            class_names[idx] = cwe
             # object storage is the source of truth for the checkpoint (so a worker on
             # another node can load it); the local path stays as a cache.
             ckpt_uri = storage.put_bytes(settings.S3_BUCKET_CHECKPOINTS, f"{new_id}.pt", best.read_bytes())
