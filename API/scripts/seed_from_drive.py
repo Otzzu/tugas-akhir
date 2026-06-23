@@ -14,10 +14,12 @@ MinIO endpoint/creds from env (defaults match docker-compose, reachable from the
   S3_ENDPOINT=http://localhost:9000  S3_ACCESS_KEY=minioadmin  S3_SECRET_KEY=minioadmin
 Datasets need rclone on PATH with the gdrive-mesach remote configured.
 
+Each model is ALWAYS seeded together with its dataset (relearn ER/EWC need the base model's
+dataset, so a checkpoint without its dataset would be unusable). megavul_mini is also seeded.
+
 Usage (host, from project root, stack up):
   uv run --with gdown --with boto3 python API/scripts/seed_from_drive.py --models all
   uv run --with gdown --with boto3 python API/scripts/seed_from_drive.py --models graph_based,sequential
-  uv run --with gdown --with boto3 python API/scripts/seed_from_drive.py --models all --checkpoints-only
 """
 from __future__ import annotations
 import argparse, os, subprocess, tarfile, tempfile, zipfile
@@ -118,8 +120,6 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Seed trained models + datasets from Drive into MinIO")
     ap.add_argument("--models", default="all",
                     help="'all' or comma-separated: graph_based,hybrid_graph_lm,sequential")
-    ap.add_argument("--checkpoints-only", action="store_true",
-                    help="upload only checkpoints (inference-ready), skip the dataset bundles")
     args = ap.parse_args()
 
     sel = list(DRIVE) if args.models == "all" else [m.strip() for m in args.models.split(",") if m.strip()]
@@ -135,13 +135,13 @@ def main() -> None:
         for mid in sel:
             d = DRIVE[mid]
             print(f"\n== {mid} (dataset_id={d['dataset_id']}) ==")
+            # a model is always seeded WITH its dataset — relearn ER/EWC materialize the base
+            # model's dataset, so seeding a checkpoint without its dataset would be unusable.
             seed_checkpoint(s3, mid, d["ckpt"], tmp)
-            if not args.checkpoints_only:
-                seed_dataset(s3, d["dataset_id"], d["data"], tmp, done)
+            seed_dataset(s3, d["dataset_id"], d["data"], tmp, done)
 
-        # small test/demo datasets — always seeded (cheap, small), independent of --models or
-        # --checkpoints-only, so a single-model cheap seed still has megavul_mini for the
-        # /train + /relearn smoke tests.
+        # small test/demo datasets — always seeded (cheap, small) so a single-model seed still
+        # has megavul_mini for the /train + /relearn smoke tests.
         for did, path in EXTRA_DATASETS.items():
             print(f"\n== dataset {did} ==")
             seed_dataset(s3, did, path, tmp, done)

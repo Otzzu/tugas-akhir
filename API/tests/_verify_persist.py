@@ -130,7 +130,7 @@ def main() -> int:
                 if not (ds_bk and _obj_exists(s3, *ds_bk)):
                     problems.append(
                         f"model {m.id} checkpoint is in MinIO but its dataset {m.dataset_id} bundle "
-                        f"is missing — relearn ER/EWC on it will fail (re-seed without --checkpoints-only)")
+                        f"is missing — relearn ER/EWC on it will fail (re-seed the model)")
             if m.method and not disk and not in_minio:
                 problems.append(f"relearned model {m.id} checkpoint missing on disk AND in MinIO")
             if m.method and bk and not in_minio:

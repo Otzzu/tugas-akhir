@@ -15,9 +15,9 @@ dataset MERGE, /train from-scratch + config.model_type arch override, /relearn A
 
     python API/tests/_test_e2e.py [BASE_URL]
 
-Cheap seed first (host) — graph_based checkpoint + megavul_mini, skipping the big megavul_26:
-    uv run --with gdown --with boto3 python API/scripts/seed_from_drive.py \
-        --models graph_based --checkpoints-only
+Seed first (host) — model 1 with its dataset + megavul_mini (a model is always seeded with its
+dataset). This e2e relearns a small model trained on megavul_mini, so it stays cheap on CPU:
+    uv run --with gdown --with boto3 python API/scripts/seed_from_drive.py --models graph_based
 
 Stdlib only (urllib). Exits non-zero if any check fails. Deep DB+MinIO proof afterwards:
     docker compose -f API/docker-compose.yml exec api python /app/API/tests/_verify_persist.py
