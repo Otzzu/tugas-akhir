@@ -40,14 +40,18 @@ def classification_metrics(csv_path: str) -> dict:
     df = pd.read_csv(csv_path)
     assert {"y_true", "y_pred"} <= set(df.columns), f"{csv_path} needs y_true,y_pred columns"
     yt, yp = df["y_true"].tolist(), df["y_pred"].tolist()
+    # macro averages over classes PRESENT in y_true (F1 undefined for a class with no samples).
+    # Passing labels= makes the denominator independent of stray predictions into absent classes;
+    # the sklearn default unique(y_true ∪ y_pred) would silently divide by +1 for such a class.
+    macro_labels = sorted(set(yt))
     out = {
         "n": len(yt),
         "accuracy":     round(accuracy_score(yt, yp), 4),
-        "f1_macro":     round(f1_score(yt, yp, average="macro", zero_division=0), 4),
+        "f1_macro":     round(f1_score(yt, yp, average="macro", labels=macro_labels, zero_division=0), 4),
         "f1_weighted":  round(f1_score(yt, yp, average="weighted", zero_division=0), 4),
         "f1_micro":     round(f1_score(yt, yp, average="micro", zero_division=0), 4),
-        "precision_macro": round(precision_score(yt, yp, average="macro", zero_division=0), 4),
-        "recall_macro":    round(recall_score(yt, yp, average="macro", zero_division=0), 4),
+        "precision_macro": round(precision_score(yt, yp, average="macro", labels=macro_labels, zero_division=0), 4),
+        "recall_macro":    round(recall_score(yt, yp, average="macro", labels=macro_labels, zero_division=0), 4),
         "precision_weighted": round(precision_score(yt, yp, average="weighted", zero_division=0), 4),
         "recall_weighted":    round(recall_score(yt, yp, average="weighted", zero_division=0), 4),
     }

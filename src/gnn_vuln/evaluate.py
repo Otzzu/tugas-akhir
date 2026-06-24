@@ -124,11 +124,15 @@ class Evaluator:
 
     def _function_level(self, y_true, y_pred, y_prob, confidence, correct_mask, target_names) -> dict:
         n_classes = y_prob.shape[1]
+        # macro metrics average over classes PRESENT in y_true (F1 is undefined for a class with
+        # no test samples). Passing labels= makes the denominator independent of what the model
+        # predicts — without it sklearn averages over unique(y_true ∪ y_pred), which silently
+        # includes a 0-support class as F1=0 the moment the model emits one stray prediction for it.
+        present = np.unique(y_true)
         try:
             if n_classes == 2:
                 auc_roc = roc_auc_score(y_true, y_prob[:, 1])
             else:
-                present = np.unique(y_true)
                 y_p = y_prob[:, present]
                 y_p = y_p / y_p.sum(axis=1, keepdims=True)
                 auc_roc = roc_auc_score(y_true, y_p, multi_class="ovr",
@@ -138,7 +142,7 @@ class Evaluator:
 
         return {
             "accuracy": float((y_true == y_pred).mean()),
-            "f1_macro": f1_score(y_true, y_pred, average="macro", zero_division=0),
+            "f1_macro": f1_score(y_true, y_pred, average="macro", labels=present, zero_division=0),
             "f1_weighted": f1_score(y_true, y_pred, average="weighted", zero_division=0),
             "auc_roc_macro_ovr": auc_roc,
             "confidence_mean":    float(confidence.mean()),
