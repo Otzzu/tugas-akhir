@@ -40,6 +40,15 @@ METHODS = [
     ("EWC-DR dan experience replay",  CIL / "N48_cil_ewc_replay.yaml"),
 ]
 
+# Trained method checkpoints already on Drive (run_ids from RELEARN_CIL_RESULTS.md) — used by
+# --reeval to re-score the saved models with the current evaluate.py, no retraining.
+REEVAL_CKPTS = [
+    ("Fine-tuning naif",              "20260619_213909_lmgat_codebert_multiclass"),
+    ("EWC-DR",                        "20260619_215528_lmgat_codebert_multiclass"),
+    ("Experience replay",             "20260619_220817_lmgat_codebert_multiclass"),
+    ("EWC-DR dan experience replay",  "20260619_222906_lmgat_codebert_multiclass"),
+]
+
 ENV = {**os.environ, "PYTHONPATH": "src"}
 
 # ── Drive setup (used only with --setup) ────────────────────────────────────
@@ -126,7 +135,9 @@ def combined_alast(tag_a: str, tag_b: str) -> tuple[float, float]:
             for row in csv.DictReader(f):
                 yt.append(int(float(row["y_true"])))
                 yp.append(int(float(row["y_pred"])))
-    return (float(f1_score(yt, yp, average="macro", zero_division=0)),
+    # macro over classes PRESENT in the merged y_true (F1 undefined for a class with no test
+    # samples); labels= keeps the denominator independent of stray predictions into absent classes.
+    return (float(f1_score(yt, yp, average="macro", labels=sorted(set(yt)), zero_division=0)),
             float(accuracy_score(yt, yp)))
 
 
@@ -162,42 +173,66 @@ def upload_ckpt(run_id: str) -> None:
     print(f"Uploaded {z} -> {DRIVE_ROOT}/checkpoints/")
 
 
+def _fetch_method_ckpt(run_id: str) -> None:
+    """Download checkpoints/<run_id>_checkpoints.zip from Drive + extract (skip if already local)."""
+    if list((CKPTS / run_id).glob("best_*.pt")):
+        print(f"{run_id} ckpt present, skip download."); return
+    z = f"{run_id}_checkpoints.zip"
+    _rclone(f"{DRIVE_ROOT}/checkpoints/{z}", str(ROOT))
+    _extract(ROOT / z, ROOT)            # inner path checkpoints/<run_id>/best_*.pt
+    (ROOT / z).unlink(missing_ok=True)
+
+
 def main() -> None:
     import argparse
     ap = argparse.ArgumentParser(description="Run the class-incremental (CIL) continual learning experiment")
     ap.add_argument("--setup", action="store_true",
                     help="download + extract + patch prerequisites from Drive before running")
+    ap.add_argument("--reeval", action="store_true",
+                    help="re-evaluate the saved method checkpoints (REEVAL_CKPTS) with the current "
+                         "evaluate.py, no retraining — recomputes the table and rewrites the md")
     args = ap.parse_args()
-    if args.setup:
+    if args.setup or args.reeval:
         setup()
 
     if not TASKA_CKPT.exists():
         sys.exit(f"Missing task-A checkpoint: {TASKA_CKPT}")
-
-    # 0. EWC importance on task-A (26-class, compute_only -> exits after saving cache)
-    sh([sys.executable, "-m", "gnn_vuln.train", "--config", IMPORTANCE_CFG])
 
     # Baseline (Sebelum pembaruan): task-A 26-class model on task-A test.
     # task-B is N.A. — the 26-class model has no head for the new classes.
     taskA_before = eval_ckpt(TASKA_CKPT, TASKA_EVAL26, "rlcil_taskA_before")
     a1_acc = accuracy_of(RESULTS / "rlcil_taskA_before")   # A_1: acc after task-A (initial), for A_avg
     rows = [("Sebelum pembaruan", taskA_before, None, None, None, None, None)]
-
-    # Each method: train on task-B (36-class), eval on task-B (new) and task-A (old).
     ckpt_map = []   # (label, run_id) — uploaded ckpts, for re-eval without retraining
-    for label, cfg in METHODS:
-        t0 = time.time()
-        sh([sys.executable, "-m", "gnn_vuln.train", "--config", cfg])
-        rdir = newest_train_dir(t0)
-        ckpt = next((CKPTS / rdir.name).glob("best_*.pt"))
-        taskB = eval_ckpt(ckpt, TASKB_EVAL,    f"rlcil_taskB_{rdir.name}")   # 10 new classes
-        taskA = eval_ckpt(ckpt, TASKA_EVAL36,  f"rlcil_taskA_{rdir.name}")   # 26 old classes
-        # A_last: combined over all 36 seen classes (paper metric); A_avg = mean(A_1, A_last_acc)
-        alast_f1, alast_acc = combined_alast(f"rlcil_taskA_{rdir.name}", f"rlcil_taskB_{rdir.name}")
-        a_avg = (a1_acc + alast_acc) / 2.0
-        rows.append((label, taskA, taskB, taskA_before - taskA, alast_f1, alast_acc, a_avg))
-        upload_ckpt(rdir.name)                                        # upload trained model for re-eval
-        ckpt_map.append((label, rdir.name))
+
+    if args.reeval:
+        # Re-score the saved method checkpoints with the current evaluate.py (no retraining).
+        for label, run_id in REEVAL_CKPTS:
+            _fetch_method_ckpt(run_id)
+            ckpt = next((CKPTS / run_id).glob("best_*.pt"))
+            taskB = eval_ckpt(ckpt, TASKB_EVAL,   f"rlcil_taskB_{run_id}")   # 10 new classes
+            taskA = eval_ckpt(ckpt, TASKA_EVAL36, f"rlcil_taskA_{run_id}")   # 26 old classes
+            alast_f1, alast_acc = combined_alast(f"rlcil_taskA_{run_id}", f"rlcil_taskB_{run_id}")
+            a_avg = (a1_acc + alast_acc) / 2.0
+            rows.append((label, taskA, taskB, taskA_before - taskA, alast_f1, alast_acc, a_avg))
+            ckpt_map.append((label, run_id))
+    else:
+        # 0. EWC importance on task-A (26-class, compute_only -> exits after saving cache)
+        sh([sys.executable, "-m", "gnn_vuln.train", "--config", IMPORTANCE_CFG])
+        # Each method: train on task-B (36-class), eval on task-B (new) and task-A (old).
+        for label, cfg in METHODS:
+            t0 = time.time()
+            sh([sys.executable, "-m", "gnn_vuln.train", "--config", cfg])
+            rdir = newest_train_dir(t0)
+            ckpt = next((CKPTS / rdir.name).glob("best_*.pt"))
+            taskB = eval_ckpt(ckpt, TASKB_EVAL,    f"rlcil_taskB_{rdir.name}")   # 10 new classes
+            taskA = eval_ckpt(ckpt, TASKA_EVAL36,  f"rlcil_taskA_{rdir.name}")   # 26 old classes
+            # A_last: combined over all 36 seen classes (paper metric); A_avg = mean(A_1, A_last_acc)
+            alast_f1, alast_acc = combined_alast(f"rlcil_taskA_{rdir.name}", f"rlcil_taskB_{rdir.name}")
+            a_avg = (a1_acc + alast_acc) / 2.0
+            rows.append((label, taskA, taskB, taskA_before - taskA, alast_f1, alast_acc, a_avg))
+            upload_ckpt(rdir.name)                                        # upload trained model for re-eval
+            ckpt_map.append((label, rdir.name))
 
     # Write RELEARN_CIL_RESULTS.md
     md = [

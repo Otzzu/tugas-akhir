@@ -35,6 +35,15 @@ METHODS = [
     ("EWC-DR dan experience replay",  CFG / "N48_relearn_ewc_replay.yaml"),
 ]
 
+# Trained method checkpoints already on Drive (run_ids from RELEARN_RESULTS.md) — used by
+# --reeval to re-score the saved models with the current evaluate.py, no retraining.
+REEVAL_CKPTS = [
+    ("Fine-tuning naif",              "20260619_200234_lmgat_codebert_multiclass"),
+    ("EWC-DR",                        "20260619_200708_lmgat_codebert_multiclass"),
+    ("Experience replay",             "20260619_201757_lmgat_codebert_multiclass"),
+    ("EWC-DR dan experience replay",  "20260619_202816_lmgat_codebert_multiclass"),
+]
+
 ENV = {**os.environ, "PYTHONPATH": "src"}
 
 # ── Drive setup (used only with --setup) ────────────────────────────────────
@@ -165,39 +174,61 @@ def _align_relearn_vocab() -> None:
     print(f"Aligned relearn vocab to task-A canonical; cleared {cleared} stale relearn .pt entries for rebuild.")
 
 
+def _fetch_method_ckpt(run_id: str) -> None:
+    """Download checkpoints/<run_id>_checkpoints.zip from Drive + extract (skip if already local)."""
+    if list((CKPTS / run_id).glob("best_*.pt")):
+        print(f"{run_id} ckpt present, skip download."); return
+    z = f"{run_id}_checkpoints.zip"
+    _rclone(f"{DRIVE_ROOT}/checkpoints/{z}", str(ROOT))
+    _extract(ROOT / z, ROOT)            # inner path checkpoints/<run_id>/best_*.pt
+    (ROOT / z).unlink(missing_ok=True)
+
+
 def main() -> None:
     import argparse
     ap = argparse.ArgumentParser(description="Run the relearn (domain-IL) continual learning experiment")
     ap.add_argument("--setup", action="store_true",
                     help="download + extract prerequisites from Drive before running")
+    ap.add_argument("--reeval", action="store_true",
+                    help="re-evaluate the saved method checkpoints (REEVAL_CKPTS) with the current "
+                         "evaluate.py, no retraining — recomputes the table and rewrites the md")
     args = ap.parse_args()
-    if args.setup:
+    if args.setup or args.reeval:
         setup()
     _align_relearn_vocab()
 
     if not TASKA_CKPT.exists():
         sys.exit(f"Missing task-A checkpoint: {TASKA_CKPT}")
 
-    # 0. EWC importance on task-A (compute_only -> exits after saving cache)
-    sh([sys.executable, "-m", "gnn_vuln.train", "--config", MEGAVUL_CFG])
-
     # Baseline (Sebelum pembaruan): task-A model evaluated on both test sets.
     taskA_before = eval_ckpt(TASKA_CKPT, MEGAVUL_CFG, "rl_taskA_before")
     taskB_before = eval_ckpt(TASKA_CKPT, RELEARN_CFG, "rl_taskB_before")
     rows = [("Sebelum pembaruan", taskA_before, taskB_before, None)]
-
-    # Each method: train on task-B, then eval the trained model on task-A.
     ckpt_map = []   # (label, run_id) — uploaded ckpts, for re-eval without retraining
-    for label, cfg in METHODS:
-        t0 = time.time()
-        sh([sys.executable, "-m", "gnn_vuln.train", "--config", cfg])
-        rdir = newest_train_dir(t0)
-        ckpt = next((CKPTS / rdir.name).glob("best_*.pt"))
-        taskB = eval_ckpt(ckpt, RELEARN_CFG, f"rl_taskB_{rdir.name}")   # task-B test
-        taskA = eval_ckpt(ckpt, MEGAVUL_CFG, f"rl_taskA_{rdir.name}")   # task-A test
-        rows.append((label, taskA, taskB, taskA_before - taskA))  # forgetting = drop on task-A
-        upload_ckpt(rdir.name)                                    # upload trained model for re-eval
-        ckpt_map.append((label, rdir.name))
+
+    if args.reeval:
+        # Re-score the saved method checkpoints with the current evaluate.py (no retraining).
+        for label, run_id in REEVAL_CKPTS:
+            _fetch_method_ckpt(run_id)
+            ckpt = next((CKPTS / run_id).glob("best_*.pt"))
+            taskB = eval_ckpt(ckpt, RELEARN_CFG, f"rl_taskB_{run_id}")
+            taskA = eval_ckpt(ckpt, MEGAVUL_CFG, f"rl_taskA_{run_id}")
+            rows.append((label, taskA, taskB, taskA_before - taskA))
+            ckpt_map.append((label, run_id))
+    else:
+        # 0. EWC importance on task-A (compute_only -> exits after saving cache)
+        sh([sys.executable, "-m", "gnn_vuln.train", "--config", MEGAVUL_CFG])
+        # Each method: train on task-B, then eval the trained model on task-A.
+        for label, cfg in METHODS:
+            t0 = time.time()
+            sh([sys.executable, "-m", "gnn_vuln.train", "--config", cfg])
+            rdir = newest_train_dir(t0)
+            ckpt = next((CKPTS / rdir.name).glob("best_*.pt"))
+            taskB = eval_ckpt(ckpt, RELEARN_CFG, f"rl_taskB_{rdir.name}")   # task-B test
+            taskA = eval_ckpt(ckpt, MEGAVUL_CFG, f"rl_taskA_{rdir.name}")   # task-A test
+            rows.append((label, taskA, taskB, taskA_before - taskA))  # forgetting = drop on task-A
+            upload_ckpt(rdir.name)                                    # upload trained model for re-eval
+            ckpt_map.append((label, rdir.name))
 
     # Write RELEARN_RESULTS.md
     md = [
