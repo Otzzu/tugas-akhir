@@ -475,3 +475,18 @@ Graph-ViT/MLP-Mixer **collapses classification** — Test F1 ~0.34 vs the N-seri
 | N48-vo-jk 25-class       | RTX 5090        | 4.7M   | 44s        | 0.52            | 13.2 GB   |
 | S1 26-class              | RTX 5090        | 9.5M   | 49s        | 0.48            | 18.5 GB   |
 | S1-vo 25-class           | RTX 5090        | 9.5M   | 31s        | 0.39            | 17.8 GB   |
+
+---
+
+## Production Models (90/10/0 split, for the API)
+
+The three deployed API models, trained on the production split (90% train, 10% val, 0% test — no
+held-out test since the whole labelled set is used; evaluation is the research split runs above).
+Checkpoints on Drive `checkpoints/<run_id>_checkpoints.zip` (2026-06-23). The two `lmgat_codebert`
+runs are disambiguated by size (graph_based GNN-only ≈ 71 MB vs hybrid_graph_lm live-LM ≈ 1.19 GB).
+
+| Model API        | Arch                        | Run ID                                       | Size    |
+| ---------------- | --------------------------- | -------------------------------------------- | ------- |
+| graph_based      | lmgat_codebert (GNN-only)   | `20260623_042745_lmgat_codebert_multiclass`  | 71 MB   |
+| sequential       | lmgat_seqgnn                | `20260623_050527_lmgat_seqgnn_multiclass`    | 137 MB  |
+| hybrid_graph_lm  | lmgat_codebert (live-LM)    | `20260623_055033_lmgat_codebert_multiclass`  | 1.19 GB |
