@@ -328,12 +328,16 @@ def main() -> None:
     parser.add_argument("--config", default=None, help="Config YAML (auto-detected if omitted)")
     parser.add_argument("--metrics-only", action="store_true",
                         help="Write only metrics_summary.json, skip per-sample CSVs + plots (API path).")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Override cfg.train.seed to match a multi-seed run's split.")
     args = parser.parse_args()
 
     config_path = Path(args.config) if args.config else Path(args.checkpoint).parent / "config.yaml"
     cfg = Config.from_yaml(config_path) if config_path.exists() else load_default_config()
     if not (args.config or config_path.exists()):
         logger.warning("No config.yaml found, using defaults.")
+    if args.seed is not None:
+        cfg.train.seed = args.seed
 
     setup_logging(cfg.train.log_dir)
     device = get_device(cfg.train.device)

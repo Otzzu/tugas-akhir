@@ -9,7 +9,8 @@ set -euo pipefail
 
 REMOTE="gdrive-mesach:tugas-akhir"
 DATA_TAR="megavul_ml1024_baselines_20260613.tar.gz"
-RUN_ID="linevul_megavul_ml1024_$(date +%Y%m%d_%H%M%S)"
+SEED="${SEED:-42}"
+RUN_ID="linevul_megavul_ml1024_s${SEED}_$(date +%Y%m%d_%H%M%S)"
 WORK="$PWD"
 OUT="$WORK/baseline_runs/$RUN_ID"
 mkdir -p "$OUT"
@@ -56,7 +57,7 @@ python linevul_main.py \
   --do_train --do_test \
   --train_data_file="$D/train.csv" --eval_data_file="$D/val.csv" --test_data_file="$D/test.csv" \
   --epochs 10 --block_size 512 --train_batch_size 16 --eval_batch_size 16 \
-  --learning_rate 2e-5 --max_grad_norm 1.0 --evaluate_during_training --seed 42 \
+  --learning_rate 2e-5 --max_grad_norm 1.0 --evaluate_during_training --seed $SEED \
   2>&1 | tee "$OUT/train.log"
 else
 echo "=== [3/5] EVAL_ONLY: skip train (restored weights -> $OUT/checkpoint-best-f1) ==="
@@ -68,7 +69,7 @@ python linevul_main.py \
   --output_dir="$OUT" --model_type=roberta \
   --tokenizer_name=microsoft/codebert-base --model_name_or_path=microsoft/codebert-base \
   --do_test --do_local_explanation --reasoning_method=attention --do_sorting_by_line_scores \
-  --test_data_file="$D/test.csv" --block_size 512 --eval_batch_size 16 --seed 42 \
+  --test_data_file="$D/test.csv" --block_size 512 --eval_batch_size 16 --seed $SEED \
   --effort_at_top_k 0.2 --top_k_recall_by_lines 0.01 --top_k_recall_by_pred_prob 0.2 \
   2>&1 | tee "$OUT/localization.log"
 cd "$WORK"

@@ -90,6 +90,8 @@ class TrainingSession:
         paths = args.config if isinstance(args.config, (list, tuple)) else [args.config]
         cfg = (Config.from_yamls(paths)
                if all(Path(p).exists() for p in paths) else load_default_config())
+        if getattr(args, "seed", None) is not None:
+            cfg.train.seed = args.seed
         set_seed(cfg.train.seed, deterministic=getattr(cfg.train, "deterministic", False))
         setup_logging(cfg.train.log_dir)
         return cls(cfg, resume=getattr(args, "resume", False))
@@ -1008,6 +1010,8 @@ def main() -> None:
                              "files (e.g. data.yaml model.yaml train.yaml) merged in order.")
     parser.add_argument("--resume", action="store_true",
                         help="Resume from latest last_*.pt for this arch/mode.")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Override cfg.train.seed for multi-seed variance runs.")
     args = parser.parse_args()
 
     session = TrainingSession.from_args(args)

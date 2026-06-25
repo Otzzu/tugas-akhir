@@ -27,6 +27,11 @@ RELEARN_CFG = CFG / "N48_relearn_naive.yaml"           # data.source=relearn (ta
 TASKA_CKPT = CKPTS / "n48_taskA" / "best_model.pt"
 DRIVE = "gdrive-mesach:tugas-akhir/results/"
 OUT_MD = ROOT / "RELEARN_RESULTS.md"
+SEED = None   # set from --seed in main; overrides train.seed (split + init) for multi-seed variance
+
+
+def _seed_args() -> list:
+    return ["--seed", str(SEED)] if SEED is not None else []
 
 METHODS = [
     ("Fine-tuning naif",              CFG / "N48_relearn_naive.yaml"),
@@ -135,7 +140,7 @@ def eval_ckpt(ckpt: Path, config: Path, tag: str) -> float:
     ed.mkdir(parents=True, exist_ok=True)
     shutil.copy2(ckpt, ed / "best_model.pt")
     sh([sys.executable, "-m", "gnn_vuln.evaluate",
-        "--checkpoint", ed / "best_model.pt", "--config", config])
+        "--checkpoint", ed / "best_model.pt", "--config", config] + _seed_args())
     return f1_macro(RESULTS / tag)
 
 
@@ -192,7 +197,12 @@ def main() -> None:
     ap.add_argument("--reeval", action="store_true",
                     help="re-evaluate the saved method checkpoints (REEVAL_CKPTS) with the current "
                          "evaluate.py, no retraining — recomputes the table and rewrites the md")
+    ap.add_argument("--seed", type=int, default=None,
+                    help="override train.seed for a multi-seed variance run (suffixes the output md)")
     args = ap.parse_args()
+    global SEED
+    SEED = args.seed
+    out_md = OUT_MD if SEED is None else OUT_MD.with_name(f"RELEARN_RESULTS_s{SEED}.md")
     if args.setup or args.reeval:
         setup()
     _align_relearn_vocab()
@@ -217,11 +227,11 @@ def main() -> None:
             ckpt_map.append((label, run_id))
     else:
         # 0. EWC importance on task-A (compute_only -> exits after saving cache)
-        sh([sys.executable, "-m", "gnn_vuln.train", "--config", MEGAVUL_CFG])
+        sh([sys.executable, "-m", "gnn_vuln.train", "--config", MEGAVUL_CFG] + _seed_args())
         # Each method: train on task-B, then eval the trained model on task-A.
         for label, cfg in METHODS:
             t0 = time.time()
-            sh([sys.executable, "-m", "gnn_vuln.train", "--config", cfg])
+            sh([sys.executable, "-m", "gnn_vuln.train", "--config", cfg] + _seed_args())
             rdir = newest_train_dir(t0)
             ckpt = next((CKPTS / rdir.name).glob("best_*.pt"))
             taskB = eval_ckpt(ckpt, RELEARN_CFG, f"rl_taskB_{rdir.name}")   # task-B test
@@ -260,12 +270,12 @@ def main() -> None:
     ]
     for label, run_id in ckpt_map:
         md.append(f"- {label}: `{run_id}_checkpoints.zip` (config: lihat configs/ablation/relearn/)")
-    OUT_MD.write_text("\n".join(md) + "\n", encoding="utf-8")
-    print("\n" + OUT_MD.read_text())
+    out_md.write_text("\n".join(md) + "\n", encoding="utf-8")
+    print("\n" + out_md.read_text())
 
     # Upload
-    subprocess.run(["rclone", "copy", str(OUT_MD), DRIVE, "--progress"], check=False)
-    print(f"\nUploaded {OUT_MD.name} -> {DRIVE}")
+    subprocess.run(["rclone", "copy", str(out_md), DRIVE, "--progress"], check=False)
+    print(f"\nUploaded {out_md.name} -> {DRIVE}")
 
 
 if __name__ == "__main__":
