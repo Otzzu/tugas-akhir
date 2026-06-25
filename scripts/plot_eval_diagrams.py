@@ -30,7 +30,8 @@ def class_names(pred_cols: list[str]) -> list[str]:
     return [c[len("prob_"):] for c in pred_cols if c.startswith("prob_")]
 
 
-def plot_confusion(df: pd.DataFrame, names: list[str], present: list[int]) -> None:
+def plot_confusion(df: pd.DataFrame, names: list[str], present: list[int],
+                   out_name: str = "Confusion_Matrix.png", title: str | None = None) -> None:
     pnames = [names[i] for i in present]
     cm = confusion_matrix(df["y_true"], df["y_pred"], labels=present)
     cmn = cm / cm.sum(axis=1, keepdims=True).clip(min=1)
@@ -40,11 +41,13 @@ def plot_confusion(df: pd.DataFrame, names: list[str], present: list[int]) -> No
     ax.set_xticklabels(pnames, rotation=90, fontsize=7)
     ax.set_yticklabels(pnames, fontsize=7)
     ax.set_xlabel("Kelas prediksi"); ax.set_ylabel("Kelas sebenarnya")
+    if title:
+        ax.set_title(title)
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="Proporsi (recall per kelas)")
     fig.tight_layout()
-    fig.savefig(OUT / "Confusion_Matrix.png", dpi=150, bbox_inches="tight")
+    fig.savefig(OUT / out_name, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print("wrote Confusion_Matrix.png")
+    print(f"wrote {out_name}")
 
 
 def plot_per_class_f1_compare(names: list[str], present: list[int], support: np.ndarray) -> None:
@@ -108,7 +111,16 @@ def main() -> None:
     present = [i for i in range(len(names)) if support[i] > 0]
     absent = [names[i] for i in range(len(names)) if support[i] == 0]
     print(f"loaded {len(df)} predictions, {len(names)} classes, {len(present)} present, absent={absent}")
-    plot_confusion(df, names, present)
+    # confusion matrix per architecture (all on the same 26-class test → same present classes).
+    # graph_based is also written as the default Confusion_Matrix.png used by IV.5.
+    shorts = {"Berbasis Graph": "graph", "Hibrida Graph-LM": "hybrid", "Sekuensial": "seq"}
+    for label, _color, path in ARCHS:
+        adf = pd.read_csv(Path(path) / "predictions.csv")
+        asup = adf["y_true"].value_counts().reindex(range(len(names)), fill_value=0).to_numpy()
+        apres = [i for i in range(len(names)) if asup[i] > 0]
+        short = shorts[label]
+        out = "Confusion_Matrix.png" if short == "graph" else f"Confusion_Matrix_{short}.png"
+        plot_confusion(adf, names, apres, out_name=out, title=f"{label} (26 kelas)")
     plot_per_class_f1_compare(names, present, support)
     plot_localization_example(names)
 

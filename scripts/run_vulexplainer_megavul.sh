@@ -17,7 +17,8 @@ DATA_TAR="megavul_ml1024_baselines_20260613.tar.gz"
 WORK="$PWD"; VPROOT="$WORK/src/VulExplainer"
 VARIANT="$VPROOT/VulExplainer/VulExplainer_GraphCodeBERT"
 BIGVUL="$VPROOT/data/big_vul"; SPLIT="$WORK/megavul_ml1024/linevd"
-RUN_ID="vulexplainer_megavul_$(date +%Y%m%d_%H%M%S)"
+SEED="${SEED:-123456}"
+RUN_ID="vulexplainer_megavul_s${SEED}_$(date +%Y%m%d_%H%M%S)"
 
 # EVAL_ONLY=1 -> skip teacher+student TRAIN: restore saved checkpoints, run student --do_test only,
 # dump preds, recompute macro+weighted+acc. Needs WEIGHTS_TAR=<run>_weights.tar.gz. [VERIFY on pod]
@@ -103,7 +104,8 @@ if [[ -n "$EVAL_ONLY" ]]; then
       --train_data_file=../../data/big_vul/train.csv --eval_data_file=../../data/big_vul/val.csv --test_data_file=../../data/big_vul/test.csv \
       --do_test --block_size 512 --eval_batch_size 8 --seed 123456 ) 2>&1 | tee "$OUT/eval_soft_distil.log"
 else
-  echo "=== [5/7] train CNN teacher (50ep bs128 5e-3) ==="
+  sed -i -E "s/--seed [0-9]+/--seed $SEED/g" "$VARIANT/train_teacher.sh" "$VARIANT/soft_distillation.sh"
+  echo "=== [5/7] train CNN teacher (50ep bs128 5e-3, seed $SEED) ==="
   ( cd "$VARIANT" && bash train_teacher.sh ) ; cp -f "$VARIANT"/train_cnn_teacher.log "$OUT/" 2>/dev/null || true
   [[ -f "$VARIANT/saved_models/checkpoint-best-acc/cnnteacher.bin" ]] || { echo "ERR: teacher cnnteacher.bin not produced"; exit 1; }
 

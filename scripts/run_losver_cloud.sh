@@ -9,7 +9,8 @@ set -euo pipefail
 
 REMOTE="gdrive-mesach:tugas-akhir"
 DATA_TAR="megavul_ml1024_baselines_20260613.tar.gz"
-RUN_ID="losver_megavul_ml1024_$(date +%Y%m%d_%H%M%S)"
+SEED="${SEED:-123456}"
+RUN_ID="losver_megavul_ml1024_s${SEED}_$(date +%Y%m%d_%H%M%S)"
 WORK="$PWD"
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
 
@@ -92,11 +93,11 @@ U=../unixcoder-nine
 python run_line_CWE.py --output_dir="$OUT/localizer" --model_type roberta \
   --model_name_or_path=$U --tokenizer_name=$U \
   --train_data_file=CWE_train_unix_512.jsonl --eval_data_file=CWE_val_unix_512.jsonl --test_data_file=CWE_test_unix_512.jsonl \
-  --block_size=512 --seed=123456 $TRAINFLAG --do_test 2>&1 | tee "$OUT/localizer.log"
+  --block_size=512 --seed=$SEED $TRAINFLAG --do_test 2>&1 | tee "$OUT/localizer.log"
 python run_weighted_CWE.py --output_dir="$OUT/classifier" --model_type roberta \
   --model_name_or_path=$U --tokenizer_name=$U \
   --localized_location="$OUT/localizer" \
-  --block_size=512 --seed=123456 $TRAINFLAG --do_test 2>&1 | tee "$OUT/classifier.log"
+  --block_size=512 --seed=$SEED $TRAINFLAG --do_test 2>&1 | tee "$OUT/classifier.log"
 cd "$WORK"
 
 # recompute MACRO-F1 (+ weighted/micro + per-class report) from the dumped test predictions.

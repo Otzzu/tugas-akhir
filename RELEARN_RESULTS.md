@@ -16,11 +16,11 @@ Urutan dan asal data:
 
 | Metode | Macro F1 task-A | Macro F1 task-B | Forgetting ↓ |
 |---|---|---|---|
-| Sebelum pembaruan | 0.525 | 0.281 | — |
-| Fine-tuning naif | 0.158 | 0.304 | +0.366 |
-| EWC-DR | 0.416 | 0.426 | +0.109 |
-| Experience replay | 0.450 | 0.381 | +0.075 |
-| EWC-DR dan experience replay | 0.438 | 0.357 | +0.087 |
+| Sebelum pembaruan | 0.5246 | 0.3275 | — |
+| Fine-tuning naif | 0.1583 | 0.3213 | +0.3663 |
+| EWC-DR | 0.4161 | 0.4501 | +0.1085 |
+| Experience replay | 0.4499 | 0.4020 | +0.0747 |
+| EWC-DR dan experience replay | 0.4551 | 0.4360 | +0.0694 |
 
 Checkpoint terlatih (Drive checkpoints/, untuk re-evaluasi tanpa latih ulang):
 - Fine-tuning naif: `20260619_200234_lmgat_codebert_multiclass_checkpoints.zip` (config: lihat configs/ablation/relearn/)

@@ -660,6 +660,20 @@ Base H4 = Test F1 0.520. **M2 (gradual) = best ULMFiT (F1 0.532, +0.012 vs H4)**
 
 ---
 
+# Multi-Seed Variance — 26-class (N48 / O1 / S1, seeds 0,1,2)
+
+Three training seeds per proposed architecture for IV.4.4 (ancaman validitas). Seed 0 = headline run; seeds 1+2 from `*_s1.yaml` / `*_s2.yaml` — same split (`resample_seed 42`), only `train.seed` varies. All evaluated with the ÷present macro fix. The 3 new bundles per pair are the latest on Drive (`20260624_*`).
+
+| Arch (seed-0 run)                       | seed-1 / seed-2 runs        | Macro F1 (s0/s1/s2)   | mean ± std        | Acc mean±std  | F1-w mean±std |
+| --------------------------------------- | --------------------------- | --------------------- | ----------------- | ------------- | ------------- |
+| Berbasis Graph (N48 `20260606_163818`)  | `20260624_135135` / `145225` | 0.525 / 0.495 / 0.476 | **0.499 ± 0.025** | 0.514 ± 0.011 | 0.515 ± 0.014 |
+| Hibrida Graph–LM (O1 `20260612_131926`) | `20260624_173655` / `212630` | 0.545 / 0.533 / 0.527 | **0.535 ± 0.009** | 0.514 ± 0.021 | 0.536 ± 0.007 |
+| Sekuensial (S1 `20260620_080752`)       | `20260624_152857` / `163118` | 0.501 / 0.536 / 0.496 | **0.511 ± 0.022** | 0.505 ± 0.032 | 0.505 ± 0.034 |
+
+**Findings.** Hybrid is the most stable (std 0.009) and tops macro-F1 on both seed-0 and the 3-seed mean — its 26-class lead is robust. Graph has the widest spread (±0.025); its seed-0 0.525 sits **above** its mean 0.499, and on the mean Graph is the **lowest** of the three at 26-class. Seq seed-0 (0.501) sat **below** its mean (0.511). The Graph-vs-Seq ordering flips between seed-0 and mean, i.e. inside noise. With std ~0.01–0.025, any inter-architecture macro gap below ~0.05 is within the random-seed band. The "Graph terkuat" claim therefore rests on the **25-class headline (0.601) + localization**, NOT 26-class macro (where Hybrid wins robustly).
+
+---
+
 # Training Efficiency
 
 | Run                      | GPU             | Params | Epoch Time | Total Time (hr) | VRAM Peak |
