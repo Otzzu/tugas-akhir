@@ -10,7 +10,7 @@ set -euo pipefail
 
 REMOTE="gdrive-mesach:tugas-akhir"
 DATA_TAR="megavul_ml1024_baselines_20260613.tar.gz"
-RUN_ID="linevd_megavul_ml1024_$(date +%Y%m%d_%H%M%S)"
+RUN_ID="linevd_megavul_ml1024${SEED:+_s$SEED}_$(date +%Y%m%d_%H%M%S)"
 WORK="$PWD"
 
 echo "=== [1/6] LineVD present (vendored in-repo; clone only if missing) ==="
