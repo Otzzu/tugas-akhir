@@ -670,7 +670,71 @@ Three training seeds per proposed architecture for IV.4.4 (ancaman validitas), *
 | Hibrida Graph–LM (O1 `20260625_072202`) | `20260624_173655` / `212630` | 0.502 / 0.533 / 0.527 | **0.521 ± 0.016** | 0.529 ± 0.014 | 0.538 ± 0.010 |
 | Sekuensial (S1 `20260625_063256`)       | `20260624_152857` / `163118` | 0.477 / 0.536 / 0.496 | **0.503 ± 0.030** | 0.514 ± 0.022 | 0.514 ± 0.023 |
 
-**Findings.** The full-fix seed-42 rerun lands notably below the original eval-only-fix headline (Graph 0.452 vs Tabel IV.13 0.525, Hybrid 0.502 vs 0.545, Seq 0.477 vs 0.501) — early-stopping on the corrected val macro selects an earlier, lower-test-macro checkpoint. On the consistent 3-seed mean, **Hybrid leads (0.521 ± 0.016, tightest std), Seq second (0.503), Graph lowest (0.474)**. Hybrid's 26-class lead is robust across seeds. With std ~0.02–0.03, any inter-architecture macro gap below ~0.05 is within noise. **Implication:** Tabel IV.13 (eval-only-fix, 0.525/0.545/0.501) overstates the absolute level; the full-fix mean is the defensible 26-class number. The "Graph terkuat" claim rests on the **25-class headline (0.601) + localization**, NOT 26-class macro (where Hybrid wins robustly).
+**Findings.** The full-fix seed-42 rerun lands notably below the original eval-only-fix headline (Graph 0.452 vs Tabel IV.13 0.525, Hybrid 0.502 vs 0.545, Seq 0.477 vs 0.501) — early-stopping on the corrected val macro selects an earlier, lower-test-macro checkpoint. On the consistent 3-seed mean, **Hybrid leads (0.521 ± 0.016, tightest std), Seq second (0.503), Graph lowest (0.474)**. Hybrid's 26-class lead is robust across seeds. With std ~0.02–0.03, any inter-architecture macro gap below ~0.05 is within noise. **Implication:** Tabel IV.13 (eval-only-fix, 0.525/0.545/0.501) overstates the absolute level; the full-fix mean is the defensible 26-class number. The "Graph terkuat" claim rests on the **25-class headline (0.601)**, NOT 26-class macro (where Hybrid wins robustly).
+
+**Localization (mean±std, 26-class).**
+
+| Arch           | IFA ↓         | Top-1 ↑       | Top-5 ↑       | R@5%LOC ↑     | R@20%LOC ↑    | Effort@20%R ↓ |
+| -------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- |
+| Berbasis Graph | 0.516 ± 0.279 | 0.873 ± 0.043 | 0.982 ± 0.009 | 0.245 ± 0.022 | 0.456 ± 0.029 | 0.034 ± 0.006 |
+| Hibrida        | 0.669 ± 0.127 | 0.900 ± 0.033 | 0.980 ± 0.005 | 0.261 ± 0.028 | 0.419 ± 0.035 | 0.026 ± 0.007 |
+| Sekuensial     | 0.526 ± 0.087 | 0.879 ± 0.027 | 0.979 ± 0.006 | 0.248 ± 0.019 | 0.461 ± 0.011 | 0.032 ± 0.006 |
+
+**IFA unreliable at n=3** (std ±0.09–0.28). On stable metrics Top-5 is a 3-way tie (~0.98); Hibrida leads Top-1, R@5%LOC, Effort. **No clean localization winner** — the single-run "Graph dominates localization" (IFA 0.310, Top-1 0.944) was a high-variance artifact.
+
+**Raw per-seed (audit — mean±std above computed from these).**
+
+| Arch   | seed | run               | Macro | Acc   | F1w   | IFA   | Top-1 | Top-5 | R@5   | R@20  | Eff   |
+| ------ | ---- | ----------------- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| Graph  | 42   | `20260625_061202` | 0.452 | 0.485 | 0.485 | 0.805 | 0.836 | 0.975 | 0.220 | 0.424 | 0.042 |
+| Graph  | 1    | `20260624_135135` | 0.495 | 0.527 | 0.532 | 0.249 | 0.920 | 0.993 | 0.261 | 0.462 | 0.030 |
+| Graph  | 2    | `20260624_145225` | 0.476 | 0.508 | 0.507 | 0.495 | 0.864 | 0.978 | 0.255 | 0.481 | 0.032 |
+| Hibrida| 42   | `20260625_072202` | 0.502 | 0.540 | 0.549 | 0.807 | 0.877 | 0.980 | 0.273 | 0.411 | 0.023 |
+| Hibrida| 1    | `20260624_173655` | 0.533 | 0.513 | 0.530 | 0.556 | 0.885 | 0.976 | 0.229 | 0.389 | 0.034 |
+| Hibrida| 2    | `20260624_212630` | 0.527 | 0.535 | 0.534 | 0.644 | 0.938 | 0.986 | 0.281 | 0.458 | 0.021 |
+| Seq    | 42   | `20260625_063256` | 0.477 | 0.500 | 0.499 | 0.428 | 0.909 | 0.985 | 0.264 | 0.474 | 0.027 |
+| Seq    | 1    | `20260624_152857` | 0.536 | 0.539 | 0.540 | 0.557 | 0.867 | 0.978 | 0.228 | 0.452 | 0.039 |
+| Seq    | 2    | `20260624_163118` | 0.496 | 0.502 | 0.502 | 0.594 | 0.859 | 0.973 | 0.254 | 0.458 | 0.030 |
+
+---
+
+# Multi-Seed Variance — 25-class vuln-only (N48-vo / O1-vo / S1-vo, seeds 42,1,2)
+
+Three training seeds per proposed architecture on the **vuln-only 25-class** split (no benign), for the headline-vs-baseline comparison (Tabel IV.10). Same setup as the 26-class section, ÷present, only `train.seed` varies. **One duplicate seed-42 O1-vo run (`20260625_163025`, macro 0.933) is EXCLUDED** — anomalous on the same 913-sample test (config seed=42 same as `20260625_152707`; likely a leaked/broken split before the seed-42 rerun). The corrected seed-42 O1-vo run is `20260625_152707` (0.552).
+
+| Arch (seed-42 run)                          | seed-1 / seed-2 runs         | Macro F1 (s42/s1/s2)  | mean ± std        | Acc mean±std  | F1-w mean±std |
+| ------------------------------------------- | ---------------------------- | --------------------- | ----------------- | ------------- | ------------- |
+| Berbasis Graph (N48-vo `20260625_110933`)   | `20260625_114910` / `123310` | 0.593 / 0.563 / 0.562 | **0.573 ± 0.017** | 0.571 ± 0.014 | 0.572 ± 0.014 |
+| Hibrida Graph–LM (O1-vo `20260625_152707`)  | `20260626_004000` / `022016` | 0.552 / 0.548 / 0.525 | **0.542 ± 0.014** | 0.548 ± 0.008 | 0.549 ± 0.010 |
+| Sekuensial (S1-vo `20260625_125515`)        | `20260625_132730` / `140449` | 0.575 / 0.541 / 0.559 | **0.558 ± 0.017** | 0.562 ± 0.011 | 0.560 ± 0.010 |
+
+**Findings.** On the 3-seed mean, **Berbasis Graph leads (0.573 ± 0.017) > Sekuensial (0.558) > Hibrida (0.542)** — the OPPOSITE order to the 26-class result (where Hibrida leads). This confirms the headline split: **Graph is strongest on vuln-only 25-class classification**, Hibrida on the benign-inclusive 26-class. Graph over Seq (0.015) is within ~1 std so that pair is marginal, but both clearly beat Hibrida on vuln-only. The single-run headline (Graph 0.601) sits above the mean 0.573 — same high-end pattern as 26-class. Localization mean±std follows.
+
+**Localization (mean±std, 25-class vuln-only).**
+
+| Arch           | IFA ↓         | Top-1 ↑       | Top-5 ↑       | R@5%LOC ↑     | R@20%LOC ↑    | Effort@20%R ↓ |
+| -------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- |
+| Berbasis Graph | 0.545 ± 0.168 | 0.888 ± 0.036 | 0.980 ± 0.004 | 0.227 ± 0.017 | 0.490 ± 0.028 | 0.040 ± 0.004 |
+| Hibrida        | 1.124 ± 0.780 | 0.865 ± 0.053 | 0.963 ± 0.021 | 0.259 ± 0.025 | 0.483 ± 0.020 | 0.033 ± 0.004 |
+| Sekuensial     | 0.450 ± 0.275 | 0.905 ± 0.027 | 0.979 ± 0.014 | 0.250 ± 0.026 | 0.493 ± 0.028 | 0.032 ± 0.006 |
+
+**IFA very noisy** (Hibrida ±0.78). Top-5 ~tied (~0.98). Sekuensial leads Top-1 (0.905), Graph best IFA (0.545, noisy), Hibrida best R@5%LOC. **No clean localization winner** here either — consistent with the 26-class finding that localization dominance is not robust across seeds.
+
+**Raw per-seed (audit — mean±std above computed from these).**
+
+| Arch   | seed | run               | Macro | Acc   | F1w   | IFA   | Top-1 | Top-5 | R@5   | R@20  | Eff   |
+| ------ | ---- | ----------------- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| Graph  | 42   | `20260625_110933` | 0.593 | 0.586 | 0.585 | 0.464 | 0.847 | 0.977 | 0.212 | 0.458 | 0.043 |
+| Graph  | 1    | `20260625_114910` | 0.563 | 0.571 | 0.574 | 0.433 | 0.907 | 0.985 | 0.246 | 0.511 | 0.036 |
+| Graph  | 2    | `20260625_123310` | 0.562 | 0.558 | 0.557 | 0.737 | 0.911 | 0.980 | 0.223 | 0.500 | 0.042 |
+| Hibrida| 42   | `20260625_152707` | 0.552 | 0.540 | 0.538 | 0.226 | 0.915 | 0.987 | 0.249 | 0.492 | 0.035 |
+| Hibrida| 1    | `20260626_004000` | 0.548 | 0.548 | 0.550 | 1.504 | 0.871 | 0.957 | 0.287 | 0.496 | 0.028 |
+| Hibrida| 2    | `20260626_022016` | 0.525 | 0.556 | 0.558 | 1.640 | 0.810 | 0.946 | 0.241 | 0.460 | 0.036 |
+| Seq    | 42   | `20260625_125515` | 0.575 | 0.574 | 0.572 | 0.172 | 0.924 | 0.993 | 0.230 | 0.467 | 0.035 |
+| Seq    | 1    | `20260625_132730` | 0.541 | 0.554 | 0.554 | 0.457 | 0.916 | 0.981 | 0.279 | 0.522 | 0.025 |
+| Seq    | 2    | `20260625_140449` | 0.559 | 0.556 | 0.555 | 0.721 | 0.874 | 0.965 | 0.241 | 0.489 | 0.035 |
+
+(Excluded duplicate seed-42 O1-vo `20260625_163025`, Macro 0.933 — anomalous, see above.)
 
 ---
 
