@@ -1,3 +1,5 @@
+import os
+
 import pytorch_lightning as pl
 import sastvd.linevd as lvd
 from ray.tune.integration.pytorch_lightning import (
@@ -10,6 +12,7 @@ def train_linevd(
     config, savepath, samplesz=-1, max_epochs=130, num_gpus=1, checkpoint_dir=None
 ):
     """Wrap Pytorch Lightning to pass to RayTune."""
+    pl.seed_everything(int(os.environ.get("LINEVD_SEED", "0")), workers=True)
     model = lvd.LitGNN(
         hfeat=config["hfeat"],
         embtype=config["embtype"],

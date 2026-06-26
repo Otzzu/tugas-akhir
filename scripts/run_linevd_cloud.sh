@@ -147,6 +147,7 @@ if [[ -n "$EVAL_ONLY" ]]; then
   [[ -n "$LINEVD_CKPT" ]] || { echo "ERR: no .ckpt found inside $WEIGHTS_TAR"; exit 1; }
   echo "  EVAL_ONLY: loaded $LINEVD_CKPT (skip raytune train)"
 else
+  export LINEVD_SEED="${SEED:-0}"
   PYTHONPATH=. python sastvd/scripts/train_best.py 2>&1 | tee "$OUT/train.log"
 fi
 
