@@ -330,6 +330,8 @@ def main() -> None:
                         help="Write only metrics_summary.json, skip per-sample CSVs + plots (API path).")
     parser.add_argument("--seed", type=int, default=None,
                         help="Override cfg.train.seed to match a multi-seed run's split.")
+    parser.add_argument("--split-seed", type=int, default=None,
+                        help="Override the split seed to match the model's training split.")
     args = parser.parse_args()
 
     config_path = Path(args.config) if args.config else Path(args.checkpoint).parent / "config.yaml"
@@ -338,6 +340,8 @@ def main() -> None:
         logger.warning("No config.yaml found, using defaults.")
     if args.seed is not None:
         cfg.train.seed = args.seed
+    if args.split_seed is not None:
+        cfg.data.split_seed = args.split_seed
 
     setup_logging(cfg.train.log_dir)
     device = get_device(cfg.train.device)
@@ -373,7 +377,7 @@ def main() -> None:
     _, _, test_idx = dataset.get_splits(
         train_ratio=getattr(cfg.data, "train_ratio", 0.8),
         val_ratio=getattr(cfg.data, "val_ratio", 0.1),
-        seed=cfg.train.seed,
+        seed=getattr(cfg.data, "split_seed", None) or cfg.train.seed,
     )
     if not test_idx:
         logger.info("Empty test split (train_ratio + val_ratio = 1.0) — evaluation skipped (prod 90/10/0).")

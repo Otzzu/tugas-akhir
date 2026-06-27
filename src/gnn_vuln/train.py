@@ -92,6 +92,8 @@ class TrainingSession:
                if all(Path(p).exists() for p in paths) else load_default_config())
         if getattr(args, "seed", None) is not None:
             cfg.train.seed = args.seed
+        if getattr(args, "split_seed", None) is not None:
+            cfg.data.split_seed = args.split_seed
         set_seed(cfg.train.seed, deterministic=getattr(cfg.train, "deterministic", False))
         setup_logging(cfg.train.log_dir)
         return cls(cfg, resume=getattr(args, "resume", False))
@@ -579,7 +581,7 @@ class TrainingSession:
             train_idx, val_idx, test_idx = dataset.get_splits(
                 train_ratio=getattr(cfg.data, "train_ratio", 0.8),
                 val_ratio=getattr(cfg.data, "val_ratio", 0.1),
-                seed=cfg.train.seed,
+                seed=getattr(cfg.data, "split_seed", None) or cfg.train.seed,
             )
             if _use_balanced:
                 from gnn_vuln.training.sampler import SupConBalancedSampler
@@ -692,7 +694,7 @@ class TrainingSession:
         train_idx, _, _ = ds.get_splits(
             train_ratio=getattr(cfg.data, "train_ratio", 0.8),
             val_ratio=getattr(cfg.data, "val_ratio", 0.1),
-            seed=cfg.train.seed,
+            seed=getattr(cfg.data, "split_seed", None) or cfg.train.seed,
         )
         bpc = int(getattr(rcfg, "buffer_per_class", 0))
         if bpc > 0:
@@ -1012,6 +1014,8 @@ def main() -> None:
                         help="Resume from latest last_*.pt for this arch/mode.")
     parser.add_argument("--seed", type=int, default=None,
                         help="Override cfg.train.seed for multi-seed variance runs.")
+    parser.add_argument("--split-seed", type=int, default=None,
+                        help="Override the train/val/test split seed (keeps the split fixed while train.seed varies).")
     args = parser.parse_args()
 
     session = TrainingSession.from_args(args)

@@ -31,7 +31,11 @@ SEED = None   # set from --seed in main; overrides train.seed (split + init) for
 
 
 def _seed_args() -> list:
-    return ["--seed", str(SEED)] if SEED is not None else []
+    # split fixed at 42 (the task-A backbone's split) so eval never leaks; only init (train.seed) varies
+    a = ["--split-seed", "42"]
+    if SEED is not None:
+        a += ["--seed", str(SEED)]
+    return a
 
 METHODS = [
     ("Fine-tuning naif",              CFG / "N48_relearn_naive.yaml"),

@@ -85,6 +85,9 @@ class DataConfig:
     max_per_class: int = 0
     # Random seed for max_per_class sampling. Change for a different sample.
     resample_seed: int = 42
+    # Train/val/test partition seed. None -> falls back to train.seed. Set (e.g. 42) to keep the
+    # split fixed while train.seed varies — used by relearn so a fixed-backbone eval never leaks.
+    split_seed: int | None = None
     # Explicit split file (json {"train":[parquet_id...],"val":[...],"test":[...]}). When set,
     # overrides seeded get_splits — used to match a baseline's exact split (e.g. LIVABLE Big-Vul
     # survivors). parquet_id == the "id" column of the source parquet. Empty = default 80/10/10.
