@@ -32,12 +32,13 @@ while [[ $# -gt 0 ]]; do
 done
 WORK="$PWD"
 LV="$WORK/src/LIVABLE"
+SEED="${SEED:-10}"   # multi-seed: patched into main_sta.py below; default 10 = LIVABLE original
 if [[ "$MODE" == "bigvul" ]]; then
   PREP="$WORK/bigvul_livable"; PREP_CACHE="livable_bigvul_preprocess.tar.gz"
   RUN_ID="livable_bigvul_${TS}_top${TOPCWE}_${OPT}${LR}"
 else
   PREP="$WORK/megavul_livable"; PREP_CACHE="livable_megavul_preprocess.tar.gz"
-  RUN_ID="livable_megavul_${TS}"
+  RUN_ID="livable_megavul_s${SEED}_${TS}"
   [[ -n "$VULN_ONLY" ]] && RUN_ID="${RUN_ID}_vo"
   RUN_ID="${RUN_ID}_${OPT}${LR}"
 fi
@@ -193,6 +194,7 @@ fi
 # / AdamW text) always apply — otherwise a same-pod re-run silently no-ops and leaves stale values.
 git -C "$LV" checkout -- code/main_sta.py code/trainer_sta.py code/modules/model.py code/data_loader/dataset.py 2>/dev/null || true
 sed -i "s/from trainer_test import train/from trainer_sta import train/" "$LV/code/main_sta.py"
+sed -i -E "s/torch\.manual_seed\([0-9]+\)/torch.manual_seed($SEED)/; s/np\.random\.seed\([0-9]+\)/np.random.seed($SEED)/" "$LV/code/main_sta.py"   # multi-seed
 sed -i "s/self.graph.add_edge(/self.graph.add_edges(/" "$LV/code/data_loader/dataset.py"   # dgl 2.x rename
 sed -i "s/os.environ\['CUDA_VISIBLE_DEVICES'\] = '1'/os.environ['CUDA_VISIBLE_DEVICES'] = '0'/" "$LV/code/main_sta.py"  # single-GPU pod
 sed -i "s/MLPReadout(self.hidden_dim2, 31)/MLPReadout(self.hidden_dim2, $NUM_CLASSES)/" "$LV/code/modules/model.py"
