@@ -738,6 +738,46 @@ Three training seeds per proposed architecture on the **vuln-only 25-class** spl
 
 ---
 
+# Multi-Seed Variance — Baselines (25-class vuln-only, seeds 42,1,2)
+
+Tiga seed pelatihan per baseline (`SEED` env → init training mereka; split TETAP = split baseline cached seed-42, sama dengan model usulan). Metrik ÷present dari `*_recomputed_metrics.json` tiap bundle (compute_baseline_metrics.py). **LineVD menunggu** re-run setelah fix eval `ray.tune.Analysis` (commit afd8f98).
+
+## Classification (mean±std)
+
+| Baseline     | Macro F1          | Acc           | F1-w          |
+| ------------ | ----------------- | ------------- | ------------- |
+| **LOSVER**   | **0.640 ± 0.015** | 0.662 ± 0.011 | 0.660 ± 0.011 |
+| VulExplainer | 0.561 ± 0.043     | 0.594 ± 0.015 | 0.593 ± 0.018 |
+
+**Headline 25-kelas TERBALIK oleh multi-seed.** Dibanding arsitektur usulan (Graph 0.573, Seq 0.558, Hibrida 0.542), **LOSVER (0.640) memimpin macro F1 di atas semua arsitektur usulan**. Single-run lama (Graph 0.601 > LOSVER 0.580) menyesatkan dua arah — run Graph kebetulan tinggi, run LOSVER (seed-123456) kebetulan rendah. Urutan macro 25-kelas robust: **LOSVER 0.640 > Graph 0.573 > VulExplainer 0.561 > Seq 0.558 > Hibrida 0.542**.
+
+## Localization (mean±std)
+
+| Baseline | IFA ↓         | Top-1 ↑       | Top-5 ↑       | R@5%LOC ↑     | R@20%LOC ↑    | Effort@20%R ↓ |
+| -------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- |
+| LOSVER   | 0.180 ± 0.017 | 0.977 ± 0.002 | 0.988 ± 0.002 | 0.492 ± 0.006 | 0.733 ± 0.003 | 0.017 ± 0.000 |
+| LineVul  | 6.160 ± 0.078 | 0.224 ± 0.005 | 0.589 ± 0.004 | 0.137 ± 0.004 | 0.369 ± 0.005 | 0.087 ± 0.005 |
+
+LOSVER dominan lokalisasi di semua seed (seperti single-run). LineVul jauh di bawah semua. Arsitektur usulan di antaranya (lihat section 25-kelas).
+
+## Raw per-seed (audit — mean±std di atas dihitung dari sini)
+
+| Baseline     | seed | Macro | Acc   | F1-w  | IFA   | Top-1 | Top-5 | R@5   | R@20  | Eff   |
+| ------------ | ---- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| LOSVER       | 42   | 0.627 | 0.674 | 0.671 | 0.187 | 0.978 | 0.988 | 0.486 | 0.729 | 0.017 |
+| LOSVER       | 1    | 0.637 | 0.652 | 0.650 | 0.161 | 0.978 | 0.990 | 0.496 | 0.733 | 0.017 |
+| LOSVER       | 2    | 0.657 | 0.661 | 0.659 | 0.193 | 0.975 | 0.987 | 0.495 | 0.735 | 0.017 |
+| VulExplainer | 42   | 0.588 | 0.588 | 0.588 | —     | —     | —     | —     | —     | —     |
+| VulExplainer | 1    | 0.584 | 0.611 | 0.612 | —     | —     | —     | —     | —     | —     |
+| VulExplainer | 2    | 0.511 | 0.583 | 0.578 | —     | —     | —     | —     | —     | —     |
+| LineVul      | 42   | —     | —     | —     | 6.227 | 0.221 | 0.586 | 0.133 | 0.364 | 0.091 |
+| LineVul      | 1    | —     | —     | —     | 6.075 | 0.230 | 0.594 | 0.140 | 0.373 | 0.082 |
+| LineVul      | 2    | —     | —     | —     | 6.177 | 0.222 | 0.587 | 0.136 | 0.370 | 0.088 |
+
+LIVABLE tetap single-run (collapse 0.047). LineVD menyusul setelah re-run.
+
+---
+
 # Training Efficiency
 
 | Run                      | GPU             | Params | Epoch Time | Total Time (hr) | VRAM Peak |
