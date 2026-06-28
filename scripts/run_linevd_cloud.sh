@@ -193,21 +193,29 @@ if ckpt:
     model.all_funcs = all_funcs
     print("manual test done, funcs:", len(all_funcs))
 else:
-    from ray.tune import Analysis
-    from sastvd.scripts.rqtest import main
-    raytune_dirs = glob(str(svd.processed_dir() / "raytune_*_-1"))
-    tune_dirs = [i for j in [glob(f"{rd}/*") for rd in raytune_dirs] for i in j]
-    df = pd.concat([Analysis(d).dataframe() for d in tune_dirs])
-    if "config/splits" not in df.columns: df["config/splits"] = "default"
-    if "config/embtype" not in df.columns: df["config/embtype"] = "codebert"
-    for c in df[["config/gtype", "config/splits", "config/embtype"]].drop_duplicates().to_dict("records"):
-        main(c, df)
-    print("EVAL DONE -> outputs/rq_results_new")
-    best = df.loc[df["val_auroc"].astype(float).idxmax()]
-    dm = lvd.BigVulDatasetLineVDDataModule(batch_size=1024, nsampling_hops=2,
-            gtype=best["config/gtype"], splits=best["config/splits"], feat=best["config/embtype"])
-    model = lvd.LitGNN.load_from_checkpoint(sorted(glob(best["logdir"] + "/checkpoint_*"))[-1] + "/checkpoint", strict=False)
-    mk_trainer().test(model, dm)
+    # full-train: single fixed-config trial. Newer ray removed ray.tune.Analysis, so grab the
+    # trained checkpoint directly (no best-trial search needed) and run the same manual test loop
+    # as EVAL_ONLY. OUR localization metric comes from the per-stmt dump below, not rqtest.
+    cks = sorted(glob(str(svd.processed_dir() / "raytune_*_-1" / "**" / "checkpoint"), recursive=True))
+    if not cks: raise SystemExit("ERR: no raytune checkpoint under processed/raytune_*_-1")
+    print("full-train: loading", cks[-1])
+    model = lvd.LitGNN.load_from_checkpoint(cks[-1], strict=False)
+    gt = getattr(model.hparams, "gtype", "pdg+raw"); emb = getattr(model.hparams, "embtype", "codebert"); sp = getattr(model.hparams, "splits", "default")
+    dm = lvd.BigVulDatasetLineVDDataModule(batch_size=1024, nsampling_hops=2, gtype=gt, splits=sp, feat=emb)
+    import torch as _th
+    try: dm.setup("test")
+    except Exception: pass
+    dev = "cuda" if _th.cuda.is_available() else "cpu"
+    model = model.to(dev).eval()
+    all_funcs = []
+    with _th.no_grad():
+        for batch in dm.test_dataloader():
+            try: batch = batch.to(dev)
+            except Exception: pass
+            out = model.test_step(batch, 0)
+            all_funcs += out[2]
+    model.all_funcs = all_funcs
+    print("manual test done, funcs:", len(all_funcs))
 rows = []
 for fid, fn in enumerate(model.all_funcs):   # fn = [node_pred(softmax [N,2]), _VULN, pred_func, _LINE]
     sc, vu, _, ln = fn
