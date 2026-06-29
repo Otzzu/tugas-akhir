@@ -16,13 +16,15 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, f1_score
 
 OUT = Path("docs")
+# Canonical seed-42 runs under the full ÷present macro fix (multi-seed seed 42), matching
+# the mean±std tables in bab-4. Bundles on Drive results/ as <run>_results.zip.
 # best model used for the confusion matrix + localization example
-RUN = Path("results/ablation/gnn_only/20260606_163818_lmgat_codebert_multiclass")
+RUN = Path("results/ablation/gnn_only/20260625_061202_lmgat_codebert_multiclass")
 # the 3 proposed architectures on the same 26-class test, for the per-class F1 comparison
 ARCHS = [
-    ("Berbasis Graph", "#3b6fb0", "results/ablation/gnn_only/20260606_163818_lmgat_codebert_multiclass"),
-    ("Hibrida Graph-LM", "#e08a1e", "results/ablation/phase13/20260612_131926_lmgat_codebert_multiclass"),
-    ("Sekuensial", "#4a9b5e", "results/ablation/seqgnn/20260620_080752_lmgat_seqgnn_multiclass"),
+    ("Berbasis Graph", "#3b6fb0", "results/ablation/gnn_only/20260625_061202_lmgat_codebert_multiclass"),
+    ("Hibrida Graph-LM", "#e08a1e", "results/ablation/phase13/20260625_072202_lmgat_codebert_multiclass"),
+    ("Sekuensial", "#4a9b5e", "results/ablation/seqgnn/20260625_063256_lmgat_seqgnn_multiclass"),
 ]
 
 
