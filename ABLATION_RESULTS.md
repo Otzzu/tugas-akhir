@@ -696,6 +696,19 @@ Three training seeds per proposed architecture for IV.4.4 (ancaman validitas), *
 | Seq    | 1    | `20260624_152857` | 0.536 | 0.539 | 0.540 | 0.557 | 0.867 | 0.978 | 0.228 | 0.452 | 0.039 |
 | Seq    | 2    | `20260624_163118` | 0.496 | 0.502 | 0.502 | 0.594 | 0.859 | 0.973 | 0.254 | 0.458 | 0.030 |
 
+## Backbone variant — unixcoder-base-nine (N48 Berbasis Graph, 26-class)
+
+N48 dengan node embedding `unixcoder-base-nine` (C/C++-aware) menggantikan `unixcoder-base`, multi-seed (42, 1, 2) yang sama, ÷present. Menguji apakah backbone sadar C/C++ menolong GNN murni di kondisi terbaru. Berbeda dari ablation lama yang MENYAKITI join O1 single-run (O1-nine 0.464 < 0.524), ini N48 murni multi-seed. Runs `20260629_{151930,154445,155935}`.
+
+| Backbone | Macro F1          | Acc           | F1-w          | IFA           | Top-1         | Top-5         | R@5%LOC       | R@20%LOC      | Effort        |
+| -------- | ----------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- |
+| base     | 0.474 ± 0.022     | 0.507 ± 0.021 | 0.508 ± 0.024 | 0.516 ± 0.279 | 0.873 ± 0.043 | 0.982 ± 0.009 | 0.245 ± 0.022 | 0.456 ± 0.029 | 0.034 ± 0.006 |
+| **nine** | 0.490 ± 0.030     | 0.500 ± 0.011 | 0.500 ± 0.012 | 0.382 ± 0.199 | 0.918 ± 0.037 | 0.984 ± 0.006 | 0.243 ± 0.009 | 0.442 ± 0.010 | 0.032 ± 0.002 |
+
+**Verdict.** Macro nine 0.490 vs base 0.474 = +0.016, DI DALAM noise (gap << 2 std). Lokalisasi nine sedikit lebih baik (Top-1 +0.045, IFA lebih rendah) tetapi IFA sangat noisy (±0.20). Nine NETRAL-ke-marginal pada N48 murni, TIDAK menyakiti seperti join O1. "Nine hurts" lama spesifik ke join, bukan GNN murni. 25-class vuln-only nine masih pending untuk membandingkan headline (base 0.573).
+
+Raw per-seed nine (audit): Macro s42 0.470 / s1 0.525 / s2 0.475. IFA 0.466 / 0.155 / 0.525. Top-1 0.903 / 0.960 / 0.890.
+
 ---
 
 # Multi-Seed Variance — 25-class vuln-only (N48-vo / O1-vo / S1-vo, seeds 42,1,2)
