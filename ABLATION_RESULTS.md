@@ -705,9 +705,16 @@ N48 dengan node embedding `unixcoder-base-nine` (C/C++-aware) menggantikan `unix
 | base     | 0.474 ± 0.022     | 0.507 ± 0.021 | 0.508 ± 0.024 | 0.516 ± 0.279 | 0.873 ± 0.043 | 0.982 ± 0.009 | 0.245 ± 0.022 | 0.456 ± 0.029 | 0.034 ± 0.006 |
 | **nine** | 0.490 ± 0.030     | 0.500 ± 0.011 | 0.500 ± 0.012 | 0.382 ± 0.199 | 0.918 ± 0.037 | 0.984 ± 0.006 | 0.243 ± 0.009 | 0.442 ± 0.010 | 0.032 ± 0.002 |
 
-**Verdict.** Macro nine 0.490 vs base 0.474 = +0.016, DI DALAM noise (gap << 2 std). Lokalisasi nine sedikit lebih baik (Top-1 +0.045, IFA lebih rendah) tetapi IFA sangat noisy (±0.20). Nine NETRAL-ke-marginal pada N48 murni, TIDAK menyakiti seperti join O1. "Nine hurts" lama spesifik ke join, bukan GNN murni. 25-class vuln-only nine masih pending untuk membandingkan headline (base 0.573).
+Vuln-only 25-class N48-nine (runs `20260629_{175502,182931,190941}`, vs N48-vo base 0.573):
 
-Raw per-seed nine (audit): Macro s42 0.470 / s1 0.525 / s2 0.475. IFA 0.466 / 0.155 / 0.525. Top-1 0.903 / 0.960 / 0.890.
+| Backbone | Macro F1          | Acc           | F1-w          | IFA           | Top-1         | Top-5         |
+| -------- | ----------------- | ------------- | ------------- | ------------- | ------------- | ------------- |
+| base     | 0.573 ± 0.017     | 0.571 ± 0.014 | 0.572 ± 0.014 | 0.545 ± 0.168 | 0.888 ± 0.036 | 0.980 ± 0.004 |
+| **nine** | 0.568 ± 0.024     | 0.562 ± 0.013 | 0.561 ± 0.014 | 0.615 ± 0.086 | 0.847 ± 0.017 | 0.971 ± 0.008 |
+
+**Verdict.** 26-class nine 0.490 vs base 0.474 (+0.016), 25-class nine 0.568 vs base 0.573 (−0.005). Kedua selisih DI DALAM noise (std ±0.02), arah berlawanan, sehingga nine TIDAK konsisten menolong N48 murni. Lokalisasi nine sedikit lebih buruk pada vuln-only (Top-1 0.847 vs 0.888). "Nine hurts" lama spesifik ke join O1 single-run, bukan GNN murni. **Implikasi penting**, bahkan dengan nine graph kami (0.568) tetap jauh di bawah LOSVER (0.640), sehingga backbone nine BUKAN penyebab keunggulan LOSVER (confound IV.4.4 teruji dan gugur).
+
+Raw per-seed nine 26-class: Macro s42 0.470 / s1 0.525 / s2 0.475. Vuln-only: Macro s42 0.564 / s1 0.547 / s2 0.595.
 
 ---
 
