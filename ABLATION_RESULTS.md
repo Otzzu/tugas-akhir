@@ -696,7 +696,7 @@ Three training seeds per proposed architecture for IV.4.4 (ancaman validitas), *
 | Seq    | 1    | `20260624_152857` | 0.536 | 0.539 | 0.540 | 0.557 | 0.867 | 0.978 | 0.228 | 0.452 | 0.039 |
 | Seq    | 2    | `20260624_163118` | 0.496 | 0.502 | 0.502 | 0.594 | 0.859 | 0.973 | 0.254 | 0.458 | 0.030 |
 
-## Backbone variant — unixcoder-base-nine (N48 Berbasis Graph, 26-class)
+## Backbone variant — unixcoder-base-nine (N48 + O1, multi-seed)
 
 N48 dengan node embedding `unixcoder-base-nine` (C/C++-aware) menggantikan `unixcoder-base`, multi-seed (42, 1, 2) yang sama, ÷present. Menguji apakah backbone sadar C/C++ menolong GNN murni di kondisi terbaru. Berbeda dari ablation lama yang MENYAKITI join O1 single-run (O1-nine 0.464 < 0.524), ini N48 murni multi-seed. Runs `20260629_{151930,154445,155935}`.
 
@@ -715,6 +715,15 @@ Vuln-only 25-class N48-nine (runs `20260629_{175502,182931,190941}`, vs N48-vo b
 **Verdict.** 26-class nine 0.490 vs base 0.474 (+0.016), 25-class nine 0.568 vs base 0.573 (−0.005). Kedua selisih DI DALAM noise (std ±0.02), arah berlawanan, sehingga nine TIDAK konsisten menolong N48 murni. Lokalisasi nine sedikit lebih buruk pada vuln-only (Top-1 0.847 vs 0.888). "Nine hurts" lama spesifik ke join O1 single-run, bukan GNN murni. **Implikasi penting**, bahkan dengan nine graph kami (0.568) tetap jauh di bawah LOSVER (0.640), sehingga backbone nine BUKAN penyebab keunggulan LOSVER (confound IV.4.4 teruji dan gugur).
 
 Raw per-seed nine 26-class: Macro s42 0.470 / s1 0.525 / s2 0.475. Vuln-only: Macro s42 0.564 / s1 0.547 / s2 0.595.
+
+### O1 Hibrida nine vuln-only 25-class (runs `20260630_{024656,044504,063729}`, vs O1-base vuln-only 0.542)
+
+| Backbone | Macro F1          | Acc           | F1-w          | IFA           | Top-1         | Top-5         |
+| -------- | ----------------- | ------------- | ------------- | ------------- | ------------- | ------------- |
+| base     | 0.542 ± 0.014     | 0.548 ± 0.008 | 0.549 ± 0.010 | 1.124 ± 0.780 | 0.865 ± 0.053 | 0.963 ± 0.021 |
+| **nine** | 0.546 ± 0.008     | 0.569 ± 0.016 | 0.570 ± 0.015 | 0.803 ± 0.547 | 0.898 ± 0.021 | 0.975 ± 0.006 |
+
+Nine macro +0.004 (DI DALAM noise), acc +0.021 (~1.3 std), lokalisasi sedikit lebih baik (Top-1 +0.033, IFA lebih rendah) — semua dalam atau dekat noise, tidak signifikan di n=3. Old O1-nine 26-class 0.464 (single-run ÷union) TIDAK tereplikasi di vuln-only multi-seed. Pola lengkap, nine NETRAL di N48 (25: −0.005) dan O1 (25: +0.004), keduanya dalam noise. Bahkan dengan nine kedua arsitektur tetap jauh di bawah LOSVER 0.640, sehingga backbone bukan penyebab keunggulan LOSVER. Raw per-seed nine O1 vuln-only: Macro s42 0.551 / s1 0.536 / s2 0.550.
 
 ---
 
