@@ -725,6 +725,17 @@ Raw per-seed nine 26-class: Macro s42 0.470 / s1 0.525 / s2 0.475. Vuln-only: Ma
 
 Nine macro +0.004 (DI DALAM noise), acc +0.021 (~1.3 std), lokalisasi sedikit lebih baik (Top-1 +0.033, IFA lebih rendah) — semua dalam atau dekat noise, tidak signifikan di n=3. Old O1-nine 26-class 0.464 (single-run ÷union) TIDAK tereplikasi di vuln-only multi-seed. Pola lengkap, nine NETRAL di N48 (25: −0.005) dan O1 (25: +0.004), keduanya dalam noise. Bahkan dengan nine kedua arsitektur tetap jauh di bawah LOSVER 0.640, sehingga backbone bukan penyebab keunggulan LOSVER. Raw per-seed nine O1 vuln-only: Macro s42 0.551 / s1 0.536 / s2 0.550.
 
+## CPG Denoising — cpg14 edge filter + largest CC (N48, 26-class)
+
+Derive `scripts/build_denoised_subset.py`: keep cpg14 edges (AST/CFG/CDG/REACHING_DEF) + largest connected component, membuang ~50% node (stub operator/external method synthetic + peripheral) + ~68% edge (bookkeeping). Reuse node features. Runs `20260630_{083523,084617,090118}`.
+
+| Variant | Macro F1      | Acc           | F1-w          | IFA           | Top-1         | Top-5         | sec/ep |
+| ------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------ |
+| base    | 0.474 ± 0.022 | 0.507 ± 0.021 | 0.508 ± 0.024 | 0.516 ± 0.279 | 0.873 ± 0.043 | 0.982 ± 0.009 | ~37    |
+| cpg14   | 0.305 ± 0.034 | 0.373 ± 0.021 | 0.378 ± 0.026 | 0.540 ± 0.216 | 0.867 ± 0.069 | 0.980 ± 0.011 | ~15.5  |
+
+**Verdict.** Denoising ke cpg14 MENYAKITI klasifikasi parah, macro **−0.169** (0.305 vs 0.474), jauh di luar noise. Lokalisasi TETAP (Top-1 0.867≈0.873, Top-5 sama, R@20 sedikit naik), dan **~2.4x lebih cepat**. Edge yang dibuang (CALL, ARGUMENT, REF, EVAL_TYPE) plus node operator membawa SINYAL klasifikasi, jadi bukan noise. **Memperkuat pilihan full-CPG plus GAT**, filter manual menghilangkan sinyal sedangkan GAT mengeksploitasi relasi penuh lebih baik. Raw per-seed cpg14 macro: s42 0.265 / s1 0.320 / s2 0.328.
+
 ---
 
 # Multi-Seed Variance — 25-class vuln-only (N48-vo / O1-vo / S1-vo, seeds 42,1,2)
