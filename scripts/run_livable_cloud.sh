@@ -37,7 +37,7 @@ if [[ "$MODE" == "bigvul" ]]; then
   PREP="$WORK/bigvul_livable"; PREP_CACHE="livable_bigvul_preprocess.tar.gz"
   RUN_ID="livable_bigvul_${TS}_top${TOPCWE}_${OPT}${LR}"
 else
-  PREP="$WORK/megavul_livable"; PREP_CACHE="livable_megavul_preprocess.tar.gz"
+  PREP="$WORK/megavul_livable_s${SEED}"; PREP_CACHE="livable_megavul_preprocess_s${SEED}.tar.gz"   # per-seed: joern_csv+ggnn are split-dependent, rebuild per seed (no cross-seed reuse)
   RUN_ID="livable_megavul_s${SEED}_${TS}"
   [[ -n "$VULN_ONLY" ]] && RUN_ID="${RUN_ID}_vo"
   RUN_ID="${RUN_ID}_${OPT}${LR}"
