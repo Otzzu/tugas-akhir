@@ -32,7 +32,7 @@ model:
   dropout: 0.3
   heads: 4
   edge_dim: 31
-  num_classes: 10
+  num_classes: 11
   add_self_loops: false
   use_skip: true
   gnn_block_style: gnn_plus
