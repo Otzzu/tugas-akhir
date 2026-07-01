@@ -118,10 +118,9 @@ fi
 mkdir -p storage/processed/bigvul
 ln -sfn ../megavul/before storage/processed/bigvul/before
 ln -sfn ../megavul/after  storage/processed/bigvul/after
-PYTHONPATH=. python sastvd/scripts/prepare.py
-
-# LineVD item cache (built DGL graphs + per-func codebert embeddings + doc2vec). Building
-# all ~14k graphs takes ~25min; restore from Drive on a fresh pod to go straight to train.
+# LineVD item cache (built DGL graphs + per-func codebert embeddings). Building all ~14k graphs
+# takes ~25min; restore from Drive on a fresh pod to go straight to train. These items are
+# per-function (split-INDEPENDENT) so they are shared across seeds.
 PREP_CACHE="linevd_megavul_prepcache.tar.gz"
 PREP_MARK="storage/cache/bigvul_linevd_codebert_pdg+raw"
 PREP_RESTORED=""
@@ -131,6 +130,12 @@ if [[ ! -d "$PREP_MARK" ]] && rclone ls "$REMOTE/data/baselines/$PREP_CACHE" >/d
   tar -I "${COMP[0]}" -xf "/tmp/$PREP_CACHE" && rm -f "/tmp/$PREP_CACHE"
   PREP_RESTORED=1
 fi
+# GloVe + Doc2Vec are trained on the TRAIN split (split-DEPENDENT: datasets.py generate_glove/d2v
+# use df[label=="train"]). Build them AFTER any restore and force fresh per seed (drop stale
+# featurizers) so seed-N uses seed-N-trained embeddings — else a cached seed-42 featurizer leaks
+# across seeds. codebert + DGL items above are per-function and stay.
+rm -rf storage/processed/bigvul/d2v_False storage/processed/bigvul/glove_False
+PYTHONPATH=. python sastvd/scripts/prepare.py
 
 echo "=== [5/6] train + localize ==="
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
@@ -235,8 +240,9 @@ fi
 # (LINEVD_REFRESH_CACHE=1 to OVERWRITE a stale/incomplete cache, OR it was freshly built + not on Drive).
 if [[ -d "$PREP_MARK" ]] && { [[ -n "${LINEVD_REFRESH_CACHE:-}" ]] || { [[ -z "$PREP_RESTORED" ]] && ! rclone ls "$REMOTE/data/baselines/$PREP_CACHE" >/dev/null 2>&1; }; }; then
   echo "  caching LineVD prep (codebert + d2v + glove) to Drive ..."
-  tar -cf - storage/cache/codebert_method_level "$PREP_MARK" \
-      storage/processed/bigvul/d2v_False storage/processed/bigvul/glove_False 2>/dev/null \
+  # cache ONLY the per-function items (codebert + DGL); d2v/glove are split-dependent and
+  # retrained per seed, so they are intentionally NOT cached.
+  tar -cf - storage/cache/codebert_method_level "$PREP_MARK" 2>/dev/null \
     | "${COMP[@]}" > "/tmp/$PREP_CACHE"
   rclone copyto "/tmp/$PREP_CACHE" "$REMOTE/data/baselines/$PREP_CACHE" --progress && rm -f "/tmp/$PREP_CACHE"
 fi
