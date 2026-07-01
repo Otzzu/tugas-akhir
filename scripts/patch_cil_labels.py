@@ -15,12 +15,14 @@ Run:
     uv run python scripts/patch_cil_labels.py
 """
 from __future__ import annotations
+import os
 from pathlib import Path
 import torch
 
 ROOT = Path(__file__).resolve().parents[1]
 PROC = ROOT / "data" / "processed"
-DS = "lm_dataset_megavul_cil_multiclass_unixcoder-base_ft_ml1024"
+_BACKBONE = "unixcoder-base-nine" if os.environ.get("RELEARN_NINE") else "unixcoder-base"
+DS = f"lm_dataset_megavul_cil_multiclass_{_BACKBONE}_ft_ml1024"
 
 # Task-A 26-class order (= MegaVul dataset class_names, indices 0..25).
 TASKA_26 = [

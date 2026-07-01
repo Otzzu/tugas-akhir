@@ -210,7 +210,7 @@ def main() -> None:
     args = ap.parse_args()
     global SEED
     SEED = args.seed
-    out_md = OUT_MD if SEED is None else OUT_MD.with_name(f"RELEARN_RESULTS_s{SEED}.md")
+    out_md = OUT_MD if SEED is None else OUT_MD.with_name(f"RELEARN_RESULTS{SUF}_s{SEED}.md")
     if args.setup or args.reeval:
         setup()
     _align_relearn_vocab()
