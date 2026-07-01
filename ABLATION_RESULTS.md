@@ -723,7 +723,30 @@ Raw per-seed nine 26-class: Macro s42 0.470 / s1 0.525 / s2 0.475. Vuln-only: Ma
 | base     | 0.542 ± 0.014     | 0.548 ± 0.008 | 0.549 ± 0.010 | 1.124 ± 0.780 | 0.865 ± 0.053 | 0.963 ± 0.021 |
 | **nine** | 0.546 ± 0.008     | 0.569 ± 0.016 | 0.570 ± 0.015 | 0.803 ± 0.547 | 0.898 ± 0.021 | 0.975 ± 0.006 |
 
-Nine macro +0.004 (DI DALAM noise), acc +0.021 (~1.3 std), lokalisasi sedikit lebih baik (Top-1 +0.033, IFA lebih rendah) — semua dalam atau dekat noise, tidak signifikan di n=3. Old O1-nine 26-class 0.464 (single-run ÷union) TIDAK tereplikasi di vuln-only multi-seed. Pola lengkap, nine NETRAL di N48 (25: −0.005) dan O1 (25: +0.004), keduanya dalam noise. Bahkan dengan nine kedua arsitektur tetap jauh di bawah LOSVER 0.640, sehingga backbone bukan penyebab keunggulan LOSVER. Raw per-seed nine O1 vuln-only: Macro s42 0.551 / s1 0.536 / s2 0.550.
+Nine macro +0.004 (DI DALAM noise), acc +0.021 (~1.3 std), lokalisasi sedikit lebih baik (Top-1 +0.033, IFA lebih rendah) — semua dalam atau dekat noise, tidak signifikan di n=3. Old O1-nine 26-class 0.464 (single-run ÷union) TIDAK tereplikasi di vuln-only multi-seed. Raw per-seed nine O1 vuln-only: Macro s42 0.551 / s1 0.536 / s2 0.550.
+
+### O1 26-class + S1 Sekuensial 26-class dan vuln-only nine
+
+Runs O1-26 `20260630_{101936,123040,155817}`, S1-26 `20260630_{183927,190353,194430}`, S1-vo `20260630_{202606,205251,212041}`.
+
+| Grup             | nine macro    | base  | Δ      | nine acc      | nine Top-1    |
+| ---------------- | ------------- | ----- | ------ | ------------- | ------------- |
+| O1 hybrid 26     | 0.535 ± 0.027 | 0.521 | +0.014 | 0.520 ± 0.026 | 0.821 ± 0.065 |
+| S1 seq 26        | 0.495 ± 0.034 | 0.503 | −0.008 | 0.506 ± 0.009 | 0.901 ± 0.027 |
+| S1 seq vuln-only | 0.580 ± 0.025 | 0.558 | +0.022 | 0.566 ± 0.021 | 0.906 ± 0.021 |
+
+**Rekap nine LENGKAP (3 arch × 2 setting, macro vs base):**
+
+| Arch | Setting | nine  | base  | Δ      |
+| ---- | ------- | ----- | ----- | ------ |
+| N48  | 26      | 0.490 | 0.474 | +0.016 |
+| N48  | 25-vo   | 0.568 | 0.573 | −0.005 |
+| O1   | 26      | 0.535 | 0.521 | +0.014 |
+| O1   | 25-vo   | 0.546 | 0.542 | +0.004 |
+| S1   | 26      | 0.495 | 0.503 | −0.008 |
+| S1   | 25-vo   | 0.580 | 0.558 | +0.022 |
+
+Nine NETRAL di semua kombinasi (4/6 sedikit positif +0.004..+0.022, 2/6 sedikit negatif, rata-rata ~+0.007, SEMUA dalam noise std ±0.02-0.03). Tidak ada arsitektur yang jelas diuntungkan, dan semua tetap jauh di bawah LOSVER 0.640 sehingga backbone bukan penyebab keunggulan LOSVER. Nine memiliki justifikasi a-priori, yaitu dilatih pada 9 bahasa termasuk C dan C++ yang cocok dengan domain MegaVul, sehingga merupakan pilihan backbone yang principled meski selisih empiris berada dalam noise. Catatan, S1-nine vuln-only 0.580 adalah macro vuln-only tertinggi di antara arsitektur usulan tetapi masih dalam noise terhadap N48-base 0.573.
 
 ## CPG Denoising — cpg14 edge filter + largest CC (N48, 26-class)
 
