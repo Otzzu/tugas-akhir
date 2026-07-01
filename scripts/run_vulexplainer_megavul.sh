@@ -105,12 +105,14 @@ if [[ -n "$EVAL_ONLY" ]]; then
       --do_test --block_size 512 --eval_batch_size 8 --seed 123456 ) 2>&1 | tee "$OUT/eval_soft_distil.log"
 else
   sed -i -E "s/--seed [0-9]+/--seed $SEED/g" "$VARIANT/train_teacher.sh" "$VARIANT/soft_distillation.sh"
+  source "$WORK/scripts/lib_timer.sh"; timer_start
   echo "=== [5/7] train CNN teacher (50ep bs128 5e-3, seed $SEED) ==="
   ( cd "$VARIANT" && bash train_teacher.sh ) ; cp -f "$VARIANT"/train_cnn_teacher.log "$OUT/" 2>/dev/null || true
   [[ -f "$VARIANT/saved_models/checkpoint-best-acc/cnnteacher.bin" ]] || { echo "ERR: teacher cnnteacher.bin not produced"; exit 1; }
 
   echo "=== [6/7] soft-distill GraphCodeBERT student (train+test, 50ep bs8 2e-5 alpha0.7) ==="
   ( cd "$VARIANT" && bash soft_distillation.sh ) ; cp -f "$VARIANT"/train_soft_distil*.log "$OUT/" 2>/dev/null || true
+  timer_stop "$OUT/train_efficiency.json"
 fi
 
 # recompute macro + weighted + accuracy from the dumped predictions (student logs only accuracy)

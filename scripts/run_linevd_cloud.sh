@@ -148,7 +148,9 @@ if [[ -n "$EVAL_ONLY" ]]; then
   echo "  EVAL_ONLY: loaded $LINEVD_CKPT (skip raytune train)"
 else
   export LINEVD_SEED="${SEED:-0}"
+  source "$WORK/scripts/lib_timer.sh"; timer_start
   PYTHONPATH=. python sastvd/scripts/train_best.py 2>&1 | tee "$OUT/train.log"
+  timer_stop "$OUT/train_efficiency.json"
 fi
 
 # train_best.py ONLY trains — the test + statement-localization metrics come from rqtest

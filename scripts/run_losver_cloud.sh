@@ -87,6 +87,7 @@ if [[ -n "$EVAL_ONLY" ]]; then
   tar -I "$(command -v pigz || echo gzip)" -xf "$OUT/$WEIGHTS_TAR" -C "$OUT" && rm -f "$OUT/$WEIGHTS_TAR"
 fi
 
+source "$WORK/scripts/lib_timer.sh"; timer_start
 echo "=== [6/7] ${EVAL_ONLY:+eval-only }localizer -> weighted classifier ==="
 cd src/losver/classification
 U=../unixcoder-nine
@@ -99,6 +100,7 @@ python run_weighted_CWE.py --output_dir="$OUT/classifier" --model_type roberta \
   --localized_location="$OUT/localizer" \
   --block_size=512 --seed=$SEED $TRAINFLAG --do_test 2>&1 | tee "$OUT/classifier.log"
 cd "$WORK"
+timer_stop "$OUT/train_efficiency.json"
 
 # recompute MACRO-F1 (+ weighted/micro + per-class report) from the dumped test predictions.
 if [[ -f "$LOSVER_PRED_CSV" ]]; then

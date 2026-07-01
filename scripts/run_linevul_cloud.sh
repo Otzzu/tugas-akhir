@@ -50,6 +50,7 @@ D="$WORK/megavul_ml1024/linevul"
 
 cd src/LineVul/linevul
 if [[ -z "$EVAL_ONLY" ]]; then
+source "$WORK/scripts/lib_timer.sh"; timer_start
 echo "=== [3/5] train + classify ==="
 python linevul_main.py \
   --output_dir="$OUT" --model_type=roberta \
@@ -59,6 +60,7 @@ python linevul_main.py \
   --epochs 10 --block_size 512 --train_batch_size 16 --eval_batch_size 16 \
   --learning_rate 2e-5 --max_grad_norm 1.0 --evaluate_during_training --seed $SEED \
   2>&1 | tee "$OUT/train.log"
+timer_stop "$OUT/train_efficiency.json"
 else
 echo "=== [3/5] EVAL_ONLY: skip train (restored weights -> $OUT/checkpoint-best-f1) ==="
 fi

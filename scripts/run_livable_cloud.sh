@@ -238,7 +238,9 @@ grep -qF "$OPTLINE" "$LV/code/main_sta.py" || { echo "ERR: optimizer patch faile
 cd "$LV/code"
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
 export LIVABLE_PRED_CSV="$OUT/livable_cls_preds.csv"   # final-test preds dumped by patched evaluate_metrics
+source "$WORK/scripts/lib_timer.sh"; timer_start
 python main_sta.py --input_dir "$GG" 2>&1 | tee "$OUT/train.log"
+timer_stop "$OUT/train_efficiency.json"
 
 # recompute macro + weighted + accuracy from the dumped predictions (LIVABLE logs only macro)
 cd "$WORK"
