@@ -52,6 +52,29 @@ def plot_confusion(df: pd.DataFrame, names: list[str], present: list[int],
     print(f"wrote {out_name}")
 
 
+def plot_confusion_grid(names: list[str], present: list[int]) -> None:
+    """3-panel confusion (Berbasis Graph / Hibrida / Sekuensial) on the same 26-class test."""
+    pnames = [names[i] for i in present]
+    fig, axes = plt.subplots(1, 3, figsize=(21, 7.5), constrained_layout=True)
+    im = None
+    for j, (ax, (label, _c, path)) in enumerate(zip(axes, ARCHS)):
+        adf = pd.read_csv(Path(path) / "predictions.csv")
+        cm = confusion_matrix(adf["y_true"], adf["y_pred"], labels=present)
+        cmn = cm / cm.sum(axis=1, keepdims=True).clip(min=1)
+        im = ax.imshow(cmn, cmap="Blues", vmin=0, vmax=1)
+        ax.set_xticks(range(len(pnames))); ax.set_xticklabels(pnames, rotation=90, fontsize=6)
+        ax.set_yticks(range(len(pnames)))
+        ax.set_xlabel("Kelas prediksi"); ax.set_title(label)
+        if j == 0:
+            ax.set_yticklabels(pnames, fontsize=6); ax.set_ylabel("Kelas sebenarnya")
+        else:
+            ax.set_yticklabels([])
+    fig.colorbar(im, ax=axes, fraction=0.015, pad=0.02, label="Proporsi (recall per kelas)")
+    fig.savefig(OUT / "Confusion_Matrix.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("wrote Confusion_Matrix.png (3-panel)")
+
+
 def plot_per_class_f1_compare(names: list[str], present: list[int], support: np.ndarray) -> None:
     order = [i for i in np.argsort(-support) if i in present]   # present classes, by support desc
     x = np.arange(len(order))
@@ -115,14 +138,7 @@ def main() -> None:
     print(f"loaded {len(df)} predictions, {len(names)} classes, {len(present)} present, absent={absent}")
     # confusion matrix per architecture (all on the same 26-class test → same present classes).
     # graph_based is also written as the default Confusion_Matrix.png used by IV.5.
-    shorts = {"Berbasis Graph": "graph", "Hibrida Graph-LM": "hybrid", "Sekuensial": "seq"}
-    for label, _color, path in ARCHS:
-        adf = pd.read_csv(Path(path) / "predictions.csv")
-        asup = adf["y_true"].value_counts().reindex(range(len(names)), fill_value=0).to_numpy()
-        apres = [i for i in range(len(names)) if asup[i] > 0]
-        short = shorts[label]
-        out = "Confusion_Matrix.png" if short == "graph" else f"Confusion_Matrix_{short}.png"
-        plot_confusion(adf, names, apres, out_name=out, title=f"{label} (26 kelas)")
+    plot_confusion_grid(names, present)
     plot_per_class_f1_compare(names, present, support)
     plot_localization_example(names)
 
