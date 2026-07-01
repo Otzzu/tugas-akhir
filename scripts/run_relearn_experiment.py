@@ -32,7 +32,12 @@ SEED = None   # set from --seed in main; overrides train.seed (split + init) for
 
 
 def _seed_args() -> list:
-    # split fixed at 42 (the task-A backbone's split) so eval never leaks; only init (train.seed) varies
+    # nine: fully per-seed. The task-A backbone for seed N is the classification seed-N checkpoint,
+    # trained on split N, so eval uses split N too — matched (no leak) and multi-seed varies split+init.
+    s = SEED if SEED is not None else 42
+    if SUF:
+        return ["--split-seed", str(s), "--seed", str(s)]
+    # base: one fixed backbone -> lock split at 42, seed varies init only
     a = ["--split-seed", "42"]
     if SEED is not None:
         a += ["--seed", str(SEED)]
@@ -63,8 +68,21 @@ RELEARN_BUNDLE = "relearn_bundle.tar.gz"               # at DRIVE_ROOT/ (CPG + p
 MEGAVUL_PT_DIR = "data/processed/megavul"              # Drive subdir holding the .pt tar
 MEGAVUL_PT_ARCHIVE = ("lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42_lazy_20260613_195029.tar.gz" if SUF
                       else "lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42_lazy_20260513_153956.tar.gz")
-TASKA_CKPT_ARCHIVE = ("20260629_151930_lmgat_codebert_multiclass_checkpoints.zip" if SUF
-                      else "20260606_163818_lmgat_codebert_multiclass_checkpoints.zip")   # DRIVE_ROOT/checkpoints/ -> checkpoints/<run_id>/best_*.pt
+# Task-A backbone = the classification 26-class model reused directly. For nine we use the SAME
+# per-seed classification checkpoints (each trained on its own split) so the split follows the
+# seed with no leak. Base keeps one backbone (split then locked at 42).
+TASKA_CKPT_BY_SEED_NINE = {
+    42: "20260629_151930_lmgat_codebert_multiclass_checkpoints.zip",
+    1:  "20260629_154445_lmgat_codebert_multiclass_checkpoints.zip",
+    2:  "20260629_155935_lmgat_codebert_multiclass_checkpoints.zip",
+}
+TASKA_CKPT_ARCHIVE_BASE = "20260606_163818_lmgat_codebert_multiclass_checkpoints.zip"
+
+
+def taska_archive() -> str:
+    if SUF:
+        return TASKA_CKPT_BY_SEED_NINE[SEED if SEED is not None else 42]
+    return TASKA_CKPT_ARCHIVE_BASE
 # Prebuilt relearn .pt (vocab-aligned) — fill after the first upload to skip rebuilding on the pod.
 RELEARN_PT_DIR = "data/processed/relearn"
 RELEARN_PT_ARCHIVE = ("lm_dataset_relearn_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42.tar.gz" if SUF
@@ -104,17 +122,17 @@ def setup() -> None:
         _extract(proc / MEGAVUL_PT_ARCHIVE, proc)
     else:
         print("megavul .pt already present, skip download.")
-    # 3. task-A checkpoint -> checkpoints/n48_taskA/best_model.pt
-    if not TASKA_CKPT.exists():
-        _rclone(f"{DRIVE_ROOT}/checkpoints/{TASKA_CKPT_ARCHIVE}", str(ROOT / "checkpoints"))
-        _extract(ROOT / "checkpoints" / TASKA_CKPT_ARCHIVE, ROOT)   # inner path checkpoints/<run_id>/best_*.pt
-        run_id = TASKA_CKPT_ARCHIVE.replace("_checkpoints.zip", "")
-        src = next((ROOT / "checkpoints" / run_id).glob("best_*.pt"))
-        TASKA_CKPT.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, TASKA_CKPT)
-        print(f"task-A ckpt {src.name} -> {TASKA_CKPT}")
-    else:
-        print("task-A ckpt already present, skip download.")
+    # 3. task-A backbone -> checkpoints/n48_taskA/best_model.pt. Per-seed for nine, so ALWAYS
+    #    (re)point to THIS seed's backbone (it differs across seeds on the same pod).
+    arch = taska_archive()
+    run_id = arch.replace("_checkpoints.zip", "")
+    if not list((ROOT / "checkpoints" / run_id).glob("best_*.pt")):
+        _rclone(f"{DRIVE_ROOT}/checkpoints/{arch}", str(ROOT / "checkpoints"))
+        _extract(ROOT / "checkpoints" / arch, ROOT)   # inner path checkpoints/<run_id>/best_*.pt
+    src = next((ROOT / "checkpoints" / run_id).glob("best_*.pt"))
+    TASKA_CKPT.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, TASKA_CKPT)
+    print(f"task-A ckpt {src.name} ({run_id}) -> {TASKA_CKPT}")
     # 4. prebuilt relearn .pt (optional) — skips the GPU rebuild on the pod
     if RELEARN_PT_ARCHIVE and not list(proc.glob("lm_dataset_relearn_multiclass*")):
         _rclone(f"{DRIVE_ROOT}/{RELEARN_PT_DIR}/{RELEARN_PT_ARCHIVE}", str(proc))
@@ -252,7 +270,7 @@ def main() -> None:
     md = [
         "# Hasil Continual Learning (relearn task-B = BigVul + TitanVul)",
         "",
-        "Model: N48 (GNN-only, jknet, 26-kelas, checkpoint 20260606_163818, MegaVul Macro F1 0.525).",
+        f"Model: N48 (GNN-only, jknet, 26-kelas, backbone task-A = {taska_archive().replace('_checkpoints.zip','')}, {'per-seed' if SUF else 'tetap seed 42'}).",
         "Satu arsitektur N48 dipakai di semua baris. Setiap metode melanjutkan pelatihan model",
         "task-A yang sama pada task-B. Jenis: domain-incremental (26 kelas tetap, domain data berganti).",
         "",
@@ -261,10 +279,10 @@ def main() -> None:
         "Forgetting = Macro F1 task-A sebelum pembaruan dikurangi sesudah (makin kecil makin baik).",
         "",
         "Urutan dan asal data:",
-        "1. Task-A (MegaVul): N48 dilatih lebih dulu pada MegaVul top-25 CWE plus benign (26 kelas, maks 1600 per kelas, seed 42).",
+        f"1. Task-A (MegaVul): N48 dilatih lebih dulu pada MegaVul top-25 CWE plus benign (26 kelas, maks 1600 per kelas, {'seed mengikuti run' if SUF else 'seed 42'}).",
         "2. Task-B (relearn): dibangun dari BigVul plus TitanVul, vuln top-25 dideduplikasi terhadap MegaVul dan antar keduanya, ditambah benign. Label dipetakan ke vocab kanonik task-A agar id kelas selaras.",
         "3. Pelatihan kontinual: model mulai dari bobot task-A, lalu dilanjutkan pada task-B. Urutan = MegaVul lebih dulu, baru relearn.",
-        "4. Split test seed 42 (80/10/10); importance EWC-DR dan buffer replay diambil dari split train task-A tanpa kebocoran ke test.",
+        f"4. Split test {'mengikuti seed (per-seed)' if SUF else 'seed 42'} (80/10/10); importance EWC-DR dan buffer replay diambil dari split train task-A tanpa kebocoran ke test.",
         "",
         "| Metode | Macro F1 task-A | Macro F1 task-B | Forgetting ↓ |",
         "|---|---|---|---|",
