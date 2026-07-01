@@ -37,7 +37,7 @@ if [[ "$MODE" == "bigvul" ]]; then
   PREP="$WORK/bigvul_livable"; PREP_CACHE="livable_bigvul_preprocess.tar.gz"
   RUN_ID="livable_bigvul_${TS}_top${TOPCWE}_${OPT}${LR}"
 else
-  PREP="$WORK/megavul_livable_s${SEED}"; PREP_CACHE="livable_megavul_preprocess_s${SEED}.tar.gz"   # per-seed: joern_csv+ggnn are split-dependent, rebuild per seed (no cross-seed reuse)
+  PREP="$WORK/megavul_livable_s${SEED}"; PREP_CACHE="livable_megavul_preprocess_s${SEED}.tar.gz"   # per-seed PREP (functions, jsonl, wv, ggnn are split-dependent); the slow joern parse is SHARED via POOL below
   RUN_ID="livable_megavul_s${SEED}_${TS}"
   [[ -n "$VULN_ONLY" ]] && RUN_ID="${RUN_ID}_vo"
   RUN_ID="${RUN_ID}_${OPT}${LR}"
@@ -107,25 +107,47 @@ fi
 JD="$LV/preprocessing/joern/joern"   # joern-lang repo root
 cp -f "$LV/preprocessing/joern/slicer.sh" "$LV/preprocessing/joern/process.py" "$JD/"
 find "$JD" -type f \( -name joern-parse -o -name "*.sh" -o -name joern \) -exec chmod +x {} \;
-# Preprocess cache (joern_csv + ggnn_input + wv) — parsing the funcs is the slow part; restore
-# from Drive on a fresh pod to skip straight to train. PREP_CACHE set per-mode up top.
-PREP_RESTORED=""
-if [[ ! -d "$PREP/ggnn_input" ]] && rclone ls "$REMOTE/data/baselines/$PREP_CACHE" >/dev/null 2>&1; then
-  echo "  restoring LIVABLE preprocess cache from Drive (skips joern parse + builder) ..."
-  rclone copy "$REMOTE/data/baselines/$PREP_CACHE" /tmp/ --progress
-  mkdir -p "$PREP"; tar --no-same-owner -xzf "/tmp/$PREP_CACHE" -C "$PREP" && rm -f "/tmp/$PREP_CACHE"
-  PREP_RESTORED=1
+# Joern parse is split-INDEPENDENT (per-function CPG, file = {id}.c) so parse the WHOLE function set
+# ONCE into a flat POOL and reuse across ALL seeds — a single seed's train+val+test already covers
+# every function, so changing only the split needs NO re-parse. Pool cached on Drive.
+COMP=(gzip); command -v pigz >/dev/null && COMP=(pigz -p "$(nproc)")
+POOL="$WORK/${MODE}_livable_joernpool/csv"; POOL_CACHE="livable_${MODE}_joernpool.tar.gz"
+POOL_CNT=$( (ls -d "$POOL"/*.c 2>/dev/null || true) | wc -l )
+if [[ "$POOL_CNT" -lt 100 ]] && rclone ls "$REMOTE/data/baselines/$POOL_CACHE" >/dev/null 2>&1; then
+  echo "  restoring Joern POOL from Drive (all funcs, split-independent) ..."
+  rclone copy "$REMOTE/data/baselines/$POOL_CACHE" /tmp/ --progress
+  mkdir -p "$POOL"; tar --no-same-owner -xzf "/tmp/$POOL_CACHE" -C "$POOL" && rm -f "/tmp/$POOL_CACHE"
+  POOL_CNT=$( (ls -d "$POOL"/*.c 2>/dev/null || true) | wc -l )
 fi
-HAVE=$( (ls -d "$PREP"/joern_csv/test/*.c 2>/dev/null || true) | wc -l )
-if [[ "$HAVE" -lt 100 ]]; then
-  cd "$JD"
+# Bootstrap from the legacy seed-42 preprocess cache (all funcs already parsed, split-organized) —
+# flatten its joern_csv/*/*.c into the flat pool so even the FIRST seed skips the joern parse.
+LEGACY_CACHE="livable_megavul_preprocess.tar.gz"
+if [[ "$POOL_CNT" -lt 100 && "$MODE" == "megavul" ]] && rclone ls "$REMOTE/data/baselines/$LEGACY_CACHE" >/dev/null 2>&1; then
+  echo "  bootstrapping Joern POOL from legacy seed-42 cache (flatten joern_csv) ..."
+  rclone copy "$REMOTE/data/baselines/$LEGACY_CACHE" /tmp/ --progress
+  mkdir -p /tmp/legacy_prep; tar --no-same-owner -xzf "/tmp/$LEGACY_CACHE" -C /tmp/legacy_prep && rm -f "/tmp/$LEGACY_CACHE"
+  mkdir -p "$POOL"
+  for d in /tmp/legacy_prep/joern_csv/*/*.c; do [[ -d "$d" ]] && mv "$d" "$POOL/" 2>/dev/null || true; done
+  rm -rf /tmp/legacy_prep
+  POOL_CNT=$( (ls -d "$POOL"/*.c 2>/dev/null || true) | wc -l )
+  echo "  POOL bootstrapped: $POOL_CNT funcs"
+  if [[ "$POOL_CNT" -ge 100 ]]; then
+    tar -C "$(dirname "$POOL")" -cf - "$(basename "$POOL")" | "${COMP[@]}" > "/tmp/$POOL_CACHE"
+    rclone copy "/tmp/$POOL_CACHE" "$REMOTE/data/baselines/" --progress && rm -f "/tmp/$POOL_CACHE"
+  fi
+fi
+if [[ "$POOL_CNT" -lt 100 ]]; then
+  echo "  parsing Joern POOL once (this seed's train+val+test = all funcs) ..."
+  mkdir -p "$POOL"; cd "$JD"
   for split in train val test; do
     rm -rf "$JD"/*.c 2>/dev/null || true            # clear prev split's parse dirs from cwd
     python process.py --file_path "$PREP/functions/$split" --start 0 --end 100000 || true
-    mkdir -p "$PREP/joern_csv/$split"
-    for d in "$JD"/*.c; do [[ -d "$d" ]] && mv "$d" "$PREP/joern_csv/$split/" 2>/dev/null || true; done
-    echo "  $split: $(ls -d "$PREP"/joern_csv/$split/*.c 2>/dev/null | wc -l) parsed"
+    for d in "$JD"/*.c; do [[ -d "$d" ]] && mv "$d" "$POOL/" 2>/dev/null || true; done
   done
+  cd "$WORK"
+  echo "  POOL: $( (ls -d "$POOL"/*.c 2>/dev/null || true) | wc -l ) funcs parsed"
+  tar -C "$(dirname "$POOL")" -cf - "$(basename "$POOL")" | "${COMP[@]}" > "/tmp/$POOL_CACHE"
+  rclone copy "/tmp/$POOL_CACHE" "$REMOTE/data/baselines/" --progress && rm -f "/tmp/$POOL_CACHE"
 fi
 
 echo "=== [5/7] word2vec + GGNNinput builder ==="
@@ -139,19 +161,16 @@ if [[ ! -d "$PREP/ggnn_input" ]]; then
   sed -i "s/'--json_files', help/'--json_files', nargs='+', help/" "ori_ourdevign+token.py"
   # Builder: csv dirs (joern out) + our jsonls + wv -> GGNNinput JSON
   # (--csv/--json_files order is train,test,valid). Output: ggnn_input/diverse-{train,test,valid}-v0.json
+  # builder is jsonl-driven (iterates entries, looks up file_path={id}.c in args.csv[i]); point ALL
+  # THREE --csv at the shared POOL — per-seed jsonls define the split, pool provides the CPGs.
   python "ori_ourdevign+token.py" \
-    --csv "$PREP/joern_csv/train" "$PREP/joern_csv/test" "$PREP/joern_csv/val" \
+    --csv "$POOL" "$POOL" "$POOL" \
     --json_files "$PREP/train.jsonl" "$PREP/test.jsonl" "$PREP/val.jsonl" \
     --wv "$PREP/wv/wvmodel" \
     --output_dir "$PREP/ggnn_input"
 fi
-# Cache the preprocess to Drive if we built it (skip when restored) so future pods skip the parse.
-if [[ -z "$PREP_RESTORED" && -d "$PREP/ggnn_input" ]] && ! rclone ls "$REMOTE/data/baselines/$PREP_CACHE" >/dev/null 2>&1; then
-  echo "  caching LIVABLE preprocess to Drive ..."
-  COMP=(gzip); command -v pigz >/dev/null && COMP=(pigz -p "$(nproc)")
-  tar -cf - -C "$PREP" joern_csv ggnn_input wv 2>/dev/null | "${COMP[@]}" > "/tmp/$PREP_CACHE"
-  rclone copy "/tmp/$PREP_CACHE" "$REMOTE/data/baselines/" --progress && rm -f "/tmp/$PREP_CACHE"
-fi
+# (Joern POOL already cached to Drive in step 4. ggnn_input + wv are per-seed and fast to rebuild,
+# so they are NOT cached — the expensive parse is the pool, reused across seeds.)
 
 echo "=== [6/7] train (patch num_classes 31 -> $NUM_CLASSES, rename GGNNinput, run) ==="
 # main_sta.py reads input_dir/multi-{train1,valid,test}-v0.json but builder writes
