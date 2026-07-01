@@ -67,7 +67,8 @@ TASKA_CKPT_ARCHIVE = ("20260629_151930_lmgat_codebert_multiclass_checkpoints.zip
                       else "20260606_163818_lmgat_codebert_multiclass_checkpoints.zip")   # DRIVE_ROOT/checkpoints/ -> checkpoints/<run_id>/best_*.pt
 # Prebuilt relearn .pt (vocab-aligned) — fill after the first upload to skip rebuilding on the pod.
 RELEARN_PT_DIR = "data/processed/relearn"
-RELEARN_PT_ARCHIVE = "lm_dataset_relearn_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42.tar.gz"
+RELEARN_PT_ARCHIVE = ("lm_dataset_relearn_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42.tar.gz" if SUF
+                      else "lm_dataset_relearn_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42.tar.gz")
 
 
 def sh(args: list[str]) -> None:
