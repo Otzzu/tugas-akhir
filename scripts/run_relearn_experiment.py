@@ -22,11 +22,12 @@ ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "results"
 CKPTS = ROOT / "checkpoints"
 CFG = ROOT / "configs" / "ablation" / "relearn"
-MEGAVUL_CFG = CFG / "N48_taskA_importance.yaml"        # data.source=megavul (task-A, 26-class)
-RELEARN_CFG = CFG / "N48_relearn_naive.yaml"           # data.source=relearn (task-B, any relearn cfg)
+SUF = "_nine" if os.environ.get("RELEARN_NINE") else ""   # unixcoder-base-nine backbone for consistency with bab-4
+MEGAVUL_CFG = CFG / f"N48_taskA_importance{SUF}.yaml"  # data.source=megavul (task-A, 26-class)
+RELEARN_CFG = CFG / f"N48_relearn_naive{SUF}.yaml"     # data.source=relearn (task-B, any relearn cfg)
 TASKA_CKPT = CKPTS / "n48_taskA" / "best_model.pt"
 DRIVE = "gdrive-mesach:tugas-akhir/results/"
-OUT_MD = ROOT / "RELEARN_RESULTS.md"
+OUT_MD = ROOT / (f"RELEARN_RESULTS{SUF}.md")
 SEED = None   # set from --seed in main; overrides train.seed (split + init) for multi-seed variance
 
 
@@ -38,10 +39,10 @@ def _seed_args() -> list:
     return a
 
 METHODS = [
-    ("Fine-tuning naif",              CFG / "N48_relearn_naive.yaml"),
-    ("EWC-DR",                        CFG / "N48_relearn_ewc.yaml"),
-    ("Experience replay",             CFG / "N48_relearn_replay.yaml"),
-    ("EWC-DR dan experience replay",  CFG / "N48_relearn_ewc_replay.yaml"),
+    ("Fine-tuning naif",              CFG / f"N48_relearn_naive{SUF}.yaml"),
+    ("EWC-DR",                        CFG / f"N48_relearn_ewc{SUF}.yaml"),
+    ("Experience replay",             CFG / f"N48_relearn_replay{SUF}.yaml"),
+    ("EWC-DR dan experience replay",  CFG / f"N48_relearn_ewc_replay{SUF}.yaml"),
 ]
 
 # Trained method checkpoints already on Drive (run_ids from RELEARN_RESULTS.md) — used by
@@ -60,8 +61,10 @@ DRIVE_ROOT = "gdrive-mesach:tugas-akhir"
 RELEARN_BUNDLE = "relearn_bundle.tar.gz"               # at DRIVE_ROOT/ (CPG + parquet)
 # Task-A = N48 26-class jknet (ABLATION_GNN_ONLY.md run 20260606_163818).
 MEGAVUL_PT_DIR = "data/processed/megavul"              # Drive subdir holding the .pt tar
-MEGAVUL_PT_ARCHIVE = "lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42_lazy_20260513_153956.tar.gz"
-TASKA_CKPT_ARCHIVE = "20260606_163818_lmgat_codebert_multiclass_checkpoints.zip"   # DRIVE_ROOT/checkpoints/ -> checkpoints/<run_id>/best_*.pt
+MEGAVUL_PT_ARCHIVE = ("lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42_lazy_20260613_195029.tar.gz" if SUF
+                      else "lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42_lazy_20260513_153956.tar.gz")
+TASKA_CKPT_ARCHIVE = ("20260629_151930_lmgat_codebert_multiclass_checkpoints.zip" if SUF
+                      else "20260606_163818_lmgat_codebert_multiclass_checkpoints.zip")   # DRIVE_ROOT/checkpoints/ -> checkpoints/<run_id>/best_*.pt
 # Prebuilt relearn .pt (vocab-aligned) — fill after the first upload to skip rebuilding on the pod.
 RELEARN_PT_DIR = "data/processed/relearn"
 RELEARN_PT_ARCHIVE = "lm_dataset_relearn_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42.tar.gz"

@@ -1,0 +1,50 @@
+# Build the class-incremental (CIL) task-B .pt = MegaVul 10 NON-top25 CWE (new classes).
+# filter_top25_dangerous MUST be false (these classes are the complement of task-A's top-25).
+# Model block matches N48 task-A (unixcoder-base, ft, ml1024) so node-feature dims are
+# compatible with the task-A checkpoint for head expansion.
+#
+# Build (GPU):
+#   PYTHONPATH=src python scripts/build_lm_dataset.py --config configs/ablation/relearn/megavul_cil_build.yaml
+
+data:
+  source: megavul_cil
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: false
+  filter_owasp: false
+  max_per_class: 0
+  resample_seed: 42
+  storage: lazy
+  ds_name_suffix: ""
+
+model:
+  architecture: lmgat_codebert
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base-nine
+  func_lm: microsoft/unixcoder-base-nine
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  graph_pool: jknet
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 10
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  func_head_type: linear
+
+train:
+  seed: 42
+  epochs: 1
+  batch_size: 32
+  lr: 0.001
+  device: cuda

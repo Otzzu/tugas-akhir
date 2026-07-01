@@ -25,13 +25,14 @@ RESULTS = ROOT / "results"
 CKPTS = ROOT / "checkpoints"
 RELEARN = ROOT / "configs" / "ablation" / "relearn"
 CIL = RELEARN / "cil"
-IMPORTANCE_CFG = RELEARN / "N48_taskA_importance.yaml"   # 26-class task-A importance (reused)
-TASKA_EVAL26 = RELEARN / "N48_taskA_importance.yaml"     # 26-class megavul eval (baseline before)
-TASKA_EVAL36 = CIL / "cil_taskA_eval.yaml"               # 36-class megavul eval (after)
-TASKB_EVAL = CIL / "N48_cil_naive.yaml"                  # 36-class megavul_cil eval (task-B)
+SUF = "_nine" if os.environ.get("RELEARN_NINE") else ""  # unixcoder-base-nine backbone for consistency with bab-4
+IMPORTANCE_CFG = RELEARN / f"N48_taskA_importance{SUF}.yaml"   # 26-class task-A importance (reused)
+TASKA_EVAL26 = RELEARN / f"N48_taskA_importance{SUF}.yaml"     # 26-class megavul eval (baseline before)
+TASKA_EVAL36 = CIL / f"cil_taskA_eval{SUF}.yaml"        # 36-class megavul eval (after)
+TASKB_EVAL = CIL / f"N48_cil_naive{SUF}.yaml"           # 36-class megavul_cil eval (task-B)
 TASKA_CKPT = CKPTS / "n48_taskA" / "best_model.pt"
 DRIVE = "gdrive-mesach:tugas-akhir/results/"
-OUT_MD = ROOT / "RELEARN_CIL_RESULTS.md"
+OUT_MD = ROOT / (f"RELEARN_CIL_RESULTS{SUF}.md")
 SEED = None   # set from --seed in main; overrides train.seed (split + init) for multi-seed variance
 
 
@@ -43,10 +44,10 @@ def _seed_args() -> list:
     return a
 
 METHODS = [
-    ("Fine-tuning naif",              CIL / "N48_cil_naive.yaml"),
-    ("EWC-DR",                        CIL / "N48_cil_ewc.yaml"),
-    ("Experience replay",             CIL / "N48_cil_replay.yaml"),
-    ("EWC-DR dan experience replay",  CIL / "N48_cil_ewc_replay.yaml"),
+    ("Fine-tuning naif",              CIL / f"N48_cil_naive{SUF}.yaml"),
+    ("EWC-DR",                        CIL / f"N48_cil_ewc{SUF}.yaml"),
+    ("Experience replay",             CIL / f"N48_cil_replay{SUF}.yaml"),
+    ("EWC-DR dan experience replay",  CIL / f"N48_cil_ewc_replay{SUF}.yaml"),
 ]
 
 # Trained method checkpoints already on Drive (run_ids from RELEARN_CIL_RESULTS.md) — used by
@@ -63,10 +64,13 @@ ENV = {**os.environ, "PYTHONPATH": "src"}
 # ── Drive setup (used only with --setup) ────────────────────────────────────
 DRIVE_ROOT = "gdrive-mesach:tugas-akhir"
 MEGAVUL_PT_DIR = "data/processed/megavul"
-MEGAVUL_PT_ARCHIVE = "lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42_lazy_20260513_153956.tar.gz"
+MEGAVUL_PT_ARCHIVE = ("lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42_lazy_20260613_195029.tar.gz" if SUF
+                      else "lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42_lazy_20260513_153956.tar.gz")
 CIL_PT_DIR = "data/processed/relearn"   # both continual task-B datasets live under relearn/ on Drive
-CIL_PT_ARCHIVE = "lm_dataset_megavul_cil_multiclass_unixcoder-base_ft_ml1024_lazy.tar.gz"
-TASKA_CKPT_ARCHIVE = "20260606_163818_lmgat_codebert_multiclass_checkpoints.zip"
+CIL_PT_ARCHIVE = ("lm_dataset_megavul_cil_multiclass_unixcoder-base-nine_ft_ml1024_lazy.tar.gz" if SUF
+                  else "lm_dataset_megavul_cil_multiclass_unixcoder-base_ft_ml1024_lazy.tar.gz")
+TASKA_CKPT_ARCHIVE = ("20260629_151930_lmgat_codebert_multiclass_checkpoints.zip" if SUF
+                      else "20260606_163818_lmgat_codebert_multiclass_checkpoints.zip")
 
 
 def sh(args: list[str]) -> None:
