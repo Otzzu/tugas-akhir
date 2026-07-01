@@ -37,7 +37,12 @@ SEED = None   # set from --seed in main; overrides train.seed (split + init) for
 
 
 def _seed_args() -> list:
-    # split fixed at 42 (the task-A backbone's split) so eval never leaks; only init (train.seed) varies
+    # nine: fully per-seed. The task-A backbone for seed N is the classification seed-N checkpoint,
+    # trained on split N, so eval uses split N too — matched (no leak) and multi-seed varies split+init.
+    s = SEED if SEED is not None else 42
+    if SUF:
+        return ["--split-seed", str(s), "--seed", str(s)]
+    # base: one fixed backbone -> lock split at 42, seed varies init only
     a = ["--split-seed", "42"]
     if SEED is not None:
         a += ["--seed", str(SEED)]
@@ -69,8 +74,21 @@ MEGAVUL_PT_ARCHIVE = ("lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml10
 CIL_PT_DIR = "data/processed/relearn"   # both continual task-B datasets live under relearn/ on Drive
 CIL_PT_ARCHIVE = ("lm_dataset_megavul_cil_multiclass_unixcoder-base-nine_ft_ml1024_lazy.tar.gz" if SUF
                   else "lm_dataset_megavul_cil_multiclass_unixcoder-base_ft_ml1024_lazy.tar.gz")
-TASKA_CKPT_ARCHIVE = ("20260629_151930_lmgat_codebert_multiclass_checkpoints.zip" if SUF
-                      else "20260606_163818_lmgat_codebert_multiclass_checkpoints.zip")
+# Task-A backbone = the classification 26-class model reused directly. For nine we use the SAME
+# per-seed classification checkpoints (each trained on its own split) so the CIL split follows the
+# seed with no leak. Base keeps one backbone (split then locked at 42).
+TASKA_CKPT_BY_SEED_NINE = {
+    42: "20260629_151930_lmgat_codebert_multiclass_checkpoints.zip",
+    1:  "20260629_154445_lmgat_codebert_multiclass_checkpoints.zip",
+    2:  "20260629_155935_lmgat_codebert_multiclass_checkpoints.zip",
+}
+TASKA_CKPT_ARCHIVE_BASE = "20260606_163818_lmgat_codebert_multiclass_checkpoints.zip"
+
+
+def taska_archive() -> str:
+    if SUF:
+        return TASKA_CKPT_BY_SEED_NINE[SEED if SEED is not None else 42]
+    return TASKA_CKPT_ARCHIVE_BASE
 
 
 def sh(args: list[str]) -> None:
@@ -112,17 +130,18 @@ def setup() -> None:
     cil_raw.mkdir(parents=True, exist_ok=True)
     shutil.copy2(CIL / "megavul_cil_cwe_vocab.json", cil_raw / "cwe_vocab.json")
     print(f"placed cil cwe_vocab.json -> {cil_raw / 'cwe_vocab.json'}")
-    # 3. task-A checkpoint → checkpoints/n48_taskA/best_model.pt
-    if not TASKA_CKPT.exists():
-        _rclone(f"{DRIVE_ROOT}/checkpoints/{TASKA_CKPT_ARCHIVE}", str(ROOT / "checkpoints"))
-        _extract(ROOT / "checkpoints" / TASKA_CKPT_ARCHIVE, ROOT)
-        run_id = TASKA_CKPT_ARCHIVE.replace("_checkpoints.zip", "")
-        src = next((ROOT / "checkpoints" / run_id).glob("best_*.pt"))
-        TASKA_CKPT.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, TASKA_CKPT)
-        print(f"task-A ckpt {src.name} -> {TASKA_CKPT}")
-    else:
-        print("task-A ckpt already present, skip.")
+    # 3. task-A backbone → checkpoints/n48_taskA/best_model.pt. Per-seed for nine, so ALWAYS
+    #    (re)point to THIS seed's backbone (it differs across seeds on the same pod). The zip is
+    #    cached by run_id dir, only the copy into n48_taskA/ is redone each seed.
+    arch = taska_archive()
+    run_id = arch.replace("_checkpoints.zip", "")
+    if not list((ROOT / "checkpoints" / run_id).glob("best_*.pt")):
+        _rclone(f"{DRIVE_ROOT}/checkpoints/{arch}", str(ROOT / "checkpoints"))
+        _extract(ROOT / "checkpoints" / arch, ROOT)
+    src = next((ROOT / "checkpoints" / run_id).glob("best_*.pt"))
+    TASKA_CKPT.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, TASKA_CKPT)
+    print(f"task-A ckpt {src.name} ({run_id}) -> {TASKA_CKPT}")
 
 
 def f1_macro(results_dir: Path) -> float:
@@ -256,7 +275,7 @@ def main() -> None:
     md = [
         "# Hasil Continual Learning Class-Incremental (CIL, task-B = 10 CWE baru MegaVul)",
         "",
-        "Model: N48 (GNN-only, jknet, checkpoint task-A 20260606_163818, MegaVul Macro F1 0.525).",
+        f"Model: N48 (GNN-only, jknet, backbone task-A = checkpoint klasifikasi 26 kelas {taska_archive().replace('_checkpoints.zip','')}, {'per-seed' if SUF else 'tetap seed 42'}).",
         "Satu arsitektur N48; head diperluas 26->36 (load expandable) untuk menampung 10 kelas baru.",
         "Jenis: class-incremental (kelas BARU ditambah, bukan domain). Sesuai setting utama paper EWC-DR.",
         "",
@@ -271,7 +290,7 @@ def main() -> None:
         "1. Task-A (MegaVul): N48 dilatih pada MegaVul top-25 CWE plus benign (26 kelas).",
         "2. Task-B (megavul_cil): 10 CWE non-top25 paling banyak di MegaVul (CWE-119,190,362,264,399,400,401,189,617,835), label dipetakan ke 26..35.",
         "3. Pelatihan kontinual: mulai dari bobot task-A (head 26->36), lanjut pada task-B.",
-        "4. Split test seed 42 (80/10/10); importance EWC-DR dan buffer replay dari train task-A.",
+        f"4. Split test {'mengikuti seed (per-seed)' if SUF else 'seed 42'} (80/10/10); importance EWC-DR dan buffer replay dari train task-A.",
         "",
         "| Metode | F1 task-A | F1 task-B | A_last F1 (36) | A_last Acc (36) | A_avg Acc | Forgetting ↓ |",
         "|---|---|---|---|---|---|---|",
