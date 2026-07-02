@@ -129,7 +129,45 @@ def plot_localization_example(names: list[str]) -> None:
     print(f"wrote Lokalisasi_Contoh.png (func_idx={fidx}, {cwe})")
 
 
+def plot_classification_compare() -> None:
+    """Macro F1 (25-class vuln-only) bar chart, arch usulan vs baseline, mean±std over seeds 42,1,2.
+    Bars are the mean, whiskers the std — the overlapping error bars are the point (top-5 within noise).
+    Numbers mirror Tabel IV.10."""
+    # (name, mean, std, group)
+    data = [
+        ("LOSVER", 0.603, 0.038, "baseline"),
+        ("VulExplainer", 0.593, 0.030, "baseline"),
+        ("Sekuensial", 0.580, 0.025, "usulan"),
+        ("Berbasis Graph", 0.568, 0.024, "usulan"),
+        ("Hibrida", 0.546, 0.008, "usulan"),
+        ("LIVABLE", 0.041, 0.008, "baseline"),
+    ]
+    names = [d[0] for d in data]
+    means = np.array([d[1] for d in data])
+    stds = np.array([d[2] for d in data])
+    colors = ["#3b6fb0" if d[3] == "usulan" else "#9aa0a6" for d in data]
+    x = np.arange(len(names))
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    ax.bar(x, means, yerr=stds, color=colors, capsize=5,
+           error_kw={"elinewidth": 1.3, "ecolor": "#333"})
+    ax.set_xticks(x)
+    ax.set_xticklabels(names, rotation=18, ha="right")
+    ax.set_ylabel("Macro F1 (25 kelas)")
+    ax.set_ylim(0, 0.72)
+    ax.grid(axis="y", alpha=0.3)
+    for xi, m, s in zip(x, means, stds):
+        ax.text(xi, m + s + 0.012, f"{m:.3f}", ha="center", fontsize=9)
+    from matplotlib.patches import Patch
+    ax.legend(handles=[Patch(color="#3b6fb0", label="Arsitektur usulan"),
+                       Patch(color="#9aa0a6", label="Baseline")], loc="upper right")
+    fig.tight_layout()
+    fig.savefig(OUT / "Perbandingan_Macro_F1.png", dpi=150)
+    plt.close(fig)
+    print("wrote Perbandingan_Macro_F1.png")
+
+
 def main() -> None:
+    plot_classification_compare()
     df = pd.read_csv(RUN / "predictions.csv")
     names = class_names(list(df.columns))
     support = df["y_true"].value_counts().reindex(range(len(names)), fill_value=0).to_numpy()
