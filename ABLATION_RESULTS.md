@@ -712,7 +712,7 @@ Vuln-only 25-class N48-nine (runs `20260629_{175502,182931,190941}`, vs N48-vo b
 | base     | 0.573 ± 0.017     | 0.571 ± 0.014 | 0.572 ± 0.014 | 0.545 ± 0.168 | 0.888 ± 0.036 | 0.980 ± 0.004 |
 | **nine** | 0.568 ± 0.024     | 0.562 ± 0.013 | 0.561 ± 0.014 | 0.615 ± 0.086 | 0.847 ± 0.017 | 0.971 ± 0.008 |
 
-**Verdict.** 26-class nine 0.490 vs base 0.474 (+0.016), 25-class nine 0.568 vs base 0.573 (−0.005). Kedua selisih DI DALAM noise (std ±0.02), arah berlawanan, sehingga nine TIDAK konsisten menolong N48 murni. Lokalisasi nine sedikit lebih buruk pada vuln-only (Top-1 0.847 vs 0.888). "Nine hurts" lama spesifik ke join O1 single-run, bukan GNN murni. **Implikasi penting**, bahkan dengan nine graph kami (0.568) tetap jauh di bawah LOSVER (0.640), sehingga backbone nine BUKAN penyebab keunggulan LOSVER (confound IV.4.4 teruji dan gugur).
+**Verdict.** 26-class nine 0.490 vs base 0.474 (+0.016), 25-class nine 0.568 vs base 0.573 (−0.005). Kedua selisih DI DALAM noise (std ±0.02), arah berlawanan, sehingga nine TIDAK konsisten menolong N48 murni. Lokalisasi nine sedikit lebih buruk pada vuln-only (Top-1 0.847 vs 0.888). "Nine hurts" lama spesifik ke join O1 single-run, bukan GNN murni. **Implikasi penting**, nine graph kami (0.568) tetap di bawah LOSVER, sehingga backbone nine BUKAN penyebab keunggulan LOSVER (confound IV.4.4 teruji). CATATAN per-seed 2026-07-02: setelah baseline dijalankan per-seed, LOSVER turun 0.640→0.603 dan gap ke Sekuensial 0.580 menyusut ke ~0.02 (dalam noise), jadi "keunggulan" LOSVER pada macro kini tipis (edge nyata LOSVER hanya di lokalisasi).
 
 Raw per-seed nine 26-class: Macro s42 0.470 / s1 0.525 / s2 0.475. Vuln-only: Macro s42 0.564 / s1 0.547 / s2 0.595.
 
@@ -746,7 +746,7 @@ Runs O1-26 `20260630_{101936,123040,155817}`, S1-26 `20260630_{183927,190353,194
 | S1   | 26      | 0.495 | 0.503 | −0.008 |
 | S1   | 25-vo   | 0.580 | 0.558 | +0.022 |
 
-Nine NETRAL di semua kombinasi (4/6 sedikit positif +0.004..+0.022, 2/6 sedikit negatif, rata-rata ~+0.007, SEMUA dalam noise std ±0.02-0.03). Tidak ada arsitektur yang jelas diuntungkan, dan semua tetap jauh di bawah LOSVER 0.640 sehingga backbone bukan penyebab keunggulan LOSVER. Nine memiliki justifikasi a-priori, yaitu dilatih pada 9 bahasa termasuk C dan C++ yang cocok dengan domain MegaVul, sehingga merupakan pilihan backbone yang principled meski selisih empiris berada dalam noise. Catatan, S1-nine vuln-only 0.580 adalah macro vuln-only tertinggi di antara arsitektur usulan tetapi masih dalam noise terhadap N48-base 0.573.
+Nine NETRAL di semua kombinasi (4/6 sedikit positif +0.004..+0.022, 2/6 sedikit negatif, rata-rata ~+0.007, SEMUA dalam noise std ±0.02-0.03). Tidak ada arsitektur yang jelas diuntungkan, dan semua di bawah LOSVER sehingga backbone bukan penyebab keunggulan LOSVER (per-seed LOSVER turun ke 0.603, gap ke Sekuensial 0.580 dalam noise). Nine memiliki justifikasi a-priori, yaitu dilatih pada 9 bahasa termasuk C dan C++ yang cocok dengan domain MegaVul, sehingga merupakan pilihan backbone yang principled meski selisih empiris berada dalam noise. Catatan, S1-nine vuln-only 0.580 adalah macro vuln-only tertinggi di antara arsitektur usulan tetapi masih dalam noise terhadap N48-base 0.573.
 
 ## CPG Denoising — cpg14 edge filter + largest CC (N48, 26-class)
 
