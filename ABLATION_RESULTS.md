@@ -803,7 +803,9 @@ Three training seeds per proposed architecture on the **vuln-only 25-class** spl
 
 # Multi-Seed Variance — Baselines (25-class vuln-only, seeds 42,1,2)
 
-Tiga seed pelatihan per baseline (`SEED` env → init training mereka; split TETAP = split baseline cached seed-42, sama dengan model usulan). Metrik ÷present dari `*_recomputed_metrics.json` tiap bundle (compute_baseline_metrics.py). Semua baseline lengkap 3 seed (42, 1, 2). n test beda per baseline (LOSVER 678, LineVD 599, LineVul 450, LIVABLE 448) karena filter granularitas masing-masing.
+Tiga seed pelatihan per baseline. Metrik dari `*_recomputed_metrics.json` tiap bundle (compute_baseline_metrics.py). Semua baseline lengkap 3 seed (42, 1, 2). n test beda per baseline (LOSVER 678, LineVD ~600, LineVul 450, LIVABLE ~576) karena filter granularitas masing-masing.
+
+**Split per-seed (update 2026-07-02).** LineVD + LIVABLE sudah dijalankan ulang dengan pembagian PER-SEED (seed N pakai split N, sama dengan arsitektur usulan), memakai split yang diekspor lokal ke Drive `megavul_ml1024_split_s{1,2}.tar.gz`. Angka per-seed baru dekat dengan angka fixed-split lama (LineVD Top-1 0.891→0.885, LIVABLE macro 0.031→0.041, selisih di dalam noise) sehingga efek pembagian memang kecil. LOSVER, VulExplainer, LineVul MASIH memakai split tetap seed-42 dan menunggu dijalankan ulang per-seed pada kelompok RTX 50.
 
 **Caveat LineVD.** Single-run lama (Top-1 0.808, IFA 0.656) = artefak EVAL_ONLY pada checkpoint epoch-10 (undertrained), dipakai saat pipeline eval masih rusak (`ray.tune.Analysis` crash). Setelah fix eval (commit afd8f98) LineVD dilatih penuh dan dievaluasi pada checkpoint terakhir trial terbaik (epoch ~129) → angka di bawah ini benar. LineVD pakai checkpoint terakhir (full-train), arsitektur usulan pakai best-val (early-stop) — beda strategi tipis, dicatat di IV.4.4.
 
@@ -813,18 +815,18 @@ Tiga seed pelatihan per baseline (`SEED` env → init training mereka; split TET
 | ------------ | ----------------- | ------------- | ------------- |
 | **LOSVER**   | **0.640 ± 0.015** | 0.662 ± 0.011 | 0.660 ± 0.011 |
 | VulExplainer | 0.561 ± 0.043     | 0.594 ± 0.015 | 0.593 ± 0.018 |
-| LIVABLE      | 0.031 ± 0.012     | 0.224 ± 0.108 | 0.107 ± 0.069 |
+| LIVABLE      | 0.041 ± 0.008     | 0.294 ± 0.033 | 0.148 ± 0.011 |
 
 **Headline 25-kelas TERBALIK oleh multi-seed.** Dibanding arsitektur usulan (Graph 0.573, Seq 0.558, Hibrida 0.542), **LOSVER (0.640) memimpin macro F1 di atas semua arsitektur usulan**. Single-run lama (Graph 0.601 > LOSVER 0.580) menyesatkan dua arah — run Graph kebetulan tinggi, run LOSVER (seed-123456) kebetulan rendah. Urutan macro 25-kelas robust: **LOSVER 0.640 > Graph 0.573 > VulExplainer 0.561 > Seq 0.558 > Hibrida 0.542**.
 
-**LIVABLE collapse ROBUST.** Macro 0.031 ± 0.012 di tiga seed (lebih rendah dari single-run lama 0.047) mengonfirmasi collapse bukan fluke. Akurasi bervariasi (std 0.108) karena tiap seed runtuh ke prediksi mayoritas berbeda, tetapi macro tetap ~0.03 — LIVABLE konsisten gagal transfer ke split MegaVul kami.
+**LIVABLE collapse ROBUST.** Macro 0.041 ± 0.008 di tiga seed per-seed mengonfirmasi collapse bukan fluke. Tiap seed runtuh ke prediksi kelas mayoritas (recall 1.0 pada satu kelas, 0.0 pada sisanya) sehingga macro tetap ~0.04 — LIVABLE konsisten gagal transfer ke split MegaVul kami.
 
 ## Localization (mean±std)
 
 | Baseline | IFA ↓         | Top-1 ↑       | Top-5 ↑       | R@5%LOC ↑     | R@20%LOC ↑    | Effort@20%R ↓ |
 | -------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- |
 | LOSVER   | 0.180 ± 0.017 | 0.977 ± 0.002 | 0.988 ± 0.002 | 0.492 ± 0.006 | 0.733 ± 0.003 | 0.017 ± 0.000 |
-| LineVD   | 0.366 ± 0.017 | 0.891 ± 0.013 | 0.979 ± 0.001 | 0.302 ± 0.015 | 0.518 ± 0.017 | 0.022 ± 0.000 |
+| LineVD   | 0.366 ± 0.077 | 0.885 ± 0.009 | 0.976 ± 0.003 | 0.309 ± 0.006 | 0.531 ± 0.013 | 0.022 ± 0.001 |
 | LineVul  | 6.160 ± 0.078 | 0.224 ± 0.005 | 0.589 ± 0.004 | 0.137 ± 0.004 | 0.369 ± 0.005 | 0.087 ± 0.005 |
 
 LOSVER dominan lokalisasi di semua seed (seperti single-run). LineVD (full-train, lihat caveat) kuat — Top-1 0.891 dan IFA 0.366 melampaui arsitektur Hibrida usulan (Top-1 0.878, IFA 0.707) pada kelompok biner. LineVul jauh di bawah semua. Urutan lokalisasi tidak punya pemenang tunggal di arsitektur usulan, tetapi LOSVER unggul, LineVD kompetitif, LineVul terburuk.
@@ -843,13 +845,13 @@ LOSVER dominan lokalisasi di semua seed (seperti single-run). LineVD (full-train
 | LineVul      | 1    | —     | —     | —     | 6.075 | 0.230 | 0.594 | 0.140 | 0.373 | 0.082 |
 | LineVul      | 2    | —     | —     | —     | 6.177 | 0.222 | 0.587 | 0.136 | 0.370 | 0.088 |
 | LineVD       | 42   | —     | —     | —     | 0.346 | 0.890 | 0.978 | 0.312 | 0.534 | 0.022 |
-| LineVD       | 1    | —     | —     | —     | 0.374 | 0.880 | 0.978 | 0.308 | 0.521 | 0.022 |
-| LineVD       | 2    | —     | —     | —     | 0.377 | 0.905 | 0.980 | 0.285 | 0.500 | 0.023 |
+| LineVD       | 1    | —     | —     | —     | 0.301 | 0.890 | 0.978 | 0.302 | 0.517 | 0.023 |
+| LineVD       | 2    | —     | —     | —     | 0.451 | 0.874 | 0.972 | 0.314 | 0.542 | 0.022 |
 | LIVABLE      | 42   | 0.042 | 0.259 | 0.147 | —     | —     | —     | —     | —     | —     |
-| LIVABLE      | 1    | 0.034 | 0.311 | 0.147 | —     | —     | —     | —     | —     | —     |
-| LIVABLE      | 2    | 0.018 | 0.102 | 0.027 | —     | —     | —     | —     | —     | —     |
+| LIVABLE      | 1    | 0.049 | 0.325 | 0.159 | —     | —     | —     | —     | —     | —     |
+| LIVABLE      | 2    | 0.033 | 0.299 | 0.137 | —     | —     | —     | —     | —     | —     |
 
-Bundle Drive `results/baselines/`: LineVD `linevd_megavul_ml1024_s{42,1,2}_20260628_*`, LIVABLE `livable_megavul_s{42,1,2}_20260628_*`. Tiap bundle simpan `*_recomputed_metrics.json` + `*_loc_scores.csv` untuk audit ulang.
+Bundle Drive `results/baselines/`: LineVD seed-42 `linevd_megavul_ml1024_s42_20260628_*`, per-seed s1/s2 `linevd_megavul_ml1024_s{1_20260701_174901,2_20260701_202207}`; LIVABLE seed-42 `livable_megavul_s42_20260628_*`, per-seed s1/s2 `livable_megavul_s{1_20260701_192547,2_20260701_215545}_adamw1e-3`. Tiap bundle simpan `*_recomputed_metrics.json` (+ `*_loc_scores.csv` LineVD) untuk audit ulang.
 
 ---
 
@@ -918,4 +920,33 @@ Bundle Drive `results/baselines/`: LineVD `linevd_megavul_ml1024_s{42,1,2}_20260
 | O1-vo-jk 25-class        | RTX 5090        | 156.5M | 186s       | 1.35            | 20.4 GB   |
 | H10-vo 25-class          | RTX 5090        | 147.5M | 188s       | 2.04            | 20.1 GB   |
 | H10-w0 num_workers0      | RTX 5090        | 147.5M | 209s       | 1.92            | 18.6 GB   |
+
+---
+
+# Continual Learning — backbone unixcoder-base-nine, PER-SEED (seeds 42,1,2)
+
+N48 (GNN-only, jknet). Backbone task-A = checkpoint klasifikasi 26 kelas nine PER-SEED (seed 42 `20260629_151930`, seed 1 `20260629_154445`, seed 2 `20260629_155935`), jadi tiap seed pakai backbone + split-nya sendiri (tidak bocor, sekonsisten arsitektur usulan). Sebelumnya fixed-42 backbone (lebih lemah) — digantikan run ini. mean±std dari `RELEARN_RESULTS_nine_s{42,1,2}.md` (domain) + `RELEARN_CIL_RESULTS_nine_s{42,1,2}.md` (CIL).
+
+**Consistency check LOLOS.** "Sebelum pembaruan" task-A per seed (0.470 / 0.525 / 0.475) = persis macro klasifikasi nine per-seed → per-seed backbone tersambung benar.
+
+## Domain-incremental (task-B = BigVul + TitanVul, 26 kelas tetap)
+
+| Metode              | F1 task-A     | F1 task-B     | Forgetting ↓   |
+| ------------------- | ------------- | ------------- | -------------- |
+| Sebelum pembaruan   | 0.490 ± 0.030 | 0.282 ± 0.031 | —              |
+| Fine-tuning naif    | 0.165 ± 0.048 | 0.414 ± 0.017 | +0.325 ± 0.019 |
+| EWC-DR              | 0.303 ± 0.054 | 0.412 ± 0.039 | +0.187 ± 0.050 |
+| Experience replay   | 0.416 ± 0.057 | 0.448 ± 0.040 | +0.074 ± 0.050 |
+| **EWC-DR + replay** | **0.597 ± 0.114** | 0.420 ± 0.062 | **−0.107 ± 0.089** |
+
+## Class-incremental (task-B = 10 CWE baru megavul_cil, id 26..35, head 26→36)
+
+| Metode              | F1 task-A     | F1 task-B     | A_last F1     | A_last Acc    | A_avg Acc     | Forgetting ↓   |
+| ------------------- | ------------- | ------------- | ------------- | ------------- | ------------- | -------------- |
+| Fine-tuning naif    | 0.000 ± 0.000 | 0.577 ± 0.020 | 0.086 ± 0.006 | 0.205 ± 0.009 | 0.353 ± 0.005 | +0.490 ± 0.030 |
+| EWC-DR              | 0.013 ± 0.010 | 0.524 ± 0.026 | 0.090 ± 0.013 | 0.197 ± 0.012 | 0.349 ± 0.002 | +0.477 ± 0.033 |
+| Experience replay   | 0.372 ± 0.019 | 0.508 ± 0.022 | 0.343 ± 0.017 | 0.302 ± 0.010 | 0.401 ± 0.010 | +0.118 ± 0.022 |
+| **EWC-DR + replay** | **0.672 ± 0.178** | 0.352 ± 0.145 | **0.512 ± 0.154** | 0.487 ± 0.129 | 0.494 ± 0.063 | **−0.182 ± 0.160** |
+
+**Verdict.** EWC-DR + replay menang di dua setting (retensi task-A tertinggi, forgetting negatif = backward transfer via buffer replay). Naif + EWC-DR sendiri kolaps di CIL (F1 task-A ~0, catastrophic forgetting yang wajar saat head diperluas). Replay saja jadi penyeimbang layak. Std EWC-DR+replay tinggi (CIL seed-42 outlier rendah, F1-B 0.185 vs s1/s2 0.43/0.44) — dilaporkan apa adanya.
 
