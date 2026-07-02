@@ -805,7 +805,7 @@ Three training seeds per proposed architecture on the **vuln-only 25-class** spl
 
 Tiga seed pelatihan per baseline. Metrik dari `*_recomputed_metrics.json` tiap bundle (compute_baseline_metrics.py). Semua baseline lengkap 3 seed (42, 1, 2). n test beda per baseline (LOSVER 678, LineVD ~600, LineVul 450, LIVABLE ~576) karena filter granularitas masing-masing.
 
-**Split per-seed (update 2026-07-02).** LineVD + LIVABLE sudah dijalankan ulang dengan pembagian PER-SEED (seed N pakai split N, sama dengan arsitektur usulan), memakai split yang diekspor lokal ke Drive `megavul_ml1024_split_s{1,2}.tar.gz`. Angka per-seed baru dekat dengan angka fixed-split lama (LineVD Top-1 0.891→0.885, LIVABLE macro 0.031→0.041, selisih di dalam noise) sehingga efek pembagian memang kecil. LOSVER, VulExplainer, LineVul MASIH memakai split tetap seed-42 dan menunggu dijalankan ulang per-seed pada kelompok RTX 50.
+**Split per-seed LENGKAP (update 2026-07-02).** KELIMA baseline sekarang dijalankan per-seed (seed N pakai split N, sama dengan arsitektur usulan), memakai split yang diekspor lokal ke Drive `megavul_ml1024_split_s{1,2}.tar.gz` (linevd + linevul). Efeknya beragam. LineVD/LIVABLE/LineVul nyaris tak berubah, tetapi LOSVER TURUN (0.640→0.603, split-2 lebih sulit) dan VulExplainer NAIK (0.561→0.593). Jadi pembagian yang berbeda memang menggeser angka absolut baseline LM, dan penyeragaman per-seed ini penting agar perbandingan adil. Semua angka di bawah sudah per-seed.
 
 **Caveat LineVD.** Single-run lama (Top-1 0.808, IFA 0.656) = artefak EVAL_ONLY pada checkpoint epoch-10 (undertrained), dipakai saat pipeline eval masih rusak (`ray.tune.Analysis` crash). Setelah fix eval (commit afd8f98) LineVD dilatih penuh dan dievaluasi pada checkpoint terakhir trial terbaik (epoch ~129) → angka di bawah ini benar. LineVD pakai checkpoint terakhir (full-train), arsitektur usulan pakai best-val (early-stop) — beda strategi tipis, dicatat di IV.4.4.
 
@@ -813,11 +813,11 @@ Tiga seed pelatihan per baseline. Metrik dari `*_recomputed_metrics.json` tiap b
 
 | Baseline     | Macro F1          | Acc           | F1-w          |
 | ------------ | ----------------- | ------------- | ------------- |
-| **LOSVER**   | **0.640 ± 0.015** | 0.662 ± 0.011 | 0.660 ± 0.011 |
-| VulExplainer | 0.561 ± 0.043     | 0.594 ± 0.015 | 0.593 ± 0.018 |
+| **LOSVER**   | **0.603 ± 0.038** | 0.638 ± 0.036 | 0.636 ± 0.034 |
+| VulExplainer | 0.593 ± 0.030     | 0.603 ± 0.014 | 0.603 ± 0.014 |
 | LIVABLE      | 0.041 ± 0.008     | 0.294 ± 0.033 | 0.148 ± 0.011 |
 
-**Headline 25-kelas TERBALIK oleh multi-seed.** Dibanding arsitektur usulan (Graph 0.573, Seq 0.558, Hibrida 0.542), **LOSVER (0.640) memimpin macro F1 di atas semua arsitektur usulan**. Single-run lama (Graph 0.601 > LOSVER 0.580) menyesatkan dua arah — run Graph kebetulan tinggi, run LOSVER (seed-123456) kebetulan rendah. Urutan macro 25-kelas robust: **LOSVER 0.640 > Graph 0.573 > VulExplainer 0.561 > Seq 0.558 > Hibrida 0.542**.
+**Headline 25-kelas, SEMUA per-seed (update 2026-07-02).** Setelah semua baseline dijalankan per-seed (simetris dengan arsitektur usulan nine), LOSVER turun dari 0.640 (fixed-split) ke **0.603 ± 0.038** dan VulExplainer naik dari 0.561 ke **0.593 ± 0.030**. Urutan macro per-seed: **LOSVER 0.603 > VulExplainer 0.593 > Sekuensial 0.580 > Graph 0.568 > Hibrida 0.546**. LOSVER masih tertinggi tetapi jaraknya ke Arsitektur Sekuensial usulan (0.580) hanya 0.023, di dalam satu simpangan baku. VulExplainer 0.593 praktis seri dengan Sekuensial. Jadi "overturn" LOSVER menyusut drastis dari gap 0.067 (fixed-split lama) menjadi ~0.02, dan tiga teratas (LOSVER, VulExplainer, Sekuensial) tidak dapat dipisahkan secara statistik pada tiga seed. Keunggulan LOSVER yang jelas hanya pada lokalisasi (IFA 0.142, Top-1 0.978). Std LOSVER naik (0.015→0.038) karena split-2 lebih sulit baginya (seed-2 macro 0.559).
 
 **LIVABLE collapse ROBUST.** Macro 0.041 ± 0.008 di tiga seed per-seed mengonfirmasi collapse bukan fluke. Tiap seed runtuh ke prediksi kelas mayoritas (recall 1.0 pada satu kelas, 0.0 pada sisanya) sehingga macro tetap ~0.04 — LIVABLE konsisten gagal transfer ke split MegaVul kami.
 
@@ -825,25 +825,25 @@ Tiga seed pelatihan per baseline. Metrik dari `*_recomputed_metrics.json` tiap b
 
 | Baseline | IFA ↓         | Top-1 ↑       | Top-5 ↑       | R@5%LOC ↑     | R@20%LOC ↑    | Effort@20%R ↓ |
 | -------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- |
-| LOSVER   | 0.180 ± 0.017 | 0.977 ± 0.002 | 0.988 ± 0.002 | 0.492 ± 0.006 | 0.733 ± 0.003 | 0.017 ± 0.000 |
+| LOSVER   | 0.142 ± 0.042 | 0.978 ± 0.003 | 0.992 ± 0.003 | 0.509 ± 0.042 | 0.759 ± 0.036 | 0.016 ± 0.001 |
 | LineVD   | 0.366 ± 0.077 | 0.885 ± 0.009 | 0.976 ± 0.003 | 0.309 ± 0.006 | 0.531 ± 0.013 | 0.022 ± 0.001 |
-| LineVul  | 6.160 ± 0.078 | 0.224 ± 0.005 | 0.589 ± 0.004 | 0.137 ± 0.004 | 0.369 ± 0.005 | 0.087 ± 0.005 |
+| LineVul  | 6.005 ± 0.395 | 0.223 ± 0.005 | 0.597 ± 0.026 | 0.133 ± 0.001 | 0.380 ± 0.014 | 0.087 ± 0.005 |
 
-LOSVER dominan lokalisasi di semua seed (seperti single-run). LineVD (full-train, lihat caveat) kuat — Top-1 0.891 dan IFA 0.366 melampaui arsitektur Hibrida usulan (Top-1 0.878, IFA 0.707) pada kelompok biner. LineVul jauh di bawah semua. Urutan lokalisasi tidak punya pemenang tunggal di arsitektur usulan, tetapi LOSVER unggul, LineVD kompetitif, LineVul terburuk.
+LOSVER dominan lokalisasi di semua seed (IFA 0.142, Top-1 0.978). LineVD (full-train, lihat caveat) kuat — Top-1 0.885 dan IFA 0.366 melampaui arsitektur Hibrida usulan (Top-1 0.878, IFA 0.707) pada kelompok biner. LineVul jauh di bawah semua. Urutan lokalisasi tidak punya pemenang tunggal di arsitektur usulan, tetapi LOSVER unggul, LineVD kompetitif, LineVul terburuk.
 
 ## Raw per-seed (audit — mean±std di atas dihitung dari sini)
 
 | Baseline     | seed | Macro | Acc   | F1-w  | IFA   | Top-1 | Top-5 | R@5   | R@20  | Eff   |
 | ------------ | ---- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
 | LOSVER       | 42   | 0.627 | 0.674 | 0.671 | 0.187 | 0.978 | 0.988 | 0.486 | 0.729 | 0.017 |
-| LOSVER       | 1    | 0.637 | 0.652 | 0.650 | 0.161 | 0.978 | 0.990 | 0.496 | 0.733 | 0.017 |
-| LOSVER       | 2    | 0.657 | 0.661 | 0.659 | 0.193 | 0.975 | 0.987 | 0.495 | 0.735 | 0.017 |
+| LOSVER       | 1    | 0.622 | 0.638 | 0.634 | 0.103 | 0.975 | 0.994 | 0.484 | 0.749 | 0.017 |
+| LOSVER       | 2    | 0.559 | 0.602 | 0.602 | 0.136 | 0.981 | 0.993 | 0.558 | 0.799 | 0.015 |
 | VulExplainer | 42   | 0.588 | 0.588 | 0.588 | —     | —     | —     | —     | —     | —     |
-| VulExplainer | 1    | 0.584 | 0.611 | 0.612 | —     | —     | —     | —     | —     | —     |
-| VulExplainer | 2    | 0.511 | 0.583 | 0.578 | —     | —     | —     | —     | —     | —     |
+| VulExplainer | 1    | 0.626 | 0.615 | 0.615 | —     | —     | —     | —     | —     | —     |
+| VulExplainer | 2    | 0.566 | 0.606 | 0.605 | —     | —     | —     | —     | —     | —     |
 | LineVul      | 42   | —     | —     | —     | 6.227 | 0.221 | 0.586 | 0.133 | 0.364 | 0.091 |
-| LineVul      | 1    | —     | —     | —     | 6.075 | 0.230 | 0.594 | 0.140 | 0.373 | 0.082 |
-| LineVul      | 2    | —     | —     | —     | 6.177 | 0.222 | 0.587 | 0.136 | 0.370 | 0.088 |
+| LineVul      | 1    | —     | —     | —     | 5.549 | 0.229 | 0.627 | 0.133 | 0.393 | 0.082 |
+| LineVul      | 2    | —     | —     | —     | 6.238 | 0.219 | 0.578 | 0.132 | 0.382 | 0.087 |
 | LineVD       | 42   | —     | —     | —     | 0.346 | 0.890 | 0.978 | 0.312 | 0.534 | 0.022 |
 | LineVD       | 1    | —     | —     | —     | 0.301 | 0.890 | 0.978 | 0.302 | 0.517 | 0.023 |
 | LineVD       | 2    | —     | —     | —     | 0.451 | 0.874 | 0.972 | 0.314 | 0.542 | 0.022 |
@@ -851,7 +851,7 @@ LOSVER dominan lokalisasi di semua seed (seperti single-run). LineVD (full-train
 | LIVABLE      | 1    | 0.049 | 0.325 | 0.159 | —     | —     | —     | —     | —     | —     |
 | LIVABLE      | 2    | 0.033 | 0.299 | 0.137 | —     | —     | —     | —     | —     | —     |
 
-Bundle Drive `results/baselines/`: LineVD seed-42 `linevd_megavul_ml1024_s42_20260628_*`, per-seed s1/s2 `linevd_megavul_ml1024_s{1_20260701_174901,2_20260701_202207}`; LIVABLE seed-42 `livable_megavul_s42_20260628_*`, per-seed s1/s2 `livable_megavul_s{1_20260701_192547,2_20260701_215545}_adamw1e-3`. Tiap bundle simpan `*_recomputed_metrics.json` (+ `*_loc_scores.csv` LineVD) untuk audit ulang.
+Bundle Drive `results/baselines/`: seed-42 semua baseline `*_s42_20260626..28_*`; per-seed s1/s2 (2026-07-02) — LOSVER `losver_megavul_ml1024_s{1_20260702_034124,2_20260702_093612}`, VulExplainer `vulexplainer_megavul_s{1_20260702_070011,2_20260702_125453}`, LineVul `linevul_megavul_ml1024_s{1_20260702_091425,2_20260702_150442}`, LineVD `linevd_megavul_ml1024_s{1_20260701_174901,2_20260701_202207}`, LIVABLE `livable_megavul_s{1_20260701_192547,2_20260701_215545}_adamw1e-3`. Tiap bundle simpan `*_recomputed_metrics.json` (+ `*_loc_scores.csv` LineVD) untuk audit ulang.
 
 ---
 
