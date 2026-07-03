@@ -26,13 +26,29 @@ CKPTS = ROOT / "checkpoints"
 RELEARN = ROOT / "configs" / "ablation" / "relearn"
 CIL = RELEARN / "cil"
 SUF = "_nine" if os.environ.get("RELEARN_NINE") else ""  # unixcoder-base-nine backbone for consistency with bab-4
-IMPORTANCE_CFG = RELEARN / f"N48_taskA_importance{SUF}.yaml"   # 26-class task-A importance (reused)
-TASKA_EVAL26 = RELEARN / f"N48_taskA_importance{SUF}.yaml"     # 26-class megavul eval (baseline before)
-TASKA_EVAL36 = CIL / f"cil_taskA_eval{SUF}.yaml"        # 36-class megavul eval (after)
-TASKB_EVAL = CIL / f"N48_cil_naive{SUF}.yaml"           # 36-class megavul_cil eval (task-B)
-TASKA_CKPT = CKPTS / "n48_taskA" / "best_model.pt"
+# Architecture selector — see run_relearn_experiment.py. graph = original N48; hybrid ml5120; seq ml1024.
+ARCH = os.environ.get("RELEARN_ARCH", "graph").lower()   # graph | hybrid | seq
+_ARCH = {
+    "graph":  {"prefix": "N48", "taska": "n48_taskA", "run": "lmgat_codebert", "label": "berbasis graph (N48)",
+               "ckpt": {42: "20260629_151930", 1: "20260629_154445", 2: "20260629_155935"}},
+    "hybrid": {"prefix": "O1",  "taska": "o1_taskA",  "run": "lmgat_codebert", "label": "hibrida graph-LM (O1)",
+               "ckpt": {42: "20260630_101936", 1: "20260630_123040", 2: "20260630_155817"}},
+    "seq":    {"prefix": "S1",  "taska": "s1_taskA",  "run": "lmgat_seqgnn",   "label": "sekuensial (S1)",
+               "ckpt": {42: "20260630_183927", 1: "20260630_190353", 2: "20260630_194430"}},
+}[ARCH]
+if ARCH != "graph" and not SUF:
+    sys.exit("hybrid/seq continual only wired for the nine backbone — set RELEARN_NINE=1")
+PREFIX, RUN_ARCH, ARCH_LABEL = _ARCH["prefix"], _ARCH["run"], _ARCH["label"]
+ARCH_TAG = "" if ARCH == "graph" else f"_{ARCH}"
+_DS_ML = "ml5120" if ARCH == "hybrid" else "ml1024"
+_EVAL36 = "cil_taskA_eval" if ARCH == "graph" else f"{PREFIX}_cil_taskA_eval"
+IMPORTANCE_CFG = RELEARN / f"{PREFIX}_taskA_importance{SUF}.yaml"   # 26-class task-A importance (reused)
+TASKA_EVAL26 = RELEARN / f"{PREFIX}_taskA_importance{SUF}.yaml"     # 26-class megavul eval (baseline before)
+TASKA_EVAL36 = CIL / f"{_EVAL36}{SUF}.yaml"             # 36-class megavul eval (after)
+TASKB_EVAL = CIL / f"{PREFIX}_cil_naive{SUF}.yaml"      # 36-class megavul_cil eval (task-B)
+TASKA_CKPT = CKPTS / _ARCH["taska"] / "best_model.pt"
 DRIVE = "gdrive-mesach:tugas-akhir/results/"
-OUT_MD = ROOT / (f"RELEARN_CIL_RESULTS{SUF}.md")
+OUT_MD = ROOT / (f"RELEARN_CIL_RESULTS{SUF}{ARCH_TAG}.md")
 SEED = None   # set from --seed in main; overrides train.seed (split + init) for multi-seed variance
 
 
@@ -49,10 +65,10 @@ def _seed_args() -> list:
     return a
 
 METHODS = [
-    ("Fine-tuning naif",              CIL / f"N48_cil_naive{SUF}.yaml"),
-    ("EWC-DR",                        CIL / f"N48_cil_ewc{SUF}.yaml"),
-    ("Experience replay",             CIL / f"N48_cil_replay{SUF}.yaml"),
-    ("EWC-DR dan experience replay",  CIL / f"N48_cil_ewc_replay{SUF}.yaml"),
+    ("Fine-tuning naif",              CIL / f"{PREFIX}_cil_naive{SUF}.yaml"),
+    ("EWC-DR",                        CIL / f"{PREFIX}_cil_ewc{SUF}.yaml"),
+    ("Experience replay",             CIL / f"{PREFIX}_cil_replay{SUF}.yaml"),
+    ("EWC-DR dan experience replay",  CIL / f"{PREFIX}_cil_ewc_replay{SUF}.yaml"),
 ]
 
 # Trained method checkpoints already on Drive (run_ids from RELEARN_CIL_RESULTS.md) — used by
@@ -69,25 +85,26 @@ ENV = {**os.environ, "PYTHONPATH": "src"}
 # ── Drive setup (used only with --setup) ────────────────────────────────────
 DRIVE_ROOT = "gdrive-mesach:tugas-akhir"
 MEGAVUL_PT_DIR = "data/processed/megavul"
-MEGAVUL_PT_ARCHIVE = ("lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42_lazy_20260613_195029.tar.gz" if SUF
-                      else "lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42_lazy_20260513_153956.tar.gz")
 CIL_PT_DIR = "data/processed/relearn"   # both continual task-B datasets live under relearn/ on Drive
-CIL_PT_ARCHIVE = ("lm_dataset_megavul_cil_multiclass_unixcoder-base-nine_ft_ml1024_lazy.tar.gz" if SUF
-                  else "lm_dataset_megavul_cil_multiclass_unixcoder-base_ft_ml1024_lazy.tar.gz")
+if ARCH == "hybrid":   # ml5120: megavul nine already on Drive; cil built + uploaded via build_hybrid_ml5120_datasets.py
+    MEGAVUL_PT_ARCHIVE = "lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml5120_f40f2e964_s1600r42_lazy_20260613_203058.tar.gz"
+    CIL_PT_ARCHIVE = "lm_dataset_megavul_cil_multiclass_unixcoder-base-nine_ft_ml5120_lazy.tar.gz"
+else:
+    MEGAVUL_PT_ARCHIVE = ("lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42_lazy_20260613_195029.tar.gz" if SUF
+                          else "lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42_lazy_20260513_153956.tar.gz")
+    CIL_PT_ARCHIVE = ("lm_dataset_megavul_cil_multiclass_unixcoder-base-nine_ft_ml1024_lazy.tar.gz" if SUF
+                      else "lm_dataset_megavul_cil_multiclass_unixcoder-base_ft_ml1024_lazy.tar.gz")
 # Task-A backbone = the classification 26-class model reused directly. For nine we use the SAME
 # per-seed classification checkpoints (each trained on its own split) so the CIL split follows the
 # seed with no leak. Base keeps one backbone (split then locked at 42).
-TASKA_CKPT_BY_SEED_NINE = {
-    42: "20260629_151930_lmgat_codebert_multiclass_checkpoints.zip",
-    1:  "20260629_154445_lmgat_codebert_multiclass_checkpoints.zip",
-    2:  "20260629_155935_lmgat_codebert_multiclass_checkpoints.zip",
-}
-TASKA_CKPT_ARCHIVE_BASE = "20260606_163818_lmgat_codebert_multiclass_checkpoints.zip"
+TASKA_CKPT_ARCHIVE_BASE = "20260606_163818_lmgat_codebert_multiclass_checkpoints.zip"  # graph base only
 
 
 def taska_archive() -> str:
+    # Per-seed nine backbone = the arch's own 26-class classification checkpoint (each on its own split).
     if SUF:
-        return TASKA_CKPT_BY_SEED_NINE[SEED if SEED is not None else 42]
+        run_id = _ARCH["ckpt"][SEED if SEED is not None else 42]
+        return f"{run_id}_{RUN_ARCH}_multiclass_checkpoints.zip"
     return TASKA_CKPT_ARCHIVE_BASE
 
 
@@ -112,13 +129,13 @@ def setup() -> None:
     proc = ROOT / "data" / "processed"
     proc.mkdir(parents=True, exist_ok=True)
     # 1. megavul task-A .pt (importance + replay buffer)
-    if not list(proc.glob("lm_dataset_megavul_multiclass*")):
+    if not list(proc.glob(f"lm_dataset_megavul_multiclass*{_DS_ML}*")):
         _rclone(f"{DRIVE_ROOT}/{MEGAVUL_PT_DIR}/{MEGAVUL_PT_ARCHIVE}", str(proc))
         _extract(proc / MEGAVUL_PT_ARCHIVE, proc)
     else:
         print("megavul .pt already present, skip.")
     # 2. cil task-B .pt + label patch (26..35)
-    if not list(proc.glob("lm_dataset_megavul_cil_multiclass*_meta.pt")):
+    if not list(proc.glob(f"lm_dataset_megavul_cil_multiclass*{_DS_ML}*_meta.pt")):
         _rclone(f"{DRIVE_ROOT}/{CIL_PT_DIR}/{CIL_PT_ARCHIVE}", str(proc))
         _extract(proc / CIL_PT_ARCHIVE, proc)
     else:
@@ -175,7 +192,7 @@ def combined_alast(tag_a: str, tag_b: str) -> tuple[float, float]:
 
 def newest_train_dir(after: float) -> Path:
     best, bt = None, after
-    for d in RESULTS.glob("*_lmgat_codebert_multiclass"):
+    for d in RESULTS.glob(f"*_{RUN_ARCH}_multiclass"):
         if d.name.startswith("rlcil_"):
             continue
         ms = d / "training_summary.json"
@@ -228,7 +245,7 @@ def main() -> None:
     args = ap.parse_args()
     global SEED
     SEED = args.seed
-    out_md = OUT_MD if SEED is None else OUT_MD.with_name(f"RELEARN_CIL_RESULTS{SUF}_s{SEED}.md")
+    out_md = OUT_MD if SEED is None else OUT_MD.with_name(f"RELEARN_CIL_RESULTS{SUF}{ARCH_TAG}_s{SEED}.md")
     if args.setup or args.reeval:
         setup()
 
@@ -275,8 +292,8 @@ def main() -> None:
     md = [
         "# Hasil Continual Learning Class-Incremental (CIL, task-B = 10 CWE baru MegaVul)",
         "",
-        f"Model: N48 (GNN-only, jknet, backbone task-A = checkpoint klasifikasi 26 kelas {taska_archive().replace('_checkpoints.zip','')}, {'per-seed' if SUF else 'tetap seed 42'}).",
-        "Satu arsitektur N48; head diperluas 26->36 (load expandable) untuk menampung 10 kelas baru.",
+        f"Model: arsitektur {ARCH_LABEL}, backbone task-A = checkpoint klasifikasi 26 kelas {taska_archive().replace('_checkpoints.zip','')}, {'per-seed' if SUF else 'tetap seed 42'}.",
+        "Satu arsitektur, head diperluas 26->36 (load expandable) untuk menampung 10 kelas baru.",
         "Jenis: class-incremental (kelas BARU ditambah, bukan domain). Sesuai setting utama paper EWC-DR.",
         "",
         "Task-A = MegaVul 26 kelas lama. Task-B = 10 CWE baru (megavul_cil, id 26..35).",

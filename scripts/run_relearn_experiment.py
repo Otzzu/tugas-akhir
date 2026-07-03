@@ -23,11 +23,29 @@ RESULTS = ROOT / "results"
 CKPTS = ROOT / "checkpoints"
 CFG = ROOT / "configs" / "ablation" / "relearn"
 SUF = "_nine" if os.environ.get("RELEARN_NINE") else ""   # unixcoder-base-nine backbone for consistency with bab-4
-MEGAVUL_CFG = CFG / f"N48_taskA_importance{SUF}.yaml"  # data.source=megavul (task-A, 26-class)
-RELEARN_CFG = CFG / f"N48_relearn_naive{SUF}.yaml"     # data.source=relearn (task-B, any relearn cfg)
-TASKA_CKPT = CKPTS / "n48_taskA" / "best_model.pt"
+# Architecture selector — the continual protocol is identical across the three proposed archs;
+# only the config prefix + task-A backbone + run-dir arch name change. graph = original N48.
+# hybrid uses func_max_length 5120: its .pt is auto-re-tokenized from the ml1024 nine base on the
+# pod (same node-LM), so all three archs share the SAME ml1024 dataset download.
+ARCH = os.environ.get("RELEARN_ARCH", "graph").lower()    # graph | hybrid | seq
+_ARCH = {
+    "graph":  {"prefix": "N48", "taska": "n48_taskA", "run": "lmgat_codebert", "label": "berbasis graph (N48)",
+               "ckpt": {42: "20260629_151930", 1: "20260629_154445", 2: "20260629_155935"}},
+    "hybrid": {"prefix": "O1",  "taska": "o1_taskA",  "run": "lmgat_codebert", "label": "hibrida graph-LM (O1)",
+               "ckpt": {42: "20260630_101936", 1: "20260630_123040", 2: "20260630_155817"}},
+    "seq":    {"prefix": "S1",  "taska": "s1_taskA",  "run": "lmgat_seqgnn",   "label": "sekuensial (S1)",
+               "ckpt": {42: "20260630_183927", 1: "20260630_190353", 2: "20260630_194430"}},
+}[ARCH]
+if ARCH != "graph" and not SUF:
+    sys.exit("hybrid/seq continual only wired for the nine backbone — set RELEARN_NINE=1")
+PREFIX, RUN_ARCH, ARCH_LABEL = _ARCH["prefix"], _ARCH["run"], _ARCH["label"]
+ARCH_TAG = "" if ARCH == "graph" else f"_{ARCH}"
+_DS_ML = "ml5120" if ARCH == "hybrid" else "ml1024"   # hybrid = live LM 5120-token func windows
+MEGAVUL_CFG = CFG / f"{PREFIX}_taskA_importance{SUF}.yaml"  # data.source=megavul (task-A, 26-class)
+RELEARN_CFG = CFG / f"{PREFIX}_relearn_naive{SUF}.yaml"     # data.source=relearn (task-B, any relearn cfg)
+TASKA_CKPT = CKPTS / _ARCH["taska"] / "best_model.pt"
 DRIVE = "gdrive-mesach:tugas-akhir/results/"
-OUT_MD = ROOT / (f"RELEARN_RESULTS{SUF}.md")
+OUT_MD = ROOT / (f"RELEARN_RESULTS{SUF}{ARCH_TAG}.md")
 SEED = None   # set from --seed in main; overrides train.seed (split + init) for multi-seed variance
 
 
@@ -44,10 +62,10 @@ def _seed_args() -> list:
     return a
 
 METHODS = [
-    ("Fine-tuning naif",              CFG / f"N48_relearn_naive{SUF}.yaml"),
-    ("EWC-DR",                        CFG / f"N48_relearn_ewc{SUF}.yaml"),
-    ("Experience replay",             CFG / f"N48_relearn_replay{SUF}.yaml"),
-    ("EWC-DR dan experience replay",  CFG / f"N48_relearn_ewc_replay{SUF}.yaml"),
+    ("Fine-tuning naif",              CFG / f"{PREFIX}_relearn_naive{SUF}.yaml"),
+    ("EWC-DR",                        CFG / f"{PREFIX}_relearn_ewc{SUF}.yaml"),
+    ("Experience replay",             CFG / f"{PREFIX}_relearn_replay{SUF}.yaml"),
+    ("EWC-DR dan experience replay",  CFG / f"{PREFIX}_relearn_ewc_replay{SUF}.yaml"),
 ]
 
 # Trained method checkpoints already on Drive (run_ids from RELEARN_RESULTS.md) — used by
@@ -66,27 +84,31 @@ DRIVE_ROOT = "gdrive-mesach:tugas-akhir"
 RELEARN_BUNDLE = "relearn_bundle.tar.gz"               # at DRIVE_ROOT/ (CPG + parquet)
 # Task-A = N48 26-class jknet (ABLATION_GNN_ONLY.md run 20260606_163818).
 MEGAVUL_PT_DIR = "data/processed/megavul"              # Drive subdir holding the .pt tar
-MEGAVUL_PT_ARCHIVE = ("lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42_lazy_20260613_195029.tar.gz" if SUF
-                      else "lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42_lazy_20260513_153956.tar.gz")
+if ARCH == "hybrid":   # ml5120 nine megavul already on Drive (H10/O1 trained on it)
+    MEGAVUL_PT_ARCHIVE = "lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml5120_f40f2e964_s1600r42_lazy_20260613_203058.tar.gz"
+else:
+    MEGAVUL_PT_ARCHIVE = ("lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42_lazy_20260613_195029.tar.gz" if SUF
+                          else "lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42_lazy_20260513_153956.tar.gz")
 # Task-A backbone = the classification 26-class model reused directly. For nine we use the SAME
 # per-seed classification checkpoints (each trained on its own split) so the split follows the
 # seed with no leak. Base keeps one backbone (split then locked at 42).
-TASKA_CKPT_BY_SEED_NINE = {
-    42: "20260629_151930_lmgat_codebert_multiclass_checkpoints.zip",
-    1:  "20260629_154445_lmgat_codebert_multiclass_checkpoints.zip",
-    2:  "20260629_155935_lmgat_codebert_multiclass_checkpoints.zip",
-}
-TASKA_CKPT_ARCHIVE_BASE = "20260606_163818_lmgat_codebert_multiclass_checkpoints.zip"
+TASKA_CKPT_ARCHIVE_BASE = "20260606_163818_lmgat_codebert_multiclass_checkpoints.zip"  # graph base only
 
 
 def taska_archive() -> str:
+    # Per-seed nine backbone = the arch's own 26-class classification checkpoint (each trained on
+    # its own split → eval follows the seed, no leak). Run ids in _ARCH["ckpt"], newest from ABLATION.
     if SUF:
-        return TASKA_CKPT_BY_SEED_NINE[SEED if SEED is not None else 42]
+        run_id = _ARCH["ckpt"][SEED if SEED is not None else 42]
+        return f"{run_id}_{RUN_ARCH}_multiclass_checkpoints.zip"
     return TASKA_CKPT_ARCHIVE_BASE
 # Prebuilt relearn .pt (vocab-aligned) — fill after the first upload to skip rebuilding on the pod.
 RELEARN_PT_DIR = "data/processed/relearn"
-RELEARN_PT_ARCHIVE = ("lm_dataset_relearn_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42.tar.gz" if SUF
-                      else "lm_dataset_relearn_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42.tar.gz")
+if ARCH == "hybrid":   # ml5120 relearn built + uploaded via scripts/build_hybrid_ml5120_datasets.py
+    RELEARN_PT_ARCHIVE = "lm_dataset_relearn_multiclass_unixcoder-base-nine_ft_ml5120_f40f2e964_s1600r42.tar.gz"
+else:
+    RELEARN_PT_ARCHIVE = ("lm_dataset_relearn_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42.tar.gz" if SUF
+                          else "lm_dataset_relearn_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42.tar.gz")
 
 
 def sh(args: list[str]) -> None:
@@ -116,7 +138,7 @@ def setup() -> None:
     _align_relearn_vocab()   # canonical vocab BEFORE any .pt download so the guard keeps it
     # 2. MegaVul task-A .pt (importance + replay buffer) -> data/processed/
     proc = ROOT / "data" / "processed"
-    if not list(proc.glob("lm_dataset_megavul_multiclass*")):
+    if not list(proc.glob(f"lm_dataset_megavul_multiclass*{_DS_ML}*")):
         proc.mkdir(parents=True, exist_ok=True)
         _rclone(f"{DRIVE_ROOT}/{MEGAVUL_PT_DIR}/{MEGAVUL_PT_ARCHIVE}", str(proc))
         _extract(proc / MEGAVUL_PT_ARCHIVE, proc)
@@ -134,7 +156,7 @@ def setup() -> None:
     shutil.copy2(src, TASKA_CKPT)
     print(f"task-A ckpt {src.name} ({run_id}) -> {TASKA_CKPT}")
     # 4. prebuilt relearn .pt (optional) — skips the GPU rebuild on the pod
-    if RELEARN_PT_ARCHIVE and not list(proc.glob("lm_dataset_relearn_multiclass*")):
+    if RELEARN_PT_ARCHIVE and not list(proc.glob(f"lm_dataset_relearn_multiclass*{_DS_ML}*")):
         _rclone(f"{DRIVE_ROOT}/{RELEARN_PT_DIR}/{RELEARN_PT_ARCHIVE}", str(proc))
         _extract(proc / RELEARN_PT_ARCHIVE, proc)
     elif not RELEARN_PT_ARCHIVE:
@@ -149,7 +171,7 @@ def f1_macro(results_dir: Path) -> float:
 def newest_train_dir(after: float) -> Path:
     """Newest results/<ts>_lmgat_codebert_multiclass dir from a TRAIN run (excludes eval dirs)."""
     best, bt = None, after
-    for d in RESULTS.glob("*_lmgat_codebert_multiclass"):
+    for d in RESULTS.glob(f"*_{RUN_ARCH}_multiclass"):
         if d.name.startswith("rl_"):          # skip our eval output dirs
             continue
         ms = d / "training_summary.json"      # train writes this; metrics_summary.json comes from evaluate
@@ -228,7 +250,7 @@ def main() -> None:
     args = ap.parse_args()
     global SEED
     SEED = args.seed
-    out_md = OUT_MD if SEED is None else OUT_MD.with_name(f"RELEARN_RESULTS{SUF}_s{SEED}.md")
+    out_md = OUT_MD if SEED is None else OUT_MD.with_name(f"RELEARN_RESULTS{SUF}{ARCH_TAG}_s{SEED}.md")
     if args.setup or args.reeval:
         setup()
     _align_relearn_vocab()
@@ -270,8 +292,8 @@ def main() -> None:
     md = [
         "# Hasil Continual Learning (relearn task-B = BigVul + TitanVul)",
         "",
-        f"Model: N48 (GNN-only, jknet, 26-kelas, backbone task-A = {taska_archive().replace('_checkpoints.zip','')}, {'per-seed' if SUF else 'tetap seed 42'}).",
-        "Satu arsitektur N48 dipakai di semua baris. Setiap metode melanjutkan pelatihan model",
+        f"Model: arsitektur {ARCH_LABEL}, 26-kelas, backbone task-A = {taska_archive().replace('_checkpoints.zip','')}, {'per-seed' if SUF else 'tetap seed 42'}.",
+        "Satu arsitektur dipakai di semua baris. Setiap metode melanjutkan pelatihan model",
         "task-A yang sama pada task-B. Jenis: domain-incremental (26 kelas tetap, domain data berganti).",
         "",
         "Task-A = MegaVul 26-kelas. Task-B = relearn 26-kelas. Macro F1 pada test masing-masing.",
