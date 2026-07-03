@@ -61,12 +61,18 @@ def _seed_args() -> list:
         a += ["--seed", str(SEED)]
     return a
 
-METHODS = [
-    ("Fine-tuning naif",              CFG / f"{PREFIX}_relearn_naive{SUF}.yaml"),
-    ("EWC-DR",                        CFG / f"{PREFIX}_relearn_ewc{SUF}.yaml"),
-    ("Experience replay",             CFG / f"{PREFIX}_relearn_replay{SUF}.yaml"),
-    ("EWC-DR dan experience replay",  CFG / f"{PREFIX}_relearn_ewc_replay{SUF}.yaml"),
+# Method set — env RELEARN_METHODS subsets/reorders (e.g. "replay" to fail-fast on the OOM,
+# or "replay,ewc_replay,naive,ewc"). Default = all four, canonical order.
+_METHOD_ALL = [
+    ("naive",      "Fine-tuning naif",             f"{PREFIX}_relearn_naive{SUF}.yaml"),
+    ("ewc",        "EWC-DR",                       f"{PREFIX}_relearn_ewc{SUF}.yaml"),
+    ("replay",     "Experience replay",            f"{PREFIX}_relearn_replay{SUF}.yaml"),
+    ("ewc_replay", "EWC-DR dan experience replay", f"{PREFIX}_relearn_ewc_replay{SUF}.yaml"),
 ]
+_msel = os.environ.get("RELEARN_METHODS", "").strip()
+_mmap = {k: (lbl, CFG / f) for k, lbl, f in _METHOD_ALL}
+METHODS = ([_mmap[k.strip()] for k in _msel.split(",")] if _msel
+           else [(lbl, CFG / f) for _, lbl, f in _METHOD_ALL])
 
 # Trained method checkpoints already on Drive (run_ids from RELEARN_RESULTS.md) — used by
 # --reeval to re-score the saved models with the current evaluate.py, no retraining.
