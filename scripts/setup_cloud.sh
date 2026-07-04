@@ -122,7 +122,7 @@ echo "=== [5/6] Installing project dependencies ==="
 $UVP \
   "transformers>=4.48,<5.0" loguru tqdm pyyaml \
   numpy pandas scikit-learn networkx metis \
-  datasets sentencepiece hf_transfer
+  "datasets<5" sentencepiece hf_transfer
 
 echo "=== [6/6] Installing project package ==="
 $UVP -e .
