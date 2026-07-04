@@ -88,6 +88,7 @@ REEVAL_CKPTS = [
 
 ENV = {**os.environ, "PYTHONPATH": "src"}
 ENV.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")  # seq two-stage + replay fragments VRAM
+ENV.setdefault("PYTORCH_ALLOC_CONF", "expandable_segments:True")       # new name (torch deprecates the old)
 
 # ── Drive setup (used only with --setup) ────────────────────────────────────
 DRIVE_ROOT = "gdrive-mesach:tugas-akhir"
