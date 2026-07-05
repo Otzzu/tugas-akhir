@@ -950,3 +950,32 @@ N48 (GNN-only, jknet). Backbone task-A = checkpoint klasifikasi 26 kelas nine PE
 
 **Verdict.** EWC-DR + replay menang di dua setting (retensi task-A tertinggi, forgetting negatif = backward transfer via buffer replay). Naif + EWC-DR sendiri kolaps di CIL (F1 task-A ~0, catastrophic forgetting yang wajar saat head diperluas). Replay saja jadi penyeimbang layak. Std EWC-DR+replay tinggi (CIL seed-42 outlier rendah, F1-B 0.185 vs s1/s2 0.43/0.44) — dilaporkan apa adanya.
 
+---
+
+# Continual Learning Sekuensial (S1) — backbone unixcoder-base-nine, PER-SEED (seeds 42,1,2)
+
+S1 (lmgat_seqgnn, dua tahap). Backbone task-A = checkpoint klasifikasi 26 kelas nine PER-SEED (seed 42 `20260630_183927`, seed 1 `20260630_190353`, seed 2 `20260630_194430`). Protokol identik dengan N48. Batch 32 di pod 48 GB — batch 32 di 32 GB OOM saat replay (dua encoder GNN dikali replay dua forward, ~30 GB peak). mean±std dari `RELEARN_RESULTS_nine_seq_s{42,1,2}.md` (domain) + `RELEARN_CIL_RESULTS_nine_seq_s{42,1,2}.md` (CIL).
+
+**Consistency check LOLOS.** "Sebelum pembaruan" task-A per seed (0.467 / 0.533 / 0.485) = macro klasifikasi seq nine per-seed → per-seed backbone tersambung benar.
+
+## Domain-incremental (task-B = BigVul + TitanVul, 26 kelas tetap)
+
+| Metode              | F1 task-A     | F1 task-B     | Forgetting ↓   |
+| ------------------- | ------------- | ------------- | -------------- |
+| Sebelum pembaruan   | 0.495 ± 0.028 | 0.262 ± 0.040 | —              |
+| Fine-tuning naif    | 0.143 ± 0.004 | 0.417 ± 0.030 | +0.352 ± 0.031 |
+| EWC-DR              | 0.459 ± 0.075 | 0.393 ± 0.025 | +0.036 ± 0.048 |
+| Experience replay   | 0.407 ± 0.046 | 0.430 ± 0.017 | +0.088 ± 0.023 |
+| **EWC-DR + replay** | **0.625 ± 0.137** | 0.438 ± 0.044 | **−0.130 ± 0.118** |
+
+## Class-incremental (task-B = 10 CWE baru megavul_cil, id 26..35, head 26→36)
+
+| Metode              | F1 task-A     | F1 task-B     | A_last F1     | A_last Acc    | A_avg Acc     | Forgetting ↓   |
+| ------------------- | ------------- | ------------- | ------------- | ------------- | ------------- | -------------- |
+| Fine-tuning naif    | 0.000 ± 0.000 | 0.589 ± 0.017 | 0.090 ± 0.004 | 0.208 ± 0.005 | 0.357 ± 0.005 | +0.495 ± 0.028 |
+| EWC-DR              | 0.157 ± 0.082 | 0.553 ± 0.024 | 0.196 ± 0.058 | 0.233 ± 0.019 | 0.370 ± 0.013 | +0.338 ± 0.054 |
+| Experience replay   | 0.354 ± 0.023 | 0.488 ± 0.023 | 0.330 ± 0.020 | 0.297 ± 0.014 | 0.402 ± 0.011 | +0.141 ± 0.028 |
+| **EWC-DR + replay** | **0.636 ± 0.137** | 0.403 ± 0.023 | **0.492 ± 0.092** | 0.467 ± 0.081 | 0.487 ± 0.040 | **−0.141 ± 0.117** |
+
+**Verdict.** Pola sama persis dengan N48 graph. EWC-DR + replay menang di dua setting (retensi task-A tertinggi, forgetting negatif = backward transfer via replay). Naif + EWC-DR sendiri kolaps di CIL (F1 task-A 0.000 / 0.157). Replay saja jadi penyeimbang layak. Magnitudo berdekatan dengan graph (domain ewc_replay 0.625 vs 0.597, CIL A_last-F1 0.492 vs 0.512) → arsitektur sekuensial juga mendukung continual learning secara konsisten. Std ewc_replay tinggi (seed-dependent) — dilaporkan apa adanya.
+
