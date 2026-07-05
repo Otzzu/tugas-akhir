@@ -1,0 +1,80 @@
+# S1 sequential (lmgat_seqgnn) + BalO (balanced classifier init, beta 2.0) — VULN-ONLY 25-class.
+# = S1_nine_vulnonly + N16's BalO (classifier-layer init only, free). Seq is our best arch on the
+# vuln-only baseline table (S1-vo-nine 0.580); BalO tests if the tail-recall lift pushes it further
+# toward LOSVER 0.603. Multi-seed 42/1/2. Needs the ml1024 nine vuln-only .pt.
+# Run:
+#   ./scripts/train_cloud.sh --skip --config configs/ablation/vulnonly/S1_balo_vulnonly_nine.yaml \
+#     --dataset lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42_vulnonly
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+  ds_name_suffix: _vulnonly
+
+model:
+  architecture: lmgat_seqgnn
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base-nine
+  func_lm: microsoft/unixcoder-base-nine
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 25
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  gnn_balanced_init: true
+  gnn_balanced_init_beta: 2.0
+  func_head_type: linear
+  jknet_mode: concat
+  jknet_readout: meanmax
+  jknet_loc: false
+  seq_stage2_input: raw
+  seq_susp_pool: false
+  seq_susp_pool_k: 4.0
+  seq_detach_susp: false
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: false
+  use_flash_attention: false
+  grad_accum_steps: 2
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 0
+  prefetch_factor: 2
