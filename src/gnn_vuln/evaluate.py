@@ -207,12 +207,24 @@ class Evaluator:
                 print(f"    [{marker}] line {ln:4d} score={sc:.3f}  {code[:60]}")
             shown += 1
 
-    def _get_src_lines(self, func_idx: int) -> list[str]:
-        if self.raw_funcs is None:
-            return []
+    def _get_src(self, func_idx: int) -> tuple[list[str], int]:
+        """Source lines + parquet_id for a test function. Reads raw_func/parquet_id
+        per-sample off the graph so it works for lazy storage too — the inmem-only
+        raw_funcs list is used as a fallback when the graph lacks raw_func."""
         ds_idx = self.test_idx[func_idx]
-        raw = self.raw_funcs[ds_idx] if ds_idx < len(self.raw_funcs) else ""
-        return raw.splitlines() if raw else []
+        g = self.dataset[ds_idx]
+        raw = getattr(g, "raw_func", "") or ""
+        if not raw and self.raw_funcs is not None:
+            raw = self.raw_funcs[ds_idx] if ds_idx < len(self.raw_funcs) else ""
+        pid = getattr(g, "parquet_id", None)
+        try:
+            pid = int(pid.item()) if hasattr(pid, "item") else int(pid)
+        except (TypeError, ValueError):
+            pid = -1
+        return (raw.splitlines() if raw else []), pid
+
+    def _get_src_lines(self, func_idx: int) -> list[str]:
+        return self._get_src(func_idx)[0]
 
     # ------------------------------------------------------------------
     # Save outputs
@@ -257,8 +269,13 @@ class Evaluator:
         rd.mkdir(parents=True, exist_ok=True)
         y_true, y_pred, y_prob, target_names = res.y_true, res.y_pred, res.y_prob, res.target_names
 
+        # per-test-func (src_lines, parquet_id) — one graph load each, reused by both CSVs so
+        # every row traces back to the exact source (code) + parquet row (parquet_id).
+        src_cache = [self._get_src(i) for i in range(len(y_true))]
+
         # predictions.csv
-        pred_df = pd.DataFrame({"y_true": y_true, "y_pred": y_pred,
+        pred_df = pd.DataFrame({"parquet_id": [c[1] for c in src_cache],
+                                 "y_true": y_true, "y_pred": y_pred,
                                  "confidence": res.confidence, "correct": res.correct_mask})
         for i, name in enumerate(target_names):
             pred_df[f"prob_{name}"] = y_prob[:, i]
@@ -268,10 +285,11 @@ class Evaluator:
         # localization_scores.csv
         loc_rows: list[dict] = []
         for func_idx, (r, yt, yp) in enumerate(zip(res.loc_results, y_true, y_pred)):
-            src_lines = self._get_src_lines(func_idx)
+            src_lines, pid = src_cache[func_idx]
             for ln, sc, lab in zip(r["line_numbers"], r["line_scores"], r["line_labels"]):
                 code = src_lines[ln - 1].strip() if 0 < ln <= len(src_lines) else ""
-                loc_rows.append({"func_idx": func_idx, "y_true": int(yt), "y_pred": int(yp),
+                loc_rows.append({"func_idx": func_idx, "parquet_id": pid,
+                                  "y_true": int(yt), "y_pred": int(yp),
                                   "line_number": int(ln), "score": round(float(sc), 6),
                                   "is_flaw_line": int(lab), "code": code})
         if loc_rows:
