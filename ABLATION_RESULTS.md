@@ -50,12 +50,12 @@ Phase structure:
 
 Both from the same best-val-F1 checkpoint. Gap = Val F1 − Test F1.
 
-| Run | Val F1 | Test F1 | Gap    | Gap % |
-| --- | ------ | ------- | ------ | ----- |
-| A1  | 0.458  | 0.471   | -0.013 | -2.8% |
-| A2  | 0.532  | 0.494   | 0.038  | 7.1%  |
-| A3  | 0.548  | 0.495   | 0.053  | 9.7%  |
-| A4  | 0.550  | **0.504**| 0.046  | 8.4%  |
+| Run | Val F1 | Test F1   | Gap    | Gap % |
+| --- | ------ | --------- | ------ | ----- |
+| A1  | 0.458  | 0.471     | -0.013 | -2.8% |
+| A2  | 0.532  | 0.494     | 0.038  | 7.1%  |
+| A3  | 0.548  | 0.495     | 0.053  | 9.7%  |
+| A4  | 0.550  | **0.504** | 0.046  | 8.4%  |
 
 A1 (frozen LM) has no gap; live-LM runs (A2-A4) show 7-10% — the live LM overfits.
 
@@ -360,22 +360,22 @@ H2 and H3 results are from reruns with fixed `lm_full_windowed` (mean-pool CLS a
 and ml5120 dataset on RTX 5090. Earlier H2/H3 runs with ml1024 never activated sliding window
 (fast path always triggered when func_max_length=max_length=1024).
 
-| ID    | Config                                                            | chunk | stride | max_len | Max windows     | Run ID            | Epochs |
-| ----- | ----------------------------------------------------------------- | ----- | ------ | ------- | --------------- | ----------------- | ------ |
-| H1    | — (= G2)                                                          | —     | —      | 1024    | 1               | `20260520_132730` | 34     |
-| H2    | `H2_unixcoder_sliding_chunk1024_stride512.yaml`                   | 1024  | 512    | 5120    | 9               | `20260525_104032` | 30     |
-| H3    | `H3_unixcoder_sliding_chunk1024_stride1024.yaml`                  | 1024  | 1024   | 5120    | 5               | `20260525_125031` | 31     |
-| H4    | `H4_unixcoder_sliding_chunk1024_stride1024_winattn.yaml`          | 1024  | 1024   | 5120    | 5+attn          | `20260527_121315` | 22     |
-| H5    | `H5_unixcoder_sliding_chunk1024_stride512_winattn.yaml`           | 1024  | 512    | 5120    | 9+attn          | `20260528_062323` | 34     |
-| H6    | `H6_unixcoder_sliding_chunk1024_stride1024_winattn_hidden.yaml`   | 1024  | 1024   | 5120    | 5+attn+hidden   | `20260528_085945` | 31     |
-| H7    | `H7_unixcoder_sliding_chunk1024_stride512_winattn_centerw.yaml`   | 1024  | 512    | 5120    | 9+attn+cw       | `20260528_063142` | 34     |
-| H8    | `H8_unixcoder_sliding_chunk1024_stride512_winattn_crosswin.yaml`  | 1024  | 512    | 5120    | 9+attn+crosswin | `20260528_094016` | 41     |
-| H9    | `H9_unixcoder_sliding_chunk1024_stride1024_winattn_crosswin.yaml` | 1024  | 1024   | 5120    | 5+attn+crosswin | `20260610_122559` | 55     |
-| H10   | `H10_unixcoder_sliding_chunk1024_stride1024_winmixer.yaml`        | 1024  | 1024   | 5120    | 5+mixer         | `20260610_152801` | 26     |
-| H10n  | `H10_nine.yaml` (node+func unixcoder-base-nine)                   | 1024  | 1024   | 5120    | 5+mixer         | `20260614_131244` | 43     |
-| H10fn | `H10_funcnine.yaml` (node base, func unixcoder-base-nine)         | 1024  | 1024   | 5120    | 5+mixer         | `20260614_155019` | 40     |
-| H10w0 | `H10_..._winmixer_w0.yaml` (num_workers 0 rerun)                  | 1024  | 1024   | 5120    | 5+mixer         | `20260617_143140` | 33     |
-| H10-vo | `vulnonly/H10_vulnonly.yaml` (25-class vuln-only)                | 1024  | 1024   | 5120    | 5+mixer         | `20260618_040527` | 39     |
+| ID     | Config                                                            | chunk | stride | max_len | Max windows     | Run ID            | Epochs |
+| ------ | ----------------------------------------------------------------- | ----- | ------ | ------- | --------------- | ----------------- | ------ |
+| H1     | — (= G2)                                                          | —     | —      | 1024    | 1               | `20260520_132730` | 34     |
+| H2     | `H2_unixcoder_sliding_chunk1024_stride512.yaml`                   | 1024  | 512    | 5120    | 9               | `20260525_104032` | 30     |
+| H3     | `H3_unixcoder_sliding_chunk1024_stride1024.yaml`                  | 1024  | 1024   | 5120    | 5               | `20260525_125031` | 31     |
+| H4     | `H4_unixcoder_sliding_chunk1024_stride1024_winattn.yaml`          | 1024  | 1024   | 5120    | 5+attn          | `20260527_121315` | 22     |
+| H5     | `H5_unixcoder_sliding_chunk1024_stride512_winattn.yaml`           | 1024  | 512    | 5120    | 9+attn          | `20260528_062323` | 34     |
+| H6     | `H6_unixcoder_sliding_chunk1024_stride1024_winattn_hidden.yaml`   | 1024  | 1024   | 5120    | 5+attn+hidden   | `20260528_085945` | 31     |
+| H7     | `H7_unixcoder_sliding_chunk1024_stride512_winattn_centerw.yaml`   | 1024  | 512    | 5120    | 9+attn+cw       | `20260528_063142` | 34     |
+| H8     | `H8_unixcoder_sliding_chunk1024_stride512_winattn_crosswin.yaml`  | 1024  | 512    | 5120    | 9+attn+crosswin | `20260528_094016` | 41     |
+| H9     | `H9_unixcoder_sliding_chunk1024_stride1024_winattn_crosswin.yaml` | 1024  | 1024   | 5120    | 5+attn+crosswin | `20260610_122559` | 55     |
+| H10    | `H10_unixcoder_sliding_chunk1024_stride1024_winmixer.yaml`        | 1024  | 1024   | 5120    | 5+mixer         | `20260610_152801` | 26     |
+| H10n   | `H10_nine.yaml` (node+func unixcoder-base-nine)                   | 1024  | 1024   | 5120    | 5+mixer         | `20260614_131244` | 43     |
+| H10fn  | `H10_funcnine.yaml` (node base, func unixcoder-base-nine)         | 1024  | 1024   | 5120    | 5+mixer         | `20260614_155019` | 40     |
+| H10w0  | `H10_..._winmixer_w0.yaml` (num_workers 0 rerun)                  | 1024  | 1024   | 5120    | 5+mixer         | `20260617_143140` | 33     |
+| H10-vo | `vulnonly/H10_vulnonly.yaml` (25-class vuln-only)                 | 1024  | 1024   | 5120    | 5+mixer         | `20260618_040527` | 39     |
 
 ## Classification
 
@@ -551,12 +551,12 @@ Loss: `L = L_CE + supcon_weight·L_SupCon(matrix) + supcon_self_weight·L_self`.
 
 ## Classification
 
-| ID        | Val F1 | Test F1 | Test Acc | F1-w  | AUC-ROC | Conf. | Epochs |
-| --------- | ------ | ------- | -------- | ----- | ------- | ----- | ------ |
-| K1 (= H4) | 0.573  | **0.520**| 0.563    | 0.560 | 0.927   | 0.695 | 22     |
-| K2        | 0.502  | 0.479   | 0.527    | 0.527 | 0.874   | 0.607 | 33     |
-| K5        | 0.521  | 0.504   | 0.550    | 0.551 | 0.897   | 0.608 | 30     |
-| K6        | 0.513  | 0.500   | 0.503    | 0.504 | 0.892   | 0.579 | 32     |
+| ID        | Val F1 | Test F1   | Test Acc | F1-w  | AUC-ROC | Conf. | Epochs |
+| --------- | ------ | --------- | -------- | ----- | ------- | ----- | ------ |
+| K1 (= H4) | 0.573  | **0.520** | 0.563    | 0.560 | 0.927   | 0.695 | 22     |
+| K2        | 0.502  | 0.479     | 0.527    | 0.527 | 0.874   | 0.607 | 33     |
+| K5        | 0.521  | 0.504     | 0.550    | 0.551 | 0.897   | 0.608 | 30     |
+| K6        | 0.513  | 0.500     | 0.503    | 0.504 | 0.892   | 0.579 | 32     |
 
 ## Statement-Level Localization
 
@@ -583,11 +583,11 @@ K2 — SupCon with dist-matrix linear weighting + L_self (w=0.2 each) collapses 
 
 ## Classification
 
-| ID  | Val F1 | Test F1 | Test Acc | F1-w  | AUC-ROC | Conf. | Epochs |
-| --- | ------ | ------- | -------- | ----- | ------- | ----- | ------ |
-| M1  | 0.498  | 0.493   | 0.514    | 0.511 | 0.900   | 0.569 | 25     |
-| M2  | 0.494  | **0.532**| 0.531    | 0.541 | 0.890   | 0.484 | 58     |
-| M3  | 0.524  | 0.455   | 0.514    | 0.513 | 0.910   | 0.557 | 40     |
+| ID  | Val F1 | Test F1   | Test Acc | F1-w  | AUC-ROC | Conf. | Epochs |
+| --- | ------ | --------- | -------- | ----- | ------- | ----- | ------ |
+| M1  | 0.498  | 0.493     | 0.514    | 0.511 | 0.900   | 0.569 | 25     |
+| M2  | 0.494  | **0.532** | 0.531    | 0.541 | 0.890   | 0.484 | 58     |
+| M3  | 0.524  | 0.455     | 0.514    | 0.513 | 0.910   | 0.557 | 40     |
 
 ## Statement-Level Localization
 
@@ -605,13 +605,13 @@ Base H4 = Test F1 0.520. **M2 (gradual) = best ULMFiT (F1 0.532, +0.012 vs H4)**
 
 `configs/ablation/phase13/` — join the best GNN-only block (N48: jknet pool + gnn_plus + elu + ffn + skip) with the best Phase 8 LM aggregation (H10: UniXcoder sliding-window stride1024 + WindowMixerPool, localization=both concat). Tests whether the two architectural winners stack. O1 = hidden_dim 768 (from H10) → jknet pool 4×768=3072D dominates the 768D LM 4:1 (GNN-dominant fusion). O2 (pending) = hidden_dim 256 (faithful N48) → 1024D GNN balanced vs 768D LM.
 
-| Run        | Run ID                                      | Config                             | hidden | jknet pool | fused | GNN:LM |
-| ---------- | ------------------------------------------- | ---------------------------------- | ------ | ---------- | ----- | ------ |
-| O1         | `20260612_131926_lmgat_codebert_multiclass` | `O1_join_n48gnn_h10lm.yaml`        | 768    | 3072D      | 3840  | 4:1    |
-| O2         | `20260613_081400_lmgat_codebert_multiclass` | `O2_join_n48gnn_h10lm_dim256.yaml` | 256    | 1024D      | 1792  | 1.3:1  |
-| O1-nine    | `20260615_080653_lmgat_codebert_multiclass` | `O1_unixcoder_nine.yaml`           | 768    | 3072D      | 3840  | 4:1    |
-| O2-nine    | `20260615_113136_lmgat_codebert_multiclass` | `O2_unixcoder_nine.yaml`           | 256    | 1024D      | 1792  | 1.3:1  |
-| O1-nine-lm | `20260615_131334_lmgat_codebert_multiclass` | `O1_unixcoder_nine_lm.yaml`        | 768    | 3072D      | 3840  | 4:1    |
+| Run        | Run ID                                      | Config                             | hidden | jknet pool  | fused | GNN:LM |
+| ---------- | ------------------------------------------- | ---------------------------------- | ------ | ----------- | ----- | ------ |
+| O1         | `20260612_131926_lmgat_codebert_multiclass` | `O1_join_n48gnn_h10lm.yaml`        | 768    | 3072D       | 3840  | 4:1    |
+| O2         | `20260613_081400_lmgat_codebert_multiclass` | `O2_join_n48gnn_h10lm_dim256.yaml` | 256    | 1024D       | 1792  | 1.3:1  |
+| O1-nine    | `20260615_080653_lmgat_codebert_multiclass` | `O1_unixcoder_nine.yaml`           | 768    | 3072D       | 3840  | 4:1    |
+| O2-nine    | `20260615_113136_lmgat_codebert_multiclass` | `O2_unixcoder_nine.yaml`           | 256    | 1024D       | 1792  | 1.3:1  |
+| O1-nine-lm | `20260615_131334_lmgat_codebert_multiclass` | `O1_unixcoder_nine_lm.yaml`        | 768    | 3072D       | 3840  | 4:1    |
 | O3 (cRT)   | `20260617_061505_lmgat_codebert_multiclass` | `O3_crt_o1.yaml`                   | 768    | 3072D       | 3840  | 4:1    |
 | O4 (proj)  | `20260617_064203_lmgat_codebert_multiclass` | `O4_o1_balanced_proj.yaml`         | 768    | 768D (proj) | 1536  | 1:1    |
 | O1-w0      | `20260617_113601_lmgat_codebert_multiclass` | `O1_join_n48gnn_h10lm_w0.yaml`     | 768    | 3072D       | 3840  | 4:1    |
@@ -622,18 +622,18 @@ Base H4 = Test F1 0.520. **M2 (gradual) = best ULMFiT (F1 0.532, +0.012 vs H4)**
 
 ## Classification
 
-| Run        | Val F1 | Test F1 | Test Acc | F1-w  | Prec  | Rec   | Prec-w | Rec-w | AUC-ROC | Conf. | Epochs |
-| ---------- | ------ | ------- | -------- | ----- | ----- | ----- | ------ | ----- | ------- | ----- | ------ |
-| O1         | 0.534  | 0.545   | 0.494    | 0.544 | 0.512 | 0.542 | 0.659  | 0.455 | 0.877   | 0.332 | 77     |
-| O2         | 0.513  | 0.477   | 0.520    | 0.518 | 0.519 | 0.555 | 0.559  | 0.556 | 0.890   | 0.554 | 25     |
-| O1-nine    | 0.518  | 0.464   | 0.527    | 0.526 | 0.511 | 0.521 | 0.572  | 0.538 | 0.887   | 0.495 | 40     |
-| O2-nine    | 0.498  | 0.494   | 0.512    | 0.512 | 0.464 | 0.501 | 0.541  | 0.521 | 0.877   | 0.553 | 30     |
-| O1-nine-lm | 0.537  | 0.509   | 0.535    | 0.536 | 0.510 | 0.549 | 0.547  | 0.540 | 0.910   | 0.550 | 31     |
-| O3 (cRT)   | 0.546  | 0.520   | 0.535    | 0.529 | 0.570 | 0.513 | 0.547  | 0.541 | 0.868   | 0.860 | 30     |
-| O4 (proj)  | 0.520  | 0.498   | 0.514    | 0.514 | 0.527 | 0.552 | 0.542  | 0.531 | 0.908   | 0.566 | 20     |
-| O1-w0      | 0.529  | 0.524   | 0.525    | 0.526 | 0.533 | 0.532 | 0.578  | 0.500 | 0.872   | 0.434 | 47     |
-| O1-vo      | 0.551  | **0.575**| 0.581    | 0.577 | 0.561 | 0.580 | 0.573  | 0.563 | 0.914   | 0.617 | 24     |
-| O1-vo-jk   | 0.511  | 0.554   | 0.552    | 0.547 | 0.495 | 0.543 | 0.580  | 0.570 | 0.900   | 0.545 | 26     |
+| Run        | Val F1 | Test F1   | Test Acc | F1-w  | Prec  | Rec   | Prec-w | Rec-w | AUC-ROC | Conf. | Epochs |
+| ---------- | ------ | --------- | -------- | ----- | ----- | ----- | ------ | ----- | ------- | ----- | ------ |
+| O1         | 0.534  | 0.545     | 0.494    | 0.544 | 0.512 | 0.542 | 0.659  | 0.455 | 0.877   | 0.332 | 77     |
+| O2         | 0.513  | 0.477     | 0.520    | 0.518 | 0.519 | 0.555 | 0.559  | 0.556 | 0.890   | 0.554 | 25     |
+| O1-nine    | 0.518  | 0.464     | 0.527    | 0.526 | 0.511 | 0.521 | 0.572  | 0.538 | 0.887   | 0.495 | 40     |
+| O2-nine    | 0.498  | 0.494     | 0.512    | 0.512 | 0.464 | 0.501 | 0.541  | 0.521 | 0.877   | 0.553 | 30     |
+| O1-nine-lm | 0.537  | 0.509     | 0.535    | 0.536 | 0.510 | 0.549 | 0.547  | 0.540 | 0.910   | 0.550 | 31     |
+| O3 (cRT)   | 0.546  | 0.520     | 0.535    | 0.529 | 0.570 | 0.513 | 0.547  | 0.541 | 0.868   | 0.860 | 30     |
+| O4 (proj)  | 0.520  | 0.498     | 0.514    | 0.514 | 0.527 | 0.552 | 0.542  | 0.531 | 0.908   | 0.566 | 20     |
+| O1-w0      | 0.529  | 0.524     | 0.525    | 0.526 | 0.533 | 0.532 | 0.578  | 0.500 | 0.872   | 0.434 | 47     |
+| O1-vo      | 0.551  | **0.575** | 0.581    | 0.577 | 0.561 | 0.580 | 0.573  | 0.563 | 0.914   | 0.617 | 24     |
+| O1-vo-jk   | 0.511  | 0.554     | 0.552    | 0.547 | 0.495 | 0.543 | 0.580  | 0.570 | 0.900   | 0.545 | 26     |
 
 ## Statement-Level Localization
 
@@ -684,33 +684,33 @@ Three training seeds per proposed architecture for IV.4.4 (ancaman validitas), *
 
 **Raw per-seed (audit — mean±std above computed from these).**
 
-| Arch   | seed | run               | Macro | Acc   | F1w   | IFA   | Top-1 | Top-5 | R@5   | R@20  | Eff   |
-| ------ | ---- | ----------------- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
-| Graph  | 42   | `20260625_061202` | 0.452 | 0.485 | 0.485 | 0.805 | 0.836 | 0.975 | 0.220 | 0.424 | 0.042 |
-| Graph  | 1    | `20260624_135135` | 0.495 | 0.527 | 0.532 | 0.249 | 0.920 | 0.993 | 0.261 | 0.462 | 0.030 |
-| Graph  | 2    | `20260624_145225` | 0.476 | 0.508 | 0.507 | 0.495 | 0.864 | 0.978 | 0.255 | 0.481 | 0.032 |
-| Hibrida| 42   | `20260625_072202` | 0.502 | 0.540 | 0.549 | 0.807 | 0.877 | 0.980 | 0.273 | 0.411 | 0.023 |
-| Hibrida| 1    | `20260624_173655` | 0.533 | 0.513 | 0.530 | 0.556 | 0.885 | 0.976 | 0.229 | 0.389 | 0.034 |
-| Hibrida| 2    | `20260624_212630` | 0.527 | 0.535 | 0.534 | 0.644 | 0.938 | 0.986 | 0.281 | 0.458 | 0.021 |
-| Seq    | 42   | `20260625_063256` | 0.477 | 0.500 | 0.499 | 0.428 | 0.909 | 0.985 | 0.264 | 0.474 | 0.027 |
-| Seq    | 1    | `20260624_152857` | 0.536 | 0.539 | 0.540 | 0.557 | 0.867 | 0.978 | 0.228 | 0.452 | 0.039 |
-| Seq    | 2    | `20260624_163118` | 0.496 | 0.502 | 0.502 | 0.594 | 0.859 | 0.973 | 0.254 | 0.458 | 0.030 |
+| Arch    | seed | run               | Macro | Acc   | F1w   | IFA   | Top-1 | Top-5 | R@5   | R@20  | Eff   |
+| ------- | ---- | ----------------- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| Graph   | 42   | `20260625_061202` | 0.452 | 0.485 | 0.485 | 0.805 | 0.836 | 0.975 | 0.220 | 0.424 | 0.042 |
+| Graph   | 1    | `20260624_135135` | 0.495 | 0.527 | 0.532 | 0.249 | 0.920 | 0.993 | 0.261 | 0.462 | 0.030 |
+| Graph   | 2    | `20260624_145225` | 0.476 | 0.508 | 0.507 | 0.495 | 0.864 | 0.978 | 0.255 | 0.481 | 0.032 |
+| Hibrida | 42   | `20260625_072202` | 0.502 | 0.540 | 0.549 | 0.807 | 0.877 | 0.980 | 0.273 | 0.411 | 0.023 |
+| Hibrida | 1    | `20260624_173655` | 0.533 | 0.513 | 0.530 | 0.556 | 0.885 | 0.976 | 0.229 | 0.389 | 0.034 |
+| Hibrida | 2    | `20260624_212630` | 0.527 | 0.535 | 0.534 | 0.644 | 0.938 | 0.986 | 0.281 | 0.458 | 0.021 |
+| Seq     | 42   | `20260625_063256` | 0.477 | 0.500 | 0.499 | 0.428 | 0.909 | 0.985 | 0.264 | 0.474 | 0.027 |
+| Seq     | 1    | `20260624_152857` | 0.536 | 0.539 | 0.540 | 0.557 | 0.867 | 0.978 | 0.228 | 0.452 | 0.039 |
+| Seq     | 2    | `20260624_163118` | 0.496 | 0.502 | 0.502 | 0.594 | 0.859 | 0.973 | 0.254 | 0.458 | 0.030 |
 
 ## Backbone variant — unixcoder-base-nine (N48 + O1, multi-seed)
 
 N48 dengan node embedding `unixcoder-base-nine` (C/C++-aware) menggantikan `unixcoder-base`, multi-seed (42, 1, 2) yang sama, ÷present. Menguji apakah backbone sadar C/C++ menolong GNN murni di kondisi terbaru. Berbeda dari ablation lama yang MENYAKITI join O1 single-run (O1-nine 0.464 < 0.524), ini N48 murni multi-seed. Runs `20260629_{151930,154445,155935}`.
 
-| Backbone | Macro F1          | Acc           | F1-w          | IFA           | Top-1         | Top-5         | R@5%LOC       | R@20%LOC      | Effort        |
-| -------- | ----------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- |
-| base     | 0.474 ± 0.022     | 0.507 ± 0.021 | 0.508 ± 0.024 | 0.516 ± 0.279 | 0.873 ± 0.043 | 0.982 ± 0.009 | 0.245 ± 0.022 | 0.456 ± 0.029 | 0.034 ± 0.006 |
-| **nine** | 0.490 ± 0.030     | 0.500 ± 0.011 | 0.500 ± 0.012 | 0.382 ± 0.199 | 0.918 ± 0.037 | 0.984 ± 0.006 | 0.243 ± 0.009 | 0.442 ± 0.010 | 0.032 ± 0.002 |
+| Backbone | Macro F1      | Acc           | F1-w          | IFA           | Top-1         | Top-5         | R@5%LOC       | R@20%LOC      | Effort        |
+| -------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- |
+| base     | 0.474 ± 0.022 | 0.507 ± 0.021 | 0.508 ± 0.024 | 0.516 ± 0.279 | 0.873 ± 0.043 | 0.982 ± 0.009 | 0.245 ± 0.022 | 0.456 ± 0.029 | 0.034 ± 0.006 |
+| **nine** | 0.490 ± 0.030 | 0.500 ± 0.011 | 0.500 ± 0.012 | 0.382 ± 0.199 | 0.918 ± 0.037 | 0.984 ± 0.006 | 0.243 ± 0.009 | 0.442 ± 0.010 | 0.032 ± 0.002 |
 
 Vuln-only 25-class N48-nine (runs `20260629_{175502,182931,190941}`, vs N48-vo base 0.573):
 
-| Backbone | Macro F1          | Acc           | F1-w          | IFA           | Top-1         | Top-5         |
-| -------- | ----------------- | ------------- | ------------- | ------------- | ------------- | ------------- |
-| base     | 0.573 ± 0.017     | 0.571 ± 0.014 | 0.572 ± 0.014 | 0.545 ± 0.168 | 0.888 ± 0.036 | 0.980 ± 0.004 |
-| **nine** | 0.568 ± 0.024     | 0.562 ± 0.013 | 0.561 ± 0.014 | 0.615 ± 0.086 | 0.847 ± 0.017 | 0.971 ± 0.008 |
+| Backbone | Macro F1      | Acc           | F1-w          | IFA           | Top-1         | Top-5         |
+| -------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- |
+| base     | 0.573 ± 0.017 | 0.571 ± 0.014 | 0.572 ± 0.014 | 0.545 ± 0.168 | 0.888 ± 0.036 | 0.980 ± 0.004 |
+| **nine** | 0.568 ± 0.024 | 0.562 ± 0.013 | 0.561 ± 0.014 | 0.615 ± 0.086 | 0.847 ± 0.017 | 0.971 ± 0.008 |
 
 **Verdict.** 26-class nine 0.490 vs base 0.474 (+0.016), 25-class nine 0.568 vs base 0.573 (−0.005). Kedua selisih DI DALAM noise (std ±0.02), arah berlawanan, sehingga nine TIDAK konsisten menolong N48 murni. Lokalisasi nine sedikit lebih buruk pada vuln-only (Top-1 0.847 vs 0.888). "Nine hurts" lama spesifik ke join O1 single-run, bukan GNN murni. **Implikasi penting**, nine graph kami (0.568) tetap di bawah LOSVER, sehingga backbone nine BUKAN penyebab keunggulan LOSVER (confound IV.4.4 teruji). CATATAN per-seed 2026-07-02: setelah baseline dijalankan per-seed, LOSVER turun 0.640→0.603 dan gap ke Sekuensial 0.580 menyusut ke ~0.02 (dalam noise), jadi "keunggulan" LOSVER pada macro kini tipis (edge nyata LOSVER hanya di lokalisasi).
 
@@ -718,10 +718,10 @@ Raw per-seed nine 26-class: Macro s42 0.470 / s1 0.525 / s2 0.475. Vuln-only: Ma
 
 ### O1 Hibrida nine vuln-only 25-class (runs `20260630_{024656,044504,063729}`, vs O1-base vuln-only 0.542)
 
-| Backbone | Macro F1          | Acc           | F1-w          | IFA           | Top-1         | Top-5         |
-| -------- | ----------------- | ------------- | ------------- | ------------- | ------------- | ------------- |
-| base     | 0.542 ± 0.014     | 0.548 ± 0.008 | 0.549 ± 0.010 | 1.124 ± 0.780 | 0.865 ± 0.053 | 0.963 ± 0.021 |
-| **nine** | 0.546 ± 0.008     | 0.569 ± 0.016 | 0.570 ± 0.015 | 0.803 ± 0.547 | 0.898 ± 0.021 | 0.975 ± 0.006 |
+| Backbone | Macro F1      | Acc           | F1-w          | IFA           | Top-1         | Top-5         |
+| -------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- |
+| base     | 0.542 ± 0.014 | 0.548 ± 0.008 | 0.549 ± 0.010 | 1.124 ± 0.780 | 0.865 ± 0.053 | 0.963 ± 0.021 |
+| **nine** | 0.546 ± 0.008 | 0.569 ± 0.016 | 0.570 ± 0.015 | 0.803 ± 0.547 | 0.898 ± 0.021 | 0.975 ± 0.006 |
 
 Nine macro +0.004 (DI DALAM noise), acc +0.021 (~1.3 std), lokalisasi sedikit lebih baik (Top-1 +0.033, IFA lebih rendah) — semua dalam atau dekat noise, tidak signifikan di n=3. Old O1-nine 26-class 0.464 (single-run ÷union) TIDAK tereplikasi di vuln-only multi-seed. Raw per-seed nine O1 vuln-only: Macro s42 0.551 / s1 0.536 / s2 0.550.
 
@@ -750,7 +750,7 @@ Nine NETRAL di semua kombinasi (4/6 sedikit positif +0.004..+0.022, 2/6 sedikit 
 
 ## CPG Denoising — cpg14 edge filter + largest CC (N48, 26-class)
 
-Derive `scripts/build_denoised_subset.py`: keep cpg14 edges (AST/CFG/CDG/REACHING_DEF) + largest connected component, membuang ~50% node (stub operator/external method synthetic + peripheral) + ~68% edge (bookkeeping). Reuse node features. Runs `20260630_{083523,084617,090118}`.
+Derive `scripts/build_denoised_subset.py`: keep cpg14 edges (AST/CFG/CDG/REACHING*DEF) + largest connected component, membuang ~50% node (stub operator/external method synthetic + peripheral) + ~68% edge (bookkeeping). Reuse node features. Runs `20260630*{083523,084617,090118}`.
 
 | Variant | Macro F1      | Acc           | F1-w          | IFA           | Top-1         | Top-5         | sec/ep |
 | ------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------------- | ------ |
@@ -765,11 +765,11 @@ Derive `scripts/build_denoised_subset.py`: keep cpg14 edges (AST/CFG/CDG/REACHIN
 
 Three training seeds per proposed architecture on the **vuln-only 25-class** split (no benign), for the headline-vs-baseline comparison (Tabel IV.10). Same setup as the 26-class section, ÷present, only `train.seed` varies. **One duplicate seed-42 O1-vo run (`20260625_163025`, macro 0.933) is EXCLUDED** — anomalous on the same 913-sample test (config seed=42 same as `20260625_152707`; likely a leaked/broken split before the seed-42 rerun). The corrected seed-42 O1-vo run is `20260625_152707` (0.552).
 
-| Arch (seed-42 run)                          | seed-1 / seed-2 runs         | Macro F1 (s42/s1/s2)  | mean ± std        | Acc mean±std  | F1-w mean±std |
-| ------------------------------------------- | ---------------------------- | --------------------- | ----------------- | ------------- | ------------- |
-| Berbasis Graph (N48-vo `20260625_110933`)   | `20260625_114910` / `123310` | 0.593 / 0.563 / 0.562 | **0.573 ± 0.017** | 0.571 ± 0.014 | 0.572 ± 0.014 |
-| Hibrida Graph–LM (O1-vo `20260625_152707`)  | `20260626_004000` / `022016` | 0.552 / 0.548 / 0.525 | **0.542 ± 0.014** | 0.548 ± 0.008 | 0.549 ± 0.010 |
-| Sekuensial (S1-vo `20260625_125515`)        | `20260625_132730` / `140449` | 0.575 / 0.541 / 0.559 | **0.558 ± 0.017** | 0.562 ± 0.011 | 0.560 ± 0.010 |
+| Arch (seed-42 run)                         | seed-1 / seed-2 runs         | Macro F1 (s42/s1/s2)  | mean ± std        | Acc mean±std  | F1-w mean±std |
+| ------------------------------------------ | ---------------------------- | --------------------- | ----------------- | ------------- | ------------- |
+| Berbasis Graph (N48-vo `20260625_110933`)  | `20260625_114910` / `123310` | 0.593 / 0.563 / 0.562 | **0.573 ± 0.017** | 0.571 ± 0.014 | 0.572 ± 0.014 |
+| Hibrida Graph–LM (O1-vo `20260625_152707`) | `20260626_004000` / `022016` | 0.552 / 0.548 / 0.525 | **0.542 ± 0.014** | 0.548 ± 0.008 | 0.549 ± 0.010 |
+| Sekuensial (S1-vo `20260625_125515`)       | `20260625_132730` / `140449` | 0.575 / 0.541 / 0.559 | **0.558 ± 0.017** | 0.562 ± 0.011 | 0.560 ± 0.010 |
 
 **Findings.** On the 3-seed mean, **Berbasis Graph leads (0.573 ± 0.017) > Sekuensial (0.558) > Hibrida (0.542)** — the OPPOSITE order to the 26-class result (where Hibrida leads). This confirms the headline split: **Graph is strongest on vuln-only 25-class classification**, Hibrida on the benign-inclusive 26-class. Graph over Seq (0.015) is within ~1 std so that pair is marginal, but both clearly beat Hibrida on vuln-only. The single-run headline (Graph 0.601) sits above the mean 0.573 — same high-end pattern as 26-class. Localization mean±std follows.
 
@@ -785,17 +785,17 @@ Three training seeds per proposed architecture on the **vuln-only 25-class** spl
 
 **Raw per-seed (audit — mean±std above computed from these).**
 
-| Arch   | seed | run               | Macro | Acc   | F1w   | IFA   | Top-1 | Top-5 | R@5   | R@20  | Eff   |
-| ------ | ---- | ----------------- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
-| Graph  | 42   | `20260625_110933` | 0.593 | 0.586 | 0.585 | 0.464 | 0.847 | 0.977 | 0.212 | 0.458 | 0.043 |
-| Graph  | 1    | `20260625_114910` | 0.563 | 0.571 | 0.574 | 0.433 | 0.907 | 0.985 | 0.246 | 0.511 | 0.036 |
-| Graph  | 2    | `20260625_123310` | 0.562 | 0.558 | 0.557 | 0.737 | 0.911 | 0.980 | 0.223 | 0.500 | 0.042 |
-| Hibrida| 42   | `20260625_152707` | 0.552 | 0.540 | 0.538 | 0.226 | 0.915 | 0.987 | 0.249 | 0.492 | 0.035 |
-| Hibrida| 1    | `20260626_004000` | 0.548 | 0.548 | 0.550 | 1.504 | 0.871 | 0.957 | 0.287 | 0.496 | 0.028 |
-| Hibrida| 2    | `20260626_022016` | 0.525 | 0.556 | 0.558 | 1.640 | 0.810 | 0.946 | 0.241 | 0.460 | 0.036 |
-| Seq    | 42   | `20260625_125515` | 0.575 | 0.574 | 0.572 | 0.172 | 0.924 | 0.993 | 0.230 | 0.467 | 0.035 |
-| Seq    | 1    | `20260625_132730` | 0.541 | 0.554 | 0.554 | 0.457 | 0.916 | 0.981 | 0.279 | 0.522 | 0.025 |
-| Seq    | 2    | `20260625_140449` | 0.559 | 0.556 | 0.555 | 0.721 | 0.874 | 0.965 | 0.241 | 0.489 | 0.035 |
+| Arch    | seed | run               | Macro | Acc   | F1w   | IFA   | Top-1 | Top-5 | R@5   | R@20  | Eff   |
+| ------- | ---- | ----------------- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| Graph   | 42   | `20260625_110933` | 0.593 | 0.586 | 0.585 | 0.464 | 0.847 | 0.977 | 0.212 | 0.458 | 0.043 |
+| Graph   | 1    | `20260625_114910` | 0.563 | 0.571 | 0.574 | 0.433 | 0.907 | 0.985 | 0.246 | 0.511 | 0.036 |
+| Graph   | 2    | `20260625_123310` | 0.562 | 0.558 | 0.557 | 0.737 | 0.911 | 0.980 | 0.223 | 0.500 | 0.042 |
+| Hibrida | 42   | `20260625_152707` | 0.552 | 0.540 | 0.538 | 0.226 | 0.915 | 0.987 | 0.249 | 0.492 | 0.035 |
+| Hibrida | 1    | `20260626_004000` | 0.548 | 0.548 | 0.550 | 1.504 | 0.871 | 0.957 | 0.287 | 0.496 | 0.028 |
+| Hibrida | 2    | `20260626_022016` | 0.525 | 0.556 | 0.558 | 1.640 | 0.810 | 0.946 | 0.241 | 0.460 | 0.036 |
+| Seq     | 42   | `20260625_125515` | 0.575 | 0.574 | 0.572 | 0.172 | 0.924 | 0.993 | 0.230 | 0.467 | 0.035 |
+| Seq     | 1    | `20260625_132730` | 0.541 | 0.554 | 0.554 | 0.457 | 0.916 | 0.981 | 0.279 | 0.522 | 0.025 |
+| Seq     | 2    | `20260625_140449` | 0.559 | 0.556 | 0.555 | 0.721 | 0.874 | 0.965 | 0.241 | 0.489 | 0.035 |
 
 (Excluded duplicate seed-42 O1-vo `20260625_163025`, Macro 0.933 — anomalous, see above.)
 
@@ -855,7 +855,117 @@ Bundle Drive `results/baselines/`: seed-42 semua baseline `*_s42_20260626..28_*`
 
 ---
 
+# Continual Learning — backbone unixcoder-base-nine, PER-SEED (seeds 42,1,2)
+
+N48 (GNN-only, jknet). Backbone task-A = checkpoint klasifikasi 26 kelas nine PER-SEED (seed 42 `20260629_151930`, seed 1 `20260629_154445`, seed 2 `20260629_155935`), jadi tiap seed pakai backbone + split-nya sendiri (tidak bocor, sekonsisten arsitektur usulan). Sebelumnya fixed-42 backbone (lebih lemah) — digantikan run ini. mean±std dari `RELEARN_RESULTS_nine_s{42,1,2}.md` (domain) + `RELEARN_CIL_RESULTS_nine_s{42,1,2}.md` (CIL).
+
+**Consistency check LOLOS.** "Sebelum pembaruan" task-A per seed (0.470 / 0.525 / 0.475) = persis macro klasifikasi nine per-seed → per-seed backbone tersambung benar.
+
+## Domain-incremental (task-B = BigVul + TitanVul, 26 kelas tetap)
+
+| Metode              | F1 task-A         | F1 task-B     | Forgetting ↓       |
+| ------------------- | ----------------- | ------------- | ------------------ |
+| Sebelum pembaruan   | 0.490 ± 0.030     | 0.282 ± 0.031 | —                  |
+| Fine-tuning naif    | 0.165 ± 0.048     | 0.414 ± 0.017 | +0.325 ± 0.019     |
+| EWC-DR              | 0.303 ± 0.054     | 0.412 ± 0.039 | +0.187 ± 0.050     |
+| Experience replay   | 0.416 ± 0.057     | 0.448 ± 0.040 | +0.074 ± 0.050     |
+| **EWC-DR + replay** | **0.597 ± 0.114** | 0.420 ± 0.062 | **−0.107 ± 0.089** |
+
+## Class-incremental (task-B = 10 CWE baru megavul_cil, id 26..35, head 26→36)
+
+| Metode              | F1 task-A         | F1 task-B     | A_last F1         | A_last Acc    | A_avg Acc     | Forgetting ↓       |
+| ------------------- | ----------------- | ------------- | ----------------- | ------------- | ------------- | ------------------ |
+| Fine-tuning naif    | 0.000 ± 0.000     | 0.577 ± 0.020 | 0.086 ± 0.006     | 0.205 ± 0.009 | 0.353 ± 0.005 | +0.490 ± 0.030     |
+| EWC-DR              | 0.013 ± 0.010     | 0.524 ± 0.026 | 0.090 ± 0.013     | 0.197 ± 0.012 | 0.349 ± 0.002 | +0.477 ± 0.033     |
+| Experience replay   | 0.372 ± 0.019     | 0.508 ± 0.022 | 0.343 ± 0.017     | 0.302 ± 0.010 | 0.401 ± 0.010 | +0.118 ± 0.022     |
+| **EWC-DR + replay** | **0.672 ± 0.178** | 0.352 ± 0.145 | **0.512 ± 0.154** | 0.487 ± 0.129 | 0.494 ± 0.063 | **−0.182 ± 0.160** |
+
+**Verdict.** EWC-DR + replay menang di dua setting (retensi task-A tertinggi, forgetting negatif = backward transfer via buffer replay). Naif + EWC-DR sendiri kolaps di CIL (F1 task-A ~0, catastrophic forgetting yang wajar saat head diperluas). Replay saja jadi penyeimbang layak. Std EWC-DR+replay tinggi (CIL seed-42 outlier rendah, F1-B 0.185 vs s1/s2 0.43/0.44) — dilaporkan apa adanya.
+
+**Per-seed (run id untuk telusur, checkpoint di Drive checkpoints/).**
+
+Domain:
+
+| Metode                       | seed | run                                         | F1 task-A | F1 task-B | Forgetting ↓ |
+| ---------------------------- | ---- | ------------------------------------------- | --------- | --------- | ------------ |
+| Fine-tuning naif             | 42   | `20260701_163249_lmgat_codebert_multiclass` | 0.1259    | 0.4099    | +0.3440      |
+| Fine-tuning naif             | 1    | `20260701_172710_lmgat_codebert_multiclass` | 0.2185    | 0.3998    | +0.3062      |
+| Fine-tuning naif             | 2    | `20260701_180900_lmgat_codebert_multiclass` | 0.1512    | 0.4321    | +0.3239      |
+| EWC-DR                       | 42   | `20260701_164604_lmgat_codebert_multiclass` | 0.3334    | 0.3671    | +0.1364      |
+| EWC-DR                       | 1    | `20260701_173148_lmgat_codebert_multiclass` | 0.3345    | 0.4353    | +0.1902      |
+| EWC-DR                       | 2    | `20260701_182236_lmgat_codebert_multiclass` | 0.2398    | 0.4347    | +0.2353      |
+| Experience replay            | 42   | `20260701_165430_lmgat_codebert_multiclass` | 0.3502    | 0.4016    | +0.1197      |
+| Experience replay            | 1    | `20260701_174412_lmgat_codebert_multiclass` | 0.4418    | 0.4747    | +0.0829      |
+| Experience replay            | 2    | `20260701_183708_lmgat_codebert_multiclass` | 0.4545    | 0.4676    | +0.0206      |
+| EWC-DR dan experience replay | 42   | `20260701_171523_lmgat_codebert_multiclass` | 0.4785    | 0.3687    | -0.0087      |
+| EWC-DR dan experience replay | 1    | `20260701_175632_lmgat_codebert_multiclass` | 0.7056    | 0.4025    | -0.1809      |
+| EWC-DR dan experience replay | 2    | `20260701_184712_lmgat_codebert_multiclass` | 0.6076    | 0.4890    | -0.1326      |
+
+CIL:
+
+| Metode                       | seed | run                                         | F1 task-A | F1 task-B | A_last F1 | A_last Acc | A_avg Acc | Forgetting ↓ |
+| ---------------------------- | ---- | ------------------------------------------- | --------- | --------- | --------- | ---------- | --------- | ------------ |
+| Fine-tuning naif             | 42   | `20260701_191610_lmgat_codebert_multiclass` | 0.0000    | 0.5918    | 0.0905    | 0.2102     | 0.3581    | +0.4698      |
+| Fine-tuning naif             | 1    | `20260701_201541_lmgat_codebert_multiclass` | 0.0000    | 0.5541    | 0.0791    | 0.1953     | 0.3511    | +0.5247      |
+| Fine-tuning naif             | 2    | `20260701_212405_lmgat_codebert_multiclass` | 0.0000    | 0.5865    | 0.0897    | 0.2102     | 0.3488    | +0.4751      |
+| EWC-DR                       | 42   | `20260701_193046_lmgat_codebert_multiclass` | 0.0035    | 0.5092    | 0.0794    | 0.1866     | 0.3463    | +0.4663      |
+| EWC-DR                       | 1    | `20260701_202702_lmgat_codebert_multiclass` | 0.0108    | 0.5094    | 0.0862    | 0.1953     | 0.3511    | +0.5139      |
+| EWC-DR                       | 2    | `20260701_214057_lmgat_codebert_multiclass` | 0.0239    | 0.5540    | 0.1053    | 0.2102     | 0.3488    | +0.4512      |
+| Experience replay            | 42   | `20260701_194523_lmgat_codebert_multiclass` | 0.3762    | 0.5176    | 0.3503    | 0.3116     | 0.4088    | +0.0936      |
+| Experience replay            | 1    | `20260701_204102_lmgat_codebert_multiclass` | 0.3881    | 0.4827    | 0.3537    | 0.3035     | 0.4052    | +0.1366      |
+| Experience replay            | 2    | `20260701_215713_lmgat_codebert_multiclass` | 0.3514    | 0.5245    | 0.3235    | 0.2917     | 0.3895    | +0.1237      |
+| EWC-DR dan experience replay | 42   | `20260701_200343_lmgat_codebert_multiclass` | 0.4669    | 0.1846    | 0.3356    | 0.3420     | 0.4240    | +0.0029      |
+| EWC-DR dan experience replay | 1    | `20260701_210512_lmgat_codebert_multiclass` | 0.7925    | 0.4329    | 0.6224    | 0.5889     | 0.5480    | -0.2678      |
+| EWC-DR dan experience replay | 2    | `20260701_221617_lmgat_codebert_multiclass` | 0.7564    | 0.4394    | 0.5773    | 0.5311     | 0.5093    | -0.2813      |
+
+---
+
+# Continual Learning Sekuensial (S1) — backbone unixcoder-base-nine, PER-SEED (seeds 42,1,2)
+
+S1 (lmgat_seqgnn, dua tahap). Backbone task-A = checkpoint klasifikasi 26 kelas nine PER-SEED (seed 42 `20260630_183927`, seed 1 `20260630_190353`, seed 2 `20260630_194430`). Protokol identik dengan N48. Batch 32 di pod 48 GB — batch 32 di 32 GB OOM saat replay (dua encoder GNN dikali replay dua forward, ~30 GB peak). mean±std dari `RELEARN_RESULTS_nine_seq_s{42,1,2}.md` (domain) + `RELEARN_CIL_RESULTS_nine_seq_s{42,1,2}.md` (CIL).
+
+**Consistency check LOLOS.** "Sebelum pembaruan" task-A per seed (0.467 / 0.533 / 0.485) = macro klasifikasi seq nine per-seed → per-seed backbone tersambung benar.
+
+## Domain-incremental (task-B = BigVul + TitanVul, 26 kelas tetap)
+
+| Metode              | F1 task-A         | F1 task-B     | Forgetting ↓       |
+| ------------------- | ----------------- | ------------- | ------------------ |
+| Sebelum pembaruan   | 0.495 ± 0.028     | 0.262 ± 0.040 | —                  |
+| Fine-tuning naif    | 0.143 ± 0.004     | 0.417 ± 0.030 | +0.352 ± 0.031     |
+| EWC-DR              | 0.459 ± 0.075     | 0.393 ± 0.025 | +0.036 ± 0.048     |
+| Experience replay   | 0.407 ± 0.046     | 0.430 ± 0.017 | +0.088 ± 0.023     |
+| **EWC-DR + replay** | **0.625 ± 0.137** | 0.438 ± 0.044 | **−0.130 ± 0.118** |
+
+## Class-incremental (task-B = 10 CWE baru megavul_cil, id 26..35, head 26→36)
+
+| Metode              | F1 task-A         | F1 task-B     | A_last F1         | A_last Acc    | A_avg Acc     | Forgetting ↓       |
+| ------------------- | ----------------- | ------------- | ----------------- | ------------- | ------------- | ------------------ |
+| Fine-tuning naif    | 0.000 ± 0.000     | 0.589 ± 0.017 | 0.090 ± 0.004     | 0.208 ± 0.005 | 0.357 ± 0.005 | +0.495 ± 0.028     |
+| EWC-DR              | 0.157 ± 0.082     | 0.553 ± 0.024 | 0.196 ± 0.058     | 0.233 ± 0.019 | 0.370 ± 0.013 | +0.338 ± 0.054     |
+| Experience replay   | 0.354 ± 0.023     | 0.488 ± 0.023 | 0.330 ± 0.020     | 0.297 ± 0.014 | 0.402 ± 0.011 | +0.141 ± 0.028     |
+| **EWC-DR + replay** | **0.636 ± 0.137** | 0.403 ± 0.023 | **0.492 ± 0.092** | 0.467 ± 0.081 | 0.487 ± 0.040 | **−0.141 ± 0.117** |
+
+## **Verdict.** Pola sama persis dengan N48 graph. EWC-DR + replay menang di dua setting (retensi task-A tertinggi, forgetting negatif = backward transfer via replay). Naif + EWC-DR sendiri kolaps di CIL (F1 task-A 0.000 / 0.157). Replay saja jadi penyeimbang layak. Magnitudo berdekatan dengan graph (domain ewc_replay 0.625 vs 0.597, CIL A_last-F1 0.492 vs 0.512) → arsitektur sekuensial juga mendukung continual learning secara konsisten. Std ewc_replay tinggi (seed-dependent) — dilaporkan apa adanya.
+
 # Training Efficiency
+
+## Arsitektur final, per-seed (nine backbone, 26-class)
+
+Params, waktu latih, VRAM per seed. Graph paling ringan jauh (4.7M param, 23s/ep), hibrida terberat (156.5M, 191s/ep, live LM ml5120), sekuensial di tengah (9.5M, 36s/ep). Semua RTX 5090. Total time bervariasi antarseed karena early-stop (jumlah epoch beda); params, s/ep, VRAM praktis konstan per arch.
+
+| Arch    | seed | run                              | Params | Epochs | s/ep | Total (hr) | VRAM Peak | GPU      |
+| ------- | ---- | -------------------------------- | ------ | ------ | ---- | ---------- | --------- | -------- |
+| Graph   | 42   | `20260629_151930_lmgat_codebert` | 4.7M   | 64     | 23s  | 0.41       | 9.2 GB    | RTX 5090 |
+| Graph   | 1    | `20260629_154445_lmgat_codebert` | 4.7M   | 37     | 23s  | 0.24       | 10.7 GB   | RTX 5090 |
+| Graph   | 2    | `20260629_155935_lmgat_codebert` | 4.7M   | 44     | 23s  | 0.28       | 10.0 GB   | RTX 5090 |
+| Hibrida | 42   | `20260630_101936_lmgat_codebert` | 156.5M | 40     | 191s | 2.12       | 22.8 GB   | RTX 5090 |
+| Hibrida | 1    | `20260630_123040_lmgat_codebert` | 156.5M | 64     | 191s | 3.40       | 19.8 GB   | RTX 5090 |
+| Hibrida | 2    | `20260630_155817_lmgat_codebert` | 156.5M | 49     | 191s | 2.60       | 22.1 GB   | RTX 5090 |
+| Seq     | 42   | `20260630_183927_lmgat_seqgnn`   | 9.5M   | 40     | 36s  | 0.40       | 17.5 GB   | RTX 5090 |
+| Seq     | 1    | `20260630_190353_lmgat_seqgnn`   | 9.5M   | 67     | 36s  | 0.67       | 20.7 GB   | RTX 5090 |
+| Seq     | 2    | `20260630_194430_lmgat_seqgnn`   | 9.5M   | 66     | 36s  | 0.65       | 16.9 GB   | RTX 5090 |
+
+## Log eksplorasi (single-run lama)
 
 | Run                      | GPU             | Params | Epoch Time | Total Time (hr) | VRAM Peak |
 | ------------------------ | --------------- | ------ | ---------- | --------------- | --------- |
@@ -921,61 +1031,38 @@ Bundle Drive `results/baselines/`: seed-42 semua baseline `*_s42_20260626..28_*`
 | H10-vo 25-class          | RTX 5090        | 147.5M | 188s       | 2.04            | 20.1 GB   |
 | H10-w0 num_workers0      | RTX 5090        | 147.5M | 209s       | 1.92            | 18.6 GB   |
 
----
+**Per-seed (run id untuk telusur, checkpoint di Drive checkpoints/).**
 
-# Continual Learning — backbone unixcoder-base-nine, PER-SEED (seeds 42,1,2)
+Domain:
 
-N48 (GNN-only, jknet). Backbone task-A = checkpoint klasifikasi 26 kelas nine PER-SEED (seed 42 `20260629_151930`, seed 1 `20260629_154445`, seed 2 `20260629_155935`), jadi tiap seed pakai backbone + split-nya sendiri (tidak bocor, sekonsisten arsitektur usulan). Sebelumnya fixed-42 backbone (lebih lemah) — digantikan run ini. mean±std dari `RELEARN_RESULTS_nine_s{42,1,2}.md` (domain) + `RELEARN_CIL_RESULTS_nine_s{42,1,2}.md` (CIL).
+| Metode                       | seed | run                                       | F1 task-A | F1 task-B | Forgetting ↓ |
+| ---------------------------- | ---- | ----------------------------------------- | --------- | --------- | ------------ |
+| Fine-tuning naif             | 42   | `20260704_051026_lmgat_seqgnn_multiclass` | 0.1467    | 0.3749    | +0.3206      |
+| Fine-tuning naif             | 1    | `20260704_071823_lmgat_seqgnn_multiclass` | 0.1379    | 0.4350    | +0.3949      |
+| Fine-tuning naif             | 2    | `20260703_210554_lmgat_seqgnn_multiclass` | 0.1450    | 0.4413    | +0.3405      |
+| EWC-DR                       | 42   | `20260704_053933_lmgat_seqgnn_multiclass` | 0.3760    | 0.3818    | +0.0913      |
+| EWC-DR                       | 1    | `20260704_073112_lmgat_seqgnn_multiclass` | 0.5585    | 0.3696    | -0.0256      |
+| EWC-DR                       | 2    | `20260703_212336_lmgat_seqgnn_multiclass` | 0.4422    | 0.4275    | +0.0433      |
+| Experience replay            | 42   | `20260704_055805_lmgat_seqgnn_multiclass` | 0.3815    | 0.4075    | +0.0858      |
+| Experience replay            | 1    | `20260704_075336_lmgat_seqgnn_multiclass` | 0.4718    | 0.4350    | +0.0611      |
+| Experience replay            | 2    | `20260703_215415_lmgat_seqgnn_multiclass` | 0.3684    | 0.4484    | +0.1171      |
+| EWC-DR dan experience replay | 42   | `20260704_063722_lmgat_seqgnn_multiclass` | 0.4319    | 0.3794    | +0.0354      |
+| EWC-DR dan experience replay | 1    | `20260704_081825_lmgat_seqgnn_multiclass` | 0.7279    | 0.4843    | -0.1951      |
+| EWC-DR dan experience replay | 2    | `20260703_223042_lmgat_seqgnn_multiclass` | 0.7157    | 0.4489    | -0.2302      |
 
-**Consistency check LOLOS.** "Sebelum pembaruan" task-A per seed (0.470 / 0.525 / 0.475) = persis macro klasifikasi nine per-seed → per-seed backbone tersambung benar.
+CIL:
 
-## Domain-incremental (task-B = BigVul + TitanVul, 26 kelas tetap)
-
-| Metode              | F1 task-A     | F1 task-B     | Forgetting ↓   |
-| ------------------- | ------------- | ------------- | -------------- |
-| Sebelum pembaruan   | 0.490 ± 0.030 | 0.282 ± 0.031 | —              |
-| Fine-tuning naif    | 0.165 ± 0.048 | 0.414 ± 0.017 | +0.325 ± 0.019 |
-| EWC-DR              | 0.303 ± 0.054 | 0.412 ± 0.039 | +0.187 ± 0.050 |
-| Experience replay   | 0.416 ± 0.057 | 0.448 ± 0.040 | +0.074 ± 0.050 |
-| **EWC-DR + replay** | **0.597 ± 0.114** | 0.420 ± 0.062 | **−0.107 ± 0.089** |
-
-## Class-incremental (task-B = 10 CWE baru megavul_cil, id 26..35, head 26→36)
-
-| Metode              | F1 task-A     | F1 task-B     | A_last F1     | A_last Acc    | A_avg Acc     | Forgetting ↓   |
-| ------------------- | ------------- | ------------- | ------------- | ------------- | ------------- | -------------- |
-| Fine-tuning naif    | 0.000 ± 0.000 | 0.577 ± 0.020 | 0.086 ± 0.006 | 0.205 ± 0.009 | 0.353 ± 0.005 | +0.490 ± 0.030 |
-| EWC-DR              | 0.013 ± 0.010 | 0.524 ± 0.026 | 0.090 ± 0.013 | 0.197 ± 0.012 | 0.349 ± 0.002 | +0.477 ± 0.033 |
-| Experience replay   | 0.372 ± 0.019 | 0.508 ± 0.022 | 0.343 ± 0.017 | 0.302 ± 0.010 | 0.401 ± 0.010 | +0.118 ± 0.022 |
-| **EWC-DR + replay** | **0.672 ± 0.178** | 0.352 ± 0.145 | **0.512 ± 0.154** | 0.487 ± 0.129 | 0.494 ± 0.063 | **−0.182 ± 0.160** |
-
-**Verdict.** EWC-DR + replay menang di dua setting (retensi task-A tertinggi, forgetting negatif = backward transfer via buffer replay). Naif + EWC-DR sendiri kolaps di CIL (F1 task-A ~0, catastrophic forgetting yang wajar saat head diperluas). Replay saja jadi penyeimbang layak. Std EWC-DR+replay tinggi (CIL seed-42 outlier rendah, F1-B 0.185 vs s1/s2 0.43/0.44) — dilaporkan apa adanya.
-
----
-
-# Continual Learning Sekuensial (S1) — backbone unixcoder-base-nine, PER-SEED (seeds 42,1,2)
-
-S1 (lmgat_seqgnn, dua tahap). Backbone task-A = checkpoint klasifikasi 26 kelas nine PER-SEED (seed 42 `20260630_183927`, seed 1 `20260630_190353`, seed 2 `20260630_194430`). Protokol identik dengan N48. Batch 32 di pod 48 GB — batch 32 di 32 GB OOM saat replay (dua encoder GNN dikali replay dua forward, ~30 GB peak). mean±std dari `RELEARN_RESULTS_nine_seq_s{42,1,2}.md` (domain) + `RELEARN_CIL_RESULTS_nine_seq_s{42,1,2}.md` (CIL).
-
-**Consistency check LOLOS.** "Sebelum pembaruan" task-A per seed (0.467 / 0.533 / 0.485) = macro klasifikasi seq nine per-seed → per-seed backbone tersambung benar.
-
-## Domain-incremental (task-B = BigVul + TitanVul, 26 kelas tetap)
-
-| Metode              | F1 task-A     | F1 task-B     | Forgetting ↓   |
-| ------------------- | ------------- | ------------- | -------------- |
-| Sebelum pembaruan   | 0.495 ± 0.028 | 0.262 ± 0.040 | —              |
-| Fine-tuning naif    | 0.143 ± 0.004 | 0.417 ± 0.030 | +0.352 ± 0.031 |
-| EWC-DR              | 0.459 ± 0.075 | 0.393 ± 0.025 | +0.036 ± 0.048 |
-| Experience replay   | 0.407 ± 0.046 | 0.430 ± 0.017 | +0.088 ± 0.023 |
-| **EWC-DR + replay** | **0.625 ± 0.137** | 0.438 ± 0.044 | **−0.130 ± 0.118** |
-
-## Class-incremental (task-B = 10 CWE baru megavul_cil, id 26..35, head 26→36)
-
-| Metode              | F1 task-A     | F1 task-B     | A_last F1     | A_last Acc    | A_avg Acc     | Forgetting ↓   |
-| ------------------- | ------------- | ------------- | ------------- | ------------- | ------------- | -------------- |
-| Fine-tuning naif    | 0.000 ± 0.000 | 0.589 ± 0.017 | 0.090 ± 0.004 | 0.208 ± 0.005 | 0.357 ± 0.005 | +0.495 ± 0.028 |
-| EWC-DR              | 0.157 ± 0.082 | 0.553 ± 0.024 | 0.196 ± 0.058 | 0.233 ± 0.019 | 0.370 ± 0.013 | +0.338 ± 0.054 |
-| Experience replay   | 0.354 ± 0.023 | 0.488 ± 0.023 | 0.330 ± 0.020 | 0.297 ± 0.014 | 0.402 ± 0.011 | +0.141 ± 0.028 |
-| **EWC-DR + replay** | **0.636 ± 0.137** | 0.403 ± 0.023 | **0.492 ± 0.092** | 0.467 ± 0.081 | 0.487 ± 0.040 | **−0.141 ± 0.117** |
-
-**Verdict.** Pola sama persis dengan N48 graph. EWC-DR + replay menang di dua setting (retensi task-A tertinggi, forgetting negatif = backward transfer via replay). Naif + EWC-DR sendiri kolaps di CIL (F1 task-A 0.000 / 0.157). Replay saja jadi penyeimbang layak. Magnitudo berdekatan dengan graph (domain ewc_replay 0.625 vs 0.597, CIL A_last-F1 0.492 vs 0.512) → arsitektur sekuensial juga mendukung continual learning secara konsisten. Std ewc_replay tinggi (seed-dependent) — dilaporkan apa adanya.
-
+| Metode                       | seed | run                                       | F1 task-A | F1 task-B | A_last F1 | A_last Acc | A_avg Acc | Forgetting ↓ |
+| ---------------------------- | ---- | ----------------------------------------- | --------- | --------- | --------- | ---------- | --------- | ------------ |
+| Fine-tuning naif             | 42   | `20260704_090457_lmgat_seqgnn_multiclass` | 0.0005    | 0.6107    | 0.0957    | 0.2146     | 0.3612    | +0.4668      |
+| Fine-tuning naif             | 1    | `20260704_123412_lmgat_seqgnn_multiclass` | 0.0000    | 0.5867    | 0.0886    | 0.2071     | 0.3608    | +0.5328      |
+| Fine-tuning naif             | 2    | `20260704_155728_lmgat_seqgnn_multiclass` | 0.0000    | 0.5687    | 0.0849    | 0.2021     | 0.3494    | +0.4854      |
+| EWC-DR                       | 42   | `20260704_101220_lmgat_seqgnn_multiclass` | 0.0678    | 0.5832    | 0.1369    | 0.2301     | 0.3690    | +0.3995      |
+| EWC-DR                       | 1    | `20260704_130855_lmgat_seqgnn_multiclass` | 0.2656    | 0.5507    | 0.2741    | 0.2587     | 0.3866    | +0.2672      |
+| EWC-DR                       | 2    | `20260704_163010_lmgat_seqgnn_multiclass` | 0.1369    | 0.5245    | 0.1761    | 0.2114     | 0.3541    | +0.3485      |
+| Experience replay            | 42   | `20260704_110154_lmgat_seqgnn_multiclass` | 0.3654    | 0.4758    | 0.3377    | 0.2948     | 0.4013    | +0.1019      |
+| Experience replay            | 1    | `20260704_140317_lmgat_seqgnn_multiclass` | 0.3739    | 0.5203    | 0.3496    | 0.3159     | 0.4152    | +0.1589      |
+| Experience replay            | 2    | `20260704_171423_lmgat_seqgnn_multiclass` | 0.3219    | 0.4692    | 0.3030    | 0.2811     | 0.3889    | +0.1636      |
+| EWC-DR dan experience replay | 42   | `20260704_115615_lmgat_seqgnn_multiclass` | 0.4433    | 0.3715    | 0.3625    | 0.3520     | 0.4300    | +0.0240      |
+| EWC-DR dan experience replay | 1    | `20260704_145853_lmgat_seqgnn_multiclass` | 0.7445    | 0.4151    | 0.5659    | 0.5292     | 0.5218    | -0.2116      |
+| EWC-DR dan experience replay | 2    | `20260704_181200_lmgat_seqgnn_multiclass` | 0.7202    | 0.4228    | 0.5463    | 0.5187     | 0.5077    | -0.2348      |
