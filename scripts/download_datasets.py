@@ -114,7 +114,6 @@ def download_megavul() -> None:
     """
     import pandas as pd
     import ijson
-    from decimal import Decimal
 
     dest = OUT_DIR / "megavul"
     dest.mkdir(parents=True, exist_ok=True)

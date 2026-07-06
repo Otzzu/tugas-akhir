@@ -28,12 +28,11 @@ from gnn_vuln.data.dataset_lm import CodeBERTGraphDataset
 from gnn_vuln.losses import HierarchicalSupConLoss
 from gnn_vuln.models.registry import build_model, _parse_active_heads
 from gnn_vuln.training.ewc import EWCDR
-from gnn_vuln.training.losses import epoch_adaptive_class_weights, livable_loss as livable_real_loss
+from gnn_vuln.training.losses import epoch_adaptive_class_weights
 from gnn_vuln.training.optimizer import build_optimizer_and_scheduler
 from gnn_vuln.training.trainer import Trainer
 from gnn_vuln.utils import (
     set_seed, setup_logging, get_device,
-    save_checkpoint, load_resume_checkpoint, save_resume_checkpoint,
     CheckpointManager,
 )
 

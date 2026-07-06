@@ -61,8 +61,8 @@ from tqdm import tqdm
 from gnn_vuln.data.graph_builder_lm import build_from_parsed, build_func_text, parse_cpg
 from gnn_vuln.data.cpg.parser import parse_cpg_hdf5_group
 from gnn_vuln.data.cwe_taxonomy import (
-    CWE_GROUP_MAP, GROUP_VOCAB, _GROUP_TO_CWES, _expand_cwe_filter,
-    OWASP_GROUP_MAP, OWASP_VOCAB, OWASP_LABELS, _OWASP_TO_CWES,
+    CWE_GROUP_MAP, GROUP_VOCAB, _expand_cwe_filter,
+    OWASP_GROUP_MAP, OWASP_VOCAB,
 )
 from gnn_vuln.data.node_embedder import LMNodeEmbedder
 
