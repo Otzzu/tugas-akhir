@@ -23,8 +23,9 @@ class InferenceRequest(BaseModel):
 
 class SuspiciousLine(BaseModel):
     line: int
+    statement: Optional[str] = None               # full statement at that line (spans a multi-line statement)
     score: float                                  # vulnerability score [0,1], higher = worse
-    code: Optional[str] = None                    # the source text of that line
+    code: Optional[str] = None                    # the single source line at that line
     predicted_cwe: Optional[str] = None           # only for per-line multiclass heads
     class_probabilities: Optional[dict[str, float]] = None
 

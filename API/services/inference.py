@@ -85,12 +85,22 @@ def list_results(model_id: str | None = None, limit: int = 50) -> list[dict]:
 
 
 def _attach_source_lines(code: str, result: dict) -> None:
-    """Add the source text of each suspicious line (line numbers are 1-indexed)."""
+    """Attach per-line source: `code` = the single line, `statement` = the full
+    statement (spans continuation lines of a multi-line statement). Line numbers
+    are 1-indexed. The statement extends until a line ends in ; { } or : (capped)."""
     lines = code.splitlines()
     for sl in result.get("suspicious_lines", []):
         ln = sl.get("line")
         if isinstance(ln, int) and 1 <= ln <= len(lines):
             sl["code"] = lines[ln - 1]
+            parts = [lines[ln - 1]]
+            i = ln
+            while i < len(lines) and not parts[-1].rstrip().endswith((";", "{", "}", ":")):
+                parts.append(lines[i])
+                i += 1
+                if i - ln >= 15:
+                    break
+            sl["statement"] = "\n".join(parts).strip()
 
 
 def _predict_text(predictor: VulnPredictor, fmt: str, content: str, top_k: int | None):
