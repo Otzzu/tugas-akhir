@@ -122,7 +122,10 @@ Depends on the retrained **N48 nine 26-class** checkpoints (from Pod C's `N48_ni
 zipped to Drive `checkpoints/`. Continual inits from those, so the run-ids must be updated first.
 
 ```bash
-# 1. relearn/cil ml1024 datasets are already patched in Pod C's patch line above.
+# 1. patch the relearn + cil ml1024 datasets (skip if already covered by Pod C's patch line):
+bash scripts/patch_reupload_flaw_mask.sh \
+  lm_dataset_relearn_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42 \
+  lm_dataset_megavul_cil_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42
 # 2. Update the per-seed backbone run-ids to the retrained N48 runs (read them from Pod C's
 #    training_summary.json / train_cloud upload log), in BOTH orchestrators:
 #      scripts/run_relearn_experiment.py     line ~33  "ckpt": {42: "<new>", 1: "<new>", 2: "<new>"}
