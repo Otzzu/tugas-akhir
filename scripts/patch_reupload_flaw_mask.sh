@@ -36,8 +36,12 @@ patch_one() {
     ts=$(date +%Y%m%d_%H%M%S)
 
     # Locate the tar on Drive: prefer storage-marked, fall back to legacy.
+    # relearn + cil datasets both live under data/processed/relearn/ regardless of
+    # their name prefix (megavul_cil), so search it too.
     tar=""
-    for subdir in "${GDRIVE_REMOTE}/data/processed/${source}" "${GDRIVE_REMOTE}/data/processed"; do
+    for subdir in "${GDRIVE_REMOTE}/data/processed/${source}" \
+                  "${GDRIVE_REMOTE}/data/processed/relearn" \
+                  "${GDRIVE_REMOTE}/data/processed"; do
         tar=$(rclone lsf "$subdir" 2>/dev/null | grep -E "^${ds}_(lazy|inmemory)_.*\.tar\.gz$" | sort | tail -1 || true)
         if [[ -z "$tar" ]]; then
             tar=$(rclone lsf "$subdir" 2>/dev/null | grep -E "^${ds}(_[0-9]{8}_[0-9]{6})?\.tar\.gz$" | sort | tail -1 || true)
