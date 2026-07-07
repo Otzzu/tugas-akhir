@@ -51,10 +51,17 @@ Hybrid is the bottleneck → split across two pods so no pod runs much longer th
 | **A** | RTX 5090 | hybrid O1 — 26-class, seeds 42/1/2 (ml5120) | 3 | ~10.5 h | ~$5.25 |
 | **B** | RTX 5090 | hybrid O1 — vuln-only, seeds 42/1/2 (ml5120) | 3 | ~10.5 h | ~$5.25 |
 | **C** | RTX 5090 | graph N48 + seq S1 — 26-class + vuln-only (ml1024) + baseline bundle re-export | 12 | ~9 h | ~$4.50 |
-| **D** | RTX 4090 | LOSVER + LineVD + LineVul (baseline bundle) | 3 | ~7.5 h | ~$3.00 |
+| **D** | RTX 4090 | LineVD (3 seeds) + LineVul (3 seeds) | 6 | ~10 h | ~$4.00 |
+| **E** | any 5090 | LOSVER (3 seeds) | 3 | ~7.5 h | ~$3.75 |
+
+Baselines are **per-seed (42/1/2)** like the archs, so each is 3 runs, not 1. LineVD is 4090-locked;
+LOSVER + LineVul run on any GPU. LineVD's Joern graphs are built once and shared across its 3 seeds
+(only the GAT retrains per seed), so it isn't 3× the Joern cost. Split so no pod runs far longer than
+the others — LineVD+LineVul on the 4090 (Pod D), LOSVER on a 5090 that frees up after the archs (Pod E,
+e.g. Pod A/B after hybrid). If you prefer 4 pods, put all three baselines on Pod D (~17 h, ~$6.80).
 
 Rate: RTX 5090 $0.50/h, RTX 4090 $0.40/h.
-**Total ≈ $18 compute + ~$2 setup/download ≈ $20** (range $16–32; hybrid varies 3–9 h/run).
+**Total ≈ $25–30** (arch pods ~$15 + baselines ~$8 + setup ~$2; hybrid + pod-FS speed vary it).
 Optional graph continual adds ~10 h on ml1024 (~30 short runs) ≈ **+$5**, on whichever pod frees up after the N48 26-class backbones exist (e.g. Pod D after baselines, or Pod C after its main runs).
 
 Data efficiency: graph + seq share the same ml1024 downloads on Pod C; A/B each hold ml5120.
@@ -108,12 +115,22 @@ VO1024=${ML1024}_vulnonly
   --config configs/ablation/vulnonly/S1_nine_vulnonly_s2.yaml  --dataset $VO1024
 ```
 
-**Pod D — localization baselines (after Pod C uploads the new bundle)**
+**Localization baselines — 3 seeds each (after Pod C uploads the new bundle)**
 ```bash
-# set DATA_TAR to the new megavul_ml1024_baselines_<date>.tar.gz in each script first
-bash scripts/run_losver_cloud.sh    # vuln-only, uses patched flaw GT from the bundle
-bash scripts/run_linevd_cloud.sh    # 26-class, Joern graph cache reused
-bash scripts/run_linevul_cloud.sh   # 26-class
+# set DATA_TAR to the new bundle first (once, on each baseline pod):
+sed -i 's/megavul_ml1024_baselines_20260613.tar.gz/megavul_ml1024_baselines_<date>.tar.gz/' \
+  scripts/run_losver_cloud.sh scripts/run_linevd_cloud.sh scripts/run_linevul_cloud.sh
+
+# Pod D (RTX 4090): LineVD + LineVul, seeds 42/1/2
+for S in 42 1 2; do
+  SEED=$S bash scripts/run_linevd_cloud.sh    # 4090-locked; Joern graphs shared across seeds
+  SEED=$S bash scripts/run_linevul_cloud.sh
+done
+
+# Pod E (any 5090, e.g. Pod A/B after hybrid): LOSVER, seeds 42/1/2
+for S in 42 1 2; do
+  SEED=$S bash scripts/run_losver_cloud.sh    # vuln-only, uses patched flaw GT from the bundle
+done
 ```
 
 **Pod C follow-on — graph continual (optional, after N48 26-class backbones are retrained)**
