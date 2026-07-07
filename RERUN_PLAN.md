@@ -39,7 +39,7 @@ chain clean. It's light (ml1024, ~30 short runs). Optional; skip it and the old 
    tar -I "$(command -v pigz || echo gzip)" -cf "$NEWTAR" -C data/baselines megavul_ml1024
    rclone copy "$NEWTAR" gdrive-mesach:tugas-akhir/data/baselines/ --progress
    ```
-   Then set `DATA_TAR="$NEWTAR"` in `run_losver_cloud.sh`, `run_linevd_cloud.sh`, `run_linevul_cloud.sh`.
+   The baseline scripts auto-pick the newest `megavul_ml1024_baselines_*.tar.gz`, so no `DATA_TAR` edit needed.
 
 ## Pod distribution (balanced ~7.5–10.5 h each)
 
@@ -116,11 +116,9 @@ VO1024=${ML1024}_vulnonly
 ```
 
 **Localization baselines — 3 seeds each (after Pod C uploads the new bundle)**
-```bash
-# set DATA_TAR to the new bundle first (once, on each baseline pod):
-sed -i 's/megavul_ml1024_baselines_20260613.tar.gz/megavul_ml1024_baselines_<date>.tar.gz/' \
-  scripts/run_losver_cloud.sh scripts/run_linevd_cloud.sh scripts/run_linevul_cloud.sh
 
+The scripts now auto-pick the newest `megavul_ml1024_baselines_*.tar.gz` on Drive, so no `DATA_TAR` edit is needed.
+```bash
 # Pod D (RTX 4090): LineVD + LineVul, seeds 42/1/2
 for S in 42 1 2; do
   SEED=$S bash scripts/run_linevd_cloud.sh    # 4090-locked; Joern graphs shared across seeds

@@ -11,7 +11,8 @@
 set -uo pipefail
 
 REMOTE="gdrive-mesach:tugas-akhir"
-DATA_TAR="megavul_ml1024_baselines_20260613.tar.gz"
+DATA_TAR="$(rclone lsf "$REMOTE/data/baselines/" 2>/dev/null | grep -E '^megavul_ml1024_baselines_.*\.tar\.gz$' | sort | tail -1)"
+DATA_TAR="${DATA_TAR:-megavul_ml1024_baselines_20260613.tar.gz}"   # newest bundle on Drive, fallback to legacy
 WORK="$PWD"; VP="$WORK/src/VulPCL"; LOC="$VP/vul_localization"
 SPLIT="$WORK/megavul_ml1024/linevd"; HDF5="$WORK/data/graphs/megavul.hdf5"; PKL="$WORK/megavul_vulpcl_loc_pkl"
 PROJ="megavul"; RUN_ID="vulpcl_loc_megavul_$(date +%Y%m%d_%H%M%S)"

@@ -9,7 +9,8 @@
 set -euo pipefail
 
 REMOTE="gdrive-mesach:tugas-akhir"
-DATA_TAR="megavul_ml1024_baselines_20260613.tar.gz"
+DATA_TAR="$(rclone lsf "$REMOTE/data/baselines/" 2>/dev/null | grep -E '^megavul_ml1024_baselines_.*\.tar\.gz$' | sort | tail -1)"
+DATA_TAR="${DATA_TAR:-megavul_ml1024_baselines_20260613.tar.gz}"   # newest bundle on Drive, fallback to legacy
 RUN_ID="linevd_megavul_ml1024${SEED:+_s$SEED}_$(date +%Y%m%d_%H%M%S)"
 WORK="$PWD"
 
