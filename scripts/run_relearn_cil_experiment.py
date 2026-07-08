@@ -17,8 +17,9 @@ Run (cloud, Linux):
   PYTHONPATH=src python scripts/run_relearn_cil_experiment.py
 """
 from __future__ import annotations
-import json, os, shutil, subprocess, sys, time
+import json, os, re, shutil, subprocess, sys, time
 from pathlib import Path
+from typing import Optional
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "results"
@@ -132,22 +133,47 @@ def _extract(archive: Path, into: Path = ROOT) -> None:
         sh(["bash", "-c", f'tar -I "$(command -v pigz || echo gzip)" -xf "{archive}" -C "{into}"'])
 
 
+def _ds_base_name(archive: str) -> str:
+    """Strip the _lazy/_inmemory marker (with or without timestamp) + .tar.gz."""
+    return re.sub(r'(_(lazy|inmemory)(_\d{8}_\d{6})?)?(_\d{8}(_\d{6})?)?\.tar\.gz$', '', archive)
+
+
+def _newest_archive(remote_dir: str, ds_name: str) -> Optional[str]:
+    """Newest tar on Drive for ds_name (patched, timestamped tar wins by sort), or None."""
+    out = subprocess.run(["rclone", "lsf", f"{DRIVE_ROOT}/{remote_dir}"],
+                         capture_output=True, text=True).stdout.splitlines()
+    pat = re.compile(rf"^{re.escape(ds_name)}(\.tar\.gz|_(lazy|inmemory)(_\d{{8}}_\d{{6}})?\.tar\.gz|_\d{{8}}(_\d{{6}})?\.tar\.gz)$")
+    cands = sorted(f for f in out if pat.match(f))
+    return cands[-1] if cands else None
+
+
+def _pull_dataset(remote_dir: str, archive_hint: str, proc: Path) -> None:
+    """Download + extract the NEWEST (patched) tar for this dataset, once per pod.
+    Clears any stale extract first, then marks done so per-seed --setup skips re-extract."""
+    ds = _ds_base_name(archive_hint)
+    archive = _newest_archive(remote_dir, ds) or archive_hint
+    marker = proc / f".{archive}.extracted"
+    if marker.exists():
+        print(f"{ds}: newest ({archive}) already extracted, skip")
+        return
+    for p in list(proc.glob(f"{ds}_graphs")) + list(proc.glob(f"{ds}_meta.pt")) + list(proc.glob(f"{ds}.pt")):
+        shutil.rmtree(p) if p.is_dir() else p.unlink()
+    proc.mkdir(parents=True, exist_ok=True)
+    _rclone(f"{DRIVE_ROOT}/{remote_dir}/{archive}", str(proc))
+    _extract(proc / archive, proc)
+    (proc / archive).unlink(missing_ok=True)
+    marker.touch()
+    print(f"{ds}: extracted newest {archive}")
+
+
 def setup() -> None:
     """Download + extract prerequisites from Drive (idempotent)."""
     proc = ROOT / "data" / "processed"
     proc.mkdir(parents=True, exist_ok=True)
-    # 1. megavul task-A .pt (importance + replay buffer)
-    if not list(proc.glob(f"lm_dataset_megavul_multiclass*{_DS_ML}*")):
-        _rclone(f"{DRIVE_ROOT}/{MEGAVUL_PT_DIR}/{MEGAVUL_PT_ARCHIVE}", str(proc))
-        _extract(proc / MEGAVUL_PT_ARCHIVE, proc)
-    else:
-        print("megavul .pt already present, skip.")
-    # 2. cil task-B .pt + label patch (26..35)
-    if not list(proc.glob(f"lm_dataset_megavul_cil_multiclass*{_DS_ML}*_meta.pt")):
-        _rclone(f"{DRIVE_ROOT}/{CIL_PT_DIR}/{CIL_PT_ARCHIVE}", str(proc))
-        _extract(proc / CIL_PT_ARCHIVE, proc)
-    else:
-        print("cil .pt already present, skip download.")
+    # 1. megavul task-A .pt (importance + replay buffer) — newest/patched
+    _pull_dataset(MEGAVUL_PT_DIR, MEGAVUL_PT_ARCHIVE, proc)
+    # 2. cil task-B .pt (newest/patched) + label patch (26..35)
+    _pull_dataset(CIL_PT_DIR, CIL_PT_ARCHIVE, proc)
     sh([sys.executable, "scripts/patch_cil_labels.py"])   # idempotent — no-op if already 36-class
     # 2b. cil cwe_vocab.json — the dataset constructor requires it under data/raw/<source>
     # even when loading the prebuilt .pt (existence guard runs before the process-skip).

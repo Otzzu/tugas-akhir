@@ -15,8 +15,9 @@ Run (cloud, Linux):
   PYTHONPATH=src python scripts/run_relearn_experiment.py           # prerequisites already on the pod
 """
 from __future__ import annotations
-import json, os, shutil, subprocess, sys, time
+import json, os, re, shutil, subprocess, sys, time
 from pathlib import Path
+from typing import Optional
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "results"
@@ -135,6 +136,39 @@ def _extract(archive: Path, into: Path = ROOT) -> None:
         sh(["bash", "-c", f'tar -I "$(command -v pigz || echo gzip)" -xf "{archive}" -C "{into}"'])
 
 
+def _ds_base_name(archive: str) -> str:
+    """Strip the _lazy/_inmemory marker (with or without timestamp) + .tar.gz."""
+    return re.sub(r'(_(lazy|inmemory)(_\d{8}_\d{6})?)?(_\d{8}(_\d{6})?)?\.tar\.gz$', '', archive)
+
+
+def _newest_archive(remote_dir: str, ds_name: str) -> Optional[str]:
+    """Newest tar on Drive for ds_name (patched, timestamped tar wins by sort), or None."""
+    out = subprocess.run(["rclone", "lsf", f"{DRIVE_ROOT}/{remote_dir}"],
+                         capture_output=True, text=True).stdout.splitlines()
+    pat = re.compile(rf"^{re.escape(ds_name)}(\.tar\.gz|_(lazy|inmemory)(_\d{{8}}_\d{{6}})?\.tar\.gz|_\d{{8}}(_\d{{6}})?\.tar\.gz)$")
+    cands = sorted(f for f in out if pat.match(f))
+    return cands[-1] if cands else None
+
+
+def _pull_dataset(remote_dir: str, archive_hint: str, proc: Path) -> None:
+    """Download + extract the NEWEST (patched) tar for this dataset, once per pod.
+    Clears any stale extract first, then marks done so per-seed --setup skips re-extract."""
+    ds = _ds_base_name(archive_hint)
+    archive = _newest_archive(remote_dir, ds) or archive_hint
+    marker = proc / f".{archive}.extracted"
+    if marker.exists():
+        print(f"{ds}: newest ({archive}) already extracted, skip")
+        return
+    for p in list(proc.glob(f"{ds}_graphs")) + list(proc.glob(f"{ds}_meta.pt")) + list(proc.glob(f"{ds}.pt")):
+        shutil.rmtree(p) if p.is_dir() else p.unlink()
+    proc.mkdir(parents=True, exist_ok=True)
+    _rclone(f"{DRIVE_ROOT}/{remote_dir}/{archive}", str(proc))
+    _extract(proc / archive, proc)
+    (proc / archive).unlink(missing_ok=True)
+    marker.touch()
+    print(f"{ds}: extracted newest {archive}")
+
+
 def setup() -> None:
     """Download + extract prerequisites from Drive (idempotent — skips if present)."""
     # 1. relearn CPG bundle -> data/raw/relearn/ + parquet
@@ -144,14 +178,9 @@ def setup() -> None:
     else:
         print("relearn CPG already present, skip download.")
     _align_relearn_vocab()   # canonical vocab BEFORE any .pt download so the guard keeps it
-    # 2. MegaVul task-A .pt (importance + replay buffer) -> data/processed/
+    # 2. MegaVul task-A .pt (importance + replay buffer) -> data/processed/ (newest/patched)
     proc = ROOT / "data" / "processed"
-    if not list(proc.glob(f"lm_dataset_megavul_multiclass*{_DS_ML}*")):
-        proc.mkdir(parents=True, exist_ok=True)
-        _rclone(f"{DRIVE_ROOT}/{MEGAVUL_PT_DIR}/{MEGAVUL_PT_ARCHIVE}", str(proc))
-        _extract(proc / MEGAVUL_PT_ARCHIVE, proc)
-    else:
-        print("megavul .pt already present, skip download.")
+    _pull_dataset(MEGAVUL_PT_DIR, MEGAVUL_PT_ARCHIVE, proc)
     # 3. task-A backbone -> checkpoints/n48_taskA/best_model.pt. Per-seed for nine, so ALWAYS
     #    (re)point to THIS seed's backbone (it differs across seeds on the same pod).
     arch = taska_archive()
@@ -163,11 +192,10 @@ def setup() -> None:
     TASKA_CKPT.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, TASKA_CKPT)
     print(f"task-A ckpt {src.name} ({run_id}) -> {TASKA_CKPT}")
-    # 4. prebuilt relearn .pt (optional) — skips the GPU rebuild on the pod
-    if RELEARN_PT_ARCHIVE and not list(proc.glob(f"lm_dataset_relearn_multiclass*{_DS_ML}*")):
-        _rclone(f"{DRIVE_ROOT}/{RELEARN_PT_DIR}/{RELEARN_PT_ARCHIVE}", str(proc))
-        _extract(proc / RELEARN_PT_ARCHIVE, proc)
-    elif not RELEARN_PT_ARCHIVE:
+    # 4. prebuilt relearn .pt (newest/patched) — skips the GPU rebuild on the pod
+    if RELEARN_PT_ARCHIVE:
+        _pull_dataset(RELEARN_PT_DIR, RELEARN_PT_ARCHIVE, proc)
+    else:
         print("RELEARN_PT_ARCHIVE not set — relearn .pt will build from CPG on first use.")
 
 
