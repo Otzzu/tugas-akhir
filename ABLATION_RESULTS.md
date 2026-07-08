@@ -698,6 +698,36 @@ Three training seeds per proposed architecture for IV.4.4 (ancaman validitas), *
 
 ## Backbone variant — unixcoder-base-nine (N48 + O1, multi-seed)
 
+Ketiga arsitektur usulan pada backbone `unixcoder-base-nine`, seed 42/1/2, ÷present. Ini angka yang dipakai bab-4 (Tabel IV.10 vuln-only, IV.13 26-kelas). Raw per-seed dengan run id di bawah, mean±std pada rekap di akhir subbab.
+
+### Raw per-seed nine — 26 kelas
+
+| Arch    | seed | run               | Macro | Acc   | F1w   | IFA   | Top-1 | Top-5 | R@5   | R@20  | Eff   |
+| ------- | ---- | ----------------- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| Graph   | 42   | `20260629_151930` | 0.470 | 0.506 | 0.510 | 0.466 | 0.903 | 0.981 | 0.233 | 0.435 | 0.034 |
+| Graph   | 1    | `20260629_154445` | 0.525 | 0.507 | 0.505 | 0.155 | 0.960 | 0.991 | 0.249 | 0.436 | 0.030 |
+| Graph   | 2    | `20260629_155935` | 0.475 | 0.487 | 0.486 | 0.525 | 0.890 | 0.980 | 0.246 | 0.454 | 0.033 |
+| Hibrida | 42   | `20260630_101936` | 0.545 | 0.531 | 0.531 | 1.126 | 0.842 | 0.975 | 0.208 | 0.414 | 0.046 |
+| Hibrida | 1    | `20260630_123040` | 0.554 | 0.491 | 0.525 | 0.338 | 0.873 | 0.985 | 0.195 | 0.353 | 0.054 |
+| Hibrida | 2    | `20260630_155817` | 0.504 | 0.539 | 0.544 | 1.311 | 0.749 | 0.957 | 0.181 | 0.371 | 0.062 |
+| Seq     | 42   | `20260630_183927` | 0.467 | 0.508 | 0.505 | 0.452 | 0.931 | 0.982 | 0.265 | 0.462 | 0.028 |
+| Seq     | 1    | `20260630_190353` | 0.533 | 0.514 | 0.518 | 0.358 | 0.878 | 0.990 | 0.252 | 0.467 | 0.030 |
+| Seq     | 2    | `20260630_194430` | 0.485 | 0.497 | 0.498 | 0.430 | 0.894 | 0.981 | 0.256 | 0.477 | 0.029 |
+
+### Raw per-seed nine — vuln-only 25 kelas
+
+| Arch    | seed | run               | Macro | Acc   | F1w   | IFA   | Top-1 | Top-5 | R@5   | R@20  | Eff   |
+| ------- | ---- | ----------------- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| Graph   | 42   | `20260629_175502` | 0.564 | 0.560 | 0.554 | 0.610 | 0.828 | 0.965 | 0.192 | 0.416 | 0.053 |
+| Graph   | 1    | `20260629_182931` | 0.547 | 0.550 | 0.552 | 0.704 | 0.852 | 0.969 | 0.235 | 0.474 | 0.035 |
+| Graph   | 2    | `20260629_190941` | 0.595 | 0.576 | 0.577 | 0.533 | 0.861 | 0.980 | 0.226 | 0.499 | 0.041 |
+| Hibrida | 42   | `20260630_024656` | 0.551 | 0.577 | 0.575 | 0.390 | 0.904 | 0.981 | 0.234 | 0.475 | 0.036 |
+| Hibrida | 1    | `20260630_044504` | 0.536 | 0.551 | 0.554 | 1.424 | 0.874 | 0.969 | 0.285 | 0.483 | 0.027 |
+| Hibrida | 2    | `20260630_063729` | 0.550 | 0.579 | 0.582 | 0.595 | 0.916 | 0.975 | 0.265 | 0.561 | 0.030 |
+| Seq     | 42   | `20260630_202606` | 0.609 | 0.578 | 0.575 | 0.331 | 0.886 | 0.981 | 0.233 | 0.469 | 0.037 |
+| Seq     | 1    | `20260630_205251` | 0.560 | 0.542 | 0.546 | 0.632 | 0.906 | 0.973 | 0.277 | 0.523 | 0.027 |
+| Seq     | 2    | `20260630_212041` | 0.571 | 0.578 | 0.579 | 0.398 | 0.927 | 0.985 | 0.257 | 0.518 | 0.030 |
+
 N48 dengan node embedding `unixcoder-base-nine` (C/C++-aware) menggantikan `unixcoder-base`, multi-seed (42, 1, 2) yang sama, ÷present. Menguji apakah backbone sadar C/C++ menolong GNN murni di kondisi terbaru. Berbeda dari ablation lama yang MENYAKITI join O1 single-run (O1-nine 0.464 < 0.524), ini N48 murni multi-seed. Runs `20260629_{151930,154445,155935}`.
 
 | Backbone | Macro F1      | Acc           | F1-w          | IFA           | Top-1         | Top-5         | R@5%LOC       | R@20%LOC      | Effort        |
@@ -714,8 +744,6 @@ Vuln-only 25-class N48-nine (runs `20260629_{175502,182931,190941}`, vs N48-vo b
 
 **Verdict.** 26-class nine 0.490 vs base 0.474 (+0.016), 25-class nine 0.568 vs base 0.573 (−0.005). Kedua selisih DI DALAM noise (std ±0.02), arah berlawanan, sehingga nine TIDAK konsisten menolong N48 murni. Lokalisasi nine sedikit lebih buruk pada vuln-only (Top-1 0.847 vs 0.888). "Nine hurts" lama spesifik ke join O1 single-run, bukan GNN murni. **Implikasi penting**, nine graph kami (0.568) tetap di bawah LOSVER, sehingga backbone nine BUKAN penyebab keunggulan LOSVER (confound IV.4.4 teruji). CATATAN per-seed 2026-07-02: setelah baseline dijalankan per-seed, LOSVER turun 0.640→0.603 dan gap ke Sekuensial 0.580 menyusut ke ~0.02 (dalam noise), jadi "keunggulan" LOSVER pada macro kini tipis (edge nyata LOSVER hanya di lokalisasi).
 
-Raw per-seed nine 26-class: Macro s42 0.470 / s1 0.525 / s2 0.475. Vuln-only: Macro s42 0.564 / s1 0.547 / s2 0.595.
-
 ### O1 Hibrida nine vuln-only 25-class (runs `20260630_{024656,044504,063729}`, vs O1-base vuln-only 0.542)
 
 | Backbone | Macro F1      | Acc           | F1-w          | IFA           | Top-1         | Top-5         |
@@ -723,7 +751,7 @@ Raw per-seed nine 26-class: Macro s42 0.470 / s1 0.525 / s2 0.475. Vuln-only: Ma
 | base     | 0.542 ± 0.014 | 0.548 ± 0.008 | 0.549 ± 0.010 | 1.124 ± 0.780 | 0.865 ± 0.053 | 0.963 ± 0.021 |
 | **nine** | 0.546 ± 0.008 | 0.569 ± 0.016 | 0.570 ± 0.015 | 0.803 ± 0.547 | 0.898 ± 0.021 | 0.975 ± 0.006 |
 
-Nine macro +0.004 (DI DALAM noise), acc +0.021 (~1.3 std), lokalisasi sedikit lebih baik (Top-1 +0.033, IFA lebih rendah) — semua dalam atau dekat noise, tidak signifikan di n=3. Old O1-nine 26-class 0.464 (single-run ÷union) TIDAK tereplikasi di vuln-only multi-seed. Raw per-seed nine O1 vuln-only: Macro s42 0.551 / s1 0.536 / s2 0.550.
+Nine macro +0.004 (DI DALAM noise), acc +0.021 (~1.3 std), lokalisasi sedikit lebih baik (Top-1 +0.033, IFA lebih rendah) — semua dalam atau dekat noise, tidak signifikan di n=3. Old O1-nine 26-class 0.464 (single-run ÷union) TIDAK tereplikasi di vuln-only multi-seed.
 
 ### O1 26-class + S1 Sekuensial 26-class dan vuln-only nine
 
@@ -747,6 +775,43 @@ Runs O1-26 `20260630_{101936,123040,155817}`, S1-26 `20260630_{183927,190353,194
 | S1   | 25-vo   | 0.580 | 0.558 | +0.022 |
 
 Nine NETRAL di semua kombinasi (4/6 sedikit positif +0.004..+0.022, 2/6 sedikit negatif, rata-rata ~+0.007, SEMUA dalam noise std ±0.02-0.03). Tidak ada arsitektur yang jelas diuntungkan, dan semua di bawah LOSVER sehingga backbone bukan penyebab keunggulan LOSVER (per-seed LOSVER turun ke 0.603, gap ke Sekuensial 0.580 dalam noise). Nine memiliki justifikasi a-priori, yaitu dilatih pada 9 bahasa termasuk C dan C++ yang cocok dengan domain MegaVul, sehingga merupakan pilihan backbone yang principled meski selisih empiris berada dalam noise. Catatan, S1-nine vuln-only 0.580 adalah macro vuln-only tertinggi di antara arsitektur usulan tetapi masih dalam noise terhadap N48-base 0.573.
+
+## BalO — balanced GAT init (gnn_balanced_init beta 2.0), nine, multi-seed
+
+BalO = balanced GAT init Mustafa 2023 (`apply_balanced_init` pada layer GATv2, bukan init classifier). Single-step, gratis (hanya init bobot). Diuji pada Graph (N48) dan Seq (S1), 26 kelas dan vuln-only 25 kelas. Angka dari metrics_summary (÷present, konsisten dengan subbab nine di atas). Config `gnn_only/N48_balo_nine*`, `vulnonly/N48_balo_vulnonly_nine*`, `seqgnn/S1_balo_nine*`, `vulnonly/S1_balo_vulnonly_nine*`.
+
+### BalO raw per-seed — 26 kelas
+
+| Arch    | seed | run               | Macro | Acc   | F1w   | IFA   | Top-1 | Top-5 | R@5   | R@20  | Eff   |
+| ------- | ---- | ----------------- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| Graph   | 42   | `20260705_060051` | 0.479 | 0.521 | 0.519 | 0.329 | 0.934 | 0.990 | 0.222 | 0.428 | 0.040 |
+| Graph   | 1    | `20260705_063829` | 0.540 | 0.516 | 0.519 | 0.371 | 0.893 | 0.990 | 0.234 | 0.446 | 0.037 |
+| Graph   | 2    | `20260705_071005` | 0.456 | 0.487 | 0.485 | 0.904 | 0.795 | 0.960 | 0.210 | 0.455 | 0.046 |
+| Seq     | 42   | `20260705_182458` | 0.532 | 0.520 | 0.520 | 0.653 | 0.864 | 0.981 | 0.234 | 0.457 | 0.038 |
+| Seq     | 1    | `20260705_191658` | 0.498 | 0.488 | 0.489 | 0.279 | 0.943 | 0.993 | 0.257 | 0.451 | 0.027 |
+| Seq     | 2    | `20260705_195119` | 0.475 | 0.473 | 0.469 | 0.405 | 0.923 | 0.986 | 0.254 | 0.489 | 0.030 |
+
+### BalO raw per-seed — vuln-only 25 kelas
+
+| Arch    | seed | run               | Macro | Acc   | F1w   | IFA   | Top-1 | Top-5 | R@5   | R@20  | Eff   |
+| ------- | ---- | ----------------- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| Graph   | 42   | `20260705_075948` | 0.609 | 0.593 | 0.596 | 0.175 | 0.927 | 0.991 | 0.239 | 0.473 | 0.034 |
+| Graph   | 1    | `20260705_113647` | 0.585 | 0.572 | 0.578 | 0.531 | 0.879 | 0.969 | 0.231 | 0.482 | 0.038 |
+| Graph   | 2    | `20260705_125431` | 0.572 | 0.563 | 0.565 | 0.643 | 0.890 | 0.975 | 0.216 | 0.500 | 0.043 |
+| Seq     | 42   | `20260705_163847` | 0.577 | 0.545 | 0.545 | 0.196 | 0.937 | 0.988 | 0.233 | 0.465 | 0.037 |
+| Seq     | 1    | `20260705_171128` | 0.532 | 0.558 | 0.559 | 0.588 | 0.865 | 0.963 | 0.265 | 0.516 | 0.027 |
+| Seq     | 2    | `20260705_175237` | 0.584 | 0.563 | 0.563 | 0.464 | 0.906 | 0.978 | 0.242 | 0.497 | 0.035 |
+
+### BalO mean±std vs plain nine
+
+| Arch  | Setting   | BalO Macro    | plain nine | Δ      |
+| ----- | --------- | ------------- | ---------- | ------ |
+| Graph | 26        | 0.492 ± 0.036 | 0.490      | +0.002 |
+| Graph | vuln-only | 0.589 ± 0.016 | 0.569      | +0.020 |
+| Seq   | 26        | 0.502 ± 0.023 | 0.495      | +0.007 |
+| Seq   | vuln-only | 0.564 ± 0.023 | 0.580      | −0.016 |
+
+**Verdict.** Dengan sumber metrics_summary yang benar (konsisten dengan bab-4), BalO praktis DALAM NOISE di semua sel (std ±0.02-0.04). Efek positif terbesar di graph vuln-only (+0.020) tetapi tidak konsisten per-seed (s42 +0.045 / s1 +0.038 / s2 −0.023) dan masih ~1 std. Seq vuln-only malah turun (−0.016), 26 kelas netral untuk kedua arch. Jadi BalO BUKAN peningkatan yang andal dan tidak mengubah headline. CATATAN, angka BalO versi lama memakai training_summary yang BERBEDA dari metrics_summary yang dipakai bab-4 (mis. graph-26 s42 training 0.491 vs metrics 0.479), sudah dikoreksi ke metrics_summary di sini.
 
 ## CPG Denoising — cpg14 edge filter + largest CC (N48, 26-class)
 
@@ -945,7 +1010,7 @@ S1 (lmgat_seqgnn, dua tahap). Backbone task-A = checkpoint klasifikasi 26 kelas 
 | Experience replay   | 0.354 ± 0.023     | 0.488 ± 0.023 | 0.330 ± 0.020     | 0.297 ± 0.014 | 0.402 ± 0.011 | +0.141 ± 0.028     |
 | **EWC-DR + replay** | **0.636 ± 0.137** | 0.403 ± 0.023 | **0.492 ± 0.092** | 0.467 ± 0.081 | 0.487 ± 0.040 | **−0.141 ± 0.117** |
 
-## **Verdict.** Pola sama persis dengan N48 graph. EWC-DR + replay menang di dua setting (retensi task-A tertinggi, forgetting negatif = backward transfer via replay). Naif + EWC-DR sendiri kolaps di CIL (F1 task-A 0.000 / 0.157). Replay saja jadi penyeimbang layak. Magnitudo berdekatan dengan graph (domain ewc_replay 0.625 vs 0.597, CIL A_last-F1 0.492 vs 0.512) → arsitektur sekuensial juga mendukung continual learning secara konsisten. Std ewc_replay tinggi (seed-dependent) — dilaporkan apa adanya.
+ **Verdict.** Pola sama persis dengan N48 graph. EWC-DR + replay menang di dua setting (retensi task-A tertinggi, forgetting negatif = backward transfer via replay). Naif + EWC-DR sendiri kolaps di CIL (F1 task-A 0.000 / 0.157). Replay saja jadi penyeimbang layak. Magnitudo berdekatan dengan graph (domain ewc_replay 0.625 vs 0.597, CIL A_last-F1 0.492 vs 0.512) → arsitektur sekuensial juga mendukung continual learning secara konsisten. Std ewc_replay tinggi (seed-dependent) — dilaporkan apa adanya.
 
 # Training Efficiency
 
@@ -1066,3 +1131,80 @@ CIL:
 | EWC-DR dan experience replay | 42   | `20260704_115615_lmgat_seqgnn_multiclass` | 0.4433    | 0.3715    | 0.3625    | 0.3520     | 0.4300    | +0.0240      |
 | EWC-DR dan experience replay | 1    | `20260704_145853_lmgat_seqgnn_multiclass` | 0.7445    | 0.4151    | 0.5659    | 0.5292     | 0.5218    | -0.2116      |
 | EWC-DR dan experience replay | 2    | `20260704_181200_lmgat_seqgnn_multiclass` | 0.7202    | 0.4228    | 0.5463    | 0.5187     | 0.5077    | -0.2348      |
+
+## Perbaikan flaw_line_mask (exact-line) + re-run semua arsitektur, 2026-07-08
+
+Bug: node METHOD satu-satunya node ber-lineNumberEnd di CPG MegaVul (span [1, akhir]), sehingga range mask menandai baris 1 (signature) sebagai flaw di ~90% fungsi rentan → Top-1 lokalisasi menggelembung (~0.92 palsu). FIX = exact-line: node flaw hanya jika baris sumbernya sendiri baris patch, METHOD dikecualikan. Verified patch==rebuild 500/500, 0 spurious, dataset-wide 0 non-METHOD spanning node. Ranking loss (weight 0.2, stmt head biner) ikut terlatih pada mask lama, jadi SEMUA arsitektur di-retrain. Klasifikasi tak pakai mask langsung tetapi encoder dibagi, jadi bergeser tipis. Backbone nine 26-class baru menggantikan 20260629/20260630 di ckpt relearn (kedua orchestrator diupdate).
+
+Baris raw dipertahankan agar mean±std bisa dicek ulang.
+
+### Arsitektur usulan 26-class (raw per-seed + mean±std)
+
+| Arch | seed | run_id | macro-F1 | acc | Top-1 | Top-5 | IFA | n_loc |
+|---|---|---|---|---|---|---|---|---|
+| Graph N48 | 42 | `20260707_202747` | 0.5281 | 0.5294 | 0.2599 | 0.5886 | 12.31 | 581 |
+| Graph N48 | 1  | `20260707_204341` | 0.5063 | 0.5051 | 0.2543 | 0.5796 | 11.76 | 578 |
+| Graph N48 | 2  | `20260707_205826` | 0.5007 | 0.5163 | 0.2580 | 0.5801 | 11.08 | 593 |
+| **Graph N48 mean** | | | **0.512±0.015** | 0.517±0.012 | **0.257±0.003** | 0.583±0.005 | 11.7±0.6 | |
+| Hybrid O1 | 42 | `20260707_201128` | 0.5212 | 0.4902 | 0.2513 | 0.5129 | 15.02 | 581 |
+| Hybrid O1 | 1  | `20260707_234710` | 0.5419 | 0.5294 | 0.2682 | 0.5554 | 14.07 | 578 |
+| Hybrid O1 | 2  | `20260708_015442` | 0.4850 | 0.5219 | 0.2159 | 0.5413 | 14.88 | 593 |
+| **Hybrid O1 mean** | | | **0.516±0.029** | 0.514±0.021 | **0.245±0.027** | 0.537±0.022 | 14.7±0.5 | |
+| Seq S1 | 42 | `20260707_211550` | 0.4895 | 0.5228 | 0.2754 | 0.5783 | 12.50 | 581 |
+| Seq S1 | 1  | `20260707_214418` | 0.5442 | 0.5396 | 0.2820 | 0.6107 | 10.72 | 578 |
+| Seq S1 | 2  | `20260707_222608` | 0.4701 | 0.4893 | 0.2614 | 0.5717 | 11.28 | 593 |
+| **Seq S1 mean** | | | **0.501±0.038** | 0.517±0.026 | **0.273±0.011** | 0.587±0.021 | 11.5±0.9 | |
+
+### Arsitektur usulan vuln-only 25-class
+
+| Arch | seed | run_id | macro-F1 | acc | Top-1 | Top-5 | IFA | n_loc |
+|---|---|---|---|---|---|---|---|---|
+| Graph N48 | 42 | `20260707_225629` | 0.5978 | 0.5761 | 0.2305 | 0.5220 | 13.59 | 590 |
+| Graph N48 | 1  | `20260707_231454` | 0.5748 | 0.5520 | 0.2249 | 0.5502 | 11.96 | 578 |
+| Graph N48 | 2  | `20260707_233502` | 0.5548 | 0.5663 | 0.2388 | 0.5721 | 10.82 | 603 |
+| **Graph N48 mean** | | | **0.576±0.022** | 0.565±0.012 | **0.231±0.007** | 0.548±0.025 | 12.1±1.4 | |
+| Hybrid O1 | 42 | `20260708_021915` | 0.5284 | 0.5575 | 0.2458 | 0.5051 | 15.13 | 590 |
+| Hybrid O1 | 1  | `20260708_034057` | 0.5728 | 0.5696 | 0.2301 | 0.5484 | 12.66 | 578 |
+| Hybrid O1 | 2  | `20260708_042439` | 0.5637 | 0.5641 | 0.2222 | 0.5506 | 12.99 | 603 |
+| **Hybrid O1 mean** | | | **0.555±0.023** | 0.564±0.006 | **0.233±0.012** | 0.535±0.026 | 13.6±1.3 | |
+| Seq S1 | 42 | `20260707_235509` | 0.5364 | 0.5652 | 0.2390 | 0.5373 | 12.90 | 590 |
+| Seq S1 | 1  | `20260708_001943` | 0.5583 | 0.5663 | 0.2318 | 0.5467 | 13.13 | 578 |
+| Seq S1 | 2  | `20260708_005700` | 0.5862 | 0.5542 | 0.2570 | 0.5821 | 11.04 | 603 |
+| **Seq S1 mean** | | | **0.560±0.025** | 0.562±0.007 | **0.243±0.013** | 0.555±0.024 | 12.4±1.1 | |
+
+### Baseline (GT terkoreksi, raw per-seed + mean±std)
+
+LOSVER — vuln-only, KLASIFIKASI + lokalisasi (n_cls=478, n_loc=476):
+
+| seed | cls macro-F1 | acc | Top-1 | Top-5 | IFA |
+|---|---|---|---|---|---|
+| 42 | 0.6576 | 0.6381 | 0.5231 | 0.7563 | 3.76 |
+| 1  | 0.6450 | 0.6548 | 0.5084 | 0.7815 | 3.72 |
+| 2  | 0.6012 | 0.6004 | 0.5042 | 0.7710 | 3.67 |
+| **mean** | **0.635±0.030** | 0.631±0.028 | **0.512±0.010** | 0.770±0.013 | 3.72±0.04 |
+
+LineVD — 26-class biner per-statement, lokalisasi (n=599):
+
+| seed | Top-1 | Top-5 | IFA |
+|---|---|---|---|
+| 42 | 0.8865 | 0.9750 | 0.41 |
+| 1  | 0.8948 | 0.9716 | 0.38 |
+| 2  | 0.8848 | 0.9733 | 0.42 |
+| **mean** | **0.889±0.005** | 0.973±0.002 | 0.40±0.02 |
+
+LineVul — 26-class attention, lokalisasi (n=402/418/422):
+
+| seed | Top-1 | Top-5 | IFA |
+|---|---|---|---|
+| 42 | 0.2139 | 0.5821 | 6.01 |
+| 1  | 0.2225 | 0.5909 | 5.83 |
+| 2  | 0.2275 | 0.5972 | 5.77 |
+| **mean** | **0.221±0.007** | 0.590±0.008 | 5.87±0.12 |
+
+### Temuan
+
+1. **Lokalisasi jujur.** Top-1 usulan turun dari ~0.92 palsu ke ~0.25 nyata; signature artifact hilang.
+2. **Fully-supervised mendominasi lokalisasi.** LineVD (per-statement fully-sup) 0.889, LOSVER (2-tahap fully-sup) 0.512, jauh di atas usulan ~0.25. Usulan MENGUNGGULI LineVul (attention-only, 0.221). Keunggulan usulan bukan presisi lokalisasi melainkan aplikabilitas (tanpa label baris, semua fungsi, kembalikan statement). Klaim IV.4.2 lama "hampir selalu di peringkat teratas, langsung bisa dipakai" DICABUT.
+3. **Klasifikasi dalam noise.** 26-class usulan ~0.50-0.52, vuln-only ~0.56-0.58, geser dalam std vs lama (encoder dibagi + ranking loss berubah). LOSVER vuln-only cls 0.635 tetap memimpin tipis, tetapi pada subset n=478 (≤512 token), bukan 913.
+4. **Peringkat lokalisasi antararsitektur.** 26-class Seq Top-1 tertinggi (0.273), Hybrid terlemah (0.245); vuln-only Seq 0.243. Konsisten hybrid pelokalisasi terlemah.
+5. **Cakupan data.** LineVD n=599, LOSVER n=476, LineVul n~410 vs usulan n~581-603 — baseline membuang fungsi (pipeline atau batas 512 token), usulan menilai lebih banyak.

@@ -30,11 +30,11 @@ SUF = "_nine" if os.environ.get("RELEARN_NINE") else ""   # unixcoder-base-nine 
 ARCH = os.environ.get("RELEARN_ARCH", "graph").lower()    # graph | hybrid | seq
 _ARCH = {
     "graph":  {"prefix": "N48", "taska": "n48_taskA", "run": "lmgat_codebert", "label": "berbasis graph (N48)",
-               "ckpt": {42: "20260629_151930", 1: "20260629_154445", 2: "20260629_155935"}},
+               "ckpt": {42: "20260707_202747", 1: "20260707_204341", 2: "20260707_205826"}},
     "hybrid": {"prefix": "O1",  "taska": "o1_taskA",  "run": "lmgat_codebert", "label": "hibrida graph-LM (O1)",
-               "ckpt": {42: "20260630_101936", 1: "20260630_123040", 2: "20260630_155817"}},
+               "ckpt": {42: "20260707_201128", 1: "20260707_234710", 2: "20260708_015442"}},
     "seq":    {"prefix": "S1",  "taska": "s1_taskA",  "run": "lmgat_seqgnn",   "label": "sekuensial (S1)",
-               "ckpt": {42: "20260630_183927", 1: "20260630_190353", 2: "20260630_194430"}},
+               "ckpt": {42: "20260707_211550", 1: "20260707_214418", 2: "20260707_222608"}},
 }[ARCH]
 if ARCH != "graph" and not SUF:
     sys.exit("hybrid/seq continual only wired for the nine backbone — set RELEARN_NINE=1")
