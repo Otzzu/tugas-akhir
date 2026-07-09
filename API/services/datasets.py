@@ -39,12 +39,12 @@ def _slug(name: str) -> str:
     return base
 
 
-_MIN_LIB_FLAW_LINES = (0, 1, 10)    # gnn-vuln release with --flaw-lines-column
+_MIN_LIB_FLAW_LINES = (0, 1, 11)    # gnn-vuln release with the `api` loader
 
 
 def _lib_supports_flaw_lines() -> bool:
-    """Before 0.1.10 the loader had no --flaw-lines-column opt-in and silently fell back to
-    the func_after diff, so an old library must reject a manually annotated row loudly."""
+    """Before 0.1.11 there was no `api` format, so a manually annotated row must be rejected
+    loudly rather than have its annotation dropped for a func_after diff."""
     from importlib.metadata import version
     try:
         parts = tuple(int(p) for p in version("gnn-vuln").split(".")[:3])
@@ -62,25 +62,11 @@ def _clean_flaw_lines(code: str, flaw_lines: list[int], row_idx: int) -> list[in
     return want
 
 
-def _diff_flaw_lines(before: str, after: str) -> list[int]:
-    """Mirror of gnn_vuln.data.prepare._diff_flaw_lines. Needed when a file mixes annotated
-    and patched rows: the flaw_lines column then covers every row, so the func_after rows
-    must be diffed here rather than by the loader."""
-    import difflib
-    if not before or not after or before == after:
-        return []
-    b, a = before.splitlines(keepends=True), after.splitlines(keepends=True)
-    out: list[int] = []
-    for tag, i1, i2, _j1, _j2 in difflib.SequenceMatcher(None, b, a).get_opcodes():
-        if tag in ("replace", "delete"):
-            out.extend(range(i1 + 1, i2 + 1))
-    return out
-
-
 def _rows_to_parquet(rows: list, path) -> int:
-    """Normalize ingest rows into the BigVul-style columns the library loader reads:
-    func_before / func_after / 'CWE ID' / vul / language. A vulnerable row localizes itself
-    with exactly one of `flaw_lines` (manual annotation) or `func_after` (patch to diff)."""
+    """Normalize ingest rows into the columns the library's `api` loader reads:
+    func_before / func_after / flaw_lines / 'CWE ID' / vul / language. A vulnerable row
+    localizes itself with exactly one of `flaw_lines` (manual annotation) or `func_after`
+    (patch); the loader resolves each row on its own, so a file may mix the two."""
     import pandas as pd
     recs = []
     any_manual = False
@@ -98,23 +84,15 @@ def _rows_to_parquet(rows: list, path) -> int:
         recs.append({
             "func_before": r.code,
             "func_after": r.func_after or "",
-            "flaw_lines": flaw,
+            "flaw_lines": flaw,          # empty -> the loader falls back to the diff
             "CWE ID": cwe,
             "vul": vul,
             "language": r.language or "C",
         })
-    if not any_manual:
-        for rec in recs:                    # no annotation anywhere -> plain diff path
-            rec.pop("flaw_lines")
-    else:
-        if not _lib_supports_flaw_lines():
-            raise UploadParseError(
-                "'flaw_lines' needs gnn-vuln >= "
-                f"{'.'.join(map(str, _MIN_LIB_FLAW_LINES))}; supply func_after instead")
-        # the column is authoritative once present, so fill it for the patched rows too
-        for rec in recs:
-            if rec["vul"] and rec["func_after"] and not rec["flaw_lines"]:
-                rec["flaw_lines"] = _diff_flaw_lines(rec["func_before"], rec["func_after"])
+    if any_manual and not _lib_supports_flaw_lines():
+        raise UploadParseError(
+            "'flaw_lines' needs gnn-vuln >= "
+            f"{'.'.join(map(str, _MIN_LIB_FLAW_LINES))}; supply func_after instead")
     df = pd.DataFrame(recs)
     df.to_parquet(path)
     return len(df)
