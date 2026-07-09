@@ -206,6 +206,7 @@ def load_bigvul(
     top_k_cwe: int = 10,
     binary: bool = False,
     cwe_vocab: dict[str, int] | None = None,
+    use_flaw_lines_column: bool = False,
 ) -> tuple[pd.DataFrame, dict[str, int]]:
     """
     Multi-class by default: top_k_cwe CWE categories become class indices 1..K.
@@ -214,8 +215,9 @@ def load_bigvul(
     Pass binary=True to collapse all vulnerable labels to 1.
     Pass cwe_vocab to reuse an existing vocabulary (val/test splits).
 
-    Flaw lines come from a caller-supplied flaw_lines column when present, otherwise
-    from diffing func_before vs func_after.
+    Flaw lines are computed by diffing func_before vs func_after. Pass
+    use_flaw_lines_column=True to instead read a caller-supplied flaw_lines column
+    (1-indexed), for corpora annotated by hand rather than by a patch.
 
     Returns (df, cwe_vocab).  cwe_vocab is {} when binary=True.
     """
@@ -265,9 +267,10 @@ def load_bigvul(
             if dropped:
                 logger.info(f"Dropped {dropped} rows with unknown/junk CWE IDs (NVD-CWE-Other, CWE-unknown, etc.)")
 
-    # Flaw lines: a caller-supplied annotation wins; otherwise diff func_before → func_after.
-    # Manually labelled corpora have no patched function to diff against.
-    if "flaw_lines" in df.columns:
+    # Flaw lines: opt in to a caller-supplied annotation (manually labelled corpora have no
+    # patched function to diff against); otherwise diff func_before → func_after. The opt-in
+    # is explicit so that research parquets carrying a flaw_lines column keep diffing.
+    if use_flaw_lines_column and "flaw_lines" in df.columns:
         def _given(row: pd.Series) -> list[int]:
             if row["vul"] == 0:
                 return []
@@ -550,6 +553,11 @@ def main() -> None:
         help="Collapse all vulnerable labels to 1 regardless of CWE (binary mode).",
     )
     parser.add_argument(
+        "--flaw-lines-column", action="store_true",
+        help="bigvul format only: read 1-indexed flaw lines from a flaw_lines column instead "
+             "of diffing func_before vs func_after (hand-annotated corpora).",
+    )
+    parser.add_argument(
         "--cwe-vocab", type=Path, default=None,
         help="Path to an existing cwe_vocab.json to reuse (for val/test splits). "
              "If omitted, vocab is auto-saved to <out-dir>/cwe_vocab.json.",
@@ -593,6 +601,7 @@ def main() -> None:
             top_k_cwe=args.top_cwe,
             binary=args.binary,
             cwe_vocab=existing_vocab,
+            use_flaw_lines_column=args.flaw_lines_column,
         )
 
         # Always save vocab to output dir so val/test splits can find it
