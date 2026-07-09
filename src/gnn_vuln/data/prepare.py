@@ -214,7 +214,8 @@ def load_bigvul(
     Pass binary=True to collapse all vulnerable labels to 1.
     Pass cwe_vocab to reuse an existing vocabulary (val/test splits).
 
-    Flaw lines are computed by diffing func_before vs func_after.
+    Flaw lines come from a caller-supplied flaw_lines column when present, otherwise
+    from diffing func_before vs func_after.
 
     Returns (df, cwe_vocab).  cwe_vocab is {} when binary=True.
     """
@@ -264,8 +265,20 @@ def load_bigvul(
             if dropped:
                 logger.info(f"Dropped {dropped} rows with unknown/junk CWE IDs (NVD-CWE-Other, CWE-unknown, etc.)")
 
-    # Compute flaw lines from func_before → func_after diff
-    if after_col and after_col in df.columns:
+    # Flaw lines: a caller-supplied annotation wins; otherwise diff func_before → func_after.
+    # Manually labelled corpora have no patched function to diff against.
+    if "flaw_lines" in df.columns:
+        def _given(row: pd.Series) -> list[int]:
+            if row["vul"] == 0:
+                return []
+            fl = row["flaw_lines"]
+            if fl is None or (isinstance(fl, float) and pd.isna(fl)):
+                return []
+            return sorted({int(i) for i in fl})
+
+        logger.info("Using caller-supplied flaw_lines column…")
+        df["flaw_lines"] = df.apply(_given, axis=1)
+    elif after_col and after_col in df.columns:
         def _flaw(row: pd.Series) -> list[int]:
             if row["vul"] == 0:
                 return []
