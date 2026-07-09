@@ -1016,14 +1016,15 @@
                 "items": {
                   "type": "integer"
                 },
-                "type": "array"
+                "type": "array",
+                "minItems": 1
               },
               {
                 "type": "null"
               }
             ],
             "title": "Flaw Lines",
-            "description": "Manually annotated 1-indexed vulnerable lines of `code`. Required on a vulnerable row unless func_after is given \u2014 supply one or the other, never both. Pass [] to state the row has no line annotation. Ignored on benign rows."
+            "description": "Manually annotated 1-indexed vulnerable lines of `code`. Required on a vulnerable row unless func_after is given \u2014 supply one or the other, never both. Omit the field when absent; an empty list is not a valid annotation. Ignored on benign rows."
           },
           "language": {
             "anyOf": [

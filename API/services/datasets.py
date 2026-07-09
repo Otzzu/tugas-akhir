@@ -80,8 +80,7 @@ def _diff_flaw_lines(before: str, after: str) -> list[int]:
 def _rows_to_parquet(rows: list, path) -> int:
     """Normalize ingest rows into the BigVul-style columns the library loader reads:
     func_before / func_after / 'CWE ID' / vul / language. A vulnerable row localizes itself
-    with exactly one of `flaw_lines` (manual annotation) or `func_after` (patch to diff);
-    pass an empty `flaw_lines` to say the row has no line annotation at all."""
+    with exactly one of `flaw_lines` (manual annotation) or `func_after` (patch to diff)."""
     import pandas as pd
     recs = []
     any_manual = False
@@ -93,11 +92,9 @@ def _rows_to_parquet(rows: list, path) -> int:
         if manual is not None and has_after:
             raise UploadParseError(f"row {i}: give either func_after or flaw_lines, not both")
         if vul and manual is None and not has_after:
-            raise UploadParseError(
-                f"row {i}: a vulnerable row needs func_after or flaw_lines "
-                "(use an empty flaw_lines list when the row has no line annotation)")
+            raise UploadParseError(f"row {i}: a vulnerable row needs func_after or flaw_lines")
         flaw = _clean_flaw_lines(r.code, manual, i) if (manual and vul) else []
-        any_manual |= manual is not None and vul
+        any_manual |= bool(flaw)
         recs.append({
             "func_before": r.code,
             "func_after": r.func_after or "",

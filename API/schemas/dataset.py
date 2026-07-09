@@ -15,10 +15,11 @@ class DatasetRow(BaseModel):
         description="Patched function; flaw lines derived from the diff. Required on a "
         "vulnerable row unless flaw_lines is given.")
     flaw_lines: Optional[list[int]] = Field(
-        None,
+        None, min_length=1,
         description="Manually annotated 1-indexed vulnerable lines of `code`. Required on a "
         "vulnerable row unless func_after is given — supply one or the other, never both. "
-        "Pass [] to state the row has no line annotation. Ignored on benign rows.")
+        "Omit the field when absent; an empty list is not a valid annotation. Ignored on "
+        "benign rows.")
     language: Optional[str] = Field(None, description="Language name (default C)")
 
 
