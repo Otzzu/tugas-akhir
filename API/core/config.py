@@ -28,6 +28,11 @@ class Settings:
     DEVICE: str = os.environ.get("API_DEVICE") or _default_device()
     MAX_NODES: int = int(os.environ.get("API_MAX_NODES", "2500"))
 
+    # dataset file upload (POST /datasets/upload). The inline `rows` body stays capped at
+    # 5000 by the schema; a file may carry more, but never an unbounded amount.
+    MAX_UPLOAD_BYTES: int = int(os.environ.get("API_MAX_UPLOAD_BYTES", str(256 * 1024 * 1024)))
+    MAX_UPLOAD_ROWS: int = int(os.environ.get("API_MAX_UPLOAD_ROWS", "50000"))
+
     # server
     CORS_ORIGINS: list[str] = os.environ.get("API_CORS_ORIGINS", "*").split(",")
 

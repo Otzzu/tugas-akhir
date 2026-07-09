@@ -6,8 +6,11 @@ The heavy raw->CPG->.pt build lives in the gnn_vuln library, driven by API.tasks
 """
 from __future__ import annotations
 
+import json
 import re
 import uuid
+from dataclasses import dataclass
+from typing import Optional
 
 from API.core.config import settings
 from API.core.database import SessionLocal
@@ -36,28 +39,155 @@ def _slug(name: str) -> str:
     return base
 
 
+_MIN_LIB_FLAW_LINES = (0, 1, 9)     # gnn-vuln release that honours a flaw_lines column
+
+
+def _lib_supports_flaw_lines() -> bool:
+    """The loader ignored a caller-supplied flaw_lines column before 0.1.9 and silently
+    fell back to the func_after diff, so an old library must reject the row loudly."""
+    from importlib.metadata import version
+    try:
+        parts = tuple(int(p) for p in version("gnn-vuln").split(".")[:3])
+    except Exception:
+        return False
+    return parts >= _MIN_LIB_FLAW_LINES
+
+
+def _clean_flaw_lines(code: str, flaw_lines: list[int], row_idx: int) -> list[int]:
+    n = len(code.splitlines())
+    want = sorted({int(i) for i in flaw_lines})
+    bad = [i for i in want if i < 1 or i > n]
+    if bad:
+        raise UploadParseError(f"row {row_idx}: flaw_lines {bad} outside 1..{n}")
+    return want
+
+
 def _rows_to_parquet(rows: list, path) -> int:
     """Normalize ingest rows into the BigVul-style columns the library loader reads:
-    func_before / func_after / 'CWE ID' / vul / language."""
+    func_before / func_after / 'CWE ID' / vul / language. A row may annotate its
+    vulnerable lines directly via `flaw_lines`, in which case no func_after is needed
+    and the loader skips the diff."""
     import pandas as pd
     recs = []
-    for r in rows:
+    any_manual = False
+    for i, r in enumerate(rows):
         cwe = (r.cwe or "").strip()
         vul = 1 if (cwe or (r.label is not None and r.label > 0)) else 0
+        manual = getattr(r, "flaw_lines", None)
+        if manual and r.func_after:
+            raise UploadParseError(f"row {i}: give either func_after or flaw_lines, not both")
+        flaw = _clean_flaw_lines(r.code, manual, i) if (manual and vul) else []
+        any_manual |= bool(flaw)
         recs.append({
             "func_before": r.code,
             "func_after": r.func_after or "",
+            "flaw_lines": flaw,
             "CWE ID": cwe,
             "vul": vul,
             "language": r.language or "C",
         })
+    if any_manual and not _lib_supports_flaw_lines():
+        raise UploadParseError(
+            "'flaw_lines' needs gnn-vuln >= "
+            f"{'.'.join(map(str, _MIN_LIB_FLAW_LINES))}; supply func_after instead")
+    if not any_manual:
+        for rec in recs:                    # keep the diff path free of an empty column
+            rec.pop("flaw_lines")
     df = pd.DataFrame(recs)
     df.to_parquet(path)
     return len(df)
 
 
+class UploadParseError(ValueError):
+    """Malformed dataset file — carries a human-readable reason for a 422."""
+
+
+@dataclass
+class FileIngest:
+    """What create_ingest_job needs, sourced from an uploaded file rather than a JSON body.
+    Bypasses DatasetIngestRequest's 5000-row inline cap (files get MAX_UPLOAD_ROWS instead)."""
+    name: str
+    rows: list
+    data_config_id: Optional[str]
+    config: object                      # DataConfigOverride
+
+
+def _rows_from_payload(raw: bytes, filename: str) -> tuple[list[dict], dict]:
+    """Accept three equivalent shapes: a bare JSON array of rows, a JSON object with a `rows`
+    key (plus optional name/config/data_config_id), or JSONL with one row per line. Returns
+    (row dicts, file-level fields)."""
+    text = raw.decode("utf-8-sig")
+    if filename.lower().endswith(".jsonl"):
+        rows = []
+        for i, line in enumerate(text.splitlines(), 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError as e:
+                raise UploadParseError(f"line {i} is not valid JSON: {e.msg}")
+        return rows, {}
+    try:
+        doc = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise UploadParseError(f"not valid JSON: {e.msg} (line {e.lineno})")
+    if isinstance(doc, list):
+        return doc, {}
+    if isinstance(doc, dict) and isinstance(doc.get("rows"), list):
+        meta = {k: doc[k] for k in ("name", "data_config_id", "config") if doc.get(k) is not None}
+        return doc["rows"], meta
+    raise UploadParseError("expected a JSON array of rows, or an object with a 'rows' array")
+
+
+def parse_upload(raw: bytes, filename: str, name: str | None,
+                 data_config_id: str | None, config_json: str | None) -> FileIngest:
+    """Validate an uploaded dataset file into a FileIngest. Form fields win over file fields."""
+    from API.schemas.dataset import DataConfigOverride, DatasetRow
+
+    if len(raw) > settings.MAX_UPLOAD_BYTES:
+        raise UploadParseError(f"file exceeds {settings.MAX_UPLOAD_BYTES} bytes")
+    if not filename.lower().endswith((".json", ".jsonl")):
+        raise UploadParseError("file must be .json or .jsonl")
+
+    raw_rows, meta = _rows_from_payload(raw, filename)
+    if not raw_rows:
+        raise UploadParseError("file contains no rows")
+    if len(raw_rows) > settings.MAX_UPLOAD_ROWS:
+        raise UploadParseError(f"{len(raw_rows)} rows exceeds the {settings.MAX_UPLOAD_ROWS} limit")
+
+    rows = []
+    for i, r in enumerate(raw_rows):
+        if not isinstance(r, dict):
+            raise UploadParseError(f"row {i}: expected an object, got {type(r).__name__}")
+        try:
+            rows.append(DatasetRow(**r))
+        except Exception as e:
+            raise UploadParseError(f"row {i}: {e}")
+
+    if config_json:
+        try:
+            cfg_src = json.loads(config_json)
+        except json.JSONDecodeError as e:
+            raise UploadParseError(f"'config' form field is not valid JSON: {e.msg}")
+    else:
+        cfg_src = meta.get("config") or {}
+    if not isinstance(cfg_src, dict):
+        raise UploadParseError("'config' must be a JSON object")
+    try:
+        config = DataConfigOverride(**cfg_src)
+    except Exception as e:
+        raise UploadParseError(f"'config': {e}")
+
+    resolved_name = name or meta.get("name") or filename.rsplit(".", 1)[0]
+    return FileIngest(name=resolved_name, rows=rows,
+                      data_config_id=data_config_id or meta.get("data_config_id"),
+                      config=config)
+
+
 def create_ingest_job(req) -> dict:
-    """Persist input rows + a job row, enqueue the Celery task, return the job dict."""
+    """Persist input rows + a job row, enqueue the Celery task, return the job dict.
+    Accepts a DatasetIngestRequest (inline rows) or a FileIngest (uploaded file)."""
     job_id = uuid.uuid4().hex[:16]
     dataset_id = f"{_slug(req.name)}_{job_id[:8]}"
     job_dir = settings.JOBS_DIR / "datasets" / job_id

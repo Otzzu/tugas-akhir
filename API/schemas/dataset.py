@@ -11,6 +11,10 @@ class DatasetRow(BaseModel):
     cwe: Optional[str] = Field(None, description="CWE id, e.g. 'CWE-787' (multiclass label)")
     label: Optional[int] = Field(None, description="Explicit class id (alternative to cwe; 0 = benign)")
     func_after: Optional[str] = Field(None, description="Patched function; flaw lines derived from the diff")
+    flaw_lines: Optional[list[int]] = Field(
+        None,
+        description="Manually annotated 1-indexed vulnerable lines of `code`. Alternative to "
+        "func_after — supply one or the other, not both. Ignored on benign rows.")
     language: Optional[str] = Field(None, description="Language name (default C)")
 
 
@@ -42,6 +46,16 @@ class DatasetIngestRequest(BaseModel):
         default_factory=DataConfigOverride,
         description="Data-build params — inline config when data_config_id is absent, or field "
         "overrides on top of data_config_id when it is set.")
+
+
+class DatasetFile(BaseModel):
+    """Object form of an uploaded dataset file (POST /datasets/upload). The file may also be
+    a bare JSON array of rows, or JSONL with one row per line — both are equivalent to this
+    object with only `rows` set. Form fields on the request win over the fields here."""
+    rows: list[DatasetRow] = Field(..., min_length=1, description="Raw functions to build the dataset from")
+    name: Optional[str] = Field(None, description="Dataset name; overridden by the `name` form field")
+    data_config_id: Optional[str] = Field(None, description="Base data-build config to reuse (prior)")
+    config: Optional[DataConfigOverride] = Field(None, description="Data-build params / overrides")
 
 
 class DatasetJob(BaseModel):

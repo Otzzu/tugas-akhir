@@ -4,7 +4,7 @@ The endpoint is intentionally thin — it enqueues a Celery job and polls its DB
 The build pipeline lives in the gnn_vuln library (driven by API.tasks)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from API.services import datasets as ds_service, registry
 from API.schemas import DatasetIngestRequest, DatasetJob
@@ -34,7 +34,35 @@ def ingest_dataset(req: DatasetIngestRequest) -> DatasetJob:
             except KeyError:
                 raise HTTPException(422, f"Unknown dataset_id '{did}'")
         return _job(ds_service.create_merge_job(req))
-    return _job(ds_service.create_ingest_job(req))
+    try:
+        return _job(ds_service.create_ingest_job(req))
+    except ds_service.UploadParseError as e:
+        raise HTTPException(422, str(e))
+
+
+@router.post("/datasets/upload", response_model=DatasetJob, status_code=202)
+async def upload_dataset(
+    file: UploadFile = File(..., description=".json (array of rows, or object with a 'rows' array) or .jsonl (one row per line)"),
+    name: str | None = Form(None, description="Dataset name; falls back to the file's 'name', then the filename"),
+    data_config_id: str | None = Form(None, description="Base data-build config to reuse (prior)"),
+    config: str | None = Form(None, description="DataConfigOverride as a JSON object string; overrides the file's 'config'"),
+) -> DatasetJob:
+    """Ingest a dataset from an uploaded file. Same pipeline as POST /datasets with `rows`,
+    but the row cap is API_MAX_UPLOAD_ROWS instead of the inline 5000. Returns a queued job;
+    poll GET /datasets/jobs/{job_id}."""
+    try:
+        req = ds_service.parse_upload(await file.read(), file.filename or "", name, data_config_id, config)
+    except ds_service.UploadParseError as e:
+        raise HTTPException(422, str(e))
+    if req.data_config_id:
+        try:
+            registry.get_config(req.data_config_id)
+        except KeyError:
+            raise HTTPException(422, f"Unknown data_config_id '{req.data_config_id}'")
+    try:
+        return _job(ds_service.create_ingest_job(req))
+    except ds_service.UploadParseError as e:
+        raise HTTPException(422, str(e))
 
 
 @router.get("/datasets/jobs")
