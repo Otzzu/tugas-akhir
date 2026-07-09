@@ -204,6 +204,19 @@ def f1_macro(results_dir: Path) -> float:
     return float(m["function_level"]["f1_macro"])
 
 
+def train_cost(rdir: Path) -> tuple[float, int, int, str]:
+    """(total_time_s, epochs_trained, n_train, gpu) — training_summary.json is not uploaded,
+    so the cost is harvested here and written into the results md. gpu is recorded because
+    the wall time is only comparable against runs on the same device."""
+    ts = json.loads((rdir / "training_summary.json").read_text())
+    n_train = 0
+    sp = rdir / "split.json"
+    if sp.exists():
+        n_train = len(json.loads(sp.read_text())["train"])
+    return (float(ts.get("total_time_s", 0)), int(ts.get("epochs_trained", 0)),
+            n_train, str(ts.get("gpu", "unknown")))
+
+
 def newest_train_dir(after: float) -> Path:
     """Newest results/<ts>_lmgat_codebert_multiclass dir from a TRAIN run (excludes eval dirs)."""
     best, bt = None, after
@@ -299,6 +312,7 @@ def main() -> None:
     taskB_before = eval_ckpt(TASKA_CKPT, RELEARN_CFG, "rl_taskB_before")
     rows = [("Sebelum pembaruan", taskA_before, taskB_before, None)]
     ckpt_map = []   # (label, run_id) — uploaded ckpts, for re-eval without retraining
+    costs = []      # (label, total_time_s, epochs, n_train, gpu) — empty on --reeval
 
     if args.reeval:
         # Re-score the saved method checkpoints with the current evaluate.py (no retraining).
@@ -321,6 +335,7 @@ def main() -> None:
             taskB = eval_ckpt(ckpt, RELEARN_CFG, f"rl_taskB_{rdir.name}")   # task-B test
             taskA = eval_ckpt(ckpt, MEGAVUL_CFG, f"rl_taskA_{rdir.name}")   # task-A test
             rows.append((label, taskA, taskB, taskA_before - taskA))  # forgetting = drop on task-A
+            costs.append((label, *train_cost(rdir)))
             upload_ckpt(rdir.name)                                    # upload trained model for re-eval
             ckpt_map.append((label, rdir.name))
 
@@ -348,6 +363,18 @@ def main() -> None:
     for label, ta, tb, fg in rows:
         fg_s = "—" if fg is None else f"{fg:+.4f}"
         md.append(f"| {label} | {ta:.4f} | {tb:.4f} | {fg_s} |")
+    if costs:
+        md += [
+            "",
+            f"Biaya pelatihan (seed {SEED if SEED is not None else 42}). Waktu hanya sebanding "
+            "antar-run pada GPU yang sama, jadi GPU dicatat per baris.",
+            "",
+            "| Metode | Epoch | Waktu latih (s) | Sampel train | GPU |",
+            "|---|---|---|---|---|",
+        ]
+        for label, t, ep, n, gpu in costs:
+            md.append(f"| {label} | {ep} | {t:.0f} | {n} | {gpu} |")
+
     md += [
         "",
         "Checkpoint terlatih (Drive checkpoints/, untuk re-evaluasi tanpa latih ulang):",

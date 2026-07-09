@@ -224,6 +224,19 @@ def combined_alast(tag_a: str, tag_b: str) -> tuple[float, float]:
             float(accuracy_score(yt, yp)))
 
 
+def train_cost(rdir: Path) -> tuple[float, int, int, str]:
+    """(total_time_s, epochs_trained, n_train, gpu) — training_summary.json is not uploaded,
+    so the cost is harvested here and written into the results md. gpu is recorded because
+    the wall time is only comparable against runs on the same device."""
+    ts = json.loads((rdir / "training_summary.json").read_text())
+    n_train = 0
+    sp = rdir / "split.json"
+    if sp.exists():
+        n_train = len(json.loads(sp.read_text())["train"])
+    return (float(ts.get("total_time_s", 0)), int(ts.get("epochs_trained", 0)),
+            n_train, str(ts.get("gpu", "unknown")))
+
+
 def newest_train_dir(after: float) -> Path:
     best, bt = None, after
     for d in RESULTS.glob(f"*_{RUN_ARCH}_multiclass"):
@@ -292,6 +305,7 @@ def main() -> None:
     a1_acc = accuracy_of(RESULTS / "rlcil_taskA_before")   # A_1: acc after task-A (initial), for A_avg
     rows = [("Sebelum pembaruan", taskA_before, None, None, None, None, None)]
     ckpt_map = []   # (label, run_id) — uploaded ckpts, for re-eval without retraining
+    costs = []      # (label, total_time_s, epochs, n_train, gpu) — empty on --reeval
 
     if args.reeval:
         # Re-score the saved method checkpoints with the current evaluate.py (no retraining).
@@ -319,6 +333,7 @@ def main() -> None:
             alast_f1, alast_acc = combined_alast(f"rlcil_taskA_{rdir.name}", f"rlcil_taskB_{rdir.name}")
             a_avg = (a1_acc + alast_acc) / 2.0
             rows.append((label, taskA, taskB, taskA_before - taskA, alast_f1, alast_acc, a_avg))
+            costs.append((label, *train_cost(rdir)))
             upload_ckpt(rdir.name)                                        # upload trained model for re-eval
             ckpt_map.append((label, rdir.name))
 
@@ -353,6 +368,19 @@ def main() -> None:
         ala_s  = "—" if al_acc is None else f"{al_acc:.4f}"
         aavg_s = "—" if a_avg is None else f"{a_avg:.4f}"
         md.append(f"| {label} | {ta:.4f} | {tb_s} | {alf_s} | {ala_s} | {aavg_s} | {fg_s} |")
+
+    if costs:
+        md += [
+            "",
+            f"Biaya pelatihan (seed {SEED if SEED is not None else 42}). Waktu hanya sebanding "
+            "antar-run pada GPU yang sama, jadi GPU dicatat per baris.",
+            "",
+            "| Metode | Epoch | Waktu latih (s) | Sampel train | GPU |",
+            "|---|---|---|---|---|",
+        ]
+        for label, t, ep, n, gpu in costs:
+            md.append(f"| {label} | {ep} | {t:.0f} | {n} | {gpu} |")
+
     md += [
         "",
         "Checkpoint terlatih (Drive checkpoints/, untuk re-evaluasi tanpa latih ulang):",
