@@ -194,9 +194,12 @@ def ingest_dataset(self, job_id: str) -> dict:
     try:
         _set_status(job_id, status="running")
 
-        # 1) raw -> CPG (+ cwe_vocab.json) via the library entrypoint
+        # 1) raw -> CPG (+ cwe_vocab.json) via the library entrypoint.
+        # --flaw-lines-column: honour manual annotations when the ingest wrote them; a no-op
+        # when the column is absent (the loader falls back to the func_after diff).
         prep = ["python", "-m", "gnn_vuln.data.prepare",
                 "--input", str(input_path), "--format", "bigvul",
+                "--flaw-lines-column",
                 "--out-dir", str(raw_dir), "--workers", "4",
                 "--joern-cli", str(settings.JOERN_CLI)]
         if mode == "binary":

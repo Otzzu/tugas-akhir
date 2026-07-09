@@ -39,12 +39,12 @@ def _slug(name: str) -> str:
     return base
 
 
-_MIN_LIB_FLAW_LINES = (0, 1, 9)     # gnn-vuln release that honours a flaw_lines column
+_MIN_LIB_FLAW_LINES = (0, 1, 10)    # gnn-vuln release with --flaw-lines-column
 
 
 def _lib_supports_flaw_lines() -> bool:
-    """The loader ignored a caller-supplied flaw_lines column before 0.1.9 and silently
-    fell back to the func_after diff, so an old library must reject the row loudly."""
+    """Before 0.1.10 the loader had no --flaw-lines-column opt-in and silently fell back to
+    the func_after diff, so an old library must reject a manually annotated row loudly."""
     from importlib.metadata import version
     try:
         parts = tuple(int(p) for p in version("gnn-vuln").split(".")[:3])
