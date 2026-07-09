@@ -1008,7 +1008,7 @@
               }
             ],
             "title": "Func After",
-            "description": "Patched function; flaw lines derived from the diff"
+            "description": "Patched function; flaw lines derived from the diff. Required on a vulnerable row unless flaw_lines is given."
           },
           "flaw_lines": {
             "anyOf": [
@@ -1023,7 +1023,7 @@
               }
             ],
             "title": "Flaw Lines",
-            "description": "Manually annotated 1-indexed vulnerable lines of `code`. Alternative to func_after \u2014 supply one or the other, not both. Ignored on benign rows."
+            "description": "Manually annotated 1-indexed vulnerable lines of `code`. Required on a vulnerable row unless func_after is given \u2014 supply one or the other, never both. Pass [] to state the row has no line annotation. Ignored on benign rows."
           },
           "language": {
             "anyOf": [

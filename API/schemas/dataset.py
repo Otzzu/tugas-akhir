@@ -10,11 +10,15 @@ class DatasetRow(BaseModel):
     code: str = Field(..., description="Function source (the 'before' code)")
     cwe: Optional[str] = Field(None, description="CWE id, e.g. 'CWE-787' (multiclass label)")
     label: Optional[int] = Field(None, description="Explicit class id (alternative to cwe; 0 = benign)")
-    func_after: Optional[str] = Field(None, description="Patched function; flaw lines derived from the diff")
+    func_after: Optional[str] = Field(
+        None,
+        description="Patched function; flaw lines derived from the diff. Required on a "
+        "vulnerable row unless flaw_lines is given.")
     flaw_lines: Optional[list[int]] = Field(
         None,
-        description="Manually annotated 1-indexed vulnerable lines of `code`. Alternative to "
-        "func_after — supply one or the other, not both. Ignored on benign rows.")
+        description="Manually annotated 1-indexed vulnerable lines of `code`. Required on a "
+        "vulnerable row unless func_after is given — supply one or the other, never both. "
+        "Pass [] to state the row has no line annotation. Ignored on benign rows.")
     language: Optional[str] = Field(None, description="Language name (default C)")
 
 

@@ -62,11 +62,26 @@ def _clean_flaw_lines(code: str, flaw_lines: list[int], row_idx: int) -> list[in
     return want
 
 
+def _diff_flaw_lines(before: str, after: str) -> list[int]:
+    """Mirror of gnn_vuln.data.prepare._diff_flaw_lines. Needed when a file mixes annotated
+    and patched rows: the flaw_lines column then covers every row, so the func_after rows
+    must be diffed here rather than by the loader."""
+    import difflib
+    if not before or not after or before == after:
+        return []
+    b, a = before.splitlines(keepends=True), after.splitlines(keepends=True)
+    out: list[int] = []
+    for tag, i1, i2, _j1, _j2 in difflib.SequenceMatcher(None, b, a).get_opcodes():
+        if tag in ("replace", "delete"):
+            out.extend(range(i1 + 1, i2 + 1))
+    return out
+
+
 def _rows_to_parquet(rows: list, path) -> int:
     """Normalize ingest rows into the BigVul-style columns the library loader reads:
-    func_before / func_after / 'CWE ID' / vul / language. A row may annotate its
-    vulnerable lines directly via `flaw_lines`, in which case no func_after is needed
-    and the loader skips the diff."""
+    func_before / func_after / 'CWE ID' / vul / language. A vulnerable row localizes itself
+    with exactly one of `flaw_lines` (manual annotation) or `func_after` (patch to diff);
+    pass an empty `flaw_lines` to say the row has no line annotation at all."""
     import pandas as pd
     recs = []
     any_manual = False
@@ -74,10 +89,15 @@ def _rows_to_parquet(rows: list, path) -> int:
         cwe = (r.cwe or "").strip()
         vul = 1 if (cwe or (r.label is not None and r.label > 0)) else 0
         manual = getattr(r, "flaw_lines", None)
-        if manual and r.func_after:
+        has_after = bool(r.func_after)
+        if manual is not None and has_after:
             raise UploadParseError(f"row {i}: give either func_after or flaw_lines, not both")
+        if vul and manual is None and not has_after:
+            raise UploadParseError(
+                f"row {i}: a vulnerable row needs func_after or flaw_lines "
+                "(use an empty flaw_lines list when the row has no line annotation)")
         flaw = _clean_flaw_lines(r.code, manual, i) if (manual and vul) else []
-        any_manual |= bool(flaw)
+        any_manual |= manual is not None and vul
         recs.append({
             "func_before": r.code,
             "func_after": r.func_after or "",
@@ -86,13 +106,18 @@ def _rows_to_parquet(rows: list, path) -> int:
             "vul": vul,
             "language": r.language or "C",
         })
-    if any_manual and not _lib_supports_flaw_lines():
-        raise UploadParseError(
-            "'flaw_lines' needs gnn-vuln >= "
-            f"{'.'.join(map(str, _MIN_LIB_FLAW_LINES))}; supply func_after instead")
     if not any_manual:
-        for rec in recs:                    # keep the diff path free of an empty column
+        for rec in recs:                    # no annotation anywhere -> plain diff path
             rec.pop("flaw_lines")
+    else:
+        if not _lib_supports_flaw_lines():
+            raise UploadParseError(
+                "'flaw_lines' needs gnn-vuln >= "
+                f"{'.'.join(map(str, _MIN_LIB_FLAW_LINES))}; supply func_after instead")
+        # the column is authoritative once present, so fill it for the patched rows too
+        for rec in recs:
+            if rec["vul"] and rec["func_after"] and not rec["flaw_lines"]:
+                rec["flaw_lines"] = _diff_flaw_lines(rec["func_before"], rec["func_after"])
     df = pd.DataFrame(recs)
     df.to_parquet(path)
     return len(df)
