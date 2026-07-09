@@ -48,16 +48,6 @@ class DatasetIngestRequest(BaseModel):
         "overrides on top of data_config_id when it is set.")
 
 
-class DatasetFile(BaseModel):
-    """Object form of an uploaded dataset file (POST /datasets/upload). The file may also be
-    a bare JSON array of rows, or JSONL with one row per line — both are equivalent to this
-    object with only `rows` set. Form fields on the request win over the fields here."""
-    rows: list[DatasetRow] = Field(..., min_length=1, description="Raw functions to build the dataset from")
-    name: Optional[str] = Field(None, description="Dataset name; overridden by the `name` form field")
-    data_config_id: Optional[str] = Field(None, description="Base data-build config to reuse (prior)")
-    config: Optional[DataConfigOverride] = Field(None, description="Data-build params / overrides")
-
-
 class DatasetJob(BaseModel):
     job_id: str
     status: str                                  # queued | running | done | failed

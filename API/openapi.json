@@ -743,7 +743,7 @@
             "type": "string",
             "contentMediaType": "application/octet-stream",
             "title": "File",
-            "description": ".json (array of rows, or object with a 'rows' array) or .jsonl (one row per line)"
+            "description": ".json (array of rows) or .jsonl (one row per line)"
           },
           "name": {
             "anyOf": [
@@ -755,7 +755,7 @@
               }
             ],
             "title": "Name",
-            "description": "Dataset name; falls back to the file's 'name', then the filename"
+            "description": "Dataset name; defaults to the filename"
           },
           "data_config_id": {
             "anyOf": [
@@ -779,7 +779,7 @@
               }
             ],
             "title": "Config",
-            "description": "DataConfigOverride as a JSON object string; overrides the file's 'config'"
+            "description": "DataConfigOverride as a JSON object string"
           }
         },
         "type": "object",

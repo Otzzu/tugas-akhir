@@ -42,10 +42,10 @@ def ingest_dataset(req: DatasetIngestRequest) -> DatasetJob:
 
 @router.post("/datasets/upload", response_model=DatasetJob, status_code=202)
 async def upload_dataset(
-    file: UploadFile = File(..., description=".json (array of rows, or object with a 'rows' array) or .jsonl (one row per line)"),
-    name: str | None = Form(None, description="Dataset name; falls back to the file's 'name', then the filename"),
+    file: UploadFile = File(..., description=".json (array of rows) or .jsonl (one row per line)"),
+    name: str | None = Form(None, description="Dataset name; defaults to the filename"),
     data_config_id: str | None = Form(None, description="Base data-build config to reuse (prior)"),
-    config: str | None = Form(None, description="DataConfigOverride as a JSON object string; overrides the file's 'config'"),
+    config: str | None = Form(None, description="DataConfigOverride as a JSON object string"),
 ) -> DatasetJob:
     """Ingest a dataset from an uploaded file. Same pipeline as POST /datasets with `rows`,
     but the row cap is API_MAX_UPLOAD_ROWS instead of the inline 5000. Returns a queued job;

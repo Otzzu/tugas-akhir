@@ -5,7 +5,7 @@ from API.schemas.inference import (
 from API.schemas.relearn import RelearnRequest, RelearnJob, RelearnMethod, SplitSpec, RunConfig
 from API.schemas.train import TrainRequest, TrainJob, TrainConfig
 from API.schemas.dataset import (
-    DatasetIngestRequest, DatasetRow, DataConfigOverride, DatasetJob, DatasetFile,
+    DatasetIngestRequest, DatasetRow, DataConfigOverride, DatasetJob,
 )
 
 __all__ = [
@@ -13,5 +13,5 @@ __all__ = [
     "EmbedRequest", "EmbedResponse", "EmbedResult", "EvalReport", "DriftSignal",
     "RelearnRequest", "RelearnJob", "RelearnMethod", "SplitSpec", "RunConfig",
     "TrainRequest", "TrainJob", "TrainConfig",
-    "DatasetIngestRequest", "DatasetRow", "DataConfigOverride", "DatasetJob", "DatasetFile",
+    "DatasetIngestRequest", "DatasetRow", "DataConfigOverride", "DatasetJob",
 ]

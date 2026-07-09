@@ -112,10 +112,10 @@ class FileIngest:
     config: object                      # DataConfigOverride
 
 
-def _rows_from_payload(raw: bytes, filename: str) -> tuple[list[dict], dict]:
-    """Accept three equivalent shapes: a bare JSON array of rows, a JSON object with a `rows`
-    key (plus optional name/config/data_config_id), or JSONL with one row per line. Returns
-    (row dicts, file-level fields)."""
+def _rows_from_payload(raw: bytes, filename: str) -> list[dict]:
+    """A dataset file is a list of rows, serialized either as a JSON array (.json) or as
+    one JSON object per line (.jsonl). Dataset-level fields live on the request, not in
+    the file, so there is exactly one way to express each of them."""
     text = raw.decode("utf-8-sig")
     if filename.lower().endswith(".jsonl"):
         rows = []
@@ -127,22 +127,19 @@ def _rows_from_payload(raw: bytes, filename: str) -> tuple[list[dict], dict]:
                 rows.append(json.loads(line))
             except json.JSONDecodeError as e:
                 raise UploadParseError(f"line {i} is not valid JSON: {e.msg}")
-        return rows, {}
+        return rows
     try:
         doc = json.loads(text)
     except json.JSONDecodeError as e:
         raise UploadParseError(f"not valid JSON: {e.msg} (line {e.lineno})")
-    if isinstance(doc, list):
-        return doc, {}
-    if isinstance(doc, dict) and isinstance(doc.get("rows"), list):
-        meta = {k: doc[k] for k in ("name", "data_config_id", "config") if doc.get(k) is not None}
-        return doc["rows"], meta
-    raise UploadParseError("expected a JSON array of rows, or an object with a 'rows' array")
+    if not isinstance(doc, list):
+        raise UploadParseError(f"expected a JSON array of rows, got {type(doc).__name__}")
+    return doc
 
 
 def parse_upload(raw: bytes, filename: str, name: str | None,
                  data_config_id: str | None, config_json: str | None) -> FileIngest:
-    """Validate an uploaded dataset file into a FileIngest. Form fields win over file fields."""
+    """Validate an uploaded dataset file into a FileIngest."""
     from API.schemas.dataset import DataConfigOverride, DatasetRow
 
     if len(raw) > settings.MAX_UPLOAD_BYTES:
@@ -150,7 +147,7 @@ def parse_upload(raw: bytes, filename: str, name: str | None,
     if not filename.lower().endswith((".json", ".jsonl")):
         raise UploadParseError("file must be .json or .jsonl")
 
-    raw_rows, meta = _rows_from_payload(raw, filename)
+    raw_rows = _rows_from_payload(raw, filename)
     if not raw_rows:
         raise UploadParseError("file contains no rows")
     if len(raw_rows) > settings.MAX_UPLOAD_ROWS:
@@ -165,13 +162,12 @@ def parse_upload(raw: bytes, filename: str, name: str | None,
         except Exception as e:
             raise UploadParseError(f"row {i}: {e}")
 
+    cfg_src = {}
     if config_json:
         try:
             cfg_src = json.loads(config_json)
         except json.JSONDecodeError as e:
             raise UploadParseError(f"'config' form field is not valid JSON: {e.msg}")
-    else:
-        cfg_src = meta.get("config") or {}
     if not isinstance(cfg_src, dict):
         raise UploadParseError("'config' must be a JSON object")
     try:
@@ -179,10 +175,8 @@ def parse_upload(raw: bytes, filename: str, name: str | None,
     except Exception as e:
         raise UploadParseError(f"'config': {e}")
 
-    resolved_name = name or meta.get("name") or filename.rsplit(".", 1)[0]
-    return FileIngest(name=resolved_name, rows=rows,
-                      data_config_id=data_config_id or meta.get("data_config_id"),
-                      config=config)
+    return FileIngest(name=name or filename.rsplit(".", 1)[0], rows=rows,
+                      data_config_id=data_config_id, config=config)
 
 
 def create_ingest_job(req) -> dict:
