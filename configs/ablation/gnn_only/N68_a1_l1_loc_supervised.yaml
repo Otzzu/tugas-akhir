@@ -1,0 +1,76 @@
+# Local GNN-only N68 — N48 (JK-Net) but localization FULLY SUPERVISED.
+# Replaces weak MIL (mil_weight=0) + ranking (rank_loss_weight=0) with direct
+# per-statement BCE against flaw-line labels (LineVD-style), weight 0.5 to match
+# the old mil(0.3)+rank(0.2) total. pos_weight 5 upweights rare flaw statements.
+# Test only: how much localization precision comes from full line supervision
+# vs our weakly supervised setup, same graph-only backbone.
+# Expect: IFA/Top-K much better on labeled funcs; unlabeled funcs get no signal.
+#
+# Run (cloud, Linux):
+#   PYTHONPATH=src python -m gnn_vuln.train --config configs/ablation/gnn_only/N68_a1_l1_loc_supervised.yaml
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base
+  func_lm: microsoft/unixcoder-base
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  graph_pool: jknet
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.0
+  mil_k: 3
+  rank_loss_weight: 0.0
+  loc_supervised_weight: 0.5
+  loc_supervised_pos_weight: 5.0
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  func_head_type: linear
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: false
+  use_flash_attention: false
+  grad_accum_steps: 2
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 0
+  prefetch_factor: 2
