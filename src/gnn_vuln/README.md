@@ -141,6 +141,30 @@ A **0-ratio test split** (e.g. `0.9 / 0.1` → no test) is supported: training +
 as usual and the end-of-training **test evaluation is skipped** (no crash, no test metrics).
 Use it for a production model that should train on all labelled data without a holdout.
 
+### Role datasets (separate val / test sources)
+
+Instead of splitting one dataset, point validation and test at **separately built sources**
+(e.g. a fixed golden benchmark reused across model versions):
+
+```python
+cfg.data.source_val         # source name used 100% as the VALIDATION set
+cfg.data.source_test        # source name used 100% as the TEST set (optional —
+                            #   val-only is fine: test eval is skipped, prod default)
+cfg.data.source_val_params  # dict|None — build-identity overrides for that source
+cfg.data.source_test_params #   (max_nodes, top_cwe, filters, sampling, suffix, storage)
+                            #   so its .pt resolves even when the main data block differs
+```
+
+When `source_val` is set, the main `source` is used 100% for training (no internal split).
+
+### Continual-learning label alignment
+
+```python
+cfg.data.target_vocab   # {"benign":0, "CWE-787":1, ...} — pins class ids to a base
+                        # model's space; new CWEs append (head grows). Training applies
+                        # the remap at load; evaluation uses it as the fixed class list.
+```
+
 ---
 
 ## Data pipeline & training — module CLIs (`python -m`)
@@ -156,6 +180,9 @@ Each step is a runnable module. All accept **one** config file or **several** sp
 | `python -m gnn_vuln.train --config <yaml…>`                                                             | `.pt` + config     | checkpoint + training_summary + split.json |
 
 `prepare` flags: `--binary`, `--top-cwe N`, `--sample-per-class N`, `--workers N`.
+`--format api` = the bigvul schema plus an optional per-row `flaw_lines` annotation
+(service-ingested corpora): a vulnerable row localizes itself either by its `flaw_lines`
+list or by a `func_after` to diff — resolved per row, one file may mix both.
 Installed console scripts: `train`, `evaluate` (= `python -m gnn_vuln.train` / `.evaluate`).
 
 The whole raw→pt→train flow:
