@@ -13,6 +13,11 @@ our training/eval uses. Vulnerable rows without mask lines fall back to func_aft
 from the original parquet by parquet_id; rows with neither are SKIPPED (counted) because
 the API rejects a vulnerable row without a localization source.
 
+code comes from the parquet (func_before by parquet_id), NOT from graph.raw_func: the
+builder caps raw_func at 4096 chars, so long functions would be truncated. raw_func is
+only the fallback when no parquet is given, and prefix-matching raw_func vs func_before
+doubles as the join validator (mismatch counter should stay 0).
+
 Split replicates dataset_lm.get_splits(): seed 42, shuffle, 80/10/10 (NOT stratified).
 Writes {out_dir}/all.json, train.json, val.json, test.json + counts to stderr.
 
@@ -84,15 +89,18 @@ def main() -> None:
     for i in tqdm(range(n), desc="export", unit="g"):
         g = torch.load(gdir / f"{i}.pt", weights_only=False)
         y = int(g.y)
-        code = getattr(g, "raw_func", "") or ""
+        raw_func = getattr(g, "raw_func", "") or ""   # builder caps this at 4096 chars
+        code = raw_func
         pid = int(g.parquet_id) if hasattr(g, "parquet_id") else -1
         lang = getattr(g, "language", None) or None
 
         pq = None
         if raw_pq is not None and 0 <= pid < len(raw_pq):
             pq = raw_pq.iloc[pid]
-            if str(pq["func_before"]) != code:
-                n_mismatch += 1
+            full = str(pq["func_before"])
+            if not full.startswith(raw_func):
+                n_mismatch += 1   # real join mismatch, not the 4096-char cap
+            code = full           # always prefer the untruncated parquet source
             if lang is None:
                 lang = str(pq["language"]) or None
 
