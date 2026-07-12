@@ -1,0 +1,82 @@
+# S1 sequential (nine) with FULLY SUPERVISED localization — pair of N68n for the seq arch.
+# Identical to S1_nine.yaml EXCEPT mil/rank off, loc_supervised on (per-statement BCE
+# against exact-line flaw mask, weight 0.5 = old mil 0.3 + rank 0.2, pos_weight 5).
+# Reference (weakly supervised, honest per-seed): Seq S1 s42 26-class run 20260707_211550
+# Top-1 0.2754, IFA 12.50, n_loc 581. Needs the PATCHED nine ml1024 tar (20260707_192819).
+#
+# Run (cloud, Linux):
+#   ./scripts/train_cloud.sh --skip --config configs/ablation/seqgnn/S1_nine_loc_supervised.yaml \
+#     --dataset lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_seqgnn
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base-nine
+  func_lm: microsoft/unixcoder-base-nine
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.0
+  mil_k: 3
+  rank_loss_weight: 0.0
+  loc_supervised_weight: 0.5
+  loc_supervised_pos_weight: 5.0
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  func_head_type: linear
+  jknet_mode: concat
+  jknet_readout: meanmax
+  jknet_loc: false            # match N48 base (localization on last-layer node vec)
+  # sequential two-stage knobs
+  seq_stage2_input: raw       # raw → [x, s_i] | loc → [h_loc, s_i]
+  seq_susp_pool: false        # true → stage-2 pool weighted by suspicion (1 + k·s_i)
+  seq_susp_pool_k: 4.0        # suspicious node ≈ 5× a clean node when seq_susp_pool=true
+  seq_detach_susp: false      # true → decouple stages (stage-1 trained only by loc loss)
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: false
+  use_flash_attention: false
+  grad_accum_steps: 2
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 0
+  prefetch_factor: 2
