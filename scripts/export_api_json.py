@@ -4,9 +4,11 @@ dataset-upload format (POST /datasets/upload): a plain JSON array of DatasetRow 
 
 Row shape (API/schemas/dataset.py DatasetRow):
   benign      : {"code", "label": 0, "language"}
-  vulnerable  : {"code", "cwe", "flaw_lines", "language"}          (mask-derived GT)
-  vulnerable  : {"code", "cwe", "func_after", "language"}          (no mask lines; API diffs)
-Rows are never given both flaw_lines and func_after (schema forbids it).
+  vulnerable  : {"code", "cwe", "flaw_lines"?, "func_after"?, "language"}
+Vulnerable rows carry BOTH flaw_lines (mask-derived GT) and func_after when both are
+available — richer raw data. NOTE: the current API upload validator rejects rows with
+both (services/datasets.py); that check is planned to be relaxed (flaw_lines wins,
+func_after kept as provenance). Rows with neither are skipped (API cannot localize).
 
 flaw_lines = sorted(unique(node_line[flaw_line_mask>0])) — the same statement-level GT
 our training/eval uses. Vulnerable rows without mask lines fall back to func_after joined
@@ -36,8 +38,8 @@ import random
 import sys
 from pathlib import Path
 
-import torch
-from tqdm import tqdm
+# NOTE: torch is imported lazily inside main() AFTER the parquet is read —
+# importing torch before pyarrow segfaults on Windows (DLL clash).
 
 
 def get_splits(n: int, seed: int = 42, train_ratio: float = 0.8, val_ratio: float = 0.1):
@@ -65,16 +67,20 @@ def main() -> None:
     if not meta_p.exists() or not gdir.exists():
         sys.exit(f"missing {meta_p} or {gdir}")
 
+    # Read the parquet BEFORE importing torch (Windows pyarrow/torch DLL clash).
+    raw_pq = None
+    if a.parquet:
+        import pandas as pd
+        raw_pq = pd.read_parquet(a.parquet, columns=["func_before", "func_after", "language", "CVE ID"])
+        print(f"parquet join: {len(raw_pq)} rows", file=sys.stderr)
+
+    import torch
+    from tqdm import tqdm
+
     meta = torch.load(meta_p, weights_only=False)
     n = int(meta["n_graphs"])
     class_names = list(meta["class_names"])
     print(f"{n} graphs, {len(class_names)} classes", file=sys.stderr)
-
-    raw_pq = None
-    if a.parquet:
-        import pandas as pd
-        raw_pq = pd.read_parquet(a.parquet, columns=["func_before", "func_after", "language"])
-        print(f"parquet join: {len(raw_pq)} rows", file=sys.stderr)
 
     tr, va, te = get_splits(n, a.seed)
     split_of = {}
@@ -84,6 +90,7 @@ def main() -> None:
 
     rows: dict[str, list[dict]] = {"train": [], "val": [], "test": []}
     all_rows: list[dict] = []
+    pids: dict[str, list[int]] = {"train": [], "val": [], "test": []}
     n_flaw, n_after, n_skip, n_mismatch = 0, 0, 0, 0
 
     for i in tqdm(range(n), desc="export", unit="g"):
@@ -104,9 +111,13 @@ def main() -> None:
             if lang is None:
                 lang = str(pq["language"]) or None
 
-        row: dict = {"code": code}
+        row: dict = {"id": pid, "code": code}   # id = parquet row index (traceability; API ignores it)
         if lang:
             row["language"] = lang
+        if pq is not None:
+            cve = str(pq.get("CVE ID") or "").strip()
+            if cve and cve.lower() != "nan":
+                row["cve_id"] = cve   # provenance; API ignores it
 
         if y == 0:
             row["label"] = 0
@@ -118,14 +129,15 @@ def main() -> None:
             if flaw:
                 row["flaw_lines"] = flaw
                 n_flaw += 1
-            elif pq is not None and isinstance(pq["func_after"], str) and pq["func_after"]:
+            if pq is not None and isinstance(pq["func_after"], str) and pq["func_after"]:
                 row["func_after"] = str(pq["func_after"])
                 n_after += 1
-            else:
+            if "flaw_lines" not in row and "func_after" not in row:
                 n_skip += 1
                 continue  # vulnerable row without any localization source — API rejects
 
         rows[split_of[i]].append(row)
+        pids[split_of[i]].append(pid)
         all_rows.append(row)
 
     out = Path(a.out_dir)
@@ -136,6 +148,14 @@ def main() -> None:
         with open(p, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
         print(f"  {name}.json: {len(data)} rows", file=sys.stderr)
+
+    # Sidecar: parquet_id per split, so the JSONs can be regenerated from the
+    # parquet alone next time (the node-count filter and n-dependent shuffle
+    # make a pure-parquet reproduction impossible without this list).
+    with open(out / "splits.json", "w") as f:
+        json.dump({"seed": a.seed, "ds_name": a.ds_name,
+                   "parquet_ids": pids}, f)
+    print("  splits.json: parquet_id per split", file=sys.stderr)
 
     print(f"vuln via flaw_lines={n_flaw}  via func_after={n_after}  "
           f"skipped(no source)={n_skip}  code!=parquet={n_mismatch}", file=sys.stderr)
