@@ -65,8 +65,9 @@ def _clean_flaw_lines(code: str, flaw_lines: list[int], row_idx: int) -> list[in
 def _rows_to_parquet(rows: list, path) -> int:
     """Normalize ingest rows into the columns the library's `api` loader reads:
     func_before / func_after / flaw_lines / 'CWE ID' / vul / language. A vulnerable row
-    localizes itself with exactly one of `flaw_lines` (manual annotation) or `func_after`
-    (patch); the loader resolves each row on its own, so a file may mix the two."""
+    localizes itself with `flaw_lines` (manual annotation) and/or `func_after` (patch);
+    the loader resolves each row on its own — flaw_lines wins, func_after is the
+    fallback — so a file may mix the two or carry both on one row."""
     import pandas as pd
     recs = []
     any_manual = False
@@ -75,8 +76,6 @@ def _rows_to_parquet(rows: list, path) -> int:
         vul = 1 if (cwe or (r.label is not None and r.label > 0)) else 0
         manual = getattr(r, "flaw_lines", None)
         has_after = bool(r.func_after)
-        if manual is not None and has_after:
-            raise UploadParseError(f"row {i}: give either func_after or flaw_lines, not both")
         if vul and manual is None and not has_after:
             raise UploadParseError(f"row {i}: a vulnerable row needs func_after or flaw_lines")
         flaw = _clean_flaw_lines(r.code, manual, i) if (manual and vul) else []

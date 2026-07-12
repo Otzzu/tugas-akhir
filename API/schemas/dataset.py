@@ -17,9 +17,9 @@ class DatasetRow(BaseModel):
     flaw_lines: Optional[list[int]] = Field(
         None, min_length=1,
         description="Manually annotated 1-indexed vulnerable lines of `code`. Required on a "
-        "vulnerable row unless func_after is given — supply one or the other, never both. "
-        "Omit the field when absent; an empty list is not a valid annotation. Ignored on "
-        "benign rows.")
+        "vulnerable row unless func_after is given. When both are present flaw_lines wins "
+        "and func_after is kept as the fallback. Omit the field when absent; an empty list "
+        "is not a valid annotation. Ignored on benign rows.")
     language: Optional[str] = Field(None, description="Language name (default C)")
 
 
