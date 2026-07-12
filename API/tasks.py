@@ -143,11 +143,13 @@ def merge_datasets(self, job_id: str) -> dict:
         uri = storage.put_bytes(settings.S3_BUCKET_DATASETS, key, buf.getvalue())
         log.write(f"\nuploaded merged dataset bundle -> {uri}\n"); log.flush()
 
-        # 6) register the dataset
+        # 6) register the dataset. A merge has no raw rows of its own — provenance
+        # lives in source_dataset_ids; each source dataset carries its own raw_id.
         registry.register_dataset(dataset_id, {
             "label": name, "source": out_source, "mode": mode, "num_classes": num_classes,
             "data_config_id": data_config_id,
             "storage_uri": uri, "storage": "inmemory",
+            "source_dataset_ids": list(dataset_ids),
             "max_nodes": max_nodes, "top_cwe": dc.get("top_cwe", 0),
             "max_per_class": dc.get("max_per_class", 0), "resample_seed": dc.get("resample_seed", 42),
             "val_fraction": dc.get("val_fraction", 0.1), "test_fraction": dc.get("test_fraction", 0.0),
@@ -179,6 +181,7 @@ def ingest_dataset(self, job_id: str) -> dict:
             return {"job_id": job_id, "status": "failed", "message": "job row missing"}
         dc = dict(rec.data_config or {})
         log_path = rec.log_path
+        n_rows = int(rec.num_rows or 0)
 
     job_dir = Path(dc["job_dir"])
     raw_dir = job_dir / "raw"
@@ -264,17 +267,36 @@ def ingest_dataset(self, job_id: str) -> dict:
         uri = storage.put_bytes(settings.S3_BUCKET_DATASETS, key, buf.getvalue())
         log.write(f"\nuploaded dataset bundle -> {uri}\n"); log.flush()
 
-        # 5) register the dataset (params hold the frozen data-config + storage pointer)
+        # 4b) persist the EXACT raw rows the .pt was built from (canonical upload
+        # JSON, row ids materialized) and register them as a first-class raw_datasets
+        # row. Content-addressed id ("raw_" + sha256[:12]) → identical rows re-uploaded
+        # dedupe to the same row + object, and ONE raw can back MANY datasets (different
+        # build configs). DB holds metadata + pointer only; the blob lives in S3.
+        raw_id = None
+        raw_path = dc.get("raw_path")
+        if raw_path and Path(raw_path).exists():
+            import hashlib
+            raw_bytes = Path(raw_path).read_bytes()
+            digest = hashlib.sha256(raw_bytes).hexdigest()
+            raw_id = f"raw_{digest[:12]}"
+            raw_uri = storage.put_bytes(settings.S3_BUCKET_DATASETS, f"{raw_id}.json", raw_bytes)
+            registry.register_raw(raw_id, {
+                "storage_uri": raw_uri, "num_rows": n_rows,
+                "size_bytes": len(raw_bytes), "content_hash": digest,
+            })
+            log.write(f"raw rows registered as {raw_id} -> {raw_uri}\n"); log.flush()
+
+        # 5) register the dataset (params hold the frozen data-config + storage pointers)
         registry.register_dataset(dataset_id, {
             "label": name, "source": source, "mode": mode, "num_classes": num_classes,
             "data_config_id": data_config_id,
-            "storage_uri": uri, "storage": "inmemory",
+            "storage_uri": uri, "storage": "inmemory", "raw_id": raw_id,
             "max_nodes": dc.get("max_nodes", 2500), "top_cwe": dc.get("top_cwe", 0),
             "max_per_class": dc.get("max_per_class", 0), "resample_seed": dc.get("resample_seed", 42),
             "val_fraction": dc.get("val_fraction", 0.1), "test_fraction": dc.get("test_fraction", 0.0),
         })
 
-        _set_status(job_id, status="done", dataset_id=dataset_id,
+        _set_status(job_id, status="done", dataset_id=dataset_id, raw_id=raw_id,
                     message=f"{num_classes} classes, bundle at {uri}")
         return {"job_id": job_id, "status": "done", "dataset_id": dataset_id}
 

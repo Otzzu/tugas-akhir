@@ -24,6 +24,7 @@ it as a package — it never reaches into the model source tree. See
 | `POST /inference` | function source → CWE + confidence + suspicious lines (per-line scores)                 |
 | `POST /embed`     | function source → final pre-head embedding (similarity search / drift), no output head  |
 | `POST /datasets`  | raw rows → Joern CPG → `.pt`, **or** merge existing `dataset_ids` → new dataset, in object storage |
+| `GET /datasets/{id}/raw` | download the exact raw rows (JSON, upload format) the dataset's `.pt` was built from |
 | `POST /relearn`   | continual-learning job — CONTINUE a base model (finetune / EWC / ER / EWC-ER) → new model |
 | `POST /train`     | train a NEW model from scratch — `config_id` + `dataset_ids` → new model |
 | `GET /eval`       | general label-free model eval over stored predictions (usage, mix, confidence + drift)  |
@@ -119,17 +120,37 @@ embed + GNN/LM forward → prediction + pre-head embedding`. The embedding is ca
 → MinIO → register dataset_id (+ immutable data_config_id)`. Poll `GET /datasets/jobs/{id}`.
   Pass `data_config_id` to reuse a registered config as the base (prior); the `config` object then
   overrides its fields. Omit `data_config_id` to use `config` alone.
+  The exact raw rows are also persisted to MinIO as `{raw_id}.json` (canonical
+  upload-format JSON, row ids materialized) and registered as a first-class
+  `raw_datasets` row with a content-addressed id (`raw_` + sha256 — identical uploads
+  dedupe to one row, and one raw can back many datasets built with different configs).
+  Download via `GET /datasets/{id}/raw`. Rows may carry optional provenance fields `id`
+  (auto-generated from the row position when absent) and `cve_id`; a vulnerable row may
+  supply `flaw_lines`, `func_after`, or both (flaw_lines wins, func_after is the
+  fallback). Lineage is queryable in the DB: `models.dataset_id → datasets.raw_id →
+  raw_datasets.storage_uri`, merges via `datasets.source_dataset_ids`.
 - **Combining datasets** — three ways: (A) send all rows in one ingest; (B) `POST /datasets`
   with `dataset_ids: [X, Y]` → materialize each `.pt` → `gnn_vuln.data.merge` (concat graphs +
   unify the label space + remap + best-effort dedup) → a NEW reusable `dataset_id`; (C) `POST
   /relearn` with multiple `dataset_ids` → the same `.pt`-level merge inline at train time. All
-  three merge at the `.pt` level (no raw CPG, no re-embedding).
+  three merge at the `.pt` level (no raw CPG, no re-embedding). A merged dataset has no raw
+  of its own — it registers `source_dataset_ids`, and each source keeps its own `raw_id`.
 - **Train from scratch** (`POST /train`, async) — a NEW model with fresh weights from
   `config_id` + `dataset_ids`. `config.model_type` optionally overrides the architecture from
   `config_id` (else the config's architecture is used). Shares the relearn worker pipeline
   (`build_config` with `method=retrain` → `gnn_vuln.train` → evaluate → register), just with no
   base checkpoint, no EWC importance, no replay. Poll `GET /train/{id}`. Continuing an existing
   model is `/relearn`, not this.
+- **Role datasets (val/test)** — both `/train` and `/relearn` accept optional `val_dataset_id`
+  and `test_dataset_id` (SageMaker channel style): training then uses 100% of `dataset_ids`,
+  early-stops on the val dataset, and reports test on the test dataset — e.g. a fixed golden
+  benchmark dataset reused across model versions so metrics are comparable. Validated:
+  featurization must match; label space must match exactly on `/train`, and on `/relearn` must
+  be a SUBSET of the model's final class space (so a 26-class benchmark is valid against a
+  36-class CIL model — target_vocab remaps it). Each role dataset is loaded with its own build
+  identity (`source_{val,test}_params`), so CIL task data with different filters still finds
+  the benchmark's `.pt`. Omit both for the internal val split (prod default: no test holdout).
+  The ids are recorded on the job and the resulting model (lineage).
 - **Relearn** (`POST /relearn`, async — CONTINUES a base model; for a fresh model use `/train`) —
   `materialize task-A+B datasets to local disk →
 build merged config → [EWC] importance pass → gnn_vuln.train → register new model →
@@ -290,7 +311,10 @@ erDiagram
     models ||--o{ inference_results : "model_id"
     graph_cache ||--o{ inference_results : "code_hash"
     graph_cache }o--|| object_store : "object_key -> graphs bucket"
-    datasets }o--|| object_store : "storage_uri -> datasets bucket"
+    raw_datasets ||--o{ datasets : "raw_id (one raw, many builds)"
+    raw_datasets }o--|| object_store : "storage_uri -> datasets bucket (raw rows json)"
+    datasets }o--|| object_store : "storage_uri -> datasets bucket (.pt bundle)"
+    datasets ||--o{ datasets : "source_dataset_ids (merge)"
     models }o--|| object_store : "storage_uri -> checkpoints bucket"
 
     configs {
@@ -300,12 +324,22 @@ erDiagram
       string content_hash
       datetime created_at
     }
+    raw_datasets {
+      string id PK "raw_ + sha256(content)[:12]"
+      text storage_uri "-> datasets bucket, raw rows json"
+      int num_rows
+      int size_bytes
+      string content_hash
+      datetime created_at
+    }
     datasets {
       string id PK
       string source
       string mode
       int num_classes
       string data_config_id FK
+      string raw_id FK "-> raw_datasets"
+      json source_dataset_ids "merge provenance -> datasets.id"
       json params "max_nodes, filters, storage_uri, ..."
       datetime created_at
     }
@@ -316,6 +350,9 @@ erDiagram
       string checkpoint "local cache path"
       string storage_uri "-> checkpoints bucket"
       string dataset_id FK
+      json dataset_ids "CUMULATIVE lineage: ancestors + this job (ER replay pool)"
+      string val_dataset_id FK "role dataset (val)"
+      string test_dataset_id FK "role dataset (test/benchmark)"
       int num_classes
       json class_names
       string base_model_id FK
@@ -327,6 +364,8 @@ erDiagram
       string method
       json dataset_ids
       string base_model_id FK
+      string val_dataset_id FK "role dataset (val)"
+      string test_dataset_id FK "role dataset (test/benchmark)"
       string result_model_id FK
       string log_path
     }

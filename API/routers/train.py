@@ -23,6 +23,9 @@ def train(req: TrainRequest) -> TrainJob:
     for d in req.dataset_ids:
         if d not in registry.load_datasets():
             raise HTTPException(404, f"Unknown dataset_id '{d}'")
+    for role_id in (req.val_dataset_id, req.test_dataset_id):
+        if role_id and role_id not in registry.load_datasets():
+            raise HTTPException(404, f"Unknown dataset_id '{role_id}'")
     try:
         registry.get_config(req.config_id)             # ensure the config exists (KeyError -> 422)
         cfg = req.config
@@ -30,7 +33,8 @@ def train(req: TrainRequest) -> TrainJob:
             req.config_id, req.dataset_ids,
             cfg.epochs if cfg else None, req.run_name,
             split=cfg.split.model_dump(exclude_none=True) if (cfg and cfg.split) else None,
-            model_type=cfg.model_type if cfg else None)
+            model_type=cfg.model_type if cfg else None,
+            val_dataset_id=req.val_dataset_id, test_dataset_id=req.test_dataset_id)
     except (ValueError, FileNotFoundError, KeyError) as e:
         raise HTTPException(422, str(e))
     return TrainJob(**job)

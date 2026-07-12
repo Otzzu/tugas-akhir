@@ -66,10 +66,20 @@ class DataConfig:
     # known CWEs keep their canonical id, brand-new CWEs land on the extended ids. None = no remap.
     target_vocab: dict[str, int] | None = None
     # Optional separate val/test source dirs (e.g. bigvul_val, bigvul_test).
-    # When both are set, official splits are used instead of internal 70/15/15.
-    # Leave empty for datasets without separate val/test parquets.
+    # source_val set -> role datasets replace the internal split: train = 100% of the
+    # main dataset, val = source_val. source_test set too -> test = source_test;
+    # otherwise test is empty (API production: no test holdout). source_test alone
+    # is ignored. Leave both empty for the internal seeded split.
     source_val: str = ""
     source_test: str = ""
+    # Dataset-identity overrides for the role datasets (same pattern as replay's
+    # per-source overrides): the role dataset's .pt was built with ITS OWN params,
+    # which may differ from this config's data block (e.g. CIL task data has
+    # filter_top25_dangerous off while an old benchmark has it on). Keys mirror the
+    # identity kwargs (max_nodes, top_cwe, filter_*, max_per_class, resample_seed,
+    # ds_name_suffix, storage). None = inherit this config's data block.
+    source_val_params: dict | None = None
+    source_test_params: dict | None = None
     # Filter vocab to top-K CWE classes at .pt build time (0 = use all in vocab).
     # Raw data can be generated with --top-cwe 999; this narrows it at processed stage.
     top_cwe: int = 0

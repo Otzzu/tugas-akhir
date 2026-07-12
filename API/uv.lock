@@ -970,7 +970,7 @@ http = [
 
 [[package]]
 name = "gnn-vuln"
-version = "0.1.8"
+version = "0.1.11"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "datasets" },
@@ -994,9 +994,9 @@ dependencies = [
     { name = "tree-sitter" },
     { name = "tree-sitter-c" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e8/88/9ad4488f3a26fa1b7b02c4852b2175f82d2c9d2576e23deb85cdf81a170c/gnn_vuln-0.1.8.tar.gz", hash = "sha256:55ede10f2a9749d6bc663329a2661cc56846bc31749e06df0e245390ddb85320", size = 188130, upload-time = "2026-07-07T21:19:12.439Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/33/2a/307d5529f2f771529955d812e767297ba48f25011cf9326ef618fe586ee6/gnn_vuln-0.1.11.tar.gz", hash = "sha256:0af36b39c4315a88c3586380fdc4f4ffa12cd8103d99224b2616e93e747d83d6", size = 188891, upload-time = "2026-07-09T18:14:40.256Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e7/8f/5aa4cdb064ca35095d7a6bfcc7c45a6fc003cff0517146ff73f50c3a56d5/gnn_vuln-0.1.8-py3-none-any.whl", hash = "sha256:25b434a6b86759c267edb87bc7e235a3795a6a6de7e2605830015e9f2e0e676f", size = 225016, upload-time = "2026-07-07T21:19:11.061Z" },
+    { url = "https://files.pythonhosted.org/packages/87/65/4a5e5297c0226133c6e8217f03900d33decb77caeefdc5e8d9584e70d774/gnn_vuln-0.1.11-py3-none-any.whl", hash = "sha256:8427a919e6f23226fe34ef094222649135a44ff69c3705a97160fe9a05841ae2", size = 225700, upload-time = "2026-07-09T18:14:38.461Z" },
 ]
 
 [[package]]
@@ -3728,7 +3728,7 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.34" },
     { name = "celery", extras = ["redis"], specifier = ">=5.3" },
     { name = "fastapi", specifier = ">=0.110" },
-    { name = "gnn-vuln", specifier = "==0.1.8" },
+    { name = "gnn-vuln", specifier = "==0.1.11" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.1" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "python-multipart", specifier = ">=0.0.9" },

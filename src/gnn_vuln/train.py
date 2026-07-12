@@ -476,7 +476,11 @@ class TrainingSession:
         func_lm_source  = getattr(cfg.model, "func_lm_source", "raw")
         source_val      = getattr(cfg.data, "source_val",  "")
         source_test     = getattr(cfg.data, "source_test", "")
-        use_official    = bool(source_val and source_test)
+        # Role datasets: separate val (and optionally test) datasets instead of an
+        # internal split. val-only (API production: no test holdout) trains on 100%
+        # of the main dataset and evaluates on the val dataset; test stays empty.
+        # Both-set behaves exactly as before (official splits). test-only is ignored.
+        use_official    = bool(source_val)
         _use_balanced   = self._use_supcon and getattr(cfg.train, "supcon_balanced_sampling", False)
         _classes_per_batch = getattr(cfg.train, "supcon_classes_per_batch", 8)
         _use_cb_sampling = getattr(cfg.train, "class_balanced_sampling", False)
@@ -551,13 +555,32 @@ class TrainingSession:
         if getattr(cfg.data, "split_file", ""):
             dataset.load_split_file(cfg.data.split_file)
         if use_official:
-            val_ds  = CodeBERTGraphDataset(source=source_val,  **kwargs)
-            test_ds = CodeBERTGraphDataset(source=source_test, **kwargs)
+            # Role datasets may have been built with their own identity params
+            # (filters, sampling, suffix) — override so the staged .pt is found,
+            # same pattern as the replay buffer's per-source overrides.
+            _ID_KEYS = ("max_nodes", "top_cwe", "filter_owasp", "filter_top25_dangerous",
+                        "max_per_class", "resample_seed", "ds_name_suffix", "storage")
+
+            def _role_kwargs(params: dict | None) -> dict:
+                if not params:
+                    return kwargs
+                kw = dict(kwargs)
+                kw.update({k: params[k] for k in _ID_KEYS if k in params})
+                return kw
+
+            val_ds  = CodeBERTGraphDataset(
+                source=source_val,
+                **_role_kwargs(getattr(cfg.data, "source_val_params", None)))
+            test_ds = CodeBERTGraphDataset(
+                source=source_test,
+                **_role_kwargs(getattr(cfg.data, "source_test_params", None))) if source_test \
+                else dataset[[]]   # val-only: empty test, eval skips it downstream
             if _precompute_line_cls:
                 _lm_dev = str(self.device)
                 dataset.precompute_line_cls_all(_lm_dev, context_lines=_line_context_lines)
                 val_ds.precompute_line_cls_all(_lm_dev, context_lines=_line_context_lines)
-                test_ds.precompute_line_cls_all(_lm_dev, context_lines=_line_context_lines)
+                if source_test:
+                    test_ds.precompute_line_cls_all(_lm_dev, context_lines=_line_context_lines)
             train_idx = list(range(len(dataset)))
             if _use_balanced:
                 from gnn_vuln.training.sampler import SupConBalancedSampler

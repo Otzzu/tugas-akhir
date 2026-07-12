@@ -38,6 +38,9 @@ class ModelRecord(Base):
     checkpoint: Mapped[str] = mapped_column(Text)                                  # local path (cache)
     storage_uri: Mapped[str | None] = mapped_column(Text, nullable=True)           # -> checkpoints bucket (source of truth)
     dataset_id: Mapped[str] = mapped_column(String(128), default="")
+    dataset_ids: Mapped[list] = mapped_column(JSON, default=list)  # CUMULATIVE training-data lineage: ancestors' datasets + this job's (chronological, deduped) — ER replay pool reads this
+    val_dataset_id: Mapped[str | None] = mapped_column(String(128), nullable=True)   # role dataset (val)
+    test_dataset_id: Mapped[str | None] = mapped_column(String(128), nullable=True)  # role dataset (test/benchmark)
     num_classes: Mapped[int] = mapped_column(Integer, default=2)
     class_names: Mapped[list] = mapped_column(JSON, default=list)
     base_model_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -49,6 +52,8 @@ class ModelRecord(Base):
             "id": self.id, "label": self.label, "arch": self.arch, "config": self.config,
             "config_id": self.config_id,
             "checkpoint": self.checkpoint, "storage_uri": self.storage_uri, "dataset_id": self.dataset_id,
+            "dataset_ids": self.dataset_ids or [],
+            "val_dataset_id": self.val_dataset_id, "test_dataset_id": self.test_dataset_id,
             "num_classes": self.num_classes, "class_names": self.class_names or [],
             "base_model_id": self.base_model_id, "method": self.method,
         }
@@ -71,6 +76,24 @@ class ModelArtifact(Base):
                 "created_at": self.created_at.isoformat() if self.created_at else None}
 
 
+class RawDatasetRecord(Base):
+    """The exact raw rows a dataset was built from — first-class entity so one raw can
+    back many datasets (same rows, different build configs). Content-addressed id gives
+    dedup for free: re-uploading identical rows reuses the same raw row + S3 object.
+    The DB holds only metadata + the pointer; the JSON blob lives in object storage."""
+    __tablename__ = "raw_datasets"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)      # "raw_" + sha256(bytes)[:12]
+    storage_uri: Mapped[str] = mapped_column(Text)                     # -> datasets bucket, {id}.json
+    num_rows: Mapped[int] = mapped_column(Integer, default=0)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    content_hash: Mapped[str] = mapped_column(String(64), default="")  # full sha256
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "storage_uri": self.storage_uri, "num_rows": self.num_rows,
+                "size_bytes": self.size_bytes, "content_hash": self.content_hash}
+
+
 class DatasetRecord(Base):
     __tablename__ = "datasets"
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
@@ -79,13 +102,17 @@ class DatasetRecord(Base):
     mode: Mapped[str] = mapped_column(String(32), default="multiclass")
     num_classes: Mapped[int] = mapped_column(Integer, default=2)
     data_config_id: Mapped[str | None] = mapped_column(String(200), nullable=True)  # -> configs.id
+    raw_id: Mapped[str | None] = mapped_column(ForeignKey("raw_datasets.id"), nullable=True)  # the raw rows this .pt was built from
+    source_dataset_ids: Mapped[list] = mapped_column(JSON, default=list)  # merge provenance -> datasets.id, each with its own raw_id
     params: Mapped[dict] = mapped_column(JSON, default=dict)   # max_nodes, filter_top25_dangerous, ...
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     def to_dict(self) -> dict:
         return {"id": self.id, "label": self.label, "source": self.source,
                 "mode": self.mode, "num_classes": self.num_classes,
-                "data_config_id": self.data_config_id, **(self.params or {})}
+                "data_config_id": self.data_config_id,
+                "raw_id": self.raw_id, "source_dataset_ids": self.source_dataset_ids or [],
+                **(self.params or {})}
 
 
 class JobRecord(Base):
@@ -95,6 +122,8 @@ class JobRecord(Base):
     method: Mapped[str] = mapped_column(String(32))
     dataset_ids: Mapped[list] = mapped_column(JSON, default=list)
     base_model_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    val_dataset_id: Mapped[str | None] = mapped_column(String(128), nullable=True)   # role dataset (val)
+    test_dataset_id: Mapped[str | None] = mapped_column(String(128), nullable=True)  # role dataset (test/benchmark)
     config_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     log_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     result_model_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -106,6 +135,7 @@ class JobRecord(Base):
     def to_dict(self) -> dict:
         return {"job_id": self.job_id, "status": self.status, "method": self.method,
                 "dataset_ids": self.dataset_ids or [], "base_model_id": self.base_model_id,
+                "val_dataset_id": self.val_dataset_id, "test_dataset_id": self.test_dataset_id,
                 "config_path": self.config_path, "log_path": self.log_path,
                 "result_model_id": self.result_model_id, "message": self.message,
                 "metrics": self.metrics}
@@ -119,6 +149,7 @@ class DatasetJobRecord(Base):
     status: Mapped[str] = mapped_column(String(16), default="queued")  # queued|running|done|failed
     name: Mapped[str] = mapped_column(String(256), default="")
     dataset_id: Mapped[str | None] = mapped_column(String(128), nullable=True)  # set when done
+    raw_id: Mapped[str | None] = mapped_column(String(64), nullable=True)       # -> raw_datasets, set when done
     data_config: Mapped[dict] = mapped_column(JSON, default=dict)               # frozen build params
     num_rows: Mapped[int | None] = mapped_column(Integer, nullable=True)
     log_path: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -128,7 +159,8 @@ class DatasetJobRecord(Base):
 
     def to_dict(self) -> dict:
         return {"job_id": self.job_id, "status": self.status, "name": self.name,
-                "dataset_id": self.dataset_id, "data_config": self.data_config or {},
+                "dataset_id": self.dataset_id, "raw_id": self.raw_id,
+                "data_config": self.data_config or {},
                 "num_rows": self.num_rows, "message": self.message,
                 "created_at": self.created_at.isoformat() if self.created_at else None,
                 "updated_at": self.updated_at.isoformat() if self.updated_at else None}

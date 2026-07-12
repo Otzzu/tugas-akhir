@@ -64,10 +64,12 @@ def _clean_flaw_lines(code: str, flaw_lines: list[int], row_idx: int) -> list[in
 
 def _rows_to_parquet(rows: list, path) -> int:
     """Normalize ingest rows into the columns the library's `api` loader reads:
-    func_before / func_after / flaw_lines / 'CWE ID' / vul / language. A vulnerable row
-    localizes itself with `flaw_lines` (manual annotation) and/or `func_after` (patch);
-    the loader resolves each row on its own — flaw_lines wins, func_after is the
-    fallback — so a file may mix the two or carry both on one row."""
+    func_before / func_after / flaw_lines / 'CWE ID' / vul / language, plus the
+    provenance columns id / 'CVE ID' (mirroring the MegaVul parquet schema; the
+    loader ignores them). A vulnerable row localizes itself with `flaw_lines`
+    (manual annotation) and/or `func_after` (patch); the loader resolves each row
+    on its own — flaw_lines wins, func_after is the fallback — so a file may mix
+    the two or carry both on one row."""
     import pandas as pd
     recs = []
     any_manual = False
@@ -80,7 +82,10 @@ def _rows_to_parquet(rows: list, path) -> int:
             raise UploadParseError(f"row {i}: a vulnerable row needs func_after or flaw_lines")
         flaw = _clean_flaw_lines(r.code, manual, i) if (manual and vul) else []
         any_manual |= bool(flaw)
+        rid = getattr(r, "id", None)
         recs.append({
+            "id": str(rid) if rid is not None else str(i),   # caller id or row position
+            "CVE ID": (getattr(r, "cve_id", None) or "").strip(),
             "func_before": r.code,
             "func_after": r.func_after or "",
             "flaw_lines": flaw,          # empty -> the loader falls back to the diff
@@ -188,9 +193,20 @@ def create_ingest_job(req) -> dict:
     input_path = job_dir / "input.parquet"
     n_rows = _rows_to_parquet(req.rows, input_path)
 
+    # Canonical raw JSON (the upload format, ids included) — the build consumes the
+    # parquet, but THIS is the provenance artifact the task ships to object storage
+    # and GET /datasets/{id}/raw serves back. Auto-generated row ids are materialized.
+    raw_path = job_dir / "raw.json"
+    raw_rows = []
+    for i, r in enumerate(req.rows):
+        d = r.model_dump(exclude_none=True)
+        d["id"] = str(d.get("id", i))
+        raw_rows.append(d)
+    raw_path.write_text(json.dumps(raw_rows, ensure_ascii=False), encoding="utf-8")
+
     data_config = {**_resolve_data_config(req), "name": req.name,
                    "dataset_id": dataset_id, "input_path": str(input_path),
-                   "job_dir": str(job_dir)}
+                   "raw_path": str(raw_path), "job_dir": str(job_dir)}
 
     with SessionLocal() as s:
         s.add(DatasetJobRecord(job_id=job_id, status="queued", name=req.name,

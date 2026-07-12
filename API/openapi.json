@@ -679,6 +679,50 @@
         }
       }
     },
+    "/datasets/{dataset_id}/raw": {
+      "get": {
+        "tags": [
+          "datasets"
+        ],
+        "summary": "Download Dataset Raw",
+        "description": "Download the EXACT raw rows the dataset's .pt was built from \u2014 a JSON array in\nthe same shape as the upload format (DatasetRow), with row ids materialized.\nResolved via the DB relation datasets.raw_id -> raw_datasets.storage_uri; the blob\nlives in object storage. One raw can back many datasets. Merged datasets have no\nraw of their own \u2014 follow `source_dataset_ids`.",
+        "operationId": "download_dataset_raw_datasets__dataset_id__raw_get",
+        "parameters": [
+          {
+            "name": "dataset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Dataset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "JSON array of DatasetRow objects (the upload format, row ids materialized) \u2014 the exact rows the dataset's .pt was built from",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown dataset, merged dataset (follow source_dataset_ids), or dataset predating raw persistence"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/eval": {
       "get": {
         "tags": [
@@ -936,6 +980,18 @@
             ],
             "title": "Dataset Id"
           },
+          "raw_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Id",
+            "description": "raw_datasets row backing this dataset (set when done); download the rows via GET /datasets/{dataset_id}/raw"
+          },
           "num_rows": {
             "anyOf": [
               {
@@ -969,6 +1025,33 @@
       },
       "DatasetRow": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Caller's row id (provenance, any string/int). Auto-generated from the row position when absent. Not used by the build itself."
+          },
+          "cve_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cve Id",
+            "description": "CVE id, e.g. 'CVE-2019-12111' (provenance)"
+          },
           "code": {
             "type": "string",
             "title": "Code",
@@ -1024,7 +1107,7 @@
               }
             ],
             "title": "Flaw Lines",
-            "description": "Manually annotated 1-indexed vulnerable lines of `code`. Required on a vulnerable row unless func_after is given \u2014 supply one or the other, never both. Omit the field when absent; an empty list is not a valid annotation. Ignored on benign rows."
+            "description": "Manually annotated 1-indexed vulnerable lines of `code`. Required on a vulnerable row unless func_after is given. When both are present flaw_lines wins and func_after is kept as the fallback. Omit the field when absent; an empty list is not a valid annotation. Ignored on benign rows."
           },
           "language": {
             "anyOf": [
@@ -1266,7 +1349,14 @@
             "type": "object",
             "title": "Prediction Distribution",
             "description": "count per predicted class over the analysed rows",
-            "default": {}
+            "default": {},
+            "examples": [
+              {
+                "CWE-125": 12,
+                "CWE-787": 7,
+                "benign": 41
+              }
+            ]
           },
           "drift": {
             "anyOf": [
@@ -1376,7 +1466,16 @@
                 "type": "null"
               }
             ],
-            "title": "Class Probabilities"
+            "title": "Class Probabilities",
+            "description": "Probability per class name (softmax over the model's classes)",
+            "examples": [
+              {
+                "CWE-125": 0.58,
+                "CWE-476": 0.22,
+                "CWE-787": 0.15,
+                "benign": 0.05
+              }
+            ]
           },
           "suspicious_lines": {
             "items": {
@@ -1528,6 +1627,28 @@
             ],
             "title": "Base Model Id"
           },
+          "val_dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Val Dataset Id"
+          },
+          "test_dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Dataset Id"
+          },
           "config_path": {
             "anyOf": [
               {
@@ -1583,7 +1704,26 @@
               }
             ],
             "title": "Metrics",
-            "description": "Compact eval summary on the task-B test split (function-level classification + localization). The full metrics_summary, the training_summary, and the realized train/val/test split are stored as model_artifacts (kinds: metrics, training_summary, train_split)."
+            "description": "Compact eval summary on the task-B test split (function-level classification + localization). The full metrics_summary, the training_summary, and the realized train/val/test split are stored as model_artifacts (kinds: metrics, training_summary, train_split).",
+            "examples": [
+              {
+                "function_level": {
+                  "accuracy": 0.474,
+                  "auc_roc_macro_ovr": 0.891,
+                  "confidence_mean": 0.52,
+                  "f1_macro": 0.474,
+                  "f1_weighted": 0.48,
+                  "num_test_samples": 1073
+                },
+                "localization": {
+                  "ifa_mean": 12.31,
+                  "recall_at_20pct_loc": 0.289,
+                  "recall_at_5pct_loc": 0.089,
+                  "top_1_accuracy": 0.26,
+                  "top_5_accuracy": 0.589
+                }
+              }
+            ]
           }
         },
         "type": "object",
@@ -1629,6 +1769,30 @@
             ],
             "title": "Base Model Id",
             "description": "Required \u2014 the model to continue from. Its dataset, config and checkpoint are read from the registry. To train a fresh model instead, use POST /train."
+          },
+          "val_dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Val Dataset Id",
+            "description": "Registered dataset to use as the VALIDATION set (role dataset). When set, training uses 100% of dataset_ids and early-stops on this dataset instead of an internal split. Label space must match."
+          },
+          "test_dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Dataset Id",
+            "description": "Registered dataset to use as the TEST set (e.g. a fixed golden benchmark reused across model versions). Requires val_dataset_id. Label space must match."
           },
           "run_name": {
             "anyOf": [
@@ -1702,7 +1866,8 @@
                 "type": "null"
               }
             ],
-            "title": "Train Ratio"
+            "title": "Train Ratio",
+            "description": "Mode B: train fraction, e.g. 0.8"
           },
           "val_ratio": {
             "anyOf": [
@@ -1713,7 +1878,8 @@
                 "type": "null"
               }
             ],
-            "title": "Val Ratio"
+            "title": "Val Ratio",
+            "description": "Mode B: val fraction, e.g. 0.1"
           },
           "seed": {
             "anyOf": [
@@ -1724,7 +1890,8 @@
                 "type": "null"
               }
             ],
-            "title": "Seed"
+            "title": "Seed",
+            "description": "Mode B: shuffle seed, e.g. 42"
           },
           "train": {
             "anyOf": [
@@ -1738,7 +1905,8 @@
                 "type": "null"
               }
             ],
-            "title": "Train"
+            "title": "Train",
+            "description": "Mode A: row ids for TRAIN"
           },
           "val": {
             "anyOf": [
@@ -1752,7 +1920,8 @@
                 "type": "null"
               }
             ],
-            "title": "Val"
+            "title": "Val",
+            "description": "Mode A: row ids for VAL"
           },
           "test": {
             "anyOf": [
@@ -1766,11 +1935,35 @@
                 "type": "null"
               }
             ],
-            "title": "Test"
+            "title": "Test",
+            "description": "Mode A: row ids for TEST"
           }
         },
         "type": "object",
-        "title": "SplitSpec"
+        "title": "SplitSpec",
+        "description": "Split control, two modes. Mode B (ratios): the library splits with a seeded\nshuffle. Mode A (explicit lists): the caller pins EXACTLY which rows go where,\nkeyed on each row's `id` from the dataset's raw rows (parquet_id) \u2014 overrides\nthe ratios. Lists don't have to cover every row; uncovered rows are unused.",
+        "examples": [
+          {
+            "seed": 42,
+            "train_ratio": 0.8,
+            "val_ratio": 0.1
+          },
+          {
+            "test": [
+              251,
+              9932
+            ],
+            "train": [
+              12154,
+              40412,
+              47121
+            ],
+            "val": [
+              6065,
+              88098
+            ]
+          }
+        ]
       },
       "SuspiciousLine": {
         "properties": {
@@ -1827,7 +2020,15 @@
                 "type": "null"
               }
             ],
-            "title": "Class Probabilities"
+            "title": "Class Probabilities",
+            "description": "Probability per class name (softmax), only for per-line multiclass heads",
+            "examples": [
+              {
+                "CWE-125": 0.61,
+                "CWE-787": 0.27,
+                "benign": 0.12
+              }
+            ]
           }
         },
         "type": "object",
@@ -1907,6 +2108,28 @@
             ],
             "title": "Config Id"
           },
+          "val_dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Val Dataset Id"
+          },
+          "test_dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Dataset Id"
+          },
           "config_path": {
             "anyOf": [
               {
@@ -1962,7 +2185,26 @@
               }
             ],
             "title": "Metrics",
-            "description": "Compact eval summary on the test split (function-level classification + localization). Full artifacts are stored as model_artifacts, same as /relearn."
+            "description": "Compact eval summary on the test split (function-level classification + localization). Full artifacts are stored as model_artifacts, same as /relearn.",
+            "examples": [
+              {
+                "function_level": {
+                  "accuracy": 0.474,
+                  "auc_roc_macro_ovr": 0.891,
+                  "confidence_mean": 0.52,
+                  "f1_macro": 0.474,
+                  "f1_weighted": 0.48,
+                  "num_test_samples": 1073
+                },
+                "localization": {
+                  "ifa_mean": 12.31,
+                  "recall_at_20pct_loc": 0.289,
+                  "recall_at_5pct_loc": 0.089,
+                  "top_1_accuracy": 0.26,
+                  "top_5_accuracy": 0.589
+                }
+              }
+            ]
           }
         },
         "type": "object",
@@ -1988,6 +2230,30 @@
             "minItems": 1,
             "title": "Dataset Ids",
             "description": "Dataset id(s) to train on. More than one are joined first."
+          },
+          "val_dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Val Dataset Id",
+            "description": "Registered dataset to use as the VALIDATION set (role dataset). When set, training uses 100% of dataset_ids and early-stops on this dataset instead of an internal split. Label space must match."
+          },
+          "test_dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Dataset Id",
+            "description": "Registered dataset to use as the TEST set (e.g. a fixed golden benchmark reused across model versions). Requires val_dataset_id. Label space must match."
           },
           "run_name": {
             "anyOf": [

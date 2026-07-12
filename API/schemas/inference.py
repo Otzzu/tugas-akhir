@@ -27,7 +27,9 @@ class SuspiciousLine(BaseModel):
     score: float                                  # vulnerability score [0,1], higher = worse
     code: Optional[str] = None                    # the single source line at that line
     predicted_cwe: Optional[str] = None           # only for per-line multiclass heads
-    class_probabilities: Optional[dict[str, float]] = None
+    class_probabilities: Optional[dict[str, float]] = Field(
+        None, description="Probability per class name (softmax), only for per-line multiclass heads",
+        json_schema_extra={"examples": [{"benign": 0.12, "CWE-125": 0.61, "CWE-787": 0.27}]})
 
 
 class FunctionResult(BaseModel):
@@ -39,7 +41,10 @@ class FunctionResult(BaseModel):
     class_id: Optional[int] = None
     is_vulnerable: Optional[bool] = None
     confidence: Optional[float] = None
-    class_probabilities: Optional[dict[str, float]] = None
+    class_probabilities: Optional[dict[str, float]] = Field(
+        None, description="Probability per class name (softmax over the model's classes)",
+        json_schema_extra={"examples": [{"benign": 0.05, "CWE-125": 0.58, "CWE-476": 0.22,
+                                         "CWE-787": 0.15}]})
     suspicious_lines: list[SuspiciousLine] = []
     cls_embedding_dim: Optional[int] = Field(
         None, description="Dimensionality of the stored pre-head function embedding "
@@ -96,5 +101,7 @@ class EvalReport(BaseModel):
     model_id: str
     n_history: int = Field(..., description="predictions analysed (capped at 2×window, not the lifetime total)")
     mean_confidence: Optional[float] = None
-    prediction_distribution: dict[str, int] = Field({}, description="count per predicted class over the analysed rows")
+    prediction_distribution: dict[str, int] = Field(
+        {}, description="count per predicted class over the analysed rows",
+        json_schema_extra={"examples": [{"benign": 41, "CWE-125": 12, "CWE-787": 7}]})
     drift: Optional[DriftSignal] = Field(None, description="null until there are >=4 stored predictions")

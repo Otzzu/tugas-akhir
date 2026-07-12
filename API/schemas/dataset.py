@@ -7,6 +7,10 @@ from pydantic import BaseModel, Field
 
 
 class DatasetRow(BaseModel):
+    id: Optional[str | int] = Field(
+        None, description="Caller's row id (provenance, any string/int). Auto-generated "
+        "from the row position when absent. Not used by the build itself.")
+    cve_id: Optional[str] = Field(None, description="CVE id, e.g. 'CVE-2019-12111' (provenance)")
     code: str = Field(..., description="Function source (the 'before' code)")
     cwe: Optional[str] = Field(None, description="CWE id, e.g. 'CWE-787' (multiclass label)")
     label: Optional[int] = Field(None, description="Explicit class id (alternative to cwe; 0 = benign)")
@@ -58,5 +62,8 @@ class DatasetJob(BaseModel):
     status: str                                  # queued | running | done | failed
     name: str
     dataset_id: Optional[str] = None             # set when status == done
+    raw_id: Optional[str] = Field(
+        None, description="raw_datasets row backing this dataset (set when done); "
+        "download the rows via GET /datasets/{dataset_id}/raw")
     num_rows: Optional[int] = None
     message: Optional[str] = None

@@ -5,13 +5,15 @@ The build pipeline lives in the gnn_vuln library (driven by API.tasks)."""
 from __future__ import annotations
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 
-from API.services import datasets as ds_service, registry
+from API.core.config import settings
+from API.services import datasets as ds_service, registry, storage
 from API.schemas import DatasetIngestRequest, DatasetJob
 
 router = APIRouter(tags=["datasets"])
 
-_JOB_KEYS = ("job_id", "status", "name", "dataset_id", "num_rows", "message")
+_JOB_KEYS = ("job_id", "status", "name", "dataset_id", "raw_id", "num_rows", "message")
 
 
 def _job(d: dict) -> DatasetJob:
@@ -76,3 +78,37 @@ def dataset_job_status(job_id: str) -> DatasetJob:
     if job is None:
         raise HTTPException(404, f"Unknown job_id '{job_id}'")
     return _job(job)
+
+
+@router.get("/datasets/{dataset_id}/raw", responses={
+    200: {"description": "JSON array of DatasetRow objects (the upload format, row ids "
+                         "materialized) — the exact rows the dataset's .pt was built from",
+          "content": {"application/json": {}}},
+    404: {"description": "Unknown dataset, merged dataset (follow source_dataset_ids), "
+                         "or dataset predating raw persistence"}})
+def download_dataset_raw(dataset_id: str) -> Response:
+    """Download the EXACT raw rows the dataset's .pt was built from — a JSON array in
+    the same shape as the upload format (DatasetRow), with row ids materialized.
+    Resolved via the DB relation datasets.raw_id -> raw_datasets.storage_uri; the blob
+    lives in object storage. One raw can back many datasets. Merged datasets have no
+    raw of their own — follow `source_dataset_ids`."""
+    try:
+        meta = registry.get_dataset(dataset_id)
+    except KeyError:
+        raise HTTPException(404, f"Unknown dataset_id '{dataset_id}'")
+    raw_id = meta.get("raw_id")
+    if not raw_id:
+        src = meta.get("source_dataset_ids")
+        hint = f" This is a merged dataset; fetch raw from its sources: {src}." if src else \
+            " Dataset predates raw persistence (no raw stored)."
+        raise HTTPException(404, f"No raw data for '{dataset_id}'.{hint}")
+    try:
+        raw = registry.get_raw(raw_id)
+    except KeyError:
+        raise HTTPException(404, f"raw_datasets row missing for raw_id '{raw_id}'")
+    key = raw["storage_uri"].rsplit("/", 1)[-1]
+    data = storage.get_bytes(settings.S3_BUCKET_DATASETS, key)
+    if data is None:
+        raise HTTPException(404, f"Raw object missing in storage: {raw['storage_uri']}")
+    return Response(content=data, media_type="application/json",
+                    headers={"Content-Disposition": f'attachment; filename="{key}"'})

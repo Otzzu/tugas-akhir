@@ -47,6 +47,7 @@ EVALUATE_ON_FINISH = True            # run the library evaluator on the new mode
 
 _REQUIRES_BASE = {"ER", "EWC", "EWC-ER", "finetune"}
 _JOB_FIELDS = ("status", "method", "dataset_ids", "base_model_id",
+               "val_dataset_id", "test_dataset_id",
                "config_path", "log_path", "result_model_id", "message", "metrics")
 
 
@@ -130,6 +131,26 @@ def _dataset_data_config(dataset_id: str) -> dict:
 
 
 # ── dataset join ────────────────────────────────────────────────────────────
+def _cumulative_dataset_ids(base_model_id: str | None, new_ids: list[str]) -> list[str]:
+    """Full training-data lineage for a model row: the base model's cumulative list
+    (falling back to its single dataset_id for models registered before this field)
+    plus this job's datasets — chronological, deduped. ER reads the BASE model's list
+    as its replay pool, so the episodic memory covers every past task (Chaudhry 2019),
+    not just the previous one."""
+    hist: list[str] = []
+    if base_model_id:
+        try:
+            b = registry.get_model(base_model_id)
+            hist = list(b.get("dataset_ids") or ([b["dataset_id"]] if b.get("dataset_id") else []))
+        except KeyError:
+            hist = []
+    out = list(hist)
+    for did in new_ids:
+        if did not in out:
+            out.append(did)
+    return out
+
+
 def _join_datasets(dataset_ids: list[str]) -> tuple[str, dict]:
     """Single id → its source. Multiple → merge at the PROCESSED .pt level via the
     gnn_vuln.data.merge CLI (concatenate finished .pt + unify vocab; no raw CPG, no
@@ -178,7 +199,9 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
                  epochs: int | None, job_dir: Path,
                  split: dict | None = None,
                  scratch_config_id: str | None = None,
-                 scratch_model_type: str | None = None) -> tuple[Path, Path | None, dict]:
+                 scratch_model_type: str | None = None,
+                 val_dataset_id: str | None = None,
+                 test_dataset_id: str | None = None) -> tuple[Path, Path | None, dict]:
     source, data_block = _join_datasets(dataset_ids)
 
     if method in _REQUIRES_BASE:
@@ -227,6 +250,42 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
     for k in ("pretrained_lm", "func_lm", "add_func_tokens", "func_max_length", "func_lm_source"):
         if k in fmodel:
             cfg["model"][k] = fmodel[k]
+
+    # Role datasets (separate registered datasets for val/test — channel style). When
+    # val_dataset_id is set the library trains on 100% of `source`, early-stops on the
+    # val dataset, and (if given) reports test on the test dataset — e.g. a fixed golden
+    # benchmark reused across model versions. No internal split is taken.
+    if test_dataset_id and not val_dataset_id:
+        raise ValueError("test_dataset_id requires val_dataset_id")
+    role_sources: list[tuple[str, str, str]] = []   # (role, rid, source) — label check after target_vocab
+    if val_dataset_id:
+        if split:
+            raise ValueError("config.split cannot be combined with val/test role datasets")
+        for role, rid in (("val", val_dataset_id), ("test", test_dataset_id)):
+            if not rid:
+                continue
+            m = registry.get_dataset(rid)             # KeyError -> 422 at the router
+            materialize_dataset(rid)                  # stage its .pt + vocab locally
+            rfrozen = _dataset_data_config(rid)
+            rf = rfrozen.get("model", {})
+            for k in ("pretrained_lm", "func_max_length"):
+                if k in rf and k in fmodel and rf[k] != fmodel[k]:
+                    raise ValueError(f"{role}_dataset_id '{rid}' featurization mismatch on "
+                                     f"{k}: {rf[k]!r} != {fmodel[k]!r}")
+            if m.get("mode", "multiclass") != cfg["data"]["mode"]:
+                raise ValueError(f"{role}_dataset_id '{rid}' mode mismatch: "
+                                 f"{m.get('mode')} != {cfg['data']['mode']}")
+            cfg["data"][f"source_{role}"] = m["source"]
+            # the role dataset's own build identity, so the library resolves ITS .pt
+            # name even when this config's data block differs (e.g. CIL)
+            cfg["data"][f"source_{role}_params"] = dict(rfrozen.get("data", {}))
+            role_sources.append((role, rid, m["source"]))
+            if not base_model_id:
+                # fresh class space (/train): label spaces must match exactly
+                n_main = int(data_block.get("num_classes", cfg["model"].get("num_classes", 0)) or 0)
+                if n_main and int(m.get("num_classes", n_main)) != n_main:
+                    raise ValueError(f"{role}_dataset_id '{rid}' label space mismatch: "
+                                     f"{m.get('num_classes')} classes != {n_main}")
     cfg["model"]["num_classes"] = data_block.get("num_classes", cfg["model"].get("num_classes", 26))
     # continual-learning label alignment — when continuing a base model, remap task-B labels onto
     # the base model's class space so ids never clash: known CWEs keep their canonical id, brand-new
@@ -243,6 +302,16 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
                         tv[name] = len(tv)          # new CWE -> extended id (head grows)
             cfg["data"]["target_vocab"] = tv
             cfg["model"]["num_classes"] = len(tv)
+            # role datasets on a continued model: every class of the role dataset must
+            # exist in the final class space (subset, NOT equality — a 26-class golden
+            # benchmark is valid against a 36-class CIL model; target_vocab remaps it)
+            for role, rid, rsource in role_sources:
+                rv = DATA_ROOT / "raw" / rsource / "cwe_vocab.json"
+                if rv.exists():
+                    missing = [n for n in json.loads(rv.read_text(encoding="utf-8")) if n not in tv]
+                    if missing:
+                        raise ValueError(f"{role}_dataset_id '{rid}' has classes outside the "
+                                         f"model's class space: {missing[:5]}")
     if scratch_model_type:
         cfg["model"]["architecture"] = scratch_model_type   # /train architecture override on config_id
     # the installed wheel's default checkpoint/results/log dirs resolve to a bogus
@@ -274,13 +343,22 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
         cfg["ewc"] = {"enabled": True, "weight": weight, "scope": "all",
                       "source_checkpoint": src_ckpt, "importance_cache": cache, "n_batches": 0}
         if method in ("ER", "EWC-ER"):
-            cfg["replay"] = {"enabled": True, "source": base_ds["source"],
-                             "ds_name_suffix": base_ds.get("ds_name_suffix", ""),
+            # Replay pool = the base model's CUMULATIVE dataset lineage (every past
+            # task), per Chaudhry 2019's episodic memory over all previous tasks —
+            # not just the immediately preceding dataset. Balanced per-class sampling
+            # (50/class, seeded) over the pool mirrors the ring-buffer guarantee.
+            pool_ids = list(base.get("dataset_ids") or []) or [base["dataset_id"]]
+            if len(pool_ids) > 1:
+                pool_source, pool_ds = _join_datasets(pool_ids)   # merged replay pool .pt
+            else:
+                pool_source, pool_ds = base_ds["source"], base_ds
+            cfg["replay"] = {"enabled": True, "source": pool_source,
+                             "ds_name_suffix": pool_ds.get("ds_name_suffix", ""),
                              "buffer_per_class": 50, "weight": 1.0, "buffer_seed": 42,
-                             "filter_top25_dangerous": base_ds.get("filter_top25_dangerous", False),
-                             "max_per_class": base_ds.get("max_per_class", 0),
-                             "top_cwe": base_ds.get("top_cwe", 0),
-                             "resample_seed": base_ds.get("resample_seed", 42)}
+                             "filter_top25_dangerous": pool_ds.get("filter_top25_dangerous", False),
+                             "max_per_class": pool_ds.get("max_per_class", 0),
+                             "top_cwe": pool_ds.get("top_cwe", 0),
+                             "resample_seed": pool_ds.get("resample_seed", 42)}
         if method in ("EWC", "EWC-ER") and not Path(cache).exists():
             # durable read-back: a prior relearn may have stored importance for this base model
             art = registry.get_artifact(base_model_id, "ewc_importance")
@@ -323,6 +401,7 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
     meta = {"source": source, "num_classes": cfg["model"]["num_classes"],
             "arch": cfg["model"]["architecture"],
             "base_model_id": base_model_id,
+            "val_dataset_id": val_dataset_id, "test_dataset_id": test_dataset_id,
             "importance_cache": str(cache) if method != "retrain" else None}
     return train_cfg_path, importance_cfg_path, meta
 
@@ -508,6 +587,9 @@ def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
                 "arch": meta["arch"], "config": str(train_cfg.relative_to(ROOT)),
                 "checkpoint": str(best.relative_to(ROOT)), "storage_uri": ckpt_uri,
                 "dataset_id": job["dataset_ids"][0], "num_classes": meta["num_classes"],
+                "dataset_ids": _cumulative_dataset_ids(job.get("base_model_id"), job["dataset_ids"]),
+                "val_dataset_id": job.get("val_dataset_id"),
+                "test_dataset_id": job.get("test_dataset_id"),
                 "class_names": class_names,
                 "base_model_id": job.get("base_model_id"), "method": job["method"]})
             job["result_model_id"] = new_id
@@ -542,16 +624,20 @@ def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
 
 def submit_relearn(method: str, dataset_ids: list[str], base_model_id: str | None,
                    epochs: int | None, run_name: str | None,
-                   split: dict | None = None) -> dict:
+                   split: dict | None = None,
+                   val_dataset_id: str | None = None,
+                   test_dataset_id: str | None = None) -> dict:
     job_id = datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:6]
     job_dir = JOBS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     job = {"job_id": job_id, "status": "queued", "method": method,
            "dataset_ids": dataset_ids, "base_model_id": base_model_id,
+           "val_dataset_id": val_dataset_id, "test_dataset_id": test_dataset_id,
            "config_path": None, "log_path": str(job_dir / "run.log"),
            "result_model_id": None, "message": run_name}
     train_cfg, importance_cfg, meta = build_config(
-        method, dataset_ids, base_model_id, epochs, job_dir, split)
+        method, dataset_ids, base_model_id, epochs, job_dir, split,
+        val_dataset_id=val_dataset_id, test_dataset_id=test_dataset_id)
     job["config_path"] = str(train_cfg.relative_to(ROOT))
     _save_job(job)
     # run on the Celery worker (off the web server), consistent with dataset ingestion
@@ -562,7 +648,9 @@ def submit_relearn(method: str, dataset_ids: list[str], base_model_id: str | Non
 
 def submit_train(config_id: str, dataset_ids: list[str], epochs: int | None,
                  run_name: str | None, split: dict | None = None,
-                 model_type: str | None = None) -> dict:
+                 model_type: str | None = None,
+                 val_dataset_id: str | None = None,
+                 test_dataset_id: str | None = None) -> dict:
     """Train a fresh model from scratch (no base model) on dataset_ids, taking the architecture
     and train hyperparameters from `config_id`. Shares the relearn worker pipeline via
     method='retrain' — fresh weights, no EWC importance and no replay buffer."""
@@ -571,11 +659,13 @@ def submit_train(config_id: str, dataset_ids: list[str], epochs: int | None,
     job_dir.mkdir(parents=True, exist_ok=True)
     job = {"job_id": job_id, "status": "queued", "method": "retrain",
            "dataset_ids": dataset_ids, "base_model_id": None, "config_id": config_id,
+           "val_dataset_id": val_dataset_id, "test_dataset_id": test_dataset_id,
            "config_path": None, "log_path": str(job_dir / "run.log"),
            "result_model_id": None, "message": run_name}
     train_cfg, importance_cfg, meta = build_config(
         "retrain", dataset_ids, None, epochs, job_dir, split,
-        scratch_config_id=config_id, scratch_model_type=model_type)
+        scratch_config_id=config_id, scratch_model_type=model_type,
+        val_dataset_id=val_dataset_id, test_dataset_id=test_dataset_id)
     job["config_path"] = str(train_cfg.relative_to(ROOT))
     _save_job(job)
     from API.tasks import run_relearn

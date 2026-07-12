@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from API.core.config import settings
 from API.core.database import SessionLocal
-from API.models.tables import ModelRecord, DatasetRecord, ConfigRecord, ModelArtifact
+from API.models.tables import ModelRecord, DatasetRecord, ConfigRecord, ModelArtifact, RawDatasetRecord
 
 ROOT = settings.ROOT
 _DATA_FIELDS = ("max_nodes", "top_cwe", "filter_top25_dangerous", "max_per_class",
@@ -109,6 +109,27 @@ def get_model(model_id: str) -> dict:
         return m.to_dict()
 
 
+def register_raw(raw_id: str, meta: dict) -> None:
+    """UPSERT a raw-rows row (content-addressed id → re-registering the same content
+    is a no-op). One raw can back many datasets (datasets.raw_id)."""
+    with SessionLocal() as s:
+        r = s.get(RawDatasetRecord, raw_id) or RawDatasetRecord(id=raw_id)
+        r.storage_uri = meta["storage_uri"]
+        r.num_rows = int(meta.get("num_rows", 0))
+        r.size_bytes = int(meta.get("size_bytes", 0))
+        r.content_hash = meta.get("content_hash", "")
+        s.merge(r)
+        s.commit()
+
+
+def get_raw(raw_id: str) -> dict:
+    with SessionLocal() as s:
+        r = s.get(RawDatasetRecord, raw_id)
+        if r is None:
+            raise KeyError(f"Unknown raw_id '{raw_id}'")
+        return r.to_dict()
+
+
 def get_dataset(dataset_id: str) -> dict:
     with SessionLocal() as s:
         d = s.get(DatasetRecord, dataset_id)
@@ -130,6 +151,9 @@ def register_model(model_id: str, meta: dict) -> None:
         m.checkpoint = meta["checkpoint"]
         m.storage_uri = meta.get("storage_uri")
         m.dataset_id = meta.get("dataset_id", "")
+        m.dataset_ids = list(meta.get("dataset_ids") or ([m.dataset_id] if m.dataset_id else []))
+        m.val_dataset_id = meta.get("val_dataset_id")
+        m.test_dataset_id = meta.get("test_dataset_id")
         m.num_classes = int(meta.get("num_classes", 2))
         m.class_names = meta.get("class_names", [])
         m.base_model_id = meta.get("base_model_id")
@@ -159,6 +183,8 @@ def register_dataset(dataset_id: str, meta: dict) -> None:
         d.mode = meta.get("mode", "multiclass")
         d.num_classes = int(meta.get("num_classes", 2))
         d.data_config_id = cid
+        d.raw_id = meta.get("raw_id")                                       # -> raw_datasets (blob in S3)
+        d.source_dataset_ids = list(meta.get("source_dataset_ids") or [])   # merge provenance
         d.params = {k: meta[k] for k in _DATA_FIELDS if k in meta}
         s.merge(d)
         s.commit()
