@@ -1,0 +1,78 @@
+# N68n — N68 (fully supervised localization) on the PATCHED nine ml1024 dataset.
+# The base ml1024 tar on Drive still has the OLD flaw_line_mask (METHOD node spans
+# the whole function), so the first N68 run scored a fake Top-1 0.972 by learning
+# "point at the signature". Only the nine tars were patched+reuploaded
+# (20260707_192819) for the honest per-seed reruns. This rerun uses that tar so
+# the honest weakly supervised reference rows (Top-1 ~0.23, IFA ~13, n~590) are
+# the direct comparison. Identical to N48_nine.yaml EXCEPT mil/rank off,
+# loc_supervised on (LineVD-style per-statement BCE, weight 0.5 = old 0.3+0.2).
+#
+# Run (cloud, Linux):
+#   ./scripts/train_cloud.sh --skip --config configs/ablation/gnn_only/N68n_a1_l1_loc_supervised_nine.yaml \
+#     --dataset lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42
+
+data:
+  source: megavul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: true
+  filter_owasp: false
+  max_per_class: 1600
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base-nine
+  func_lm: microsoft/unixcoder-base-nine
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  graph_pool: jknet
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 26
+  mil_weight: 0.0
+  mil_k: 3
+  rank_loss_weight: 0.0
+  loc_supervised_weight: 0.5
+  loc_supervised_pos_weight: 5.0
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  func_head_type: linear
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: false
+  use_flash_attention: false
+  grad_accum_steps: 2
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 0
+  prefetch_factor: 2
