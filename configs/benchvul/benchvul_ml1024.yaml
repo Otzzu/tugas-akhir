@@ -1,0 +1,29 @@
+# BenchVul ml1024 — dataset benchmark untuk arsitektur berbasis graph dan sekuensial.
+# Parameter data + LM disamakan dengan run resmi (nine, ml1024) supaya .pt-nya sepadan.
+# Hanya fungsi rentan C/C++ dengan CWE yang ada di ruang label MegaVul 26 kelas.
+#
+# Build (cloud):
+#   PYTHONPATH=src python -m gnn_vuln.data.build_pt --config configs/benchvul/benchvul_ml1024.yaml
+
+data:
+  source: benchvul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: false   # vocab sudah dibatasi di adapter
+  filter_owasp: false
+  max_per_class: 0                # benchmark: jangan disampling
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base-nine
+  func_lm: microsoft/unixcoder-base-nine
+  add_func_tokens: true
+  func_max_length: 1024
+  num_classes: 26
+
+train:
+  seed: 42

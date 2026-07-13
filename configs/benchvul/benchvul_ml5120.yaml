@@ -1,0 +1,28 @@
+# BenchVul ml5120 — dataset benchmark untuk arsitektur hibrida (jalur LM sliding window).
+# Sama dengan benchvul_ml1024 kecuali func_max_length. Node feature-nya identik, jadi
+# build_pt memakai fast-path re-tokenize dari base ml1024 bila base itu sudah ada.
+#
+# Build (cloud):
+#   PYTHONPATH=src python -m gnn_vuln.data.build_pt --config configs/benchvul/benchvul_ml5120.yaml
+
+data:
+  source: benchvul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: false
+  filter_owasp: false
+  max_per_class: 0
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  pretrained_lm: microsoft/unixcoder-base-nine
+  func_lm: microsoft/unixcoder-base-nine
+  add_func_tokens: true
+  func_max_length: 5120
+  num_classes: 26
+
+train:
+  seed: 42
