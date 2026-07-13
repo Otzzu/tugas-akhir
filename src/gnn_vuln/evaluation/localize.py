@@ -19,6 +19,12 @@ class LocalizationExtractor:
         self.model = model
         self.loader = loader
         self.device = device
+        # Tidak semua arsitektur menerima return_repr. Yang tidak mendukung tetap
+        # dievaluasi seperti biasa, hanya tanpa embedding.
+        import inspect
+        params = inspect.signature(type(model).forward).parameters
+        self._wants_repr = ("return_repr" in params
+                            or any(p.kind is p.VAR_KEYWORD for p in params.values()))
 
     @torch.no_grad()
     def run(self):
@@ -30,11 +36,13 @@ class LocalizationExtractor:
         y_prob      : np.ndarray [N, C]
         confidence  : np.ndarray [N]
         loc_results : list[dict]  — one per function
+        embeddings  : np.ndarray [N, D] — pre-head function representation
         """
         import numpy as np
 
         self.model.eval()
         all_y, all_pred, all_prob, all_conf = [], [], [], []
+        all_emb: list = []
         loc_results: list[dict] = []
 
         for batch in self.loader:
@@ -44,6 +52,9 @@ class LocalizationExtractor:
             edge_attr  = getattr(batch, "edge_attr", None)
 
             out = self._forward(batch, node_line, edge_attr)
+            out, emb = self._split_repr(out)
+            if emb is not None:
+                all_emb.append(emb.float().cpu().numpy())
 
             logit_func, stmt_scores_list = self._unpack(out)
 
@@ -75,7 +86,15 @@ class LocalizationExtractor:
             np.vstack(all_prob) if all_prob else np.zeros((0, 2)),
             np.array(all_conf),
             loc_results,
+            np.vstack(all_emb) if all_emb else None,
         )
+
+    def _split_repr(self, out):
+        """forward(return_repr=True) menempelkan representasi pra-head sebagai elemen
+        terakhir. Pisahkan agar _unpack tetap melihat bentuk tuple yang lama."""
+        if self._wants_repr and isinstance(out, (tuple, list)):
+            return tuple(out)[:-1], out[-1]
+        return out, None
 
     def _forward(self, batch, node_line, edge_attr):
         # Only read rwse if encoder uses PE — avoids PyG batch issues for non-PE configs.
@@ -83,6 +102,7 @@ class LocalizationExtractor:
         _enc = getattr(self.model, "encoder", None)
         if _enc is not None and getattr(_enc, "use_pe", False):
             rwse = getattr(batch, "rwse", None)
+        extra = {"return_repr": True} if self._wants_repr else {}
         if hasattr(self.model, "codebert"):
             func_input_ids      = getattr(batch, "func_input_ids", None)
             func_attention_mask = getattr(batch, "func_attention_mask", None)
@@ -90,9 +110,10 @@ class LocalizationExtractor:
             return self.model(
                 batch.x, batch.edge_index, batch.batch, node_line, edge_attr,
                 func_input_ids, func_attention_mask, func_token_lines,
-                rwse=rwse,
+                rwse=rwse, **extra,
             )
-        return self.model(batch.x, batch.edge_index, batch.batch, node_line, edge_attr, rwse=rwse)
+        return self.model(batch.x, batch.edge_index, batch.batch, node_line, edge_attr,
+                          rwse=rwse, **extra)
 
     @staticmethod
     def _unpack(out):

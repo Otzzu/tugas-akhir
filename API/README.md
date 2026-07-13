@@ -160,8 +160,9 @@ drop the local results dir`. Poll `GET /relearn/{id}`: returns `result_model_id`
   `training_summary.json`, the EWC importance, and the realized train/val/test split are stored
   as per-model `model_artifacts`.
   - **No research artifacts on the worker** — train + eval run with `GNN_VULN_API_MODE=1`, so
-    the bulky/per-sample research outputs (`predictions.csv`, `localization_scores.csv`, ROC /
-    confusion / PR plots, `training_log.csv`, `training_curves.png`) are **never written**;
+    the bulky/per-sample research outputs (`predictions.csv`, `localization_scores.csv`,
+    `embeddings.npz`, ROC / confusion / PR plots, `training_log.csv`, `training_curves.png`)
+    are **never written**;
     only the small JSON handoffs (`metrics_summary`, `split`, `training_summary`) are produced,
     harvested to DB + object storage, then the local `results/<run>` dir is deleted. Object
     storage + DB are the source of truth; local disk keeps only the dataset cache + checkpoint.

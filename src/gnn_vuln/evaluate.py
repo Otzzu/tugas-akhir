@@ -49,6 +49,7 @@ class EvalResult:
     loc_results: list
     func_metrics: dict
     loc_metrics: LocalizationMetrics
+    embeddings: "np.ndarray | None" = None   # [N, D] representasi fungsi pra-head
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +97,7 @@ class Evaluator:
         `.summary`; research: `save_artifacts`)."""
         logger.info("Running inference…")
         extractor = LocalizationExtractor(self.model, self._loader, self.device)
-        y_true, y_pred, y_prob, confidence, loc_results = extractor.run()
+        y_true, y_pred, y_prob, confidence, loc_results, embeddings = extractor.run()
 
         target_names = self.class_names or [str(i) for i in range(y_prob.shape[1])]
         correct_mask = y_true == y_pred
@@ -109,7 +110,7 @@ class Evaluator:
                            loc_results, y_true, confidence, correct_mask)
         summary = self._build_summary(func_metrics, loc_metrics)
         return EvalResult(summary, y_true, y_pred, y_prob, confidence, correct_mask,
-                          target_names, loc_results, func_metrics, loc_metrics)
+                          target_names, loc_results, func_metrics, loc_metrics, embeddings)
 
     def run(self) -> dict:
         """Full evaluation + persist all research artifacts to results_dir
@@ -281,6 +282,13 @@ class Evaluator:
             pred_df[f"prob_{name}"] = y_prob[:, i]
         pred_df.to_csv(rd / "predictions.csv", index=False)
         logger.info(f"predictions.csv → {rd/'predictions.csv'}")
+
+        # embeddings.npz — representasi fungsi pra-head, sebaris dengan predictions.csv
+        if res.embeddings is not None:
+            import numpy as np
+            np.savez_compressed(rd / "embeddings.npz", embeddings=res.embeddings,
+                                parquet_id=np.array([c[1] for c in src_cache]))
+            logger.info(f"embeddings.npz → {rd/'embeddings.npz'} {res.embeddings.shape}")
 
         # localization_scores.csv
         loc_rows: list[dict] = []

@@ -40,12 +40,12 @@ predictor = VulnPredictor.from_checkpoint(
 predictor.class_names = ["benign", "CWE-787", ...]  # optional: override label names
 ```
 
-| Method | Input | Output |
-| --- | --- | --- |
-| `predict_code(code, joern_cli, max_nodes=2500, top_k_lines=None)` | function **source string** | result `dict`, or `None` if Joern produced no CPG |
-| `predict_codes(codes, joern_cli, max_nodes=2500, top_k_lines=None)` | `list[str]` | list of result dicts (`None` per entry on Joern failure) |
-| `predict(data, top_k_lines=None)` | a PyG `Data` object (already built) | result `dict` |
-| `predict_from_file(cpg_path, max_nodes=1000, top_k_lines=None)` | path to a Joern CPG file | result `dict`, or `None` |
+| Method                                                              | Input                               | Output                                                   |
+| ------------------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------- |
+| `predict_code(code, joern_cli, max_nodes=2500, top_k_lines=None)`   | function **source string**          | result `dict`, or `None` if Joern produced no CPG        |
+| `predict_codes(codes, joern_cli, max_nodes=2500, top_k_lines=None)` | `list[str]`                         | list of result dicts (`None` per entry on Joern failure) |
+| `predict(data, top_k_lines=None)`                                   | a PyG `Data` object (already built) | result `dict`                                            |
+| `predict_from_file(cpg_path, max_nodes=1000, top_k_lines=None)`     | path to a Joern CPG file            | result `dict`, or `None`                                 |
 
 ```python
 # the everyday call — string in, dict out (Joern handled internally)
@@ -172,11 +172,11 @@ cfg.data.target_vocab   # {"benign":0, "CWE-787":1, ...} — pins class ids to a
 Each step is a runnable module. All accept **one** config file or **several** split files
 (merged section-by-section).
 
-| Command                                                                                                 | In                 | Out                                       |
-| ------------------------------------------------------------------------------------------------------- | ------------------ | ----------------------------------------- |
-| `python -m gnn_vuln.data.prepare --input <parquet> --format bigvul --out-dir <dir> --joern-cli <joern>` | raw rows (parquet) | per-function CPGs + `cwe_vocab.json`      |
-| `python -m gnn_vuln.data.build_pt --config <yaml…> --split train`                                       | CPG dir            | processed `.pt` (UniXcoder node features) |
-| `python -m gnn_vuln.data.merge --config <yaml…> --sources <s1> <s2> … --out-source <name> [--dedup]`     | built `.pt`s       | one merged `.pt` (label space unified)    |
+| Command                                                                                                 | In                 | Out                                        |
+| ------------------------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------ |
+| `python -m gnn_vuln.data.prepare --input <parquet> --format bigvul --out-dir <dir> --joern-cli <joern>` | raw rows (parquet) | per-function CPGs + `cwe_vocab.json`       |
+| `python -m gnn_vuln.data.build_pt --config <yaml…> --split train`                                       | CPG dir            | processed `.pt` (UniXcoder node features)  |
+| `python -m gnn_vuln.data.merge --config <yaml…> --sources <s1> <s2> … --out-source <name> [--dedup]`    | built `.pt`s       | one merged `.pt` (label space unified)     |
 | `python -m gnn_vuln.train --config <yaml…>`                                                             | `.pt` + config     | checkpoint + training_summary + split.json |
 
 `prepare` flags: `--binary`, `--top-cwe N`, `--sample-per-class N`, `--workers N`.
@@ -201,10 +201,32 @@ python -m gnn_vuln.train         --config config.yaml
 
 - `Evaluator.compute() -> EvalResult` — runs inference + metrics, returns everything in memory,
   writes **nothing**.
-- `Evaluator.save_artifacts(res)` — research persistence: `predictions.csv`,
-  `localization_scores.csv`, `metrics_summary.json`, ROC / confusion / PR plots.
-- `Evaluator.save_summary(res)` — writes **only** `metrics_summary.json` (the small handoff).
+- `Evaluator.save_artifacts(res: EvalResult)` — research persistence: `predictions.csv`,
+  `localization_scores.csv`, `embeddings.npz`, `metrics_summary.json`, ROC / confusion / PR plots.
+- `Evaluator.save_summary(res: EvalResult)` — writes **only** `metrics_summary.json` (the small handoff).
 - `Evaluator.run()` = `compute()` + `save_artifacts()` (the research/CLI default).
+
+`EvalResult` is the in-memory bundle every persistence method consumes:
+
+```python
+res = evaluator.compute()
+res.summary        # dict — the metrics_summary payload (all save_summary writes)
+res.y_true         # [N]      true class ids
+res.y_pred         # [N]      predicted class ids
+res.y_prob         # [N, C]   softmax probabilities
+res.confidence     # [N]      prob of the predicted class
+res.correct_mask   # [N]      y_true == y_pred
+res.target_names   # [C]      class names
+res.loc_results    # list[dict] — per-function line numbers / scores / labels
+res.func_metrics   # dict — function-level metrics
+res.loc_metrics    # LocalizationMetrics
+res.embeddings     # [N, D] — pre-head function representation, or None
+```
+
+`res.embeddings` is the same vector `predict()` returns as `cls_embedding` — the representation
+fed to the classification head. `save_artifacts` writes it to `embeddings.npz` together with the
+matching `parquet_id` array, so each row traces back to its source function (drift detection,
+similarity search, error analysis). The API path (`save_summary`) never writes it.
 
 `python -m gnn_vuln.evaluate --checkpoint <pt>` runs the full research path. Pass
 `--metrics-only` (or set `GNN_VULN_API_MODE=1`) to write just `metrics_summary.json` — for a
