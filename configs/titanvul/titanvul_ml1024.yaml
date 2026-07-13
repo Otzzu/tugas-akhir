@@ -1,0 +1,29 @@
+# TitanVul ml1024 — arsitektur berbasis graph dan sekuensial.
+# Fungsi rentan C/C++, CWE dalam ruang label MegaVul 26 kelas, sudah dideduplikasi
+# terhadap MegaVul sehingga tidak ada fungsi yang pernah dilihat saat pelatihan.
+#
+# Build:
+#   uv run python -m gnn_vuln.data.build_pt --config configs/titanvul/titanvul_ml1024.yaml
+
+data:
+  source: titanvul
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: false   # sudah dibatasi di adapter
+  filter_owasp: false
+  max_per_class: 0                # jangan disampling
+  resample_seed: 42
+  storage: lazy
+
+model:
+  architecture: lmgat_codebert
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base-nine
+  func_lm: microsoft/unixcoder-base-nine
+  add_func_tokens: true
+  func_max_length: 1024
+  num_classes: 26
+
+train:
+  seed: 42
