@@ -42,19 +42,13 @@ if [[ ! -f "$PARQUET" ]]; then
   mkdir -p "$(dirname "$PARQUET")"
   rclone copy "$DRIVE/data/datasets/benchvul/train.parquet" "$(dirname "$PARQUET")" --progress
 fi
-# cwe_vocab MegaVul = ruang label acuan (26 kelas). SELALU ambil dari Drive: salinan di
-# repo masih versi lama 193 kelas dengan id yang berbeda, dan memakainya akan membuat
-# seluruh label BenchVul salah.
-mkdir -p data/raw/megavul
-rclone copy "$DRIVE/data/raw/megavul/cwe_vocab.json" data/raw/megavul/ --progress
-NCLS=$(python -c "import json;print(len(json.load(open('data/raw/megavul/cwe_vocab.json'))))")
-[[ "$NCLS" == "26" ]] || { echo "ERR: cwe_vocab harus 26 kelas, dapat $NCLS"; exit 1; }
-
 echo "=== [3/6] adapter -> parquet berbentuk MegaVul ==="
-python scripts/benchvul_to_parquet.py \
-  --input "$PARQUET" \
-  --cwe-vocab data/raw/megavul/cwe_vocab.json \
-  --out-dir "$DS"
+# Vocab 26 kelas DITANAM di adapter, tidak dibaca dari file mana pun. Salinan
+# cwe_vocab.json yang beredar sempat berbeda (193 kelas, id bergeser) dan memakainya
+# akan membuat label meleset tanpa error.
+python scripts/benchvul_to_parquet.py --input "$PARQUET" --out-dir "$DS"
+NCLS=$(python -c "import json;print(len(json.load(open('$DS/cwe_vocab.json'))))")
+[[ "$NCLS" == "26" ]] || { echo "ERR: vocab harus 26 kelas, dapat $NCLS"; exit 1; }
 
 echo "=== [4/6] joern-cli v${JOERN_VER} + CPG ==="
 JCLI="$WORK/joern-cli"
