@@ -163,6 +163,17 @@ def _dataset_class_names(dataset_id: str, source: str) -> list[str]:
         f"raw/{source}. Cannot determine its class space.")
 
 
+def _assert_featurization_matches(base_model_id: str, base_cfg: dict, dataset_id: str) -> None:
+    """DB-only check — no staging, no downloads. Raises on a mismatch the model would survive."""
+    fmodel = (_dataset_data_config(dataset_id) or {}).get("model", {})
+    for k in ("pretrained_lm", "func_max_length", "add_func_tokens"):
+        bv, dv = (base_cfg.get("model") or {}).get(k), fmodel.get(k)
+        if bv is not None and dv is not None and bv != dv:
+            raise ValueError(
+                f"dataset '{dataset_id}' featurization mismatch with base model "
+                f"'{base_model_id}' on {k}: dataset {dv!r} != model {bv!r}")
+
+
 def _dataset_data_config(dataset_id: str) -> dict:
     """The frozen data-build config that produced this dataset's .pt (via data_config_id).
     Used so the relearn run reuses the EXACT featurization — same source/embedder/filters
@@ -256,6 +267,11 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
             raise ValueError(f"method '{method}' requires base_model_id")
         base = registry.get_model(base_model_id)
         base_cfg = yaml.safe_load(registry.config_text(base))
+        # Check BEFORE staging anything: a base checkpoint is welded to its featurization (node
+        # embeddings are LM-specific, and CodeBERT vs UniXcoder share dims — a mismatch trains
+        # fine and silently ruins the model). Reads the DB only, so a doomed job dies in ms
+        # instead of after downloading gigabytes.
+        _assert_featurization_matches(base_model_id, base_cfg, dataset_ids[0])
         from API.services.inference import _materialize_checkpoint
         base_ckpt = _materialize_checkpoint(base)   # local cache; pulls from MinIO if absent
         base_ds = registry.get_dataset(base["dataset_id"])
@@ -293,15 +309,8 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
         "storage": fdata.get("storage", data_block.get("storage", "inmemory")),
         "ds_name_suffix": data_block.get("ds_name_suffix", ""),
     }}
-    # A base checkpoint is welded to its featurization: node embeddings are LM-specific, and
-    # CodeBERT vs UniXcoder share dims — a mismatch trains fine and silently ruins the model.
-    if base_model_id:
-        for k in ("pretrained_lm", "func_max_length", "add_func_tokens"):
-            bv, dv = (base_cfg.get("model") or {}).get(k), fmodel.get(k)
-            if bv is not None and dv is not None and bv != dv:
-                raise ValueError(
-                    f"dataset '{dataset_ids[0]}' featurization mismatch with base model "
-                    f"'{base_model_id}' on {k}: dataset {dv!r} != model {bv!r}")
+    if base_model_id and method not in _REQUIRES_BASE:   # /train on a base config
+        _assert_featurization_matches(base_model_id, base_cfg, dataset_ids[0])
     # reuse the dataset's embedder (featurization) so the .pt name matches the cached build
     for k in ("pretrained_lm", "func_lm", "add_func_tokens", "func_max_length", "func_lm_source"):
         if k in fmodel:
