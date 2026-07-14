@@ -40,7 +40,26 @@ def main() -> None:
                    help="reuse a parent dataset's class space (a JSON {cwe: id})")
     b.add_argument("--result-json", type=Path, help="where to write the DatasetInfo")
 
+    m = sub.add_parser("merge-datasets", help="merge built .pt datasets into one, by path")
+    m.add_argument("--paths", required=True, nargs="+", type=Path)
+    m.add_argument("--out", required=True, type=Path)
+    m.add_argument("--no-dedup", action="store_true")
+    m.add_argument("--storage", default="inmemory", choices=["inmemory", "lazy"])
+    m.add_argument("--device", default="cpu")
+    m.add_argument("--result-json", type=Path)
+
     args = ap.parse_args()
+
+    if args.cmd == "merge-datasets":
+        from gnn_vuln.core import merge_datasets
+        info = merge_datasets(args.paths, args.out, dedup=not args.no_dedup,
+                              storage=args.storage, device=args.device)
+        payload = asdict(info) | {"path": str(info.path)}
+        if args.result_json:
+            args.result_json.parent.mkdir(parents=True, exist_ok=True)
+            args.result_json.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        print(json.dumps(payload, indent=2))
+        return
 
     vocab = json.loads(args.cwe_vocab_json.read_text(encoding="utf-8")) \
         if args.cwe_vocab_json else None

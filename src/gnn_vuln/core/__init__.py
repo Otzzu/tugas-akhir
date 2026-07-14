@@ -161,6 +161,39 @@ def build_dataset(
             shutil.rmtree(raw_link, ignore_errors=True)
 
 
+def merge_datasets(
+    paths: list[str | Path],
+    out_path: str | Path,
+    *,
+    dedup: bool = True,
+    storage: str = "inmemory",
+    device: str = "cpu",
+) -> DatasetInfo:
+    """Merge built datasets into one, at the path you name. Label spaces are unified; every
+    input is opened by path, so nothing here derives or guesses a name."""
+    from gnn_vuln.data.merge import merge_into
+
+    if len(paths) < 2:
+        raise ValueError("merge needs at least two datasets")
+    fps = [read_fingerprint(p) or {} for p in paths]
+    for key in ("pretrained_lm", "func_max_length"):
+        seen = {fp[key] for fp in fps if fp.get(key) is not None}
+        if len(seen) > 1:
+            raise ValueError(f"cannot merge: datasets disagree on {key}: {sorted(seen)}")
+
+    datasets = [open_dataset(p, device=device) for p in paths]
+    out_path = Path(out_path)
+    res = merge_into(datasets, out_path, storage=storage, dedup=dedup,
+                     out_source=out_path.stem)
+    built = read_meta(out_path)
+    return DatasetInfo(
+        path=out_path, n_graphs=int(built["n_graphs"] or 0),
+        class_names=list(built["class_names"] or []),
+        fingerprint=built.get("fingerprint") or {},
+        cwe_vocab=res["cwe_vocab"],
+    )
+
+
 def check_compatible(required: dict, path_or_ds) -> list[str]:
     """Compare a model's requirements against a dataset's identity. Returns mismatch
     strings, empty = compatible. Fields absent on either side are skipped."""

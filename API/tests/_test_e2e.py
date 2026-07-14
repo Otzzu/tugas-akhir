@@ -167,7 +167,7 @@ def main():
     # 10) ingest B reusing megavul_mini's data_config as base + a config override (layering).
     #     The ingest() helper asserts it finishes — that IS the layering test.
     print("10) POST /datasets ingest B (data_config_id base + config override)")
-    ingest("e2e_b", rows, data_config_id=mini_dcid, config={"max_per_class": 5})
+    ingest("e2e_b", rows, data_config_id=mini_dcid, config={"max_nodes": 1500})
 
     # 11) MERGE different-vocab datasets — ds_a (C/C++, few classes) + megavul_mini (26 classes).
     #     This exercises VOCAB RESOLUTION: the merge must unify the two label spaces (map ds_a's

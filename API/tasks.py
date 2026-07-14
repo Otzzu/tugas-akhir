@@ -121,53 +121,53 @@ def merge_datasets(self, job_id: str) -> dict:
             if len(set(vals.values())) > 1:
                 raise ValueError(f"cannot merge: datasets disagree on {k}: {vals}")
 
-        # 1) stage each source dataset's .pt + vocab onto local disk, collect sources
-        src_sources = []
+        # 1) stage each source .pt, and take its PATH — a merged dataset is named after its
+        # dataset_id, so a name derived from build params would look for a file nobody wrote.
+        from API.services.relearn import dataset_pt_path
+        paths = []
         for did in dataset_ids:
             materialize_dataset(did)
-            src_sources.append(registry.get_dataset(did)["source"])
+            p = dataset_pt_path(did)
+            if p is None:
+                raise FileNotFoundError(f"dataset '{did}' has no .pt after materialization")
+            paths.append(str(p))
         mode = registry.get_dataset(dataset_ids[0]).get("mode", "multiclass")
-        max_nodes = dc.get("max_nodes", 2500)
 
-        # 2) data-build config (same template as ingest; out source slug, root dirs)
+        # 2) merge by path, in one library call that hands back a DatasetInfo
+        info_path = job_dir / "dataset_info.json"
+        merge = ["python", "-m", "gnn_vuln.core", "merge-datasets",
+                 "--paths", *paths,
+                 "--out", str(processed_dir / f"{out_source}.pt"),
+                 "--storage", "inmemory", "--device", settings.DEVICE,
+                 "--result-json", str(info_path)]
+        if not dedup:
+            merge.append("--no-dedup")
+        _run(merge, log)
+
+        info = json.loads(info_path.read_text(encoding="utf-8"))
+        num_classes = len(info["class_names"])
+        log.write(f"\nmerged {info['n_graphs']} graphs, {num_classes} classes\n"); log.flush()
+
+        # 3) the data-build config that describes it (content-addressed, immutable)
         cfg = copy.deepcopy(yaml.safe_load(_DATA_BUILD_TEMPLATE.read_text()))
-        d = cfg.setdefault("data", {})
-        d.update({
+        cfg.setdefault("data", {}).update({
             "source": out_source, "mode": mode,
             "raw_dir": str(raw_dir), "processed_dir": str(processed_dir),
-            "max_nodes": max_nodes,
+            "max_nodes": dc.get("max_nodes", 2500),
         })
+        cfg.setdefault("model", {})["num_classes"] = num_classes
         cfg.setdefault("train", {})["device"] = settings.DEVICE
         cfg_path = job_dir / "data_config.yaml"
         cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
-
-        # 3) merge the staged .pt's via the library entrypoint
-        merge = ["python", "-m", "gnn_vuln.data.merge", "--config", str(cfg_path),
-                 "--sources", *src_sources, "--out-source", out_source]
-        if dedup:
-            merge.append("--dedup")
-        _run(merge, log)
-
-        # class space of the MERGED .pt (union of the parents, benign first) — the vocab file
-        # the merge also wrote is a convenience copy, not the source of truth.
-        vocab_path = raw_dir / out_source / "cwe_vocab.json"
-        num_classes = len(_built_class_names(processed_dir))
-
-        # 4) register the data-build config (content-addressed, immutable)
-        cfg.setdefault("model", {})["num_classes"] = num_classes
-        cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
         data_config_id = registry.upsert_config(out_source, cfg)
 
-        # 5) bundle the DATA ARTIFACTS only (this merge's .pt + label vocab) -> object storage.
-        # processed_dir is the SHARED data root holding EVERY dataset's .pt (incl multi-GB
-        # ones); tar ONLY the .pt this merge wrote — never the whole dir (gzip of GBs hangs).
-        pts = sorted(processed_dir.glob(f"lm_dataset_{out_source}_*.pt"))
+        # 4) bundle THIS merge's .pt only — processed_dir is shared and holds every dataset's
+        # .pt, including multi-GB ones (gzipping the whole dir hangs). No vocab: the .pt carries
+        # its own class_names.
+        merged_pt = Path(info["path"])
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-            for pt in pts:
-                tar.add(pt, arcname=f"processed/{pt.name}")
-            if vocab_path.exists():
-                tar.add(vocab_path, arcname="cwe_vocab.json")
+            tar.add(merged_pt, arcname=f"processed/{merged_pt.name}")
         key = f"{dataset_id}.tar.gz"
         uri = storage.put_bytes(settings.S3_BUCKET_DATASETS, key, buf.getvalue())
         log.write(f"\nuploaded merged dataset bundle -> {uri}\n"); log.flush()

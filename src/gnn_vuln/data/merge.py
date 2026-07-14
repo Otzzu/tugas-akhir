@@ -62,42 +62,33 @@ def _func_hash(g) -> str | None:
     return hashlib.md5(raw.encode("utf-8", "ignore")).hexdigest()
 
 
-def merge_processed(cfg, sources, out_source, dedup=False, device="cpu") -> dict:
-    storage = getattr(cfg.data, "storage", "inmemory")
+def merge_into(datasets, out_path: Path, *, storage: str = "inmemory", dedup: bool = False,
+               out_source: str = "") -> dict:
+    """Concatenate already-loaded datasets into one .pt at out_path, unifying the label space."""
     if storage not in ("inmemory", "lazy"):
         raise ValueError(f"unknown storage {storage!r} (expected 'inmemory' or 'lazy')")
 
-    root = Path(cfg.data.processed_dir).parent
+    src_class_names = [ds.class_names or ["benign", "vulnerable"] for ds in datasets]
+    for ds, cn in zip(datasets, src_class_names):
+        logger.info(f"  source: {len(ds)} graphs, {len(cn)} classes")
 
-    # 1. Load each source.
-    datasets, src_class_names = [], []
-    for s in sources:
-        ds = _build_ds(root, s, cfg, device)
-        cn = ds.class_names or ["benign", "vulnerable"]
-        datasets.append(ds)
-        src_class_names.append(cn)
-        logger.info(f"  source {s!r}: {len(ds)} graphs, {len(cn)} classes")
-
-    # 2. Unified vocab: benign at 0, other labels sorted deterministically.
     others = sorted({c for cn in src_class_names for c in cn if c != "benign"})
     unified_names = ["benign"] + others
     unified = {name: i for i, name in enumerate(unified_names)}
     logger.info(f"unified vocab: {len(unified_names)} classes")
 
-    # 5. Save to the exact path CodeBERTGraphDataset(source=out_source) resolves to.
-    #    lazy writes each graph straight to disk, so the whole merge never sits in RAM.
-    out_path = _out_processed_path(root, out_source, cfg)
+    out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     graphs_dir = None
-    if storage == "lazy":
+    if storage == "lazy":       # write each graph straight to disk — the merge never sits in RAM
         graphs_dir = out_path.parent / f"{out_path.name[:-len('_meta.pt')]}_graphs"
         if graphs_dir.exists():
             shutil.rmtree(graphs_dir)
         graphs_dir.mkdir(parents=True)
 
-    # 3/4. Remap each graph's y to the unified index, concatenate, optional dedup.
     merged, seen = [], set()
     n_dupes = n_graphs = 0
+    g = None
     for ds, cn in zip(datasets, src_class_names):
         for i in range(len(ds)):
             g = ds[i]
@@ -108,9 +99,7 @@ def merge_processed(cfg, sources, out_source, dedup=False, device="cpu") -> dict
                         n_dupes += 1
                         continue
                     seen.add(h)
-            old_idx = int(g.y)
-            new_idx = unified[cn[old_idx]]
-            g.y = torch.tensor([new_idx], dtype=g.y.dtype).reshape(g.y.shape)
+            g.y = torch.tensor([unified[cn[int(g.y)]]], dtype=g.y.dtype).reshape(g.y.shape)
             if graphs_dir is not None:
                 torch.save(g, graphs_dir / f"{n_graphs}.pt")
             else:
@@ -119,27 +108,32 @@ def merge_processed(cfg, sources, out_source, dedup=False, device="cpu") -> dict
 
     sample = merged[0] if merged else (g if n_graphs else None)
     fp = datasets[0]._fingerprint(sample)
-    fp["source"] = out_source
+    fp["source"] = out_source or out_path.stem
     meta = {"n_graphs": n_graphs, "class_names": unified_names, "fingerprint": fp}
     if graphs_dir is None:
         meta["graphs"] = merged
     torch.save(meta, out_path)
+    logger.info(f"merged → {out_path}")
 
-    # Unified vocab → raw/<out_source>/cwe_vocab.json as {name: idx}.
+    return {"num_classes": len(unified_names), "n_graphs": n_graphs,
+            "n_duplicates_removed": n_dupes, "out_path": str(out_path),
+            "class_names": unified_names, "cwe_vocab": unified}
+
+
+def merge_processed(cfg, sources, out_source, dedup=False, device="cpu") -> dict:
+    storage = getattr(cfg.data, "storage", "inmemory")
+    root = Path(cfg.data.processed_dir).parent
+
+    datasets = [_build_ds(root, s, cfg, device) for s in sources]
+    out_path = _out_processed_path(root, out_source, cfg)
+    res = merge_into(datasets, out_path, storage=storage, dedup=dedup, out_source=out_source)
+
+    # research keeps a vocab file next to the raw dir — build_pt reads it when rebuilding
     vocab_dir = root / "raw" / out_source
     vocab_dir.mkdir(parents=True, exist_ok=True)
     (vocab_dir / "cwe_vocab.json").write_text(
-        json.dumps(unified, indent=2), encoding="utf-8"
-    )
-
-    logger.info(f"merged → {out_path}")
-    return {
-        "num_classes": len(unified_names),
-        "n_graphs": n_graphs,
-        "n_duplicates_removed": n_dupes,
-        "out_path": str(out_path),
-        "class_names": unified_names,
-    }
+        json.dumps(res["cwe_vocab"], indent=2), encoding="utf-8")
+    return res
 
 
 def _out_processed_path(root, out_source, cfg) -> Path:
