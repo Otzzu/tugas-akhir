@@ -69,7 +69,7 @@ python -m gnn_vuln.data.prepare --input "$DS/train.parquet" --format api \
   --cwe-vocab "$DS/cwe_vocab.json"
 rm -rf "$RAW"; mkdir -p "$(dirname "$RAW")"; mv "$OUT/api" "$RAW"; rm -rf "$OUT"
 cp -f "$DS/cwe_vocab.json" "$RAW/cwe_vocab.json"
-echo "  CPG: $(ls "$RAW"/vulnerable/*.json 2>/dev/null | grep -v meta | wc -l) fungsi"
+echo "  CPG: $(ls "$RAW"/vulnerable/*.xml 2>/dev/null | wc -l) fungsi"
 
 echo "=== [5/6] build .pt (ml1024 lalu ml5120) ==="
 python -m gnn_vuln.data.build_pt --config configs/titanvul/titanvul_ml1024.yaml

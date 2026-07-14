@@ -41,13 +41,12 @@ if (Test-Path $RAW) { Remove-Item $RAW -Recurse -Force }
 Move-Item "$TMP/api" $RAW
 Remove-Item $TMP -Recurse -Force -ErrorAction SilentlyContinue
 Copy-Item "$DS/cwe_vocab.json" "$RAW/cwe_vocab.json" -Force
-$nCpg = (Get-ChildItem "$RAW/vulnerable" -Filter "func_*.json" -ErrorAction SilentlyContinue |
-         Where-Object { $_.Name -notlike "*.meta.json" }).Count
+$nCpg = (Get-ChildItem "$RAW/vulnerable" -Filter "func_*.xml" -ErrorAction SilentlyContinue).Count
 Write-Host "  CPG terbentuk: $nCpg fungsi"
 
-Write-Host "`n=== [3/4] build .pt (ml1024 lalu ml5120) ===" -ForegroundColor Cyan
-uv run python -m gnn_vuln.data.build_pt --config configs/titanvul/titanvul_ml1024.yaml
-uv run python -m gnn_vuln.data.build_pt --config configs/titanvul/titanvul_ml5120.yaml
+Write-Host "`n=== [3/4] build .pt (ml1024 lalu ml5120) — GPU ===" -ForegroundColor Cyan
+uv run python -m gnn_vuln.data.build_pt --config configs/titanvul/titanvul_ml1024.yaml --device cuda
+uv run python -m gnn_vuln.data.build_pt --config configs/titanvul/titanvul_ml5120.yaml --device cuda
 
 Write-Host "`n=== [4/4] hasil ===" -ForegroundColor Cyan
 Get-ChildItem $PROC -Filter "lm_dataset_titanvul_*_meta.pt" | ForEach-Object {

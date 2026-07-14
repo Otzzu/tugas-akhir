@@ -26,3 +26,4 @@ model:
 
 train:
   seed: 42
+  device: cuda
