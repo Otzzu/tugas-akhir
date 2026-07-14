@@ -250,6 +250,7 @@ class ModelConfig:
 
 @dataclass
 class TrainConfig:
+    research_artifacts: bool = True   # False = skip per-epoch CSV + curves; handoff files stay
     seed: int = 42
     epochs: int = 100
     batch_size: int = 32

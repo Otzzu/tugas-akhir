@@ -46,24 +46,6 @@ def _run(cmd: list[str], log) -> None:
     subprocess.run(cmd, check=True, cwd=str(ROOT), stdout=log, stderr=subprocess.STDOUT)
 
 
-def _built_class_names(processed_dir: Path, pattern: str = "*") -> list[str]:
-    """Class space of the .pt that was just built — the one source of truth. cwe_vocab.json is
-    the build INPUT (pre-filter); the .pt carries what the labels actually became. `pattern`
-    narrows the pick when the dir holds other datasets (newest match wins)."""
-    import torch
-    cands = [p for p in processed_dir.glob(f"{pattern}_meta.pt")] or [
-        p for p in processed_dir.glob(f"{pattern}.pt")
-        if p.name not in ("pre_filter.pt", "pre_transform.pt") and not p.name.endswith("_meta.pt")
-    ]
-    if not cands:
-        raise FileNotFoundError(f"no built .pt matching {pattern!r} under {processed_dir}")
-    newest = max(cands, key=lambda p: p.stat().st_mtime)
-    names = (torch.load(newest, map_location="cpu", weights_only=False) or {}).get("class_names")
-    if not names:
-        raise ValueError(f"{newest.name} has no class_names")
-    return list(names)
-
-
 def _log_tail(path, n: int = 12, maxlen: int = 600) -> str:
     """Last meaningful lines of a job log — folded into the job's `message` so the real
     subprocess error reaches the user via GET /datasets/jobs/{id}, no log-spelunking."""
@@ -179,8 +161,7 @@ def merge_datasets(self, job_id: str) -> dict:
             "data_config_id": data_config_id,
             "storage_uri": uri, "storage": "inmemory",
             "source_dataset_ids": list(dataset_ids),
-            "max_nodes": max_nodes, "top_cwe": dc.get("top_cwe", 0),
-            "max_per_class": dc.get("max_per_class", 0), "resample_seed": dc.get("resample_seed", 42),
+            "max_nodes": dc.get("max_nodes", 2500),
             "val_fraction": dc.get("val_fraction", 0.1), "test_fraction": dc.get("test_fraction", 0.0),
         })
 
@@ -306,8 +287,7 @@ def ingest_dataset(self, job_id: str) -> dict:
             "label": name, "source": source, "mode": mode, "num_classes": num_classes,
             "data_config_id": data_config_id,
             "storage_uri": uri, "storage": "inmemory", "raw_id": raw_id,
-            "max_nodes": dc.get("max_nodes", 2500), "top_cwe": dc.get("top_cwe", 0),
-            "max_per_class": dc.get("max_per_class", 0), "resample_seed": dc.get("resample_seed", 42),
+            "max_nodes": dc.get("max_nodes", 2500),
             "val_fraction": dc.get("val_fraction", 0.1), "test_fraction": dc.get("test_fraction", 0.0),
         })
 

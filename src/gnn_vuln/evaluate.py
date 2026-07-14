@@ -432,7 +432,7 @@ def main() -> None:
         batch_size=cfg.train.batch_size,
     )
     evaluator.checkpoint_path = args.checkpoint
-    if args.metrics_only or os.environ.get("GNN_VULN_API_MODE") == "1":
+    if args.metrics_only or not getattr(cfg.train, "research_artifacts", True):
         evaluator.save_summary(evaluator.compute())
     else:
         evaluator.run()

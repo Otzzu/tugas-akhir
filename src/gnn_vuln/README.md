@@ -198,7 +198,7 @@ python -m gnn_vuln.train         --config config.yaml
 
 ---
 
-## Evaluation outputs & `GNN_VULN_API_MODE`
+## Evaluation outputs & `train.research_artifacts`
 
 `Evaluator` separates **compute** from **persistence** so a caller can decide what hits disk:
 
@@ -232,14 +232,18 @@ matching `parquet_id` array, so each row traces back to its source function (dri
 similarity search, error analysis). The API path (`save_summary`) never writes it.
 
 `python -m gnn_vuln.evaluate --checkpoint <pt>` runs the full research path. Pass
-`--metrics-only` (or set `GNN_VULN_API_MODE=1`) to write just `metrics_summary.json` — for a
-service that reads the metrics back and persists them elsewhere, with no bulky per-sample CSVs
-or plots on disk.
+`--metrics-only`, or set `train.research_artifacts: false` in the config, to write just
+`metrics_summary.json` — for a service that reads the metrics back and persists them elsewhere,
+with no bulky per-sample CSVs or plots on disk.
 
-`GNN_VULN_API_MODE=1` also tells **the trainer** to skip research-only outputs
-(`training_log.csv`, `training_curves.png`); the small handoffs `split.json` +
-`training_summary.json` are still written. Set it when embedding the library in a service; leave
-it unset for research runs that want the full artifacts for analysis.
+The same flag tells **the trainer** to skip research-only outputs (`training_log.csv`,
+`training_curves.png`); the handoffs `split.json`, `training_summary.json` and `run_result.json`
+are still written. It lives in the config, not the environment, so the policy travels with the
+run and is recorded alongside it.
+
+Related: `data.no_build: true` makes a missing `.pt` raise instead of rebuilding it from raw
+CPGs, and `data.dataset_path` names the `.pt` outright — a service ships built datasets, so a
+miss there is a bug, not a cue to start Joern.
 
 ---
 

@@ -912,10 +912,10 @@ class TrainingSession:
         import csv as _csv, json as _json
         res_dir = cfg.train.results_dir / cm.run_dir.name
         res_dir.mkdir(parents=True, exist_ok=True)
-        # Under the API (GNN_VULN_API_MODE=1) skip research-only artifacts — the per-epoch
-        # CSV log and the rendered curves plot are never consumed by the service and only
-        # waste compute + disk. split.json + training_summary.json (handoff) are still written.
-        _api_mode = os.environ.get("GNN_VULN_API_MODE") == "1"
+        # research-only artifacts (per-epoch CSV, rendered curves): a service consumes none of
+        # them. split.json + training_summary.json + run_result.json are the handoff and always
+        # written. Off via config, not an env var — the policy travels with the run.
+        _api_mode = not getattr(cfg.train, "research_artifacts", True)
 
         if epoch_log and not _api_mode:
             log_path = res_dir / "training_log.csv"

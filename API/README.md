@@ -159,7 +159,7 @@ drop the local results dir`. Poll `GET /relearn/{id}`: returns `result_model_id`
   `metrics` summary (function-level + localization); the full `metrics_summary.json`, the
   `training_summary.json`, the EWC importance, and the realized train/val/test split are stored
   as per-model `model_artifacts`.
-  - **No research artifacts on the worker** — train + eval run with `GNN_VULN_API_MODE=1`, so
+  - **No research artifacts on the worker** — the run config sets `train.research_artifacts: false`, so
     the bulky/per-sample research outputs (`predictions.csv`, `localization_scores.csv`,
     `embeddings.npz`, ROC / confusion / PR plots, `training_log.csv`, `training_curves.png`)
     are **never written**;

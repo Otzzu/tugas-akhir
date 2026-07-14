@@ -16,7 +16,7 @@ def relearn(req: RelearnRequest) -> RelearnJob:
 
     Materializes the task-B dataset(s), trains a new model via the gnn_vuln library, evaluates
     it on the task-B test split (metrics-only), and registers the result. The library runs in
-    API mode (`GNN_VULN_API_MODE`): no research artifacts — per-sample CSVs, ROC/confusion/PR
+    No research artifacts (`train.research_artifacts=false`) — per-sample CSVs, ROC/confusion/PR
     plots, training log/curves — touch the worker disk. The metrics, the realized
     train/val/test split, and the training summary are persisted as per-model `model_artifacts`
     (DB + object storage), then the local results dir is deleted. Poll `GET /relearn/{job_id}`.

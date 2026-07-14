@@ -38,10 +38,8 @@ from API.services import registry, storage
 ROOT = settings.ROOT
 JOBS_DIR = settings.JOBS_DIR
 DATA_ROOT = ROOT / "data"            # local materialization target (the trainer's root)
-# Output policy only: skip research artifacts (training_log.csv, curves), eval stays
-# metrics-only. Whether a dataset may be rebuilt is NOT decided here — it is data.no_build,
-# set per config, so the rule travels with the run instead of with the environment.
-ENV: dict[str, str] = {"GNN_VULN_API_MODE": "1"}
+# No env flags: what the run does is in its config. train.research_artifacts=False skips the
+# per-epoch CSV + curves; data.no_build refuses a rebuild. Both travel with the run.
 TRAIN_MODULE = "gnn_vuln.train"      # library trainer (installed package, single source of truth)
 EVAL_MODULE = "gnn_vuln.evaluate"    # library evaluator — returns metrics_summary (cls + localization)
 COMPUTE_IMPORTANCE_ON_FINISH = True  # eagerly compute EWC importance for the newly trained model
@@ -232,35 +230,27 @@ def _join_datasets(dataset_ids: list[str]) -> tuple[str, dict]:
     metas = [registry.get_dataset(i) for i in dataset_ids]
     joined = "join_" + "_".join(dataset_ids)
 
-    sources: list[str] = []
-    for did, m in zip(dataset_ids, metas):
-        materialize_dataset(did)          # stage each dataset's .pt + vocab locally
-        sources.append(m["source"])
+    paths = []
+    for did in dataset_ids:
+        materialize_dataset(did)
+        p = dataset_pt_path(did)
+        if p is None:
+            raise FileNotFoundError(f"dataset '{did}' has no .pt after materialization")
+        paths.append(str(p))
 
-    # minimal data-build config for the merge — raw/processed pinned to DATA_ROOT,
-    # embedder pulled from the first dataset's frozen build config so the merge reads
-    # and writes .pt with matching featurization.
-    cfg = copy.deepcopy(yaml.safe_load((ROOT / "API" / "configs" / "data_build.yaml").read_text()))
-    fmodel = _dataset_data_config(dataset_ids[0]).get("model", {})
-    cfg.setdefault("model", {}).update(
-        {k: fmodel[k] for k in
-         ("pretrained_lm", "func_lm", "func_lm_source", "add_func_tokens", "func_max_length")
-         if k in fmodel})
-    cfg["data"] = {**cfg.get("data", {}), "raw_dir": str(DATA_ROOT / "raw"),
-                   "processed_dir": str(DATA_ROOT / "processed"), "source": joined}
-    cfg_path = DATA_ROOT / "processed" / f"{joined}_merge.yaml"
-    cfg_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
-
+    out = DATA_ROOT / "processed" / f"{joined}.pt"
+    info_path = DATA_ROOT / "processed" / f"{joined}_info.json"
     subprocess.run(
-        ["python", "-m", "gnn_vuln.data.merge", "--config", str(cfg_path),
-         "--sources", *sources, "--out-source", joined, "--dedup"],
-        check=True, cwd=str(ROOT), env={**os.environ, **ENV})
+        ["python", "-m", "gnn_vuln.core", "merge-datasets", "--paths", *paths,
+         "--out", str(out), "--storage", "inmemory", "--device", settings.DEVICE,
+         "--result-json", str(info_path)],
+        check=True, cwd=str(ROOT), env=os.environ.copy())
 
-    from API.tasks import _built_class_names
+    info = json.loads(info_path.read_text(encoding="utf-8"))
     base = copy.deepcopy(metas[0])
     base["source"] = joined
-    base["num_classes"] = len(_built_class_names(DATA_ROOT / "processed", f"*{joined}*"))
+    base["num_classes"] = len(info["class_names"])
+    base["dataset_path"] = info["path"]
     return joined, base
 
 
@@ -329,12 +319,12 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
         if k in fmodel:
             cfg["model"][k] = fmodel[k]
 
-    # single dataset: hand the trainer the exact .pt recorded at materialization, so the
-    # load no longer depends on name derivation matching (merged multi-id keeps deriving)
-    if len(dataset_ids) == 1:
-        pt = dataset_pt_path(dataset_ids[0])
-        if pt is not None:
-            cfg["data"]["dataset_path"] = str(pt)
+    # hand the trainer the exact .pt — never a name to re-derive. One dataset: the path recorded
+    # at materialization. Several: the path the inline merge just wrote.
+    pt = data_block.get("dataset_path") or (
+        dataset_pt_path(dataset_ids[0]) if len(dataset_ids) == 1 else None)
+    if pt:
+        cfg["data"]["dataset_path"] = str(pt)
 
     # Each role is sourced on its own, so ratios for train/val + a benchmark dataset for test is
     # a valid mix. Only Mode A is exclusive — it already names every split.
@@ -396,6 +386,7 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
     # the installed wheel's default checkpoint/results/log dirs resolve to a bogus
     # site-packages path; pin them to the app root so the trainer writes where we read.
     t = cfg.setdefault("train", {})
+    t["research_artifacts"] = False   # no per-epoch CSV / curves; the handoff files still land
     t["checkpoint_dir"] = str(ROOT / "checkpoints")
     t["results_dir"] = str(ROOT / "results")
     t["log_dir"] = str(ROOT / "logs")
@@ -513,7 +504,7 @@ def _compute_and_store_importance(model_id: str, train_cfg_path: Path, checkpoin
         imp_cfg.write_text(yaml.safe_dump(cfg, sort_keys=False))
         log_file.write(f"== EWC importance (eager, finish): {imp_cfg} ==\n"); log_file.flush()
         subprocess.run(["python", "-m", TRAIN_MODULE, "--config", str(imp_cfg)],
-                       check=True, cwd=str(ROOT), env={**os.environ, **ENV},
+                       check=True, cwd=str(ROOT), env=os.environ.copy(),
                        stdout=log_file, stderr=subprocess.STDOUT)
         _store_importance(model_id, out_cache_path)
     except Exception as e:  # noqa: BLE001
@@ -544,7 +535,7 @@ def _evaluate_and_store(model_id: str, train_cfg_path: Path, checkpoint_path: Pa
         log_file.write(f"== evaluate (task-B test): {checkpoint_path} ==\n"); log_file.flush()
         subprocess.run(["python", "-m", EVAL_MODULE, "--checkpoint", str(checkpoint_path),
                         "--config", str(train_cfg_path), "--metrics-only"],
-                       check=True, cwd=str(ROOT), env={**os.environ, **ENV},
+                       check=True, cwd=str(ROOT), env=os.environ.copy(),
                        stdout=log_file, stderr=subprocess.STDOUT)
         msj = ROOT / "results" / run_dir.name / "metrics_summary.json"
         if not msj.exists():
@@ -620,7 +611,7 @@ def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
     log = Path(job["log_path"])
     try:
         job["status"] = "running"; _save_job(job)
-        env = {**os.environ, **ENV}
+        env = os.environ.copy()
         base_model_id = meta.get("base_model_id")
         importance_cache = meta.get("importance_cache")
         with open(log, "w", encoding="utf-8") as lf:
