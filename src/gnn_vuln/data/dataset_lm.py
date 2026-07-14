@@ -409,13 +409,20 @@ class CodeBERTGraphDataset(Dataset):
         self._func_lm = func_lm if func_lm else pretrained_lm
         self._func_short = self._func_lm.split("/")[-1]
 
-        # Load dynamic XML filters — union (no duplicates)
+        # Load dynamic XML filters — union (no duplicates). A missing XML used to yield an
+        # empty set, which silently disabled the very filter that was asked for; refuse instead.
         cwe_dir = Path(root).parent / "data" / "cwe"
         cwe_set = set(self._cwe_list)
-        if filter_owasp:
-            cwe_set |= _get_cwe_set_from_xml(cwe_dir / "owasptop10.xml")
-        if filter_top25_dangerous:
-            cwe_set |= _get_cwe_set_from_xml(cwe_dir / "top25.xml")
+        for flag, xml in ((filter_owasp, "owasptop10.xml"), (filter_top25_dangerous, "top25.xml")):
+            if not flag:
+                continue
+            got = _get_cwe_set_from_xml(cwe_dir / xml)
+            if not got:
+                raise FileNotFoundError(
+                    f"filter requested but {cwe_dir / xml} is missing or empty. Ship the XML, or "
+                    f"narrow with an explicit cwe_list instead."
+                )
+            cwe_set |= got
         self._cwe_list = sorted(cwe_set)  # deterministic order
 
         # Compute effective CWE filter set (None = no filter)

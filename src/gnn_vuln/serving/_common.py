@@ -31,12 +31,10 @@ class DataParams:
     mode: str = "multiclass"
     storage: str = "lazy"
     max_nodes: int = 2500
-    filter_top25_dangerous: bool = True
-    filter_owasp: bool = False
-    top_cwe: int = 0
+    # Build every class in the uploaded rows. Narrowing is explicit and auditable (cwe_list);
+    # the research presets (filter_owasp, filter_top25_dangerous, top_cwe frequency cut,
+    # max_per_class balancing) are benchmark-shaping knobs and are NOT part of this contract.
     cwe_list: list | None = None
-    cwe_groups: list | None = None
-    max_per_class: int = 1600
     resample_seed: int = 42
     train_ratio: float = 0.9      # production split: no test holdout, val drives early stopping
     val_ratio: float = 0.1
