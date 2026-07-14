@@ -35,7 +35,19 @@ printf 'int f(char*s){char b[8];strcpy(b,s);return b[0];}\n' > "$TMP/t.c"
 "$TMP/x/joern-cli/joern-parse" "$TMP/t.c" --output "$TMP/t.bin" >/dev/null
 echo "  joern-parse OK"
 
-echo "=== [4/4] tar + unggah ==="
+echo "=== [4/4] lisensi + tar + unggah ==="
+# Kita mendistribusikan ulang, jadi lisensinya wajib ikut (Apache-2.0 pasal 4). Rilis resmi
+# Joern tidak menyertakannya di root, jadi ambil dari repo.
+curl -fsSL https://raw.githubusercontent.com/joernio/joern/master/LICENSE \
+     -o "$TMP/x/joern-cli/LICENSE"
+cat > "$TMP/x/joern-cli/NOTICE" <<EOF
+Joern ${VER} — https://github.com/joernio/joern
+Apache License 2.0 (lihat LICENSE).
+
+Redistribusi yang DIPANGKAS: seluruh frontend selain c2cpg (C/C++) dibuang untuk
+menekan ukuran image (1,9 GB -> $(du -sm "$TMP/x/joern-cli" | cut -f1) MB). Tidak ada
+berkas yang diubah isinya. Untuk bahasa lain, pakai rilis resmi.
+EOF
 tar -C "$TMP/x" -czf "$TMP/$OUT" joern-cli
 rclone copy "$TMP/$OUT" "$DRIVE/" --progress
 echo
