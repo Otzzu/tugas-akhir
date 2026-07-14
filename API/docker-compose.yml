@@ -100,6 +100,15 @@ services:
       - appckpt:/app/checkpoints
       - appdata:/app/data
       - jobsdata:/app/API/jobs       # shared with the worker — API writes input, worker reads it
+    # a running container is not a ready service: uvicorn still has to bind and the lifespan has
+    # to init+seed the DB. `up -d --wait` blocks on this, so a test never races the boot.
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
 
   # Celery workers — heavy jobs off the web server, split by per-task queue.
   #   worker-gpu  -Q relearn,ingest  → GPU-bound tasks, ONE at a time (concurrency=1) so they
@@ -129,6 +138,13 @@ services:
       - appckpt:/app/checkpoints
       - appdata:/app/data
       - jobsdata:/app/API/jobs
+    healthcheck: &celery-ready
+      # ping THIS node: a worker is only ready once it has imported torch and joined its queue
+      test: ["CMD-SHELL", "celery -A API.celery_app inspect ping -d celery@$$HOSTNAME"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
 
   worker-cpu:
     build:
@@ -151,6 +167,7 @@ services:
       - appckpt:/app/checkpoints
       - appdata:/app/data
       - jobsdata:/app/API/jobs
+    healthcheck: *celery-ready
 
 volumes:
   pgdata:
