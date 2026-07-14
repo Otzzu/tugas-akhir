@@ -397,6 +397,7 @@ class CodeBERTGraphDataset(Dataset):
         precompute_line_cls: bool = False,
         ds_name_suffix: str = "",   # graph_vit: load a separate patched .pt
         ds_name: str = "",          # override the derived name — for callers that own their own versioning
+        cwe_vocab: dict[str, int] | None = None,  # build input, in memory — skips raw/<source>/cwe_vocab.json
         target_vocab: dict | None = None,   # CL: remap labels onto this canonical vocab at load
         transform=None,
         pre_transform=None,
@@ -405,6 +406,7 @@ class CodeBERTGraphDataset(Dataset):
         self._storage = storage  # "inmemory" | "lazy"
         self._ds_name_suffix = ds_name_suffix
         self._ds_name_explicit = ds_name
+        self._cwe_vocab = cwe_vocab
         self._target_vocab = target_vocab
         self._precompute_line_cls = precompute_line_cls
         self._func_max_length = func_max_length
@@ -452,7 +454,8 @@ class CodeBERTGraphDataset(Dataset):
         already_built = (Path(root) / "processed" / fname).exists()
         source_dir = Path(root) / "raw" / source
         hdf5_check = Path(root) / "graphs" / f"{source}.hdf5"
-        has_vocab = already_built or (source_dir / "cwe_vocab.json").exists() or hdf5_check.exists()
+        has_vocab = (already_built or bool(cwe_vocab)
+                     or (source_dir / "cwe_vocab.json").exists() or hdf5_check.exists())
         if mode in ("multiclass", "group", "owasp") and not has_vocab:
             raise RuntimeError(
                 f"mode='{mode}' but cwe_vocab.json not found under {source_dir}. "
@@ -1040,6 +1043,8 @@ class CodeBERTGraphDataset(Dataset):
                             "Re-run convert_raw_to_hdf5.py with a dataset that has cwe_vocab.json."
                         )
                 cwe_vocab: dict[str, int] = json.loads(_vocab_json)
+            elif self._cwe_vocab:      # handed in by the caller — no file needed
+                cwe_vocab = dict(self._cwe_vocab)
             else:
                 with open(vocab_path, encoding="utf-8") as f:
                     cwe_vocab: dict[str, int] = json.load(f)

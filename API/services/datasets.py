@@ -90,8 +90,8 @@ def _rows_to_parquet(rows: list, path) -> int:
         })
     if any_manual and not _lib_supports_flaw_lines():
         raise UploadParseError(
-            "'flaw_lines' needs gnn-vuln >= "
-            f"{'.'.join(map(str, _MIN_LIB_FLAW_LINES))}; supply func_after instead")
+            "the installed gnn-vuln has no `api` loader, so 'flaw_lines' cannot be honored; "
+            "supply func_after instead, or upgrade the library")
     df = pd.DataFrame(recs)
     df.to_parquet(path)
     return len(df)

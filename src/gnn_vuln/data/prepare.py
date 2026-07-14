@@ -541,6 +541,64 @@ def _run_megavul_one(
 # Main
 # ---------------------------------------------------------------------------
 
+def build_cpgs(
+    df: "pd.DataFrame",
+    out_dir: Path,
+    *,
+    joern_cli: Path | None = None,
+    java_home: str | None = None,
+    workers: int = 4,
+    normalize: bool = False,
+    resume: bool = False,
+    is_multi_class: bool = True,
+) -> tuple[int, int]:
+    """Rows -> per-function CPGs under out_dir/{benign,vulnerable}. Returns (ok, failed).
+
+    The CLI's inner loop, callable without argparse — so a caller can drive the whole
+    rows -> .pt pipeline in one process instead of shelling out twice and passing state
+    through files on disk."""
+    benign_dir, vuln_dir = out_dir / "benign", out_dir / "vulnerable"
+    benign_dir.mkdir(parents=True, exist_ok=True)
+    vuln_dir.mkdir(parents=True, exist_ok=True)
+
+    lang_col = next((c for c in ("lang", "language", "extension") if c in df.columns), None)
+    ext_norm = {"C": "C", "CPP": "C++", "C++": "C++"}
+
+    work: list[tuple] = []
+    for i, row in enumerate(df.itertuples(index=False)):
+        class_id = int(row.label)
+        lang_raw = str(getattr(row, lang_col, "") or "") if lang_col else ""
+        work.append(dict(
+            idx=i, code=str(row.code),
+            out_dir=benign_dir if class_id == 0 else vuln_dir,
+            joern_cli_dir=joern_cli, java_home=java_home,
+            normalize=normalize, resume=resume,
+            flaw_lines=list(row.flaw_lines) if hasattr(row, "flaw_lines") else [],
+            class_id=class_id,
+            cwe=str(row.cwe) if hasattr(row, "cwe") else "",
+            is_multi_class=is_multi_class,
+            row_id=int(row.id) if hasattr(row, "id") else -1,
+            language=ext_norm.get(lang_raw.upper(), lang_raw) if lang_raw else "",
+        ))
+
+    ok = failed = 0
+    if workers <= 1:
+        results = (_run_one(**w) for w in work)
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_run_one, **w) for w in work]
+            results = [f.result() for f in as_completed(futures)]
+    for _, dest, err in results:
+        if dest:
+            ok += 1
+        else:
+            failed += 1
+            if err:
+                logger.warning(f"  CPG failed: {err[:200]}")
+    logger.info(f"CPG: {ok} ok, {failed} failed")
+    return ok, failed
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate Joern CPG files from a vulnerability dataset.",
