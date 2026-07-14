@@ -963,9 +963,9 @@ class TrainingSession:
         logger.info(f"training_summary.json → {summary_path}")
 
         # run_result.json — stable handoff contract: callers read this instead of
-        # globbing checkpoints or scraping the research summary.
-        with open(res_dir / "run_result.json", "w") as f:
-            _json.dump({
+        # globbing checkpoints or scraping the research summary. GNN_VULN_RUN_RESULT
+        # lets the caller pick the exact path (race-free when jobs run concurrently).
+        run_result = {
                 "run_id": cm.run_dir.name,
                 "checkpoint": str(cm.best_path),
                 "architecture": cfg.model.architecture,
@@ -979,7 +979,14 @@ class TrainingSession:
                     "test_prec": round(test_prec, 6),
                     "test_rec": round(test_rec, 6),
                 },
-            }, f, indent=2)
+            }
+        with open(res_dir / "run_result.json", "w") as f:
+            _json.dump(run_result, f, indent=2)
+        rr_env = os.environ.get("GNN_VULN_RUN_RESULT")
+        if rr_env:
+            Path(rr_env).parent.mkdir(parents=True, exist_ok=True)
+            with open(rr_env, "w") as f:
+                _json.dump(run_result, f, indent=2)
 
         # split.json — map dataset indices to parquet_ids (seeded-split runs only)
         _sd = getattr(self, "_split_dataset", None)

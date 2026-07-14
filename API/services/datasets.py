@@ -39,18 +39,13 @@ def _slug(name: str) -> str:
     return base
 
 
-_MIN_LIB_FLAW_LINES = (0, 1, 11)    # gnn-vuln release with the `api` loader
-
-
 def _lib_supports_flaw_lines() -> bool:
-    """Before 0.1.11 there was no `api` format, so a manually annotated row must be rejected
-    loudly rather than have its annotation dropped for a func_after diff."""
-    from importlib.metadata import version
+    """Ask the lib for the capability (the `api` loader) instead of sniffing its version."""
     try:
-        parts = tuple(int(p) for p in version("gnn-vuln").split(".")[:3])
-    except Exception:
+        from gnn_vuln.data.prepare import load_api  # noqa: F401
+        return True
+    except ImportError:
         return False
-    return parts >= _MIN_LIB_FLAW_LINES
 
 
 def _clean_flaw_lines(code: str, flaw_lines: list[int], row_idx: int) -> list[int]:

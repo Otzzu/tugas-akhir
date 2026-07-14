@@ -246,6 +246,15 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
         "storage": fdata.get("storage", data_block.get("storage", "inmemory")),
         "ds_name_suffix": data_block.get("ds_name_suffix", ""),
     }}
+    # A base checkpoint is welded to its featurization: node embeddings are LM-specific, and
+    # CodeBERT vs UniXcoder share dims — a mismatch trains fine and silently ruins the model.
+    if base_model_id:
+        for k in ("pretrained_lm", "func_max_length", "add_func_tokens"):
+            bv, dv = (base_cfg.get("model") or {}).get(k), fmodel.get(k)
+            if bv is not None and dv is not None and bv != dv:
+                raise ValueError(
+                    f"dataset '{dataset_ids[0]}' featurization mismatch with base model "
+                    f"'{base_model_id}' on {k}: dataset {dv!r} != model {bv!r}")
     # reuse the dataset's embedder (featurization) so the .pt name matches the cached build
     for k in ("pretrained_lm", "func_lm", "add_func_tokens", "func_max_length", "func_lm_source"):
         if k in fmodel:
@@ -551,12 +560,21 @@ def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
                     except Exception as e:  # noqa: BLE001
                         lf.write(f"WARN persist base importance failed: {type(e).__name__}: {e}\n")
                         lf.flush()
+            rr_path = log.parent / f"{job_id}_run_result.json"
+            env["GNN_VULN_RUN_RESULT"] = str(rr_path)
             lf.write(f"== train: {train_cfg} ==\n"); lf.flush()
             subprocess.run(["python", "-m", TRAIN_MODULE, "--config", str(train_cfg)],
                            check=True, cwd=str(ROOT), env=env, stdout=lf, stderr=subprocess.STDOUT)
-        ckpts = sorted((ROOT / "checkpoints").glob("*_*"), key=lambda p: p.stat().st_mtime, reverse=True)
-        run_dir = next((c for c in ckpts if not c.name.startswith("api_base_")), None)
-        best = next(run_dir.glob("best_*.pt"), None) if run_dir else None
+        run_result: dict = {}
+        if rr_path.exists():
+            run_result = json.loads(rr_path.read_text(encoding="utf-8"))
+            best = Path(run_result["checkpoint"])
+            best = best if best.is_absolute() else ROOT / best
+            run_dir = best.parent
+        else:  # lib < 0.1.17 writes no run_result — fall back to the mtime glob
+            ckpts = sorted((ROOT / "checkpoints").glob("*_*"), key=lambda p: p.stat().st_mtime, reverse=True)
+            run_dir = next((c for c in ckpts if not c.name.startswith("api_base_")), None)
+            best = next(run_dir.glob("best_*.pt"), None) if run_dir else None
         if best:
             new_id = f"relearn_{job['method']}_{run_dir.name}"
             # class_names must match num_classes. When continual alignment is applied the model
@@ -564,9 +582,11 @@ def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
             # dataset's own (smaller) vocab — using the latter would desync names vs the head and
             # raise IndexError at inference. Fall back to the task-B vocab only when not aligned
             # (e.g. /train from scratch).
-            class_names: list = []
+            class_names: list = run_result.get("class_names") or []
             tv = ((yaml.safe_load(train_cfg.read_text(encoding="utf-8")) or {}).get("data", {}) or {}).get("target_vocab")
-            if tv:
+            if class_names:
+                pass  # lib reported the trained class space directly (target-aligned when set)
+            elif tv:
                 class_names = [""] * (max(int(v) for v in tv.values()) + 1)
                 for cwe, idx in tv.items():
                     if 0 <= int(idx) < len(class_names):
