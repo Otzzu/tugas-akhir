@@ -7,13 +7,9 @@
 data:
   mode: multiclass
   max_nodes: 2500
-  top_cwe: 0
-  cwe_list: null
-  cwe_groups: null
-  filter_owasp: false
-  filter_top25_dangerous: false
-  max_per_class: 0
-  resample_seed: 42
+  # No class filtering, no per-class cap: the rows belong to the caller, so every class in
+  # them is built. top_cwe / max_per_class / the MITRE-OWASP presets shape a benchmark and
+  # live in the research configs, not here.
   storage: inmemory
 
 # Embedder = featurization. Must match the models the dataset will be used with

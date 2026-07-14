@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DatasetRow(BaseModel):
@@ -28,16 +28,19 @@ class DatasetRow(BaseModel):
 
 
 class DataConfigOverride(BaseModel):
-    """Data-build config — frozen onto the dataset. All overridable; defaults are
-    production-sensible (small val split, no test held out — test = forgetting eval
-    on old data + drift monitoring)."""
+    """Data-build config — frozen onto the dataset. Defaults are production-sensible (small val
+    split, no test held out — test = forgetting eval on old data + drift monitoring).
+
+    Every class in the uploaded rows is built. The benchmark-shaping knobs (top_cwe frequency
+    cut, max_per_class balancing, MITRE/OWASP presets) belong to research, not to a service that
+    is handed someone else's functions: silently dropping a caller's rows to make the class
+    distribution prettier is not ours to do."""
+    model_config = ConfigDict(extra="forbid")   # a dropped knob must fail loudly, not be ignored
+
     mode: str = Field("multiclass", description="multiclass | binary")
     val_fraction: float = Field(0.1, ge=0.0, lt=1.0, description="0 = 100% train (fixed epochs, no early stop)")
     test_fraction: float = Field(0.0, ge=0.0, lt=1.0, description="Held-out test fraction (prod default 0)")
     max_nodes: int = Field(2500, description="Skip CPGs larger than this")
-    top_cwe: int = Field(0, description="Keep only top-N CWE classes (0 = all)")
-    max_per_class: int = Field(0, description="Balance: max samples per class (0 = unlimited)")
-    resample_seed: int = Field(42, description="Seed for sampling / splits")
 
 
 class DatasetIngestRequest(BaseModel):
