@@ -1,6 +1,6 @@
 [project]
 name = "gnn-vuln"
-version = "0.1.15"
+version = "0.1.16"
 description = "GNN-based vulnerability detection for code — Final Project (Tugas Akhir)"
 readme = "src/gnn_vuln/README.md"
 requires-python = ">=3.11"

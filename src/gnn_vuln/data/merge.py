@@ -44,6 +44,13 @@ def _build_ds(root, source, cfg, device) -> CodeBERTGraphDataset:
         func_lm_source=getattr(cfg.model, "func_lm_source", "raw"),
         func_max_length=getattr(cfg.model, "func_max_length", 512),
         storage=getattr(cfg.data, "storage", "inmemory"),
+        cwe_list=getattr(cfg.data, "cwe_list", None),
+        cwe_groups=getattr(cfg.data, "cwe_groups", None),
+        filter_owasp=getattr(cfg.data, "filter_owasp", False),
+        filter_top25_dangerous=getattr(cfg.data, "filter_top25_dangerous", False),
+        top_cwe=getattr(cfg.data, "top_cwe", 0),
+        max_per_class=getattr(cfg.data, "max_per_class", 0),
+        resample_seed=getattr(cfg.data, "resample_seed", 42),
     )
 
 
@@ -154,7 +161,9 @@ def _out_processed_path(root, out_source, cfg) -> Path:
     obj._func_short = func_lm.split("/")[-1]
     fowasp = getattr(cfg.data, "filter_owasp", False)
     ftop25 = getattr(cfg.data, "filter_top25_dangerous", False)
-    obj._fsuffix = _filter_suffix(None, None, fowasp, ftop25)
+    cwe_list = getattr(cfg.data, "cwe_list", None)
+    cwe_groups = getattr(cfg.data, "cwe_groups", None)
+    obj._fsuffix = _filter_suffix(cwe_list or None, cwe_groups, fowasp, ftop25)
 
     name = obj._ds_name
     processed = Path(root) / "processed"
