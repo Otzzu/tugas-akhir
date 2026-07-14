@@ -45,8 +45,14 @@ RUN curl -fL "https://github.com/joernio/joern/releases/download/${JOERN_VERSION
     && mkdir -p /opt/joern \
     && unzip -q /tmp/joern-cli.zip -d /opt/joern \
     && rm /tmp/joern-cli.zip \
+    # Joern ships every language frontend (~1.8GB). We only ever parse C/C++, so keep c2cpg
+    # and drop the rest — the image loses ~1.7GB and nothing we call can miss them.
+    && find /opt/joern/joern-cli/frontends -mindepth 1 -maxdepth 1 ! -name c2cpg -exec rm -rf {} + \
     && chmod +x /opt/joern/joern-cli/joern* \
-    && test -x /opt/joern/joern-cli/joern-parse
+    && test -x /opt/joern/joern-cli/joern-parse \
+    && printf 'int f(){return 0;}\n' > /tmp/t.c \
+    && /opt/joern/joern-cli/joern-parse /tmp/t.c --output /tmp/t.bin >/dev/null \
+    && rm -rf /tmp/t.c /tmp/t.bin
 
 # Install gnn-vuln (from PyPI) + the API web deps. torch/pyg above already satisfy the
 # heavy transitive deps; the rest (transformers, numpy, ...) resolve from PyPI.

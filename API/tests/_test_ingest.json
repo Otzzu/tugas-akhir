@@ -1,37 +1,48 @@
 {
-  "name": "e2e_cpp_smoke",
-  "rows": [
-    {
-      "language": "c",
-      "cwe": "CWE-787",
-      "code": "void copy_name(const char *input) {\n    char buf[16];\n    strcpy(buf, input);\n    printf(\"%s\\n\", buf);\n}",
-      "func_after": "void copy_name(const char *input) {\n    char buf[16];\n    strncpy(buf, input, sizeof(buf) - 1);\n    buf[sizeof(buf) - 1] = '\\0';\n    printf(\"%s\\n\", buf);\n}"
-    },
-    {
-      "language": "c",
-      "cwe": "CWE-476",
-      "code": "int process(Config *cfg) {\n    int t = cfg->timeout;\n    return t * 2;\n}",
-      "func_after": "int process(Config *cfg) {\n    if (cfg == NULL) {\n        return -1;\n    }\n    int t = cfg->timeout;\n    return t * 2;\n}"
-    },
-    {
-      "language": "c",
-      "cwe": "CWE-416",
-      "code": "void handle(char *data) {\n    free(data);\n    log_msg(data);\n}"
-    },
-    {
-      "language": "cpp",
-      "cwe": "CWE-120",
-      "code": "void read_packet(int fd) {\n    char buf[64];\n    int n = recv(fd, buf, 256, 0);\n    buf[n] = 0;\n}"
-    },
-    {
-      "language": "c",
-      "cwe": "CWE-78",
-      "code": "void run_cmd(const char *user) {\n    char cmd[128];\n    sprintf(cmd, \"ls %s\", user);\n    system(cmd);\n}"
-    },
-    {
-      "language": "c",
-      "cwe": "",
-      "code": "int add(int a, int b) {\n    int sum = a + b;\n    return sum;\n}"
-    }
-  ]
+ "name": "e2e_cpp_smoke",
+ "rows": [
+  {
+   "language": "c",
+   "cwe": "CWE-787",
+   "code": "void copy_name(const char *input) {\n    char buf[16];\n    strcpy(buf, input);\n    printf(\"%s\\n\", buf);\n}",
+   "func_after": "void copy_name(const char *input) {\n    char buf[16];\n    strncpy(buf, input, sizeof(buf) - 1);\n    buf[sizeof(buf) - 1] = '\\0';\n    printf(\"%s\\n\", buf);\n}"
+  },
+  {
+   "language": "c",
+   "cwe": "CWE-476",
+   "code": "int process(Config *cfg) {\n    int t = cfg->timeout;\n    return t * 2;\n}",
+   "func_after": "int process(Config *cfg) {\n    if (cfg == NULL) {\n        return -1;\n    }\n    int t = cfg->timeout;\n    return t * 2;\n}"
+  },
+  {
+   "language": "c",
+   "cwe": "CWE-416",
+   "code": "void handle(char *data) {\n    free(data);\n    log_msg(data);\n}",
+   "flaw_lines": [
+    3
+   ]
+  },
+  {
+   "language": "cpp",
+   "cwe": "CWE-120",
+   "code": "void read_packet(int fd) {\n    char buf[64];\n    int n = recv(fd, buf, 256, 0);\n    buf[n] = 0;\n}",
+   "flaw_lines": [
+    3,
+    4
+   ]
+  },
+  {
+   "language": "c",
+   "cwe": "CWE-78",
+   "code": "void run_cmd(const char *user) {\n    char cmd[128];\n    sprintf(cmd, \"ls %s\", user);\n    system(cmd);\n}",
+   "flaw_lines": [
+    3,
+    4
+   ]
+  },
+  {
+   "language": "c",
+   "cwe": "",
+   "code": "int add(int a, int b) {\n    int sum = a + b;\n    return sum;\n}"
+  }
+ ]
 }

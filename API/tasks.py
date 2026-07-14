@@ -240,11 +240,15 @@ def ingest_dataset(self, job_id: str) -> dict:
             prep += ["--sample-per-class", str(dc["max_per_class"])]
         _run(prep, log)
 
-        # prepare nests CPGs under <raw_dir>/<format> ("bigvul"); the .pt builder
-        # reads <raw_dir>/<source>. Rename so both agree on the dataset slug.
-        prep_dir = raw_dir / "bigvul"
+        # prepare nests CPGs under <raw_dir>/<format> (prepare.py: out_dir / format), so with
+        # --format api that is raw/api — NOT raw/bigvul. The .pt builder reads raw/<source>;
+        # rename whichever the library actually produced instead of guessing its name.
         src_dir = raw_dir / source
-        if prep_dir.exists() and prep_dir != src_dir:
+        prep_dir = next((d for d in (raw_dir / "api", raw_dir / "bigvul") if d.is_dir()), None)
+        if prep_dir is None:
+            raise FileNotFoundError(
+                f"prepare produced no CPG dir under {raw_dir} (looked for api/, bigvul/)")
+        if prep_dir != src_dir:
             if src_dir.exists():
                 shutil.rmtree(src_dir)
             prep_dir.rename(src_dir)
