@@ -379,6 +379,7 @@ class ReplayConfig:
     max_per_class: int | None = None
     resample_seed: int | None = None
     storage: str | None = None       # "inmemory" | "lazy" — task-A .pt may differ from task-B
+    target_vocab: dict[str, int] | None = None   # align replay .pt labels (e.g. merged bundle) to the model's class space
 
 
 @dataclass
