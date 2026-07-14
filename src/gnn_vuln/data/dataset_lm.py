@@ -174,6 +174,24 @@ def _get_cwe_set_from_xml(filepath: Path) -> set[str]:
 from gnn_vuln.research.naming import filter_suffix as _filter_suffix  # moved; alias keeps importers working
 
 
+def _expand_xml_filters(root, cwe_list, filter_owasp: bool, filter_top25_dangerous: bool) -> list[str]:
+    """Union the XML presets into cwe_list. Every caller must expand BEFORE hashing the name,
+    or it derives a name the loader never looks for. A missing XML used to yield an empty set,
+    silently disabling the filter that was asked for — refuse instead."""
+    cwe_dir = Path(root).parent / "data" / "cwe"
+    cwe_set = set(cwe_list or [])
+    for flag, xml in ((filter_owasp, "owasptop10.xml"), (filter_top25_dangerous, "top25.xml")):
+        if not flag:
+            continue
+        got = _get_cwe_set_from_xml(cwe_dir / xml)
+        if not got:
+            raise FileNotFoundError(
+                f"filter requested but {cwe_dir / xml} is missing or empty. Ship the XML, or "
+                f"narrow with an explicit cwe_list instead.")
+        cwe_set |= got
+    return sorted(cwe_set)
+
+
 def _parse_cwe_string(raw: str | list) -> str:
     """
     Extract the primary (first) CWE string from potentially multi-label 
@@ -409,21 +427,8 @@ class CodeBERTGraphDataset(Dataset):
         self._func_lm = func_lm if func_lm else pretrained_lm
         self._func_short = self._func_lm.split("/")[-1]
 
-        # Load dynamic XML filters — union (no duplicates). A missing XML used to yield an
-        # empty set, which silently disabled the very filter that was asked for; refuse instead.
-        cwe_dir = Path(root).parent / "data" / "cwe"
-        cwe_set = set(self._cwe_list)
-        for flag, xml in ((filter_owasp, "owasptop10.xml"), (filter_top25_dangerous, "top25.xml")):
-            if not flag:
-                continue
-            got = _get_cwe_set_from_xml(cwe_dir / xml)
-            if not got:
-                raise FileNotFoundError(
-                    f"filter requested but {cwe_dir / xml} is missing or empty. Ship the XML, or "
-                    f"narrow with an explicit cwe_list instead."
-                )
-            cwe_set |= got
-        self._cwe_list = sorted(cwe_set)  # deterministic order
+        self._cwe_list = _expand_xml_filters(root, self._cwe_list, filter_owasp,
+                                             filter_top25_dangerous)
 
         # Compute effective CWE filter set (None = no filter)
         self._effective_cwes = _expand_cwe_filter(self._cwe_list if self._cwe_list else None, cwe_groups)

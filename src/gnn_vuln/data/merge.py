@@ -164,10 +164,13 @@ def _out_processed_path(root, out_source, cfg) -> Path:
     obj._lm_short = lm.split("/")[-1]
     func_lm = getattr(cfg.model, "func_lm", "") or lm
     obj._func_short = func_lm.split("/")[-1]
+    # the XML presets are expanded into cwe_list BEFORE hashing (dataset_lm does the same),
+    # otherwise merge would write a name the loader never looks for
+    from gnn_vuln.data.dataset_lm import _expand_xml_filters
     fowasp = getattr(cfg.data, "filter_owasp", False)
     ftop25 = getattr(cfg.data, "filter_top25_dangerous", False)
-    cwe_list = getattr(cfg.data, "cwe_list", None)
     cwe_groups = getattr(cfg.data, "cwe_groups", None)
+    cwe_list = _expand_xml_filters(root, getattr(cfg.data, "cwe_list", None), fowasp, ftop25)
     obj._fsuffix = _filter_suffix(cwe_list or None, cwe_groups, fowasp, ftop25)
 
     name = obj._ds_name
