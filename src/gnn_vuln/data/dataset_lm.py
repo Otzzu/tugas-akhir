@@ -167,14 +167,7 @@ def _get_cwe_set_from_xml(filepath: Path) -> set[str]:
         logger.warning(f"Failed to parse {filepath}: {e}")
         return set()
 
-def _filter_suffix(cwe_list: list[str] | None, cwe_groups: list[str] | None, filter_owasp: bool = False, filter_top25_dangerous: bool = False) -> str:
-    if not cwe_list and not cwe_groups and not filter_owasp and not filter_top25_dangerous:
-        return ""
-    key = json.dumps(
-        {"l": sorted(cwe_list or []), "g": sorted(cwe_groups or []), "owasp": filter_owasp, "top25": filter_top25_dangerous},
-        sort_keys=True,
-    )
-    return "_f" + hashlib.md5(key.encode()).hexdigest()[:8]
+from gnn_vuln.research.naming import filter_suffix as _filter_suffix  # moved; alias keeps importers working
 
 
 def _parse_cwe_string(raw: str | list) -> str:
@@ -494,17 +487,13 @@ class CodeBERTGraphDataset(Dataset):
     def _ds_name(self) -> str:
         if getattr(self, "_ds_name_explicit", ""):
             return self._ds_name_explicit
-        ft_suffix = "_ft" if self._add_func_tokens else ""
-        ml_suffix = f"_ml{self._func_max_length}" if self._add_func_tokens and self._func_max_length != 512 else ""
-        top_suffix = f"_top{self._top_cwe}" if self._top_cwe > 0 else ""
-        samp_suffix = (
-            f"_s{self._max_per_class}r{self._resample_seed}"
-            if self._max_per_class > 0 else ""
-        )
-        live_suffix = f"_live_{self._func_short}" if self._func_short != self._lm_short else ""
-        return (
-            f"lm_dataset_{self._source}_{self._mode}_{self._lm_short}{live_suffix}"
-            f"{ft_suffix}{ml_suffix}{top_suffix}{self._fsuffix}{samp_suffix}{self._ds_name_suffix}"
+        from gnn_vuln.research.naming import derive_ds_name
+        return derive_ds_name(
+            source=self._source, mode=self._mode, lm_short=self._lm_short,
+            func_short=self._func_short, add_func_tokens=self._add_func_tokens,
+            func_max_length=self._func_max_length, top_cwe=self._top_cwe,
+            fsuffix=self._fsuffix, max_per_class=self._max_per_class,
+            resample_seed=self._resample_seed, ds_name_suffix=self._ds_name_suffix,
         )
 
     def _fingerprint(self, sample=None) -> dict:
