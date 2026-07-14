@@ -35,7 +35,11 @@ apt-get update -q && (apt-get install -y -q openjdk-21-jdk-headless || apt-get i
 JH=$(ls -d /usr/lib/jvm/java-21-openjdk* /usr/lib/jvm/temurin-21* /usr/lib/jvm/*-21-* 2>/dev/null | head -1 || true)
 [[ -n "${JH:-}" ]] && export JAVA_HOME="$JH" && export PATH="$JH/bin:$PATH"
 echo "  java: $(java -version 2>&1 | head -1)"
-WORKERS=$(( $(nproc) < 8 ? $(nproc) : 8 ))
+# tiap worker joern = 1 JVM (~3 GB puncak), jadi batasnya RAM bukan core
+RAM_GB=$(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024 ))
+AUTO=$(( RAM_GB / 4 )); [[ $AUTO -gt $(nproc) ]] && AUTO=$(nproc); [[ $AUTO -lt 1 ]] && AUTO=1
+WORKERS="${WORKERS:-$AUTO}"
+echo "  cpu=$(nproc) ram=${RAM_GB}G -> workers=$WORKERS"
 
 echo "=== [2/6] data mentah ==="
 for f in "$TITAN" "$MEGAVUL"; do
