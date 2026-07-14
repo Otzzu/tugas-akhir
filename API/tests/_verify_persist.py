@@ -10,6 +10,9 @@ Checks, and FAILS (non-zero exit) if any expected artifact is missing:
   - each registered dataset's `storage_uri` object actually exists in the `datasets`
     bucket (MinIO), and its data_config_id resolves to a config (DB).
   - relearned models are registered with a checkpoint on disk (DB + fs).
+
+Seeded with `--no-model-dataset` (cheap e2e)? The seed models then have no task-A bundle by
+design, so acknowledge it:  ALLOW_MISSING_MODEL_DATASETS=1
 """
 from __future__ import annotations
 
@@ -128,9 +131,14 @@ def main() -> int:
             if in_minio is True and ds_rec:
                 ds_bk = _parse_uri((ds_rec.params or {}).get("storage_uri", ""))
                 if not (ds_bk and _obj_exists(s3, *ds_bk)):
-                    problems.append(
-                        f"model {m.id} checkpoint is in MinIO but its dataset {m.dataset_id} bundle "
-                        f"is missing — relearn ER/EWC on it will fail (re-seed the model)")
+                    msg = (f"model {m.id} checkpoint is in MinIO but its dataset {m.dataset_id} "
+                           f"bundle is missing — relearn ER/EWC on it will fail (re-seed the model)")
+                    # seed_from_drive --no-model-dataset does exactly this on purpose (the cheap
+                    # e2e never relearns the seed models), so allow it to be acknowledged.
+                    if os.environ.get("ALLOW_MISSING_MODEL_DATASETS") == "1":
+                        print(f"   [skip] {msg}")
+                    else:
+                        problems.append(msg)
             if m.method and not disk and not in_minio:
                 problems.append(f"relearned model {m.id} checkpoint missing on disk AND in MinIO")
             if m.method and bk and not in_minio:
