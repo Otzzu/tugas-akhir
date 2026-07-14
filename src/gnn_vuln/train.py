@@ -550,7 +550,13 @@ class TrainingSession:
             generator=_g,
         )
 
-        dataset = CodeBERTGraphDataset(source=getattr(cfg.data, "source", "bigvul"), **kwargs)
+        ds_path = getattr(cfg.data, "dataset_path", "")
+        if ds_path:  # caller names the file — no derivation, no silent rebuild
+            from gnn_vuln.core import open_dataset
+            dataset = open_dataset(ds_path, device=str(self.device),
+                                   target_vocab=getattr(cfg.data, "target_vocab", None))
+        else:
+            dataset = CodeBERTGraphDataset(source=getattr(cfg.data, "source", "bigvul"), **kwargs)
         _dataset_pt = Path(dataset.processed_paths[0]).name
         self._dataset_pt = _dataset_pt
         if getattr(cfg.data, "split_file", ""):

@@ -70,6 +70,7 @@ class DataConfig:
     # main dataset, val = source_val. source_test set too -> test = source_test;
     # otherwise test is empty (API production: no test holdout). source_test alone
     # is ignored. Leave both empty for the internal seeded split.
+    dataset_path: str = ""   # explicit built .pt path — skips name derivation entirely
     source_val: str = ""
     source_test: str = ""
     # Dataset-identity overrides for the role datasets (same pattern as replay's
