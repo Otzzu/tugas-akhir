@@ -439,21 +439,26 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
                 importance_cfg_path = job_dir / "importance.yaml"
                 importance_cfg_path.write_text(yaml.safe_dump(imp, sort_keys=False))
 
-    # split control: Mode A (explicit lists → split_file) overrides Mode B (ratios/seed)
-    if split:
-        if split.get("train") or split.get("val") or split.get("test"):
-            split_in = job_dir / "split_input.json"
-            split_in.write_text(json.dumps({"train": split.get("train") or [],
-                                            "val": split.get("val") or [],
-                                            "test": split.get("test") or []}))
-            cfg["data"]["split_file"] = str(split_in)
-        elif any(k in split for k in ("train_ratio", "val_ratio", "seed")):
-            if split.get("train_ratio") is not None:
-                cfg["data"]["train_ratio"] = split["train_ratio"]
-            if split.get("val_ratio") is not None:
-                cfg["data"]["val_ratio"] = split["val_ratio"]
-            if split.get("seed") is not None:
-                cfg["train"]["seed"] = split["seed"]
+    # Split has ONE source per run. The base config is a snapshot of the PREVIOUS run, so it may
+    # carry that run's split_file — a path to another job's parquet_ids, for another dataset. The
+    # library prefers split_file over ratios, so an inherited one would silently outrank whatever
+    # this request asked for. Drop it, then apply exactly one mode.
+    cfg["data"].pop("split_file", None)
+    if val_dataset_id:
+        pass                                   # role datasets ARE the split (train = 100%)
+    elif split and (split.get("train") or split.get("val") or split.get("test")):
+        split_in = job_dir / "split_input.json"      # Mode A — exact rows, by parquet_id
+        split_in.write_text(json.dumps({"train": split.get("train") or [],
+                                        "val": split.get("val") or [],
+                                        "test": split.get("test") or []}))
+        cfg["data"]["split_file"] = str(split_in)
+    elif split:                                      # Mode B — seeded ratios
+        if split.get("train_ratio") is not None:
+            cfg["data"]["train_ratio"] = split["train_ratio"]
+        if split.get("val_ratio") is not None:
+            cfg["data"]["val_ratio"] = split["val_ratio"]
+        if split.get("seed") is not None:
+            cfg["train"]["seed"] = split["seed"]
 
     train_cfg_path = job_dir / "train.yaml"
     train_cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
