@@ -1,9 +1,10 @@
 """Celery tasks — async orchestration for long-running jobs.
 
-Tasks ORCHESTRATE only: job state (DB), storage (MinIO/S3), registration. The
-actual ML work is the gnn_vuln LIBRARY, invoked via its module entrypoints
-(`python -m gnn_vuln.data.prepare`, `... .build_pt`). The library knows nothing
-about Celery / the API.
+Tasks ORCHESTRATE only: job state (DB), storage (MinIO/S3), registration. The actual ML work is
+the gnn_vuln LIBRARY, invoked via `python -m gnn_vuln.core build-dataset` (rows -> CPG -> .pt in
+one call, returning a DatasetInfo) and `python -m gnn_vuln.data.merge`. Subprocess, because a
+dying process frees GPU memory cleanly — not because the library only speaks CLI. The library
+knows nothing about Celery / the API.
 
 Run the worker:  celery -A API.celery_app worker --loglevel=info --concurrency=1
 """
@@ -12,7 +13,6 @@ from __future__ import annotations
 import copy
 import io
 import json
-import shutil
 import subprocess
 import tarfile
 from pathlib import Path
@@ -226,57 +226,43 @@ def ingest_dataset(self, job_id: str) -> dict:
     try:
         _set_status(job_id, status="running")
 
-        # 1) raw -> CPG (+ cwe_vocab.json) via the library entrypoint. Format `api` = bigvul
-        # schema plus per-row flaw_lines annotations; rows without one fall back to the diff.
-        prep = ["python", "-m", "gnn_vuln.data.prepare",
-                "--input", str(input_path), "--format", "api",
-                "--out-dir", str(raw_dir), "--workers", "4",
-                "--joern-cli", str(settings.JOERN_CLI)]
-        if mode == "binary":
-            prep.append("--binary")
-        if dc.get("top_cwe", 0):
-            prep += ["--top-cwe", str(dc["top_cwe"])]
-        if dc.get("max_per_class", 0):
-            prep += ["--sample-per-class", str(dc["max_per_class"])]
-        _run(prep, log)
-
-        # prepare nests CPGs under <raw_dir>/<format> (prepare.py: out_dir / format), so with
-        # --format api that is raw/api — NOT raw/bigvul. The .pt builder reads raw/<source>;
-        # rename whichever the library actually produced instead of guessing its name.
-        src_dir = raw_dir / source
-        prep_dir = next((d for d in (raw_dir / "api", raw_dir / "bigvul") if d.is_dir()), None)
-        if prep_dir is None:
-            raise FileNotFoundError(
-                f"prepare produced no CPG dir under {raw_dir} (looked for api/, bigvul/)")
-        if prep_dir != src_dir:
-            if src_dir.exists():
-                shutil.rmtree(src_dir)
-            prep_dir.rename(src_dir)
-
-        # vocab is the BUILD INPUT (CWE -> id, pre-filter). The authoritative class space is
-        # whatever the .pt ends up with — read back after build_pt, below.
-        vocab_path = src_dir / "cwe_vocab.json"
-        if mode == "binary":
-            num_classes = 2
-        elif vocab_path.exists():
-            num_classes = len(json.loads(vocab_path.read_text()))
-        else:
-            num_classes = 2
-
-        # 2) data-build config: the self-contained featurization template with the
-        # per-request data overrides overlaid (job dirs, mode, sampling). No
-        # training config is involved, so nothing training-specific can leak in.
+        # 1) rows -> CPG -> .pt in ONE library call. Still a subprocess (a dying process frees
+        # GPU memory cleanly), but it hands back a DatasetInfo instead of leaving a
+        # cwe_vocab.json on disk for the next step to find. The vocab is a value now.
         cfg = copy.deepcopy(yaml.safe_load(_DATA_BUILD_TEMPLATE.read_text()))
+        feat = cfg.setdefault("model", {})
+        info_path = job_dir / "dataset_info.json"
+        build = ["python", "-m", "gnn_vuln.core", "build-dataset",
+                 "--rows", str(input_path),
+                 "--out", str(processed_dir / f"{source}.pt"),
+                 "--pretrained-lm", feat["pretrained_lm"],
+                 "--func-lm", feat.get("func_lm", ""),
+                 "--func-max-length", str(feat.get("func_max_length", 1024)),
+                 "--mode", mode,
+                 "--storage", "inmemory",
+                 "--max-nodes", str(dc.get("max_nodes", 2500)),
+                 "--joern-cli", str(settings.JOERN_CLI),
+                 "--workers", "4",
+                 "--device", settings.DEVICE,
+                 "--result-json", str(info_path)]
+        if not feat.get("add_func_tokens", True):
+            build.append("--no-func-tokens")
+        _run(build, log)
+
+        info = json.loads(info_path.read_text(encoding="utf-8"))
+        num_classes = len(info["class_names"])
+        log.write(f"\nbuilt {info['n_graphs']} graphs, {num_classes} classes "
+                  f"({info['n_cpg_failed']} CPG failed)\n"); log.flush()
+
+        # the data-build config that produced it — pinned to what actually ran, registered as an
+        # immutable content-addressed row so the dataset references it by id
         d = cfg.setdefault("data", {})
         d.update({
             "source": source, "mode": mode,
             "raw_dir": str(raw_dir), "processed_dir": str(processed_dir),
             "max_nodes": dc.get("max_nodes", d.get("max_nodes", 2500)),
-            "top_cwe": dc.get("top_cwe", 0),
-            "max_per_class": dc.get("max_per_class", 0),
-            "resample_seed": dc.get("resample_seed", 42),
         })
-        cfg.setdefault("model", {})["num_classes"] = num_classes
+        feat["num_classes"] = num_classes
         cfg.setdefault("train", {})["device"] = settings.DEVICE
         cfg_path = job_dir / "data_config.yaml"
         cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
@@ -285,24 +271,13 @@ def ingest_dataset(self, job_id: str) -> dict:
         # dataset references it by id. Editing it later mints a new id.
         data_config_id = registry.upsert_config(source, cfg)
 
-        # 3) CPG -> .pt via the library entrypoint
-        _run(["python", "-m", "gnn_vuln.data.build_pt", "--config", str(cfg_path), "--split", "train"], log)
-
-        # the filters (top_cwe, top25) narrow the vocab during the build, so the .pt's own
-        # class space is the truth — not the pre-filter vocab file.
-        if mode != "binary":
-            num_classes = len(_built_class_names(processed_dir))
-            log.write(f"class space from built .pt: {num_classes} classes\n"); log.flush()
-
-        # 4) bundle the DATA ARTIFACTS only (.pt + label vocab) -> object storage.
-        # The config is NOT bundled: it lives in the DB (datasets.params), which is
-        # the single source of truth relearn reads. .pt = artifact, config = config.
+        # 2) bundle the DATA ARTIFACT -> object storage. Only the .pt: it already carries its
+        # class_names, so no vocab file rides along. The config lives in the DB (datasets.params),
+        # which is the single source of truth relearn reads. .pt = artifact, config = config.
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
             if processed_dir.exists():
                 tar.add(processed_dir, arcname="processed")
-            if vocab_path.exists():
-                tar.add(vocab_path, arcname="cwe_vocab.json")
         key = f"{dataset_id}.tar.gz"
         uri = storage.put_bytes(settings.S3_BUCKET_DATASETS, key, buf.getvalue())
         log.write(f"\nuploaded dataset bundle -> {uri}\n"); log.flush()
