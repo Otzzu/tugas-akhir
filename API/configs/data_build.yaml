@@ -19,8 +19,8 @@ data:
 # Embedder = featurization. Must match the models the dataset will be used with
 # (project standard: UniXcoder node + function tokens, 1024-token window).
 model:
-  pretrained_lm: microsoft/unixcoder-base
-  func_lm: microsoft/unixcoder-base
+  pretrained_lm: microsoft/unixcoder-base-nine
+  func_lm: microsoft/unixcoder-base-nine
   func_lm_source: raw
   add_func_tokens: true
   func_max_length: 1024

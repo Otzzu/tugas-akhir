@@ -6,8 +6,8 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 SHARED_DESIGN: dict[str, Any] = {   # Bab III — locked
-    "pretrained_lm": "microsoft/unixcoder-base",
-    "func_lm": "microsoft/unixcoder-base",
+    "pretrained_lm": "microsoft/unixcoder-base-nine",
+    "func_lm": "microsoft/unixcoder-base-nine",
     "add_func_tokens": True,
     "edge_dim": 31,
     "add_self_loops": False,

@@ -22,8 +22,8 @@ data:
 model:
   architecture: lmgat_seqgnn
   live_lm: none
-  pretrained_lm: microsoft/unixcoder-base
-  func_lm: microsoft/unixcoder-base
+  pretrained_lm: microsoft/unixcoder-base-nine
+  func_lm: microsoft/unixcoder-base-nine
   add_func_tokens: true
   func_max_length: 1024
   localization_encoder: gnn

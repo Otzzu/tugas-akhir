@@ -4,7 +4,7 @@
     "source": "megavul", "mode": "multiclass", "max_nodes": 2500, "top_cwe": 0,
     "filter_top25_dangerous": true, "max_per_class": 1600, "resample_seed": 42,
     "storage": "lazy", "ds_name_suffix": "", "num_classes": 26,
-    "featurization": {"pretrained_lm": "microsoft/unixcoder-base", "func_lm": "microsoft/unixcoder-base", "add_func_tokens": true, "func_max_length": 1024},
+    "featurization": {"pretrained_lm": "microsoft/unixcoder-base-nine", "func_lm": "microsoft/unixcoder-base-nine", "add_func_tokens": true, "func_max_length": 1024},
     "storage_uri": "s3://datasets/megavul_26.tar.gz"
   },
   "megavul_26_lm": {
@@ -12,7 +12,7 @@
     "source": "megavul", "mode": "multiclass", "max_nodes": 2500, "top_cwe": 0,
     "filter_top25_dangerous": true, "max_per_class": 1600, "resample_seed": 42,
     "storage": "lazy", "ds_name_suffix": "", "num_classes": 26,
-    "featurization": {"pretrained_lm": "microsoft/unixcoder-base", "func_lm": "microsoft/unixcoder-base", "add_func_tokens": true, "func_max_length": 5120},
+    "featurization": {"pretrained_lm": "microsoft/unixcoder-base-nine", "func_lm": "microsoft/unixcoder-base-nine", "add_func_tokens": true, "func_max_length": 5120},
     "storage_uri": "s3://datasets/megavul_26_lm.tar.gz"
   },
   "megavul_mini": {
@@ -20,7 +20,7 @@
     "source": "megavul_mini", "mode": "multiclass", "max_nodes": 2500, "top_cwe": 0,
     "filter_top25_dangerous": false, "max_per_class": 0, "resample_seed": 42,
     "storage": "inmemory", "ds_name_suffix": "", "num_classes": 26,
-    "featurization": {"pretrained_lm": "microsoft/unixcoder-base", "func_lm": "microsoft/unixcoder-base", "add_func_tokens": true, "func_max_length": 1024},
+    "featurization": {"pretrained_lm": "microsoft/unixcoder-base-nine", "func_lm": "microsoft/unixcoder-base-nine", "add_func_tokens": true, "func_max_length": 1024},
     "storage_uri": "s3://datasets/megavul_mini.tar.gz"
   },
   "relearn": {
@@ -28,13 +28,13 @@
     "source": "relearn", "mode": "multiclass", "max_nodes": 2500, "top_cwe": 0,
     "filter_top25_dangerous": true, "max_per_class": 1600, "resample_seed": 42,
     "storage": "lazy", "ds_name_suffix": "", "num_classes": 26,
-    "featurization": {"pretrained_lm": "microsoft/unixcoder-base", "func_lm": "microsoft/unixcoder-base", "add_func_tokens": true, "func_max_length": 1024}
+    "featurization": {"pretrained_lm": "microsoft/unixcoder-base-nine", "func_lm": "microsoft/unixcoder-base-nine", "add_func_tokens": true, "func_max_length": 1024}
   },
   "megavul_cil": {
     "label": "MegaVul 10 new CWE (class-incremental, ids 26..35)",
     "source": "megavul_cil", "mode": "multiclass", "max_nodes": 2500, "top_cwe": 0,
     "filter_top25_dangerous": false, "max_per_class": 0, "resample_seed": 42,
     "storage": "lazy", "ds_name_suffix": "", "num_classes": 36,
-    "featurization": {"pretrained_lm": "microsoft/unixcoder-base", "func_lm": "microsoft/unixcoder-base", "add_func_tokens": true, "func_max_length": 1024}
+    "featurization": {"pretrained_lm": "microsoft/unixcoder-base-nine", "func_lm": "microsoft/unixcoder-base-nine", "add_func_tokens": true, "func_max_length": 1024}
   }
 }

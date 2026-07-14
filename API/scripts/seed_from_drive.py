@@ -4,8 +4,8 @@ and their datasets, so the API serves them with ZERO local dependency.
 
 Datasets are pulled as the API-format bundles already prepared on Drive by
 scripts/patch_dataset_to_api.sh (cwe_vocab.json + processed/<files>, subdirs preserved) and
-copied straight into MinIO — no repackaging here. Checkpoints come from the public Drive file
-ids and are unzipped to best_*.pt.
+copied straight into MinIO — no repackaging here. Checkpoints come from Drive
+checkpoints/<run>_checkpoints.zip via rclone and are unzipped to best_*.pt.
 
   - checkpoint zip (checkpoints/<run>/best_*.pt)  -> s3://checkpoints/<model_id>.pt
   - API dataset bundle (gdrive api_datasets/<source>/<name>_api.tar.gz)  -> s3://datasets/<dataset_id>.tar.gz
@@ -18,8 +18,8 @@ Each model is ALWAYS seeded together with its dataset (relearn ER/EWC need the b
 dataset, so a checkpoint without its dataset would be unusable). megavul_mini is also seeded.
 
 Usage (host, from project root, stack up):
-  uv run --with gdown --with boto3 python API/scripts/seed_from_drive.py --models all
-  uv run --with gdown --with boto3 python API/scripts/seed_from_drive.py --models graph_based,sequential
+  uv run --with boto3 python API/scripts/seed_from_drive.py --models all
+  uv run --with boto3 python API/scripts/seed_from_drive.py --models graph_based,sequential
 """
 from __future__ import annotations
 import argparse, os, subprocess, tarfile, tempfile, zipfile
@@ -32,22 +32,22 @@ BUCKET_CKPT = os.environ.get("S3_BUCKET_CHECKPOINTS", "checkpoints")
 BUCKET_DATA = os.environ.get("S3_BUCKET_DATASETS", "datasets")
 GDRIVE = "gdrive-mesach:tugas-akhir"
 
-# model_id -> checkpoint Drive file id + API dataset bundle path on Drive + the dataset_id it
-# registers as. graph_based + sequential share the ml1024 bundle; hybrid uses the ml5120 one.
+# model_id -> checkpoint zip (rclone path) + API dataset bundle + dataset_id. These are the
+# OFFICIAL bab-4 models (seed 42, unixcoder-base-nine, patched flaw mask).
 DRIVE = {
     "graph_based": {
-        "ckpt": "1zM7YQnIhNO01vh_tmCZlDr3O7JZ0AMky",
-        "data": f"{GDRIVE}/api_datasets/megavul/lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42_api.tar.gz",
+        "ckpt": f"{GDRIVE}/checkpoints/20260707_202747_lmgat_codebert_multiclass_checkpoints.zip",
+        "data": f"{GDRIVE}/api_datasets/megavul/lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42_api.tar.gz",
         "dataset_id": "megavul_26",
     },
     "hybrid_graph_lm": {
-        "ckpt": "1_zkdNfydWa7KHOwdMhdzS93U_EldysIo",
-        "data": f"{GDRIVE}/api_datasets/megavul/lm_dataset_megavul_multiclass_unixcoder-base_ft_ml5120_f40f2e964_s1600r42_api.tar.gz",
+        "ckpt": f"{GDRIVE}/checkpoints/20260707_201128_lmgat_codebert_multiclass_checkpoints.zip",
+        "data": f"{GDRIVE}/api_datasets/megavul/lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml5120_f40f2e964_s1600r42_api.tar.gz",
         "dataset_id": "megavul_26_lm",
     },
     "sequential": {
-        "ckpt": "1yvUXUjCgMfHtH0KTUye7J1VFIqPRlkpl",
-        "data": f"{GDRIVE}/api_datasets/megavul/lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42_api.tar.gz",
+        "ckpt": f"{GDRIVE}/checkpoints/20260707_211550_lmgat_seqgnn_multiclass_checkpoints.zip",
+        "data": f"{GDRIVE}/api_datasets/megavul/lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42_api.tar.gz",
         "dataset_id": "megavul_26",
     },
 }
@@ -59,22 +59,12 @@ EXTRA_DATASETS = {
 }
 
 
-def _gdown(file_id: str, out: Path) -> None:
-    try:
-        import gdown
-    except ImportError:
-        raise SystemExit("gdown missing. Run with:  uv run --with gdown --with boto3 python API/scripts/seed_from_drive.py ...")
-    gdown.download(id=file_id, output=str(out), quiet=False)
-    if not out.exists() or out.stat().st_size == 0:
-        raise SystemExit(f"download failed (empty) for id={file_id}")
-
-
 def _s3():
     try:
         import boto3
         from botocore.client import Config as BotoConfig
     except ImportError:
-        raise SystemExit("boto3 missing. Run with:  uv run --with gdown --with boto3 python API/scripts/seed_from_drive.py ...")
+        raise SystemExit("boto3 missing. Run with:  uv run --with boto3 python API/scripts/seed_from_drive.py ...")
     s3 = boto3.client("s3", endpoint_url=ENDPOINT, aws_access_key_id=KEY,
                       aws_secret_access_key=SECRET, config=BotoConfig(signature_version="s3v4"))
     have = {b["Name"] for b in s3.list_buckets().get("Buckets", [])}
@@ -84,9 +74,11 @@ def _s3():
     return s3
 
 
-def seed_checkpoint(s3, mid: str, file_id: str, tmp: Path) -> None:
-    arc = tmp / f"{mid}_ckpt.bin"
-    _gdown(file_id, arc)
+def seed_checkpoint(s3, mid: str, drive_path: str, tmp: Path) -> None:
+    subprocess.run(["rclone", "copy", drive_path, str(tmp), "--progress"], check=True)
+    arc = tmp / Path(drive_path).name
+    if not arc.exists():
+        raise SystemExit(f"rclone did not produce {arc} (check {drive_path})")
     ex = tmp / f"{mid}_ckpt_x"
     ex.mkdir(parents=True, exist_ok=True)
     if zipfile.is_zipfile(arc):
