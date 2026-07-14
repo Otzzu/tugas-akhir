@@ -11,7 +11,8 @@ CLI
     python -m gnn_vuln.data.merge --config <yaml...> \
         --sources <s1> <s2> ... --out-source <name> [--dedup] [--device cpu]
 
-Only inmemory storage is supported; lazy raises NotImplementedError.
+Storage follows cfg.data.storage. inmemory writes one <name>.pt holding every graph.
+lazy writes <name>_meta.pt plus a <name>_graphs/{i}.pt file per graph, streamed to disk.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shutil
 from pathlib import Path
 
 import torch
@@ -54,8 +56,8 @@ def _func_hash(g) -> str | None:
 
 def merge_processed(cfg, sources, out_source, dedup=False, device="cpu") -> dict:
     storage = getattr(cfg.data, "storage", "inmemory")
-    if storage != "inmemory":
-        raise NotImplementedError(f"merge only supports storage='inmemory' (got {storage!r})")
+    if storage not in ("inmemory", "lazy"):
+        raise ValueError(f"unknown storage {storage!r} (expected 'inmemory' or 'lazy')")
 
     root = Path(cfg.data.processed_dir).parent
 
@@ -74,9 +76,20 @@ def merge_processed(cfg, sources, out_source, dedup=False, device="cpu") -> dict
     unified = {name: i for i, name in enumerate(unified_names)}
     logger.info(f"unified vocab: {len(unified_names)} classes")
 
+    # 5. Save to the exact path CodeBERTGraphDataset(source=out_source) resolves to.
+    #    lazy writes each graph straight to disk, so the whole merge never sits in RAM.
+    out_path = _out_processed_path(root, out_source, cfg)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    graphs_dir = None
+    if storage == "lazy":
+        graphs_dir = out_path.parent / f"{out_path.name[:-len('_meta.pt')]}_graphs"
+        if graphs_dir.exists():
+            shutil.rmtree(graphs_dir)
+        graphs_dir.mkdir(parents=True)
+
     # 3/4. Remap each graph's y to the unified index, concatenate, optional dedup.
     merged, seen = [], set()
-    n_dupes = 0
+    n_dupes = n_graphs = 0
     for ds, cn in zip(datasets, src_class_names):
         for i in range(len(ds)):
             g = ds[i]
@@ -90,17 +103,16 @@ def merge_processed(cfg, sources, out_source, dedup=False, device="cpu") -> dict
             old_idx = int(g.y)
             new_idx = unified[cn[old_idx]]
             g.y = torch.tensor([new_idx], dtype=g.y.dtype).reshape(g.y.shape)
-            merged.append(g)
+            if graphs_dir is not None:
+                torch.save(g, graphs_dir / f"{n_graphs}.pt")
+            else:
+                merged.append(g)
+            n_graphs += 1
 
-    n_graphs = len(merged)
-
-    # 5. Save to the exact path CodeBERTGraphDataset(source=out_source) resolves to.
-    out_path = _out_processed_path(root, out_source, cfg)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(
-        {"n_graphs": n_graphs, "class_names": unified_names, "graphs": merged},
-        out_path,
-    )
+    meta = {"n_graphs": n_graphs, "class_names": unified_names}
+    if graphs_dir is None:
+        meta["graphs"] = merged
+    torch.save(meta, out_path)
 
     # Unified vocab → raw/<out_source>/cwe_vocab.json as {name: idx}.
     vocab_dir = root / "raw" / out_source

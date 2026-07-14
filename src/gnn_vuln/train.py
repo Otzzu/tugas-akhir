@@ -716,6 +716,7 @@ class TrainingSession:
         kwargs["filter_top25_dangerous"] = _rd("filter_top25_dangerous", False)
         kwargs["max_per_class"]          = _rd("max_per_class", 0)
         kwargs["resample_seed"]          = _rd("resample_seed", 42)
+        kwargs["storage"]                = _rd("storage", "inmemory")
         ds = CodeBERTGraphDataset(source=getattr(rcfg, "source", ""), **kwargs)
         train_idx, _, _ = ds.get_splits(
             train_ratio=getattr(cfg.data, "train_ratio", 0.8),

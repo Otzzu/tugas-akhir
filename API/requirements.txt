@@ -3,7 +3,7 @@
 # (`pip install gnn-vuln`) and transitively brings torch, torch-geometric, transformers.
 # NOTE: torch + torch-scatter/torch-sparse are pre-installed from their own indexes in
 # the Dockerfile (matching torch+CUDA wheels), since PyPI alone can't resolve them.
-gnn-vuln==0.1.13
+gnn-vuln==0.1.14
 
 # Web service layer
 fastapi>=0.110

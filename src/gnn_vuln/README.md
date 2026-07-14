@@ -176,8 +176,11 @@ Each step is a runnable module. All accept **one** config file or **several** sp
 | ------------------------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------ |
 | `python -m gnn_vuln.data.prepare --input <parquet> --format bigvul --out-dir <dir> --joern-cli <joern>` | raw rows (parquet) | per-function CPGs + `cwe_vocab.json`       |
 | `python -m gnn_vuln.data.build_pt --config <yaml…> --split train`                                       | CPG dir            | processed `.pt` (UniXcoder node features)  |
-| `python -m gnn_vuln.data.merge --config <yaml…> --sources <s1> <s2> … --out-source <name> [--dedup]`    | built `.pt`s       | one merged `.pt` (label space unified)     |
+| `python -m gnn_vuln.data.merge --config <yaml…> --sources <s1> <s2> … --out-source <name> [--dedup]`    | built `.pt`s       | one merged dataset (label space unified)   |
 | `python -m gnn_vuln.train --config <yaml…>`                                                             | `.pt` + config     | checkpoint + training_summary + split.json |
+
+`merge` follows `data.storage`. `inmemory` writes one `.pt`, `lazy` writes `<name>_meta.pt`
+plus a `<name>_graphs/` dir streamed graph-by-graph, so a merge never has to fit in RAM.
 
 `prepare` flags: `--binary`, `--top-cwe N`, `--sample-per-class N`, `--workers N`.
 `--format api` = the bigvul schema plus an optional per-row `flaw_lines` annotation
