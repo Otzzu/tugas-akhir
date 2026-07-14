@@ -1,0 +1,28 @@
+# Overlay pengembangan: kode API di-mount dari host, jadi edit + restart tanpa rebuild.
+#
+#   docker compose -f API/docker-compose.yml -f API/docker-compose.dev.yml up -d
+#
+# Compose utama sengaja TIDAK memuat bind ini: layanan harus bisa jalan di mesin mana pun
+# hanya bermodal image + MinIO, tanpa repo. Data dan checkpoint tetap di named volume,
+# tidak pernah menyentuh direktori riset.
+services:
+  api:
+    volumes:
+      - ../API:/app/API
+      - appckpt:/app/checkpoints
+      - appdata:/app/data
+      - jobsdata:/app/API/jobs
+
+  worker-gpu:
+    volumes:
+      - ../API:/app/API
+      - appckpt:/app/checkpoints
+      - appdata:/app/data
+      - jobsdata:/app/API/jobs
+
+  worker-cpu:
+    volumes:
+      - ../API:/app/API
+      - appckpt:/app/checkpoints
+      - appdata:/app/data
+      - jobsdata:/app/API/jobs

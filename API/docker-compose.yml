@@ -93,10 +93,12 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      # mount trained checkpoints + datasets from the host (don't bake large artifacts into the image)
-      - ../checkpoints:/app/checkpoints
-      - ../data:/app/data
-      - ../API:/app/API              # live API source (edit + restart, no rebuild)
+      # Own storage, NOT the research repo. Object storage is the source of truth: checkpoints
+      # and dataset bundles are pulled from MinIO into these volumes on demand. Binding the host
+      # repo instead would let the service overwrite research artifacts, and would survive
+      # `down -v` — a stale .materialized marker then hides a re-seeded bundle.
+      - appckpt:/app/checkpoints
+      - appdata:/app/data
       - jobsdata:/app/API/jobs       # shared with the worker — API writes input, worker reads it
 
   # Celery workers — heavy jobs off the web server, split by per-task queue.
@@ -124,9 +126,8 @@ services:
         condition: service_started
     environment: *app-env
     volumes:
-      - ../checkpoints:/app/checkpoints
-      - ../data:/app/data
-      - ../API:/app/API
+      - appckpt:/app/checkpoints
+      - appdata:/app/data
       - jobsdata:/app/API/jobs
 
   worker-cpu:
@@ -147,12 +148,13 @@ services:
         condition: service_started
     environment: *app-env
     volumes:
-      - ../checkpoints:/app/checkpoints
-      - ../data:/app/data
-      - ../API:/app/API
+      - appckpt:/app/checkpoints
+      - appdata:/app/data
       - jobsdata:/app/API/jobs
 
 volumes:
   pgdata:
   miniodata:
   jobsdata:
+  appdata:      # datasets materialized from MinIO
+  appckpt:      # checkpoints materialized from MinIO

@@ -208,16 +208,27 @@ API/
 
 ---
 
-## Run — dev (Docker, recommended)
+## Run — Docker
 
 The stack (Postgres + Redis + MinIO + API + worker-gpu + worker-cpu + Adminer) comes up with
-one command. API source is bind-mounted, so editing `API/*.py` + `docker compose restart api
-worker-gpu worker-cpu` applies without a rebuild (only `src/gnn_vuln` changes need `build`,
-because that goes into the installed package).
+one command. Nothing is bind-mounted from the repo: the service owns its storage (`appdata`,
+`appckpt` volumes) and pulls checkpoints + dataset bundles from MinIO on demand, so it runs on
+any host with no source tree — and it can never overwrite the research `data/` directory.
 
 ```bash
 docker compose -f API/docker-compose.yml up -d --build
 curl http://localhost:8000/health
+```
+
+`down -v` therefore resets the service completely (DB, MinIO, and every materialized dataset).
+
+### Dev overlay — edit without rebuilding
+
+Bind-mounts `API/` so editing `API/*.py` + `docker compose restart api worker-gpu worker-cpu`
+applies immediately. Changes to `src/gnn_vuln` still need `build` (it is an installed package).
+
+```bash
+docker compose -f API/docker-compose.yml -f API/docker-compose.dev.yml up -d
 ```
 
 UIs: API docs `:8000/docs` · MinIO console `:9001` (minioadmin/minioadmin) ·
