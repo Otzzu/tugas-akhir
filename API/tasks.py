@@ -46,19 +46,21 @@ def _run(cmd: list[str], log) -> None:
     subprocess.run(cmd, check=True, cwd=str(ROOT), stdout=log, stderr=subprocess.STDOUT)
 
 
-def _built_class_names(processed_dir: Path) -> list[str]:
+def _built_class_names(processed_dir: Path, pattern: str = "*") -> list[str]:
     """Class space of the .pt that was just built — the one source of truth. cwe_vocab.json is
-    the build INPUT (pre-filter); the .pt carries what the labels actually became."""
+    the build INPUT (pre-filter); the .pt carries what the labels actually became. `pattern`
+    narrows the pick when the dir holds other datasets (newest match wins)."""
     import torch
-    metas = sorted(processed_dir.glob("*_meta.pt")) or [
-        p for p in sorted(processed_dir.glob("*.pt"))
-        if p.name not in ("pre_filter.pt", "pre_transform.pt")
+    cands = [p for p in processed_dir.glob(f"{pattern}_meta.pt")] or [
+        p for p in processed_dir.glob(f"{pattern}.pt")
+        if p.name not in ("pre_filter.pt", "pre_transform.pt") and not p.name.endswith("_meta.pt")
     ]
-    if not metas:
-        raise FileNotFoundError(f"no built .pt under {processed_dir}")
-    names = (torch.load(metas[0], map_location="cpu", weights_only=False) or {}).get("class_names")
+    if not cands:
+        raise FileNotFoundError(f"no built .pt matching {pattern!r} under {processed_dir}")
+    newest = max(cands, key=lambda p: p.stat().st_mtime)
+    names = (torch.load(newest, map_location="cpu", weights_only=False) or {}).get("class_names")
     if not names:
-        raise ValueError(f"{metas[0].name} has no class_names")
+        raise ValueError(f"{newest.name} has no class_names")
     return list(names)
 
 

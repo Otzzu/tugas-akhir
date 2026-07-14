@@ -234,10 +234,10 @@ def _join_datasets(dataset_ids: list[str]) -> tuple[str, dict]:
          "--sources", *sources, "--out-source", joined, "--dedup"],
         check=True, cwd=str(ROOT), env={**os.environ, **ENV})
 
-    vocab = json.loads((DATA_ROOT / "raw" / joined / "cwe_vocab.json").read_text())
+    from API.tasks import _built_class_names
     base = copy.deepcopy(metas[0])
     base["source"] = joined
-    base["num_classes"] = len(vocab)
+    base["num_classes"] = len(_built_class_names(DATA_ROOT / "processed", f"*{joined}*"))
     return joined, base
 
 
