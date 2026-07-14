@@ -243,7 +243,8 @@ uv run uvicorn API.main:app --host 0.0.0.0 --port 8000
 ```
 
 Env: `DATABASE_URL`, `JOERN_CLI`, `GNN_VULN_ROOT` (data/checkpoint root), `API_DEVICE`
-(`cpu`|`cuda`), `API_CORS_ORIGINS`, `API_MAX_NODES`, `STORAGE_BACKEND` (`fs`|`s3`) +
+(`cpu`|`cuda`), `API_CORS_ORIGINS`, `API_MAX_NODES`, `API_MODEL_CACHE_SIZE` (loaded predictors
+kept in RAM/GPU, LRU, default 3), `STORAGE_BACKEND` (`fs`|`s3`) +
 `S3_*` + `S3_BUCKET_GRAPHS`/`S3_BUCKET_DATASETS`/`S3_BUCKET_CHECKPOINTS`, `CELERY_BROKER_URL`,
 `CELERY_RESULT_BACKEND`.
 

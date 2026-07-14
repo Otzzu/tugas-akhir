@@ -27,6 +27,7 @@ class Settings:
     JOERN_CLI: str = os.environ.get("JOERN_CLI", "C:/joern/joern-cli")
     DEVICE: str = os.environ.get("API_DEVICE") or _default_device()
     MAX_NODES: int = int(os.environ.get("API_MAX_NODES", "2500"))
+    MODEL_CACHE_SIZE: int = int(os.environ.get("API_MODEL_CACHE_SIZE", "3"))  # loaded predictors kept (LRU)
 
     # dataset file upload (POST /datasets/upload). The inline `rows` body stays capped at
     # 5000 by the schema; a file may carry more, but never an unbounded amount.

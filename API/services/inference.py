@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import tempfile
 import threading
+from collections import OrderedDict
 from pathlib import Path
+
+from loguru import logger
 
 from API.core.config import settings
 from API.core.database import SessionLocal
@@ -31,8 +34,20 @@ def _store_result(model_id: str, code_h: str, r: dict) -> None:
         ))
         s.commit()
 
-_predictors: dict[str, VulnPredictor] = {}
+_predictors: "OrderedDict[str, VulnPredictor]" = OrderedDict()   # LRU, newest last
 _lock = threading.Lock()
+
+
+def _evict_lru() -> None:
+    """Relearn keeps minting model_ids, so an unbounded cache would pin every model ever
+    served in RAM/GPU. Keep the MODEL_CACHE_SIZE most recently used, drop the rest."""
+    import torch
+    while len(_predictors) > max(1, settings.MODEL_CACHE_SIZE):
+        evicted_id, evicted = _predictors.popitem(last=False)
+        del evicted
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        logger.info(f"evicted predictor '{evicted_id}' (cache={len(_predictors)})")
 
 
 def _materialize_checkpoint(m: dict) -> Path:
@@ -61,16 +76,19 @@ def _materialize_checkpoint(m: dict) -> Path:
 def get_predictor(model_id: str) -> VulnPredictor:
     from gnn_vuln.inference import VulnPredictor
     with _lock:
-        if model_id not in _predictors:
-            m = registry.get_model(model_id)
-            ckpt = _materialize_checkpoint(m)         # local cache; pulls from object storage if absent
-            cfg = registry.materialize_config(m)      # from DB snapshot (no repo files needed)
-            predictor = VulnPredictor.from_checkpoint(str(ckpt), str(cfg), device=settings.DEVICE)
-            names = m.get("class_names")
-            if names:
-                predictor.class_names = names
-            _predictors[model_id] = predictor
-        return _predictors[model_id]
+        if model_id in _predictors:
+            _predictors.move_to_end(model_id)
+            return _predictors[model_id]
+        m = registry.get_model(model_id)
+        ckpt = _materialize_checkpoint(m)         # local cache; pulls from object storage if absent
+        cfg = registry.materialize_config(m)      # from DB snapshot (no repo files needed)
+        predictor = VulnPredictor.from_checkpoint(str(ckpt), str(cfg), device=settings.DEVICE)
+        names = m.get("class_names")
+        if names:
+            predictor.class_names = names
+        _predictors[model_id] = predictor
+        _evict_lru()
+        return predictor
 
 
 def list_results(model_id: str | None = None, limit: int = 50) -> list[dict]:
