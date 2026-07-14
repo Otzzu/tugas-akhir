@@ -212,7 +212,18 @@ def _cumulative_dataset_ids(base_model_id: str | None, new_ids: list[str]) -> li
 def _join_datasets(dataset_ids: list[str]) -> tuple[str, dict]:
     """Single id → its source. Multiple → merge at the PROCESSED .pt level via the
     gnn_vuln.data.merge CLI (concatenate finished .pt + unify vocab; no raw CPG, no
-    rebuild). Works for datasets ingested via /datasets whose bundle has only the .pt."""
+    rebuild). Works for datasets ingested via /datasets whose bundle has only the .pt.
+
+    SHOULD GO AWAY. The merged .pt this produces is never registered: no dataset id, no frozen
+    config, no fingerprint anyone can read back — so the data a model was actually trained on has
+    no identity, only a list of ingredients. It survives on the assumption that merge is
+    deterministic forever, which is already false (its vocab order, filter suffix and lazy path
+    all changed this month).
+
+    The shape it should have: /relearn stops merging. Every role — train, val, test — takes ONE
+    registered dataset id, and merging is the caller's explicit POST /datasets step, which
+    already yields a registered entity with provenance and a bundle. Breaks the HTTP contract
+    (dataset_ids becomes a single id), so it needs coordinating with the service team."""
     if len(dataset_ids) == 1:
         d = registry.get_dataset(dataset_ids[0])
         return d["source"], d
