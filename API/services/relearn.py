@@ -27,6 +27,7 @@ from datetime import datetime
 from pathlib import Path
 
 import yaml
+from loguru import logger
 from sqlalchemy import select
 
 from API.core.config import settings
@@ -93,30 +94,34 @@ def materialize_dataset(dataset_id: str) -> Path:
             f"dataset '{dataset_id}' not in object storage ({settings.S3_BUCKET_DATASETS}/{key}). "
             f"Object storage is the single source of truth — seed it via scripts/seed_from_drive.py "
             f"or ingest via POST /datasets. The API does not read pre-placed local data.")
-    # Bundle = cwe_vocab.json (top) + processed/<files>; subdirs preserved so a lazy
-    # <name>_graphs/ stays intact (basename-only would flatten the per-graph files).
+    # Two layouts are accepted, so a research tar works as-is and no repack step is needed:
+    #   API   — cwe_vocab.json (top) + processed/<files>
+    #   cloud — <name>_meta.pt + <name>_graphs/ at top level, no vocab
+    # Subdirs are preserved either way (basename-only would flatten the per-graph files).
     raw_dir.mkdir(parents=True, exist_ok=True)
     proc_dir.mkdir(parents=True, exist_ok=True)
     pt_rel = ""
     with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
-        for m in tar.getmembers():
-            if not m.isfile():
-                continue
+        members = [m for m in tar.getmembers() if m.isfile()]
+        nested = any(m.name.startswith("processed/") for m in members)
+        for m in members:
             data = tar.extractfile(m).read()
             if Path(m.name).name == "cwe_vocab.json":
                 (raw_dir / "cwe_vocab.json").write_bytes(data)
-            elif m.name.startswith("processed/"):
-                rel = m.name[len("processed/"):]
-                if not rel:
-                    continue
-                target = proc_dir / rel
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(data)
-                # remember the dataset entry file so callers can pass an explicit path
-                if rel.endswith("_meta.pt") or (
-                        rel.endswith(".pt") and "_graphs/" not in rel and not pt_rel
-                        and Path(rel).name not in ("pre_filter.pt", "pre_transform.pt")):
-                    pt_rel = rel if rel.endswith("_meta.pt") else (pt_rel or rel)
+                continue
+            rel = m.name[len("processed/"):] if nested else m.name.lstrip("./")
+            if not nested and not (rel.endswith(".pt") or "_graphs/" in rel):
+                continue
+            if not rel:
+                continue
+            target = proc_dir / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            # remember the dataset entry file so callers can pass an explicit path
+            if rel.endswith("_meta.pt") or (
+                    rel.endswith(".pt") and "_graphs/" not in rel and not pt_rel
+                    and Path(rel).name not in ("pre_filter.pt", "pre_transform.pt")):
+                pt_rel = rel if rel.endswith("_meta.pt") else (pt_rel or rel)
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text(json.dumps({"at": datetime.utcnow().isoformat(), "pt": pt_rel}))
     return DATA_ROOT
@@ -134,6 +139,28 @@ def dataset_pt_path(dataset_id: str) -> Path | None:
         return None
     p = DATA_ROOT / "processed" / rel
     return p if rel and p.exists() else None
+
+
+def _dataset_class_names(dataset_id: str, source: str) -> list[str]:
+    """Class space of a materialized dataset. The .pt carries it (class_names, id-ordered);
+    cwe_vocab.json is only a fallback — a research bundle does not ship one, and silently
+    finding nothing there would leave a class-incremental head refusing to grow."""
+    pt = dataset_pt_path(dataset_id)
+    if pt is not None:
+        try:
+            import torch
+            names = (torch.load(pt, map_location="cpu", weights_only=False) or {}).get("class_names")
+            if names:
+                return list(names)
+        except Exception as e:  # noqa: BLE001 — fall through to the vocab file
+            logger.warning(f"class_names unreadable from {pt.name}: {type(e).__name__}: {e}")
+    vpath = DATA_ROOT / "raw" / source / "cwe_vocab.json"
+    if vpath.exists():
+        vocab: dict[str, int] = json.loads(vpath.read_text(encoding="utf-8"))
+        return [k for k, _ in sorted(vocab.items(), key=lambda kv: kv[1])]
+    raise FileNotFoundError(
+        f"dataset '{dataset_id}': no class_names in its .pt and no cwe_vocab.json under "
+        f"raw/{source}. Cannot determine its class space.")
 
 
 def _dataset_data_config(dataset_id: str) -> dict:
@@ -331,23 +358,19 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
         base_names = base.get("class_names") or []
         if base_names:
             tv = {n: i for i, n in enumerate(base_names)}
-            vpath = DATA_ROOT / "raw" / source / "cwe_vocab.json"
-            if vpath.exists():
-                for name in json.loads(vpath.read_text(encoding="utf-8")):
-                    if name not in tv:
-                        tv[name] = len(tv)          # new CWE -> extended id (head grows)
+            for name in _dataset_class_names(dataset_ids[0], source):
+                if name not in tv:
+                    tv[name] = len(tv)              # new CWE -> extended id (head grows)
             cfg["data"]["target_vocab"] = tv
             cfg["model"]["num_classes"] = len(tv)
             # role datasets on a continued model: every class of the role dataset must
             # exist in the final class space (subset, NOT equality — a 26-class golden
             # benchmark is valid against a 36-class CIL model; target_vocab remaps it)
             for role, rid, rsource in role_sources:
-                rv = DATA_ROOT / "raw" / rsource / "cwe_vocab.json"
-                if rv.exists():
-                    missing = [n for n in json.loads(rv.read_text(encoding="utf-8")) if n not in tv]
-                    if missing:
-                        raise ValueError(f"{role}_dataset_id '{rid}' has classes outside the "
-                                         f"model's class space: {missing[:5]}")
+                missing = [n for n in _dataset_class_names(rid, rsource) if n not in tv]
+                if missing:
+                    raise ValueError(f"{role}_dataset_id '{rid}' has classes outside the "
+                                     f"model's class space: {missing[:5]}")
     if scratch_model_type:
         cfg["model"]["architecture"] = scratch_model_type   # /train architecture override on config_id
     # the installed wheel's default checkpoint/results/log dirs resolve to a bogus
