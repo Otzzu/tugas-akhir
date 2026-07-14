@@ -13,7 +13,7 @@ checkpoints still load.
 """
 from __future__ import annotations
 
-from dataclasses import fields, is_dataclass
+from dataclasses import MISSING, fields, is_dataclass
 from typing import Any
 
 from gnn_vuln.config import Config, EWCConfig, ReplayConfig
@@ -22,7 +22,8 @@ from gnn_vuln.serving._common import DataParams, TrainParams, to_raw
 
 MODELS = {m.NAME: m for m in (graph_based, hybrid_graph_lm, sequential)}
 
-__all__ = ["MODELS", "DataParams", "TrainParams", "build_config", "design_of", "params_of"]
+__all__ = ["MODELS", "DataParams", "TrainParams", "build_config",
+           "design_of", "params_of", "schema_of", "schemas"]
 
 
 def _as_raw(section: str, value, expected) -> dict:
@@ -84,3 +85,37 @@ def design_of(arch: str) -> dict[str, Any]:
 def params_of(arch: str) -> dict[str, Any]:
     """Default tunables for `arch`."""
     return to_raw(MODELS[arch].Params())
+
+
+_TYPES = {int: "int", float: "float", bool: "bool", str: "str", dict: "dict", list: "list"}
+
+
+def _fields_schema(cls) -> list[dict[str, Any]]:
+    out = []
+    for f in fields(cls):
+        t = f.type if isinstance(f.type, str) else _TYPES.get(f.type, str(f.type))
+        required = f.default is MISSING and f.default_factory is MISSING  # type: ignore[misc]
+        out.append({
+            "name": f.name,
+            "type": _TYPES.get(f.type, t if isinstance(t, str) else str(t)),
+            "default": None if required else (f.default if f.default is not MISSING else None),
+            "required": required,
+        })
+    return out
+
+
+def schema_of(arch: str) -> dict[str, Any]:
+    """JSON-serializable contract for `arch` — what a UI needs to render a config form."""
+    mod = MODELS[arch]
+    return {
+        "model": arch,
+        "doc": (mod.__doc__ or "").strip(),
+        "design": dict(mod.DESIGN),              # read-only, shown but not editable
+        "params": _fields_schema(mod.Params),    # editable: model sizing
+        "data": _fields_schema(DataParams),
+        "train": _fields_schema(TrainParams),
+    }
+
+
+def schemas() -> list[dict[str, Any]]:
+    return [schema_of(a) for a in MODELS]

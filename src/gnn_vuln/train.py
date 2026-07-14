@@ -501,6 +501,7 @@ class TrainingSession:
             storage=getattr(cfg.data, "storage", "inmemory"),
             precompute_line_cls=getattr(cfg.model, "precompute_line_cls", False),
             ds_name_suffix=getattr(cfg.data, "ds_name_suffix", ""),
+            ds_name=getattr(cfg.data, "ds_name", ""),
             target_vocab=getattr(cfg.data, "target_vocab", None),
         )
         bs          = cfg.train.batch_size
@@ -559,7 +560,7 @@ class TrainingSession:
             # (filters, sampling, suffix) — override so the staged .pt is found,
             # same pattern as the replay buffer's per-source overrides.
             _ID_KEYS = ("max_nodes", "top_cwe", "filter_owasp", "filter_top25_dangerous",
-                        "max_per_class", "resample_seed", "ds_name_suffix", "storage")
+                        "max_per_class", "resample_seed", "ds_name_suffix", "ds_name", "storage")
 
             def _role_kwargs(params: dict | None) -> dict:
                 if not params:
@@ -705,6 +706,7 @@ class TrainingSession:
             storage=getattr(cfg.data, "storage", "inmemory"),
             precompute_line_cls=getattr(cfg.model, "precompute_line_cls", False),
             ds_name_suffix=getattr(rcfg, "ds_name_suffix", ""),
+            ds_name=getattr(rcfg, "ds_name", "") or "",
         )
         # Dataset-identity params: prefer replay-config overrides (task-A subset),
         # else inherit cfg.data. Lets the replay buffer load task-A's megavul .pt even

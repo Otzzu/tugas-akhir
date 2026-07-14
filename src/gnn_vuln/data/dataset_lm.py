@@ -47,6 +47,7 @@ from __future__ import annotations
 import gc
 import hashlib
 import json
+import os
 import random
 import re
 import shutil
@@ -380,6 +381,7 @@ class CodeBERTGraphDataset(Dataset):
         storage: str = "inmemory",  # "inmemory" | "lazy"
         precompute_line_cls: bool = False,
         ds_name_suffix: str = "",   # graph_vit: load a separate patched .pt
+        ds_name: str = "",          # override the derived name — for callers that own their own versioning
         target_vocab: dict | None = None,   # CL: remap labels onto this canonical vocab at load
         transform=None,
         pre_transform=None,
@@ -387,6 +389,7 @@ class CodeBERTGraphDataset(Dataset):
         self._force_rebuild = force_rebuild
         self._storage = storage  # "inmemory" | "lazy"
         self._ds_name_suffix = ds_name_suffix
+        self._ds_name_explicit = ds_name
         self._target_vocab = target_vocab
         self._precompute_line_cls = precompute_line_cls
         self._func_max_length = func_max_length
@@ -422,6 +425,19 @@ class CodeBERTGraphDataset(Dataset):
         self._effective_cwes = _expand_cwe_filter(self._cwe_list if self._cwe_list else None, cwe_groups)
         self._fsuffix = _filter_suffix(self._cwe_list if self._cwe_list else None, cwe_groups, filter_owasp, filter_top25_dangerous)
 
+        self._mode = mode
+        # API mode has no raw CPG to fall back on — a missing .pt means the caller's params
+        # do not match the .pt it shipped. Fail here, before anything reaches Joern.
+        if os.environ.get("GNN_VULN_API_MODE") == "1":
+            fname = f"{self._ds_name}.pt" if storage == "inmemory" else f"{self._ds_name}_meta.pt"
+            expected = Path(root) / "processed" / fname
+            if not expected.exists():
+                raise FileNotFoundError(
+                    f"processed dataset not found: {expected}. Rebuilding from raw CPG is "
+                    f"disabled under GNN_VULN_API_MODE. Check the dataset params, or pass "
+                    f"ds_name to name the .pt explicitly."
+                )
+
         source_dir = Path(root) / "raw" / source
         hdf5_check = Path(root) / "graphs" / f"{source}.hdf5"
         has_vocab = (source_dir / "cwe_vocab.json").exists() or hdf5_check.exists()
@@ -430,7 +446,6 @@ class CodeBERTGraphDataset(Dataset):
                 f"mode='{mode}' but cwe_vocab.json not found under {source_dir}. "
                 "Run prepare_dataset.py --top-cwe N to generate it."
             )
-        self._mode = mode
 
         super().__init__(str(root), transform, pre_transform)
 
@@ -474,6 +489,8 @@ class CodeBERTGraphDataset(Dataset):
 
     @property
     def _ds_name(self) -> str:
+        if getattr(self, "_ds_name_explicit", ""):
+            return self._ds_name_explicit
         ft_suffix = "_ft" if self._add_func_tokens else ""
         ml_suffix = f"_ml{self._func_max_length}" if self._add_func_tokens and self._func_max_length != 512 else ""
         top_suffix = f"_top{self._top_cwe}" if self._top_cwe > 0 else ""
@@ -922,6 +939,16 @@ class CodeBERTGraphDataset(Dataset):
     def process(self) -> None:
         if self._try_patch_from_existing(Path(self.processed_paths[0])):
             return
+
+        # Under the API there is no raw CPG to fall back on: a missing .pt means the caller's
+        # params do not match the .pt it shipped. Fail loudly instead of walking into Joern.
+        if os.environ.get("GNN_VULN_API_MODE") == "1":
+            raise FileNotFoundError(
+                f"processed dataset not found: {Path(self.processed_paths[0]).name} "
+                f"(source={self._source!r}, storage={self._storage!r}). Rebuilding from raw CPG "
+                f"is disabled under GNN_VULN_API_MODE. Check that the dataset params match the "
+                f"built .pt, or pass ds_name to name it explicitly."
+            )
 
         # HDF5 source takes priority over raw file tree
         hdf5_path = Path(self.root) / "graphs" / f"{self._source}.hdf5"

@@ -27,6 +27,7 @@ SHARED_DESIGN: dict[str, Any] = {   # Bab III — locked
 @dataclass
 class DataParams:
     source: str
+    ds_name: str = ""             # caller-owned .pt name; empty = derive from params
     mode: str = "multiclass"
     storage: str = "lazy"
     max_nodes: int = 2500

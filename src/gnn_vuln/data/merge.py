@@ -51,6 +51,7 @@ def _build_ds(root, source, cfg, device) -> CodeBERTGraphDataset:
         top_cwe=getattr(cfg.data, "top_cwe", 0),
         max_per_class=getattr(cfg.data, "max_per_class", 0),
         resample_seed=getattr(cfg.data, "resample_seed", 42),
+        ds_name=source if getattr(cfg.data, "ds_name", "") else "",
     )
 
 
@@ -148,6 +149,7 @@ def _out_processed_path(root, out_source, cfg) -> Path:
     obj = CodeBERTGraphDataset.__new__(CodeBERTGraphDataset)
     obj._storage = getattr(cfg.data, "storage", "inmemory")
     obj._ds_name_suffix = ""
+    obj._ds_name_explicit = getattr(cfg.data, "ds_name", "") or ""   # caller-owned name wins
     obj._add_func_tokens = getattr(cfg.model, "add_func_tokens", False)
     obj._func_max_length = getattr(cfg.model, "func_max_length", 512)
     obj._top_cwe = getattr(cfg.data, "top_cwe", 0)

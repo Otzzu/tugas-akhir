@@ -112,6 +112,7 @@ def main() -> None:
         func_max_length=func_max_length,
         force_rebuild=args.force_rebuild,
         storage=storage,
+        ds_name=getattr(cfg.data, "ds_name", ""),
         use_flash_attention=getattr(cfg.train, "use_flash_attention", False),
         embedder_use_amp=getattr(cfg.train, "use_amp", True),
     )
