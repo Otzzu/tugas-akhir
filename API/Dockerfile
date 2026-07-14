@@ -39,17 +39,29 @@ RUN uv pip install --system torch==${TORCH_VERSION} --index-url ${TORCH_INDEX} \
 # dep bump reuses this cached ~1.7GB download instead of re-fetching it. `curl -f` fails
 # on 404 instead of silently leaving /opt/joern empty; the final `test -x` asserts the
 # CLI actually extracted. ──
+# Joern ships EVERY language frontend (~1.8GB of C#, Ghidra, JS, Swift, Kotlin, ...). We only
+# parse C/C++, so c2cpg is kept and the rest dropped: 1.9GB -> 208MB, identical predictions.
+# Default path downloads the official 1.7GB zip and prunes. Pass JOERN_SLIM_GDRIVE_ID (see
+# scripts/make_joern_slim.sh) to pull the pre-pruned 208MB archive instead — much faster, but
+# optional so a clean clone still builds with no access to our Drive.
 ARG JOERN_VERSION=v4.0.526
-RUN curl -fL "https://github.com/joernio/joern/releases/download/${JOERN_VERSION}/joern-cli.zip" \
-        -o /tmp/joern-cli.zip \
-    && mkdir -p /opt/joern \
-    && unzip -q /tmp/joern-cli.zip -d /opt/joern \
-    && rm /tmp/joern-cli.zip \
-    # Joern ships every language frontend (~1.8GB). We only ever parse C/C++, so keep c2cpg
-    # and drop the rest — the image loses ~1.7GB and nothing we call can miss them.
-    && find /opt/joern/joern-cli/frontends -mindepth 1 -maxdepth 1 ! -name c2cpg -exec rm -rf {} + \
+ARG JOERN_SLIM_GDRIVE_ID=""
+RUN mkdir -p /opt/joern \
+    && if [ -n "${JOERN_SLIM_GDRIVE_ID}" ]; then \
+         uv pip install --system gdown \
+         && gdown "${JOERN_SLIM_GDRIVE_ID}" -O /tmp/joern-slim.tar.gz \
+         && tar -xzf /tmp/joern-slim.tar.gz -C /opt/joern \
+         && rm /tmp/joern-slim.tar.gz; \
+       else \
+         curl -fL "https://github.com/joernio/joern/releases/download/${JOERN_VERSION}/joern-cli.zip" \
+              -o /tmp/joern-cli.zip \
+         && unzip -q /tmp/joern-cli.zip -d /opt/joern \
+         && rm /tmp/joern-cli.zip \
+         && find /opt/joern/joern-cli/frontends -mindepth 1 -maxdepth 1 ! -name c2cpg -exec rm -rf {} +; \
+       fi \
     && chmod +x /opt/joern/joern-cli/joern* \
     && test -x /opt/joern/joern-cli/joern-parse \
+    && test -d /opt/joern/joern-cli/frontends/c2cpg \
     && printf 'int f(){return 0;}\n' > /tmp/t.c \
     && /opt/joern/joern-cli/joern-parse /tmp/t.c --output /tmp/t.bin >/dev/null \
     && rm -rf /tmp/t.c /tmp/t.bin
