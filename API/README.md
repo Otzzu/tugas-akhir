@@ -222,13 +222,17 @@ curl http://localhost:8000/health
 
 `down -v` therefore resets the service completely (DB, MinIO, and every materialized dataset).
 
-### Dev overlay — edit without rebuilding
+### Dev overlay — edit without rebuilding, and run the tests
 
 Bind-mounts `API/` so editing `API/*.py` + `docker compose restart api worker-gpu worker-cpu`
 applies immediately. Changes to `src/gnn_vuln` still need `build` (it is an installed package).
+`API/tests/` is `.dockerignore`d — it has no business in a production image — so the in-container
+test scripts only exist under this overlay.
 
 ```bash
 docker compose -f API/docker-compose.yml -f API/docker-compose.dev.yml up -d
+docker compose -f API/docker-compose.yml -f API/docker-compose.dev.yml exec api \
+  python /app/API/tests/_verify_persist.py
 ```
 
 UIs: API docs `:8000/docs` · MinIO console `:9001` (minioadmin/minioadmin) ·
