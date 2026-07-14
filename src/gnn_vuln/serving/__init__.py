@@ -41,6 +41,13 @@ def _as_raw(section: str, value, expected) -> dict:
     return dict(value)
 
 
+def _one_split_mode(data: dict) -> None:
+    """split_file names every split, so it cannot share a run with role datasets."""
+    if data.get("split_file") and (data.get("source_val") or data.get("source_test")):
+        raise ValueError("data: split_file already names every split — it cannot be combined "
+                         "with source_val / source_test")
+
+
 def build_config(
     arch: str,
     *,
@@ -68,8 +75,11 @@ def build_config(
         if val:
             _as_raw(section, val, cls)
 
+    raw_data = _as_raw("data", data, DataParams)
+    _one_split_mode(raw_data)
+
     return Config._from_raw({
-        "data": _as_raw("data", data, DataParams),
+        "data": raw_data,
         "model": model_section,
         "train": _as_raw("train", train, TrainParams),
         "ewc": ewc or {},

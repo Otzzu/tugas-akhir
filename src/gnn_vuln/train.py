@@ -561,20 +561,20 @@ class TrainingSession:
         self._dataset_pt = _dataset_pt
         if getattr(cfg.data, "split_file", ""):
             dataset.load_split_file(cfg.data.split_file)
+        # Role datasets may have been built with their own identity params (filters, sampling,
+        # suffix) — override so the staged .pt is found, same pattern as the replay buffer's
+        # per-source overrides.
+        _ID_KEYS = ("max_nodes", "top_cwe", "filter_owasp", "filter_top25_dangerous",
+                    "max_per_class", "resample_seed", "ds_name_suffix", "ds_name", "storage")
+
+        def _role_kwargs(params: dict | None) -> dict:
+            if not params:
+                return kwargs
+            kw = dict(kwargs)
+            kw.update({k: params[k] for k in _ID_KEYS if k in params})
+            return kw
+
         if use_official:
-            # Role datasets may have been built with their own identity params
-            # (filters, sampling, suffix) — override so the staged .pt is found,
-            # same pattern as the replay buffer's per-source overrides.
-            _ID_KEYS = ("max_nodes", "top_cwe", "filter_owasp", "filter_top25_dangerous",
-                        "max_per_class", "resample_seed", "ds_name_suffix", "ds_name", "storage")
-
-            def _role_kwargs(params: dict | None) -> dict:
-                if not params:
-                    return kwargs
-                kw = dict(kwargs)
-                kw.update({k: params[k] for k in _ID_KEYS if k in params})
-                return kw
-
             val_ds  = CodeBERTGraphDataset(
                 source=source_val,
                 **_role_kwargs(getattr(cfg.data, "source_val_params", None)))
@@ -632,10 +632,23 @@ class TrainingSession:
                 train_dl = DataLoader(dataset[train_idx], batch_size=bs, sampler=_cb, **dl_kw)
             else:
                 train_dl = DataLoader(dataset[train_idx], batch_size=bs, shuffle=True, **dl_kw)
+            # test is its own role: ratios may drive train/val while test comes from a fixed
+            # benchmark, so the number stays comparable across model versions
+            if source_test:
+                _test_ds = CodeBERTGraphDataset(
+                    source=source_test,
+                    **_role_kwargs(getattr(cfg.data, "source_test_params", None)))
+                if _precompute_line_cls:
+                    _test_ds.precompute_line_cls_all(str(self.device),
+                                                     context_lines=_line_context_lines)
+                logger.info(f"test from role dataset '{source_test}': {len(_test_ds)} graphs")
+                test_dl = DataLoader(_test_ds, batch_size=bs, **dl_kw)
+            else:
+                test_dl = DataLoader(dataset[test_idx], batch_size=bs, **dl_kw)
             loaders = (
                 train_dl,
-                DataLoader(dataset[val_idx],   batch_size=bs, **dl_kw),
-                DataLoader(dataset[test_idx],  batch_size=bs, **dl_kw),
+                DataLoader(dataset[val_idx], batch_size=bs, **dl_kw),
+                test_dl,
             )
         # Stash split for split.json (val/test only exist on the seeded-split branch)
         self._split_dataset = dataset

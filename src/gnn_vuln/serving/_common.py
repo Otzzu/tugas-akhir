@@ -35,12 +35,20 @@ class DataParams:
     # the research presets (filter_owasp, filter_top25_dangerous, top_cwe frequency cut,
     # max_per_class balancing) are benchmark-shaping knobs and are NOT part of this contract.
     cwe_list: list | None = None
-    resample_seed: int = 42
-    train_ratio: float = 0.9      # production split: no test holdout, val drives early stopping
-    val_ratio: float = 0.1
-    split_seed: int | None = None
     ds_name_suffix: str = ""
     target_vocab: dict[str, int] | None = None
+
+    # Exactly ONE of the three split modes applies per run — mixing them is what let a stale
+    # split_file silently outrank the ratios a caller had just asked for.
+    #   ratios   — train_ratio / val_ratio / split_seed (test = 1 - train - val)
+    #   rows     — split_file: exact rows by parquet_id, for reproducing a run bit for bit
+    #   datasets — source_val / source_test: val+test come from other datasets, train = 100%
+    # Production default is 90/10/0: no test holdout, val drives early stopping. Held-out test
+    # is a benchmark habit — in service, the honest test is the NEXT dataset that arrives.
+    train_ratio: float = 0.9
+    val_ratio: float = 0.1
+    split_seed: int | None = None
+    split_file: str = ""
     source_val: str = ""
     source_test: str = ""
     source_val_params: dict | None = None

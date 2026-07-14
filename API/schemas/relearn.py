@@ -41,7 +41,9 @@ class RunConfig(BaseModel):
     split: Optional[SplitSpec] = Field(
         None,
         description="Optional split control. Mode A: explicit {train,val,test} parquet_id lists. "
-        "Mode B: {train_ratio,val_ratio,seed} for the library to split. Omit = default 80/10/10 seed 42.")
+        "Mode B: {train_ratio,val_ratio,seed} for the library to split. Omit = the base config's "
+        "split, which for the production models is 90/10/0 — no test holdout, val drives early "
+        "stopping (the honest test in service is the next dataset that arrives).")
 
 
 class RelearnRequest(BaseModel):
@@ -56,13 +58,15 @@ class RelearnRequest(BaseModel):
     )
     val_dataset_id: Optional[str] = Field(
         None,
-        description="Registered dataset to use as the VALIDATION set (role dataset). When set, "
-        "training uses 100% of dataset_ids and early-stops on this dataset instead of an "
-        "internal split. Label space must match.")
+        description="Registered dataset to use as the VALIDATION set. When set, training uses "
+        "100% of dataset_ids and early-stops on this one instead of an internal split. Label "
+        "space must match.")
     test_dataset_id: Optional[str] = Field(
         None,
-        description="Registered dataset to use as the TEST set (e.g. a fixed golden benchmark "
-        "reused across model versions). Requires val_dataset_id. Label space must match.")
+        description="Registered dataset to use as the TEST set — e.g. a fixed benchmark, so the "
+        "number is comparable across model versions. Independent of val_dataset_id: it also works "
+        "with a ratio split. Omit it (and leave no test remainder) and the model is registered "
+        "WITHOUT metrics. Label space must match.")
     run_name: Optional[str] = Field(None, description="Optional human label for the job")
     config: Optional[RunConfig] = Field(
         None,

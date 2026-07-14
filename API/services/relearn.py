@@ -323,16 +323,14 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
         if pt is not None:
             cfg["data"]["dataset_path"] = str(pt)
 
-    # Role datasets (separate registered datasets for val/test — channel style). When
-    # val_dataset_id is set the library trains on 100% of `source`, early-stops on the
-    # val dataset, and (if given) reports test on the test dataset — e.g. a fixed golden
-    # benchmark reused across model versions. No internal split is taken.
-    if test_dataset_id and not val_dataset_id:
-        raise ValueError("test_dataset_id requires val_dataset_id")
-    role_sources: list[tuple[str, str, str]] = []   # (role, rid, source) — label check after target_vocab
-    if val_dataset_id:
-        if split:
-            raise ValueError("config.split cannot be combined with val/test role datasets")
+    # Each role is sourced on its own, so ratios for train/val + a benchmark dataset for test is
+    # a valid mix. Only Mode A is exclusive — it already names every split.
+    role_sources: list[tuple[str, str, str]] = []   # (role, rid, source)
+    if (val_dataset_id or test_dataset_id) and split and (
+            split.get("train") or split.get("val") or split.get("test")):
+        raise ValueError("config.split with explicit row lists already defines every split; "
+                         "it cannot be combined with val/test role datasets")
+    if val_dataset_id or test_dataset_id:
         for role, rid in (("val", val_dataset_id), ("test", test_dataset_id)):
             if not rid:
                 continue
@@ -685,6 +683,11 @@ def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
                     # every useful artifact is now in DB + object storage → drop the local
                     # results dir so nothing research-only lingers on the API worker disk
                     shutil.rmtree(ROOT / "results" / run_dir.name, ignore_errors=True)
+            # test data is optional, but a model with no metrics must say so, not slip out quietly
+            if not job.get("metrics"):
+                job["message"] = ("registered WITHOUT metrics: no test set. Pass test_dataset_id "
+                                  "(a fixed benchmark, comparable across versions), or leave "
+                                  "1 - train_ratio - val_ratio > 0 to hold one out.")
         job["status"] = "done"
     except subprocess.CalledProcessError as e:
         try:
