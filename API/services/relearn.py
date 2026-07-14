@@ -97,6 +97,7 @@ def materialize_dataset(dataset_id: str) -> Path:
     # <name>_graphs/ stays intact (basename-only would flatten the per-graph files).
     raw_dir.mkdir(parents=True, exist_ok=True)
     proc_dir.mkdir(parents=True, exist_ok=True)
+    pt_rel = ""
     with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
         for m in tar.getmembers():
             if not m.isfile():
@@ -111,9 +112,28 @@ def materialize_dataset(dataset_id: str) -> Path:
                 target = proc_dir / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(data)
+                # remember the dataset entry file so callers can pass an explicit path
+                if rel.endswith("_meta.pt") or (
+                        rel.endswith(".pt") and "_graphs/" not in rel and not pt_rel
+                        and Path(rel).name not in ("pre_filter.pt", "pre_transform.pt")):
+                    pt_rel = rel if rel.endswith("_meta.pt") else (pt_rel or rel)
     marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(datetime.utcnow().isoformat())
+    marker.write_text(json.dumps({"at": datetime.utcnow().isoformat(), "pt": pt_rel}))
     return DATA_ROOT
+
+
+def dataset_pt_path(dataset_id: str) -> Path | None:
+    """Entry .pt of a materialized dataset, recorded at extraction. None for datasets
+    staged before this field existed — callers fall back to name derivation."""
+    marker = DATA_ROOT / ".materialized" / dataset_id
+    if not marker.exists():
+        return None
+    try:
+        rel = (json.loads(marker.read_text()) or {}).get("pt") or ""
+    except (json.JSONDecodeError, OSError):
+        return None
+    p = DATA_ROOT / "processed" / rel
+    return p if rel and p.exists() else None
 
 
 def _dataset_data_config(dataset_id: str) -> dict:
@@ -259,6 +279,13 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
     for k in ("pretrained_lm", "func_lm", "add_func_tokens", "func_max_length", "func_lm_source"):
         if k in fmodel:
             cfg["model"][k] = fmodel[k]
+
+    # single dataset: hand the trainer the exact .pt recorded at materialization, so the
+    # load no longer depends on name derivation matching (merged multi-id keeps deriving)
+    if len(dataset_ids) == 1:
+        pt = dataset_pt_path(dataset_ids[0])
+        if pt is not None:
+            cfg["data"]["dataset_path"] = str(pt)
 
     # Role datasets (separate registered datasets for val/test — channel style). When
     # val_dataset_id is set the library trains on 100% of `source`, early-stops on the
