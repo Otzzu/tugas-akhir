@@ -962,6 +962,25 @@ class TrainingSession:
             }, f, indent=2)
         logger.info(f"training_summary.json → {summary_path}")
 
+        # run_result.json — stable handoff contract: callers read this instead of
+        # globbing checkpoints or scraping the research summary.
+        with open(res_dir / "run_result.json", "w") as f:
+            _json.dump({
+                "run_id": cm.run_dir.name,
+                "checkpoint": str(cm.best_path),
+                "architecture": cfg.model.architecture,
+                "num_classes": cfg.model.num_classes,
+                "class_names": getattr(getattr(self, "_split_dataset", None), "class_names", None),
+                "metrics": {
+                    "best_val_f1": round(best_val_f1, 6),
+                    "test_acc": round(test_acc, 6),
+                    "test_f1": round(test_f1, 6),
+                    "test_f1w": round(test_f1w, 6),
+                    "test_prec": round(test_prec, 6),
+                    "test_rec": round(test_rec, 6),
+                },
+            }, f, indent=2)
+
         # split.json — map dataset indices to parquet_ids (seeded-split runs only)
         _sd = getattr(self, "_split_dataset", None)
         _train_idx = getattr(self, "_split_train_idx", None)

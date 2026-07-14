@@ -117,7 +117,10 @@ def merge_processed(cfg, sources, out_source, dedup=False, device="cpu") -> dict
                 merged.append(g)
             n_graphs += 1
 
-    meta = {"n_graphs": n_graphs, "class_names": unified_names}
+    sample = merged[0] if merged else (g if n_graphs else None)
+    fp = datasets[0]._fingerprint(sample)
+    fp["source"] = out_source
+    meta = {"n_graphs": n_graphs, "class_names": unified_names, "fingerprint": fp}
     if graphs_dir is None:
         meta["graphs"] = merged
     torch.save(meta, out_path)

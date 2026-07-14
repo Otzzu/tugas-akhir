@@ -438,9 +438,12 @@ class CodeBERTGraphDataset(Dataset):
                     f"ds_name to name the .pt explicitly."
                 )
 
+        # vocab is only needed to BUILD — a built .pt already carries class_names
+        fname = f"{self._ds_name}.pt" if storage == "inmemory" else f"{self._ds_name}_meta.pt"
+        already_built = (Path(root) / "processed" / fname).exists()
         source_dir = Path(root) / "raw" / source
         hdf5_check = Path(root) / "graphs" / f"{source}.hdf5"
-        has_vocab = (source_dir / "cwe_vocab.json").exists() or hdf5_check.exists()
+        has_vocab = already_built or (source_dir / "cwe_vocab.json").exists() or hdf5_check.exists()
         if mode in ("multiclass", "group", "owasp") and not has_vocab:
             raise RuntimeError(
                 f"mode='{mode}' but cwe_vocab.json not found under {source_dir}. "
@@ -503,6 +506,28 @@ class CodeBERTGraphDataset(Dataset):
             f"lm_dataset_{self._source}_{self._mode}_{self._lm_short}{live_suffix}"
             f"{ft_suffix}{ml_suffix}{top_suffix}{self._fsuffix}{samp_suffix}{self._ds_name_suffix}"
         )
+
+    def _fingerprint(self, sample=None) -> dict:
+        """Build identity stored inside the meta — the filename is a label, not a guarantee."""
+        from gnn_vuln import __version__
+        fp = {
+            "schema": 1,
+            "gnn_vuln": __version__,
+            "source": self._source,
+            "mode": self._mode,
+            "storage": self._storage,
+            "max_nodes": self.max_nodes,
+            "pretrained_lm": self._pretrained_lm,
+            "func_lm": self._func_lm,
+            "add_func_tokens": self._add_func_tokens,
+            "func_max_length": self._func_max_length,
+        }
+        if sample is not None and getattr(sample, "x", None) is not None:
+            fp["node_feat_dim"] = int(sample.x.shape[1])
+            ea = getattr(sample, "edge_attr", None)
+            if ea is not None and ea.dim() == 2:
+                fp["edge_dim"] = int(ea.shape[1])
+        return fp
 
     @property
     def _graphs_dir(self) -> Path:
@@ -690,7 +715,9 @@ class CodeBERTGraphDataset(Dataset):
                         batch_funcs[j], self._func_max_length, tokenizer
                     ).unsqueeze(0)
                     all_patched.append(g)
-            torch.save({"n_graphs": n, "class_names": class_names, "graphs": all_patched}, out_path)
+            torch.save({"n_graphs": n, "class_names": class_names,
+                        "fingerprint": self._fingerprint(all_patched[0] if all_patched else None),
+                        "graphs": all_patched}, out_path)
 
         else:  # lazy
             self._graphs_dir.mkdir(parents=True, exist_ok=True)
@@ -716,7 +743,8 @@ class CodeBERTGraphDataset(Dataset):
                         batch_funcs[j], self._func_max_length, tokenizer
                     ).unsqueeze(0)
                     torch.save(g, self._graphs_dir / f"{batch_start + j}.pt")
-            torch.save({"n_graphs": n, "class_names": class_names}, out_path)
+            torch.save({"n_graphs": n, "class_names": class_names,
+                        "fingerprint": self._fingerprint(g if n else None)}, out_path)
 
         logger.info("  Patch complete.")
         return True
@@ -1480,14 +1508,16 @@ class CodeBERTGraphDataset(Dataset):
             del cls_graphs
             gc.collect()
 
+        fp = self._fingerprint(all_graphs_buf[0] if all_graphs_buf else (g if global_idx else None))
         if self._storage == "inmemory":
             torch.save(
-                {"n_graphs": global_idx, "class_names": class_names, "graphs": all_graphs_buf},
+                {"n_graphs": global_idx, "class_names": class_names, "fingerprint": fp,
+                 "graphs": all_graphs_buf},
                 self.processed_paths[0],
             )
         else:
             torch.save(
-                {"n_graphs": global_idx, "class_names": class_names},
+                {"n_graphs": global_idx, "class_names": class_names, "fingerprint": fp},
                 self.processed_paths[0],
             )
         shutil.rmtree(cache_dir, ignore_errors=True)
