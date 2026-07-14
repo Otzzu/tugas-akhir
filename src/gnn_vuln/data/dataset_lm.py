@@ -78,6 +78,10 @@ def _fix_special_tokens_map(v):
     return v
 
 
+from functools import lru_cache
+
+
+@lru_cache(maxsize=8)
 def _load_tokenizer(model_name: str):
     """Load AutoTokenizer with 3-tier fallback for broken special_tokens_map.json.
 

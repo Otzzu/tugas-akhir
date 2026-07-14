@@ -66,6 +66,16 @@ from gnn_vuln.data.node_embedder import LMNodeEmbedder
 from gnn_vuln.models.registry import build_model
 from gnn_vuln.utils import get_device, load_checkpoint
 
+_EMBEDDERS: dict[tuple[str, str], LMNodeEmbedder] = {}
+
+
+def _get_embedder(model_name: str, device: str) -> LMNodeEmbedder:
+    """One frozen embedder per (LM, device) — rebuilding it per function costs seconds each."""
+    key = (model_name, device)
+    if key not in _EMBEDDERS:
+        _EMBEDDERS[key] = LMNodeEmbedder(model_name=model_name, device=device)
+    return _EMBEDDERS[key]
+
 
 # ---------------------------------------------------------------------------
 # Model loader
@@ -354,7 +364,7 @@ def predict_from_file(
     if cpg is None:
         return None
 
-    embedder = LMNodeEmbedder(model_name=pretrained_lm, device=str(device))
+    embedder = _get_embedder(pretrained_lm, str(device))
     codes = cpg["codes"]
     embed_batch = 256
     parts = [
