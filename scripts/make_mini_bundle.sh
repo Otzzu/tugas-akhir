@@ -74,9 +74,12 @@ echo "=== [3/4] bundle format API ==="
 STAGE="data/_mini"; rm -rf "$STAGE"; mkdir -p "$STAGE/processed"
 cp "$PROC/lm_dataset_megavul_mini_multiclass_unixcoder-base-nine_ft_ml1024.pt" "$STAGE/processed/"
 cp data/raw/megavul_mini/cwe_vocab.json "$STAGE/"
-tar -C "$STAGE" -cf - . | $COMP > "$PROC/megavul_mini.tar.gz"
+# anggota disebut eksplisit — `tar -c .` menambahkan awalan "./" dan materialize_dataset
+# menganggapnya bukan format API, lalu mengubur .pt di processed/processed/
+tar -C "$STAGE" -cf - cwe_vocab.json processed | $COMP > "$PROC/megavul_mini.tar.gz"
 rm -rf "$STAGE"
 echo "  -> megavul_mini.tar.gz ($(du -h "$PROC/megavul_mini.tar.gz" | cut -f1))"
+tar -tzf "$PROC/megavul_mini.tar.gz" | head -3 | sed 's/^/     /'
 
 echo "=== [4/4] unggah ==="
 rclone copy "$PROC/megavul_mini.tar.gz" "$DRIVE/api_datasets/megavul_mini/" --progress

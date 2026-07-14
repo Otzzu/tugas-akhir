@@ -109,7 +109,7 @@ def materialize_dataset(dataset_id: str) -> Path:
             if Path(m.name).name == "cwe_vocab.json":
                 (raw_dir / "cwe_vocab.json").write_bytes(data)
                 continue
-            rel = m.name[len("processed/"):] if nested else m.name.lstrip("./")
+            rel = m.name[len("processed/"):] if nested else m.name
             if not nested and not (rel.endswith(".pt") or "_graphs/" in rel):
                 continue
             if not rel:
