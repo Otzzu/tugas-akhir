@@ -78,6 +78,10 @@ services:
     build:
       context: ..
       dockerfile: API/Dockerfile
+      args:
+        # optional: pre-pruned joern (208MB) instead of the 1.7GB official zip.
+        # export JOERN_SLIM_GDRIVE_ID=<file-id>  (needs the Drive file shared publicly)
+        JOERN_SLIM_GDRIVE_ID: ${JOERN_SLIM_GDRIVE_ID:-}
     depends_on:
       db:
         condition: service_healthy
@@ -106,6 +110,10 @@ services:
     build:
       context: ..
       dockerfile: API/Dockerfile
+      args:
+        # optional: pre-pruned joern (208MB) instead of the 1.7GB official zip.
+        # export JOERN_SLIM_GDRIVE_ID=<file-id>  (needs the Drive file shared publicly)
+        JOERN_SLIM_GDRIVE_ID: ${JOERN_SLIM_GDRIVE_ID:-}
     command: celery -A API.celery_app worker --loglevel=info -Q relearn,ingest --concurrency=1
     depends_on:
       db:
@@ -125,6 +133,10 @@ services:
     build:
       context: ..
       dockerfile: API/Dockerfile
+      args:
+        # optional: pre-pruned joern (208MB) instead of the 1.7GB official zip.
+        # export JOERN_SLIM_GDRIVE_ID=<file-id>  (needs the Drive file shared publicly)
+        JOERN_SLIM_GDRIVE_ID: ${JOERN_SLIM_GDRIVE_ID:-}
     command: celery -A API.celery_app worker --loglevel=info -Q merge --concurrency=2
     depends_on:
       db:
