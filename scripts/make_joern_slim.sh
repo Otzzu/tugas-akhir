@@ -30,9 +30,16 @@ AFTER=$(du -sm "$TMP/x/joern-cli" | cut -f1)
 echo "  ${BEFORE} MB -> ${AFTER} MB"
 
 echo "=== [3/4] sanity: parse C ==="
+if ! command -v java >/dev/null; then
+  echo "  java tidak ada, pasang JRE 21 ..."
+  apt-get update -q && apt-get install -y -q openjdk-21-jre-headless
+fi
+java -version 2>&1 | head -1 | sed 's/^/  /'
 chmod +x "$TMP/x/joern-cli"/joern* 2>/dev/null || true
 printf 'int f(char*s){char b[8];strcpy(b,s);return b[0];}\n' > "$TMP/t.c"
-"$TMP/x/joern-cli/joern-parse" "$TMP/t.c" --output "$TMP/t.bin" >/dev/null
+# jangan sembunyikan errornya — sanity yang gagal diam-diam itu yang bikin bingung
+"$TMP/x/joern-cli/joern-parse" "$TMP/t.c" --output "$TMP/t.bin" || {
+  echo "ERR: joern-parse gagal. java=$(java -version 2>&1 | head -1)"; exit 1; }
 echo "  joern-parse OK"
 
 echo "=== [4/4] lisensi + tar + unggah ==="
