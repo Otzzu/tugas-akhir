@@ -502,6 +502,7 @@ class TrainingSession:
             precompute_line_cls=getattr(cfg.model, "precompute_line_cls", False),
             ds_name_suffix=getattr(cfg.data, "ds_name_suffix", ""),
             ds_name=getattr(cfg.data, "ds_name", ""),
+            no_build=getattr(cfg.data, "no_build", False),
             target_vocab=getattr(cfg.data, "target_vocab", None),
         )
         bs          = cfg.train.batch_size
@@ -739,6 +740,7 @@ class TrainingSession:
         kwargs["resample_seed"]          = _rd("resample_seed", 42)
         kwargs["storage"]                = _rd("storage", "inmemory")
         kwargs["target_vocab"]           = _rd("target_vocab", None)
+        kwargs["no_build"]               = getattr(cfg.data, "no_build", False)
         ds = CodeBERTGraphDataset(source=getattr(rcfg, "source", ""), **kwargs)
         train_idx, _, _ = ds.get_splits(
             train_ratio=getattr(cfg.data, "train_ratio", 0.8),

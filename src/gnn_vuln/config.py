@@ -71,6 +71,7 @@ class DataConfig:
     # otherwise test is empty (API production: no test holdout). source_test alone
     # is ignored. Leave both empty for the internal seeded split.
     dataset_path: str = ""   # explicit built .pt path — skips name derivation entirely
+    no_build: bool = False   # a missing .pt raises instead of rebuilding from raw CPG
     source_val: str = ""
     source_test: str = ""
     # Dataset-identity overrides for the role datasets (same pattern as replay's

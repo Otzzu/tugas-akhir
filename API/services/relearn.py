@@ -38,9 +38,10 @@ from API.services import registry, storage
 ROOT = settings.ROOT
 JOBS_DIR = settings.JOBS_DIR
 DATA_ROOT = ROOT / "data"            # local materialization target (the trainer's root)
-ENV: dict[str, str] = {"GNN_VULN_API_MODE": "1"}  # tell the lib it runs under the API: skip
-                                                   # research-only artifacts (training_log.csv,
-                                                   # training_curves.png); eval stays metrics-only
+# Output policy only: skip research artifacts (training_log.csv, curves), eval stays
+# metrics-only. Whether a dataset may be rebuilt is NOT decided here — it is data.no_build,
+# set per config, so the rule travels with the run instead of with the environment.
+ENV: dict[str, str] = {"GNN_VULN_API_MODE": "1"}
 TRAIN_MODULE = "gnn_vuln.train"      # library trainer (installed package, single source of truth)
 EVAL_MODULE = "gnn_vuln.evaluate"    # library evaluator — returns metrics_summary (cls + localization)
 COMPUTE_IMPORTANCE_ON_FINISH = True  # eagerly compute EWC importance for the newly trained model
@@ -318,6 +319,7 @@ def build_config(method: str, dataset_ids: list[str], base_model_id: str | None,
         "max_per_class": fdata.get("max_per_class", data_block.get("max_per_class", 0)),
         "resample_seed": fdata.get("resample_seed", data_block.get("resample_seed", 42)),
         "storage": fdata.get("storage", data_block.get("storage", "inmemory")),
+        "no_build": True,   # the service ships built .pt only; a miss is a bug, not a rebuild
         "ds_name_suffix": data_block.get("ds_name_suffix", ""),
     }}
     if base_model_id and method not in _REQUIRES_BASE:   # /train on a base config

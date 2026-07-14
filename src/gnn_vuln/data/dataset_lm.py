@@ -398,6 +398,7 @@ class CodeBERTGraphDataset(Dataset):
         ds_name_suffix: str = "",   # graph_vit: load a separate patched .pt
         ds_name: str = "",          # override the derived name — for callers that own their own versioning
         cwe_vocab: dict[str, int] | None = None,  # build input, in memory — skips raw/<source>/cwe_vocab.json
+        no_build: bool = False,     # a missing .pt raises instead of rebuilding from raw CPG
         target_vocab: dict | None = None,   # CL: remap labels onto this canonical vocab at load
         transform=None,
         pre_transform=None,
@@ -407,6 +408,7 @@ class CodeBERTGraphDataset(Dataset):
         self._ds_name_suffix = ds_name_suffix
         self._ds_name_explicit = ds_name
         self._cwe_vocab = cwe_vocab
+        self._no_build = no_build
         self._target_vocab = target_vocab
         self._precompute_line_cls = precompute_line_cls
         self._func_max_length = func_max_length
@@ -437,16 +439,13 @@ class CodeBERTGraphDataset(Dataset):
         self._fsuffix = _filter_suffix(self._cwe_list if self._cwe_list else None, cwe_groups, filter_owasp, filter_top25_dangerous)
 
         self._mode = mode
-        # API mode has no raw CPG to fall back on — a missing .pt means the caller's params
-        # do not match the .pt it shipped. Fail here, before anything reaches Joern.
-        if os.environ.get("GNN_VULN_API_MODE") == "1":
+        if no_build:
             fname = f"{self._ds_name}.pt" if storage == "inmemory" else f"{self._ds_name}_meta.pt"
             expected = Path(root) / "processed" / fname
             if not expected.exists():
                 raise FileNotFoundError(
-                    f"processed dataset not found: {expected}. Rebuilding from raw CPG is "
-                    f"disabled under GNN_VULN_API_MODE. Check the dataset params, or pass "
-                    f"ds_name to name the .pt explicitly."
+                    f"processed dataset not found: {expected} (no_build=True). Pass ds_name to "
+                    f"name the .pt explicitly, or open it by path with core.open_dataset."
                 )
 
         # vocab is only needed to BUILD — a built .pt already carries class_names
@@ -976,14 +975,11 @@ class CodeBERTGraphDataset(Dataset):
         if self._try_patch_from_existing(Path(self.processed_paths[0])):
             return
 
-        # Under the API there is no raw CPG to fall back on: a missing .pt means the caller's
-        # params do not match the .pt it shipped. Fail loudly instead of walking into Joern.
-        if os.environ.get("GNN_VULN_API_MODE") == "1":
+        if self._no_build:
             raise FileNotFoundError(
                 f"processed dataset not found: {Path(self.processed_paths[0]).name} "
-                f"(source={self._source!r}, storage={self._storage!r}). Rebuilding from raw CPG "
-                f"is disabled under GNN_VULN_API_MODE. Check that the dataset params match the "
-                f"built .pt, or pass ds_name to name it explicitly."
+                f"(source={self._source!r}, storage={self._storage!r}, no_build=True). "
+                f"Rebuilding from raw CPG is off; pass ds_name, or open it by path."
             )
 
         # HDF5 source takes priority over raw file tree

@@ -82,6 +82,7 @@ def open_dataset(path: str | Path, *, device: str = "cpu", target_vocab: dict | 
         root=str(path.parent.parent),
         source=fp.get("source", name),
         ds_name=name,
+        no_build=True,          # open means open: a missing .pt raises, it never runs Joern
         storage=storage,
         mode=fp.get("mode", "multiclass"),
         max_nodes=fp.get("max_nodes", 2500),

@@ -400,6 +400,7 @@ def main() -> None:
         storage=getattr(cfg.data, "storage", "inmemory"),
         ds_name_suffix=getattr(cfg.data, "ds_name_suffix", ""),
         ds_name=getattr(cfg.data, "ds_name", ""),
+        no_build=getattr(cfg.data, "no_build", False),
     )
     _, _, test_idx = dataset.get_splits(
         train_ratio=getattr(cfg.data, "train_ratio", 0.8),
