@@ -10,8 +10,10 @@ Endpoints (all 18):
 
 Functional paths: config-per-entity (NO kind), config-object bodies (inference top_k_lines,
 datasets config, train/relearn config), data_config_id base + config override (layering),
-dataset MERGE, /train from-scratch + config.model_type arch override, /relearn ALL FOUR methods
-(finetune, ER, EWC, EWC-ER) with task-B label alignment, then inference on a relearned model.
+raw-dataset lineage, flaw_lines+func_after on one row, dataset MERGE, /train from-scratch +
+config.model_type arch override, /relearn ALL FOUR methods (finetune, ER, EWC, EWC-ER) with
+task-B label alignment + CUMULATIVE dataset lineage, a REFUSED featurization mismatch, then
+inference on a relearned model.
 
     python API/tests/_test_e2e.py [BASE_URL]
 
@@ -147,6 +149,20 @@ def main():
         rec = call("GET", "/datasets").get(ds_a, {})
         check(bool(rec.get("data_config_id")) and str(rec.get("storage_uri", "")).startswith("s3://"),
               "dataset A has data_config + object-storage bundle")
+        # raw lineage: the uploaded rows are a first-class entity, so the same raw can be
+        # rebuilt under another featurization without re-uploading it.
+        check(bool(rec.get("raw_id")), f"dataset A records its raw_id ({rec.get('raw_id')})")
+
+    # 8b) a row carrying BOTH flaw_lines and func_after — flaw_lines is the annotation, the
+    #     diff is only a fallback, so the explicit one must win (never silently dropped).
+    print("8b) POST /datasets ingest (flaw_lines + func_after together)")
+    both = [{"language": "c", "cwe": "CWE-787", "flaw_lines": [3],
+             "code": "void f(const char *s) {\n    char b[8];\n    strcpy(b, s);\n    puts(b);\n}",
+             "func_after": "void f(const char *s) {\n    char b[8];\n    strncpy(b, s, sizeof(b) - 1);\n    puts(b);\n}"},
+            {"language": "c", "label": 0,
+             "code": "int add(int a, int b) {\n    return a + b;\n}"}]
+    ds_both = ingest("e2e_both", both)
+    check(bool(ds_both), "row with flaw_lines + func_after ingests (explicit annotation kept)")
 
     # 10) ingest B reusing megavul_mini's data_config as base + a config override (layering).
     #     The ingest() helper asserts it finishes — that IS the layering test.
@@ -167,8 +183,12 @@ def main():
             ds_merged = mdone.get("dataset_id")
             check(mdone.get("status") == "done" and bool(ds_merged), f"merge done -> {ds_merged}")
             if ds_merged:
-                merged_nc = int(call("GET", "/datasets").get(ds_merged, {}).get("num_classes") or 0)
+                mrec = call("GET", "/datasets").get(ds_merged, {})
+                merged_nc = int(mrec.get("num_classes") or 0)
                 check(merged_nc >= mini_nc, f"merge resolved vocab to the union ({merged_nc} >= mini {mini_nc})")
+                # provenance: a merged dataset names its parents, each keeping its own raw_id
+                check(set(mrec.get("source_dataset_ids") or []) == {ds_a, "megavul_mini"},
+                      f"merge records its parents ({mrec.get('source_dataset_ids')})")
         else:
             check(False, f"merge job not created ({mj})")
 
@@ -204,10 +224,31 @@ def main():
                 check(False, f"relearn[{method}] not created ({rj})"); continue
             rmid = poll(f"/relearn/{rid}").get("result_model_id")
             check(bool(rmid) and rmid in call("GET", "/models"), f"relearn[{method}] registered model ({rmid})")
+            if rmid:
+                m = call("GET", "/models").get(rmid, {})
+                # ER replays the base model's CUMULATIVE lineage, not just t-1 — so the child's
+                # dataset_ids must contain every ancestor dataset plus this task's.
+                lineage = m.get("dataset_ids") or []
+                check("megavul_mini" in lineage and ds_a in lineage,
+                      f"relearn[{method}] lineage cumulative ({lineage})")
+                # class space comes from the trainer (target-aligned), so names must match the head
+                check(len(m.get("class_names") or []) == int(m.get("num_classes") or 0),
+                      f"relearn[{method}] class_names match num_classes ({m.get('num_classes')})")
             last_relearned = rmid or last_relearned
         print("   GET /relearn (list)")
         check(isinstance(call("GET", "/relearn"), list) and len(call("GET", "/relearn")) >= 4,
               "relearn jobs listed (>=4)")
+
+        # 13b) NEGATIVE — relearning a nine-featurized seed model on a base-featurized dataset.
+        #      Same node-feature dim, different LM: it would train fine and quietly ruin the
+        #      model, so it must be refused up front.
+        print("13b) POST /relearn (featurization mismatch — must be REFUSED)")
+        bad = call("POST", "/relearn", {"method": "finetune", "base_model_id": "graph_based",
+                                        "dataset_ids": ["megavul_mini"], "run_name": "e2e_bad",
+                                        "config": {"epochs": 1}})
+        refused = bool(bad.get("_http_error")) or (
+            poll(f"/relearn/{bad['job_id']}").get("status") == "failed" if bad.get("job_id") else False)
+        check(refused, "featurization mismatch refused (nine model vs base dataset)")
 
     # 14) inference on a relearned model — full loop closes
     if last_relearned:
