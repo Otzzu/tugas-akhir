@@ -111,6 +111,16 @@ def merge_datasets(self, job_id: str) -> dict:
     try:
         _set_status(job_id, status="running")
 
+        # Node embeddings are LM-specific and CodeBERT vs UniXcoder share dims, so merging
+        # datasets built with different featurizations produces a .pt that loads, trains, and
+        # means nothing. Refuse before staging a byte.
+        from API.services.relearn import _dataset_data_config
+        feats = {did: (_dataset_data_config(did) or {}).get("model", {}) for did in dataset_ids}
+        for k in ("pretrained_lm", "func_max_length"):
+            vals = {did: f.get(k) for did, f in feats.items() if f.get(k) is not None}
+            if len(set(vals.values())) > 1:
+                raise ValueError(f"cannot merge: datasets disagree on {k}: {vals}")
+
         # 1) stage each source dataset's .pt + vocab onto local disk, collect sources
         src_sources = []
         for did in dataset_ids:

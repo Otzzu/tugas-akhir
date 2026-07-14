@@ -55,7 +55,7 @@ DRIVE = {
 # Dataset-only seeds (no model) — already API-format bundles on Drive, copied straight to MinIO.
 # megavul_mini = small 26-class subsample for demos + the relearn task-A test path.
 EXTRA_DATASETS = {
-    "megavul_mini": f"{GDRIVE}/data/processed/megavul_mini/megavul_mini.tar.gz",
+    "megavul_mini": f"{GDRIVE}/api_datasets/megavul_mini/megavul_mini.tar.gz",
 }
 
 

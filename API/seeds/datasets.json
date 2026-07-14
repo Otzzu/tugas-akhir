@@ -20,7 +20,7 @@
     "source": "megavul_mini", "mode": "multiclass", "max_nodes": 2500, "top_cwe": 0,
     "filter_top25_dangerous": false, "max_per_class": 0, "resample_seed": 42,
     "storage": "inmemory", "ds_name_suffix": "", "num_classes": 26,
-    "featurization": {"pretrained_lm": "microsoft/unixcoder-base", "func_lm": "microsoft/unixcoder-base", "add_func_tokens": true, "func_max_length": 1024},
+    "featurization": {"pretrained_lm": "microsoft/unixcoder-base-nine", "func_lm": "microsoft/unixcoder-base-nine", "add_func_tokens": true, "func_max_length": 1024},
     "storage_uri": "s3://datasets/megavul_mini.tar.gz"
   },
   "relearn": {
