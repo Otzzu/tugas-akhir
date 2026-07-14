@@ -641,14 +641,8 @@ def execute_relearn(job_id: str, train_cfg, importance_cfg, meta: dict) -> None:
                 for cwe, idx in tv.items():
                     if 0 <= int(idx) < len(class_names):
                         class_names[int(idx)] = cwe
-            else:
-                vocab_path = DATA_ROOT / "raw" / meta["source"] / "cwe_vocab.json"
-                if vocab_path.exists():
-                    vocab = json.loads(vocab_path.read_text())
-                    class_names = [""] * len(vocab)
-                    for cwe, idx in vocab.items():
-                        if 0 <= idx < len(class_names):
-                            class_names[idx] = cwe
+            else:  # /train from scratch on lib < 0.1.17 — the dataset's own class space
+                class_names = _dataset_class_names(job["dataset_ids"][0], meta["source"])
             # object storage is the source of truth for the checkpoint (so a worker on
             # another node can load it); the local path stays as a cache.
             ckpt_uri = storage.put_bytes(settings.S3_BUCKET_CHECKPOINTS, f"{new_id}.pt", best.read_bytes())

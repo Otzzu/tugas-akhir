@@ -46,6 +46,22 @@ def _run(cmd: list[str], log) -> None:
     subprocess.run(cmd, check=True, cwd=str(ROOT), stdout=log, stderr=subprocess.STDOUT)
 
 
+def _built_class_names(processed_dir: Path) -> list[str]:
+    """Class space of the .pt that was just built — the one source of truth. cwe_vocab.json is
+    the build INPUT (pre-filter); the .pt carries what the labels actually became."""
+    import torch
+    metas = sorted(processed_dir.glob("*_meta.pt")) or [
+        p for p in sorted(processed_dir.glob("*.pt"))
+        if p.name not in ("pre_filter.pt", "pre_transform.pt")
+    ]
+    if not metas:
+        raise FileNotFoundError(f"no built .pt under {processed_dir}")
+    names = (torch.load(metas[0], map_location="cpu", weights_only=False) or {}).get("class_names")
+    if not names:
+        raise ValueError(f"{metas[0].name} has no class_names")
+    return list(names)
+
+
 def _log_tail(path, n: int = 12, maxlen: int = 600) -> str:
     """Last meaningful lines of a job log — folded into the job's `message` so the real
     subprocess error reaches the user via GET /datasets/jobs/{id}, no log-spelunking."""
@@ -120,9 +136,10 @@ def merge_datasets(self, job_id: str) -> dict:
             merge.append("--dedup")
         _run(merge, log)
 
-        # num_classes from the unified vocab the merge wrote
+        # class space of the MERGED .pt (union of the parents, benign first) — the vocab file
+        # the merge also wrote is a convenience copy, not the source of truth.
         vocab_path = raw_dir / out_source / "cwe_vocab.json"
-        num_classes = len(json.loads(vocab_path.read_text())) if vocab_path.exists() else 2
+        num_classes = len(_built_class_names(processed_dir))
 
         # 4) register the data-build config (content-addressed, immutable)
         cfg.setdefault("model", {})["num_classes"] = num_classes
@@ -220,7 +237,8 @@ def ingest_dataset(self, job_id: str) -> dict:
                 shutil.rmtree(src_dir)
             prep_dir.rename(src_dir)
 
-        # num_classes from the vocab the prepare step wrote
+        # vocab is the BUILD INPUT (CWE -> id, pre-filter). The authoritative class space is
+        # whatever the .pt ends up with — read back after build_pt, below.
         vocab_path = src_dir / "cwe_vocab.json"
         if mode == "binary":
             num_classes = 2
@@ -253,6 +271,12 @@ def ingest_dataset(self, job_id: str) -> dict:
 
         # 3) CPG -> .pt via the library entrypoint
         _run(["python", "-m", "gnn_vuln.data.build_pt", "--config", str(cfg_path), "--split", "train"], log)
+
+        # the filters (top_cwe, top25) narrow the vocab during the build, so the .pt's own
+        # class space is the truth — not the pre-filter vocab file.
+        if mode != "binary":
+            num_classes = len(_built_class_names(processed_dir))
+            log.write(f"class space from built .pt: {num_classes} classes\n"); log.flush()
 
         # 4) bundle the DATA ARTIFACTS only (.pt + label vocab) -> object storage.
         # The config is NOT bundled: it lives in the DB (datasets.params), which is
