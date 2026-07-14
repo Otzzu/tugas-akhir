@@ -3,7 +3,8 @@
 **Tanggal:** 15 Juli 2026
 **Repo ditinjau:** `Benardo07/sast-ai-service` @ `ebeac00` (*feat: fix ER cumulative bug*)
 **Pin sekarang:** `gnn-vuln==0.1.15`
-**Tersedia di PyPI:** `0.1.16` (stabil terbaru), `0.1.17rc1..rc4`
+**Stabil terbaru di PyPI:** `0.1.16` ← target upgrade kalian
+**`0.1.17`:** masih **RC** (`0.1.17rc1..rc4`), hidup di branch `refactor/core-split`, **belum di-merge ke `main`, belum rilis final.** Jangan dipin sekarang.
 
 ---
 
@@ -11,7 +12,21 @@
 
 **Naik ke `0.1.16` sekarang.** Satu baris di `pyproject.toml`, tanpa perubahan kode, dan langsung membuka satu kemampuan yang hari ini kalian tolak sendiri lewat `ValueError`.
 
-**Jangan naik ke `0.1.17` dulu.** `0.1.17` akan **menggagalkan setiap relearn** di image kalian yang sekarang — bukan melambat, tapi mati dengan `FileNotFoundError`. Sebabnya di bagian 2. Ada 3 hal yang harus dikerjakan dulu; semuanya kecil, tapi tak boleh dilewat.
+**`0.1.17` belum final** — masih RC di branch. Review ini fokus ke kalian + `main` (`0.1.16`). Tapi kalian perlu tahu 0.1.17 itu **dibuat untuk apa**, karena beberapa bug di bawah memang hanya sembuh di sana, dan karena begitu ia rilis, upgrade-nya **tidak otomatis** — ada 3 hal yang harus kalian ubah dulu (bagian 6), dan tanpa itu setiap relearn kalian **mati**.
+
+### 0.1.17 dibuat untuk apa
+
+| Yang dibawa | Menyembuhkan |
+|---|---|
+| **Fingerprint di dalam `.pt`** (LM, dimensi, versi lib) | Dataset tak cocok ditolak dalam 0,1 detik **sebelum** bundle diunduh. Nama file itu label, bukan jaminan — selama ini kita berdua bergantung pada label. |
+| **`data.dataset_path`** — trainer terima path, bukan nama turunan | Seluruh kelas bug "nama `.pt` tak cocok" (bagian 3) mati permanen |
+| **`core.merge-datasets --paths`** + `DatasetInfo` JSON | Ganti impor privat `_out_processed_path`; merge tak lagi menebak nama |
+| **`run_result.json`** per run | Ganti `glob` + `mtime` (bagian 5.2) — hasil **diberitahukan**, bukan ditebak |
+| **Perluasan XML jadi fungsi bersama** | Bug nama merge berfilter (bagian 3) |
+| **XML hilang = error keras** | "Diam-diam tidak memfilter" — tapi ini justru yang **memblokir** upgrade kalian (bagian 2) |
+| **`train.research_artifacts` + `data.no_build`** (config, bukan env) | `GNN_VULN_API_MODE` **dihapus**; `.pt` hilang jadi error, bukan diam-diam menyalakan Joern berjam-jam |
+| **Test jadi peran mandiri** | Batasan "TEST butuh VAL" (bagian 5.4) hilang; model tanpa metrik bilang alasannya |
+| **`class_names` selalu dari `.pt`** | `cwe_vocab.json` lenyap dari jalur API (bagian 5.3) |
 
 ---
 
@@ -123,7 +138,27 @@ Dipakai di `loader.py:124`, `relearn.py:179/331/465`. Masalahnya: bundle hasil m
 
 Kebenarannya ada di `.pt` (`class_names` di meta), bukan di file JSON di sebelahnya. Di `0.1.17`, `core.open_dataset(path)` mengembalikan `DatasetInfo.class_names` langsung dari `.pt`, dan `cwe_vocab.json` sudah **hilang total** dari jalur API kami — vocab jadi nilai di memori saat build, bukan file.
 
-### 5.4 "TEST butuh VAL"
+### 5.4 Split: yang mengisi sisanya bukan default library, tapi **config basis**
+
+Komentar di `relearn.py:192-193` bilang:
+
+> *"setting only the keys the caller provided (library defaults 0.8/0.1/42 fill the rest)"*
+
+Tidak benar. `cfg` di titik itu **bukan** config kosong — ia salinan config model basis, dan config yang kami kirim sudah memuat:
+
+```yaml
+data:
+  train_ratio: 0.9
+  val_ratio: 0.1
+```
+
+Jadi kalau pemanggil mengirim `split: {train_ratio: 0.8}` saja, `val_ratio` **tidak** jatuh ke default library — ia mewarisi nilai dari config basis. Sekarang kebetulan tak terasa karena angkanya sama, tapi begitu model basis lahir dari config dengan rasio lain, pemanggil mendapat split yang bukan dia minta, tanpa peringatan.
+
+Kalian sudah membuang warisan yang berbahaya (`cfg.pop("ewc")`, `cfg.pop("replay")` di `:206-207`). Blok split perlu perlakuan yang sama: **tepat satu sumber split per run**. Buang dulu `train_ratio` / `val_ratio` / `split_file` / `source_val` / `source_test` warisan, baru pasang yang diminta pemanggil.
+
+Catatan `split_file`: config kalian tak pernah menyetelnya, tapi ia **tidak ikut di-pop** juga. Di library, `split_file` **mengalahkan** rasio. Jadi kalau suatu hari ada config riset (yang memang memakainya untuk menyamai split baseline) masuk sebagai basis, rasio yang diminta pemanggil akan diabaikan **diam-diam**. Kami kena persis bug ini di API sendiri bulan ini — makanya disebut di sini.
+
+### 5.5 "TEST butuh VAL"
 
 Komentar di `schemas.py:111` benar untuk `0.1.15/0.1.16`: test-only diabaikan library. **Sudah tidak berlaku di `0.1.17`** — test jadi peran mandiri, boleh dicampur (rasio untuk train/val + dataset benchmark tetap untuk test). Itu justru bentuk yang kalian inginkan: satu benchmark tetap, dibandingkan lintas versi model.
 
@@ -135,9 +170,10 @@ Komentar di `schemas.py:111` benar untuk `0.1.15/0.1.16`: test-only diabaikan li
 ```toml
 "gnn-vuln==0.1.16",
 ```
-lalu hapus `ValueError` di `_write_merge_config` (bagian 4). Perbaiki juga 5.1 — itu independen dari versi dan yang paling berbahaya di antara semuanya.
+lalu hapus `ValueError` di `_write_merge_config` (bagian 4). Perbaiki juga **5.1** (metrik nyasar) dan **5.4** (warisan split) — keduanya **independen dari versi**, jadi tak ada gunanya menunggu 0.1.17. 5.1 yang paling berbahaya dari semua isi dokumen ini.
 
-**Langkah 2 — `0.1.17`, setelah 3 hal ini:**
+**Langkah 2 — nanti, SETELAH `0.1.17` rilis final.**
+Sekarang 0.1.17 masih RC di branch `refactor/core-split`, belum di-merge ke `main`. **Jangan dipin dulu** — RC bisa masih berubah. Kami kabari kalau sudah final. Saat itu, kerjakan 3 hal ini **sebelum** menaikkan pin, bukan sesudah:
 
 1. **Buang knob benchmark** dari blok `data` yang kalian kirim (`filter_top25_dangerous`, `filter_owasp`, `top_cwe`, `max_per_class`) — kalau tidak, setiap run mati (bagian 2).
 2. **Ganti `GNN_VULN_API_MODE`.** Env itu **dihapus** di `0.1.17`. Kode kalian menyetelnya di `relearn.py:391` + `:781` dan sengaja melepasnya di `:971`. Setelah upgrade env itu jadi **tak berefek** — dan gagalnya senyap: tiap run kembali menulis artefak riset (`predictions.csv`, `embeddings.npz`, plot, `training_log.csv`) ke disk. Gantinya dua field yang ikut tersimpan bersama config run:
