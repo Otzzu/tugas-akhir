@@ -37,7 +37,8 @@ JH=$(ls -d /usr/lib/jvm/java-21-openjdk* /usr/lib/jvm/temurin-21* /usr/lib/jvm/*
 echo "  java: $(java -version 2>&1 | head -1)"
 # tiap worker joern = 1 JVM (~3 GB puncak), jadi batasnya RAM bukan core
 RAM_GB=$(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024 ))
-AUTO=$(( RAM_GB / 4 )); [[ $AUTO -gt $(nproc) ]] && AUTO=$(nproc); [[ $AUTO -lt 1 ]] && AUTO=1
+AUTO=$(( RAM_GB / 4 )); [[ $AUTO -gt $(nproc) ]] && AUTO=$(nproc)
+[[ $AUTO -gt 32 ]] && AUTO=32; [[ $AUTO -lt 1 ]] && AUTO=1   # di atas 32, overhead JVM menang
 WORKERS="${WORKERS:-$AUTO}"
 echo "  cpu=$(nproc) ram=${RAM_GB}G -> workers=$WORKERS"
 
