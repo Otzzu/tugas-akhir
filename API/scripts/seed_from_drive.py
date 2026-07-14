@@ -112,6 +112,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Seed trained models + datasets from Drive into MinIO")
     ap.add_argument("--models", default="all",
                     help="'all' or comma-separated: graph_based,hybrid_graph_lm,sequential")
+    ap.add_argument("--no-model-dataset", action="store_true",
+                    help="checkpoints only — skip each model's (multi-GB) training dataset. The "
+                         "model still serves /inference, but relearning IT needs its task-A data, "
+                         "so that job will fail. For a cheap E2E, where megavul_mini is enough.")
     args = ap.parse_args()
 
     sel = list(DRIVE) if args.models == "all" else [m.strip() for m in args.models.split(",") if m.strip()]
@@ -127,10 +131,14 @@ def main() -> None:
         for mid in sel:
             d = DRIVE[mid]
             print(f"\n== {mid} (dataset_id={d['dataset_id']}) ==")
-            # a model is always seeded WITH its dataset — relearn ER/EWC materialize the base
-            # model's dataset, so seeding a checkpoint without its dataset would be unusable.
+            # a model is normally seeded WITH its dataset — relearn ER/EWC materialize the base
+            # model's dataset, so a checkpoint alone cannot be continued (only served).
             seed_checkpoint(s3, mid, d["ckpt"], tmp)
-            seed_dataset(s3, d["dataset_id"], d["data"], tmp, done)
+            if args.no_model_dataset:
+                print(f"  dataset    -> SKIPPED ({d['dataset_id']}); /inference works, "
+                      f"relearn on '{mid}' will not")
+            else:
+                seed_dataset(s3, d["dataset_id"], d["data"], tmp, done)
 
         # small test/demo datasets — always seeded (cheap, small) so a single-model seed still
         # has megavul_mini for the /train + /relearn smoke tests.

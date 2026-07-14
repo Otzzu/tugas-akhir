@@ -19,7 +19,7 @@ inference on a relearned model.
 
 Seed first (host) — model 1 with its dataset + megavul_mini (a model is always seeded with its
 dataset). This e2e relearns a small model trained on megavul_mini, so it stays cheap on CPU:
-    uv run --with gdown --with boto3 python API/scripts/seed_from_drive.py --models graph_based
+    uv run --with boto3 python API/scripts/seed_from_drive.py --models graph_based --no-model-dataset
 
 Stdlib only (urllib). Exits non-zero if any check fails. Deep DB+MinIO proof afterwards:
     docker compose -f API/docker-compose.yml exec api python /app/API/tests/_verify_persist.py
@@ -239,16 +239,20 @@ def main():
         check(isinstance(call("GET", "/relearn"), list) and len(call("GET", "/relearn")) >= 4,
               "relearn jobs listed (>=4)")
 
-        # 13b) NEGATIVE — relearning a nine-featurized seed model on a base-featurized dataset.
-        #      Same node-feature dim, different LM: it would train fine and quietly ruin the
-        #      model, so it must be refused up front.
-        print("13b) POST /relearn (featurization mismatch — must be REFUSED)")
+        # 13b) NEGATIVE — graph_based is ml1024, megavul_26_lm is ml5120. Same LM, same dims,
+        #      but a different token window: it would train and quietly mean something else.
+        #      The guard reads the DB only, so this must be refused WITHOUT staging the (huge,
+        #      not-even-seeded) 5120 bundle — a doomed job must not cost gigabytes first.
+        print("13b) POST /relearn (featurization mismatch — must be REFUSED, no download)")
+        t0 = time.time()
         bad = call("POST", "/relearn", {"method": "finetune", "base_model_id": "graph_based",
-                                        "dataset_ids": ["megavul_mini"], "run_name": "e2e_bad",
+                                        "dataset_ids": ["megavul_26_lm"], "run_name": "e2e_bad",
                                         "config": {"epochs": 1}})
         refused = bool(bad.get("_http_error")) or (
             poll(f"/relearn/{bad['job_id']}").get("status") == "failed" if bad.get("job_id") else False)
-        check(refused, "featurization mismatch refused (nine model vs base dataset)")
+        took = time.time() - t0
+        check(refused, f"featurization mismatch refused (ml1024 model vs ml5120 dataset), {took:.1f}s")
+        check(took < 60, f"refusal is cheap — no bundle staged ({took:.1f}s)")
 
     # 14) inference on a relearned model — full loop closes
     if last_relearned:
