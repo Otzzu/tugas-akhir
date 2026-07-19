@@ -72,11 +72,15 @@ _METHOD_ALL = [
     ("ewc",        "EWC-DR",                       f"{PREFIX}_cil_ewc{SUF}.yaml"),
     ("replay",     "Experience replay",            f"{PREFIX}_cil_replay{SUF}.yaml"),
     ("ewc_replay", "EWC-DR dan experience replay", f"{PREFIX}_cil_ewc_replay{SUF}.yaml"),
+    # upper bound: joint from scratch (ewc off = no ckpt load, replay bpc 0 = full task-A train).
+    # NOT in the default set — run explicitly via RELEARN_METHODS=joint.
+    ("joint",      "Pelatihan ulang gabungan",     f"{PREFIX}_cil_joint{SUF}.yaml"),
 ]
+_METHOD_DEFAULT = [t for t in _METHOD_ALL if t[0] != "joint"]
 _msel = os.environ.get("RELEARN_METHODS", "").strip()
 _mmap = {k: (lbl, CIL / f) for k, lbl, f in _METHOD_ALL}
 METHODS = ([_mmap[k.strip()] for k in _msel.split(",")] if _msel
-           else [(lbl, CIL / f) for _, lbl, f in _METHOD_ALL])
+           else [(lbl, CIL / f) for _, lbl, f in _METHOD_DEFAULT])
 
 # Trained method checkpoints already on Drive (run_ids from RELEARN_CIL_RESULTS.md) — used by
 # --reeval to re-score the saved models with the current evaluate.py, no retraining.
@@ -293,6 +297,8 @@ def main() -> None:
     global SEED
     SEED = args.seed
     out_md = OUT_MD if SEED is None else OUT_MD.with_name(f"RELEARN_CIL_RESULTS{SUF}{ARCH_TAG}_s{SEED}.md")
+    if _msel:  # subset run (e.g. joint) writes its own md, never clobbers the canonical one
+        out_md = out_md.with_name(out_md.stem + "_" + _msel.replace(",", "_") + ".md")
     if args.setup or args.reeval:
         setup()
 
