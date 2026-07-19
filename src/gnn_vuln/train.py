@@ -674,7 +674,6 @@ class TrainingSession:
             func_max_length=getattr(cfg.model, "func_max_length", 512),
             precompute_line_cls=getattr(cfg.model, "precompute_line_cls", False),
             ds_name_suffix=getattr(jcfg, "ds_name_suffix", ""),
-            ds_name=getattr(jcfg, "ds_name", "") or "",
         )
         def _jd(k, default):
             v = getattr(jcfg, k, None)
@@ -685,7 +684,6 @@ class TrainingSession:
         kwargs["resample_seed"]          = _jd("resample_seed", 42)
         kwargs["storage"]                = _jd("storage", "inmemory")
         kwargs["target_vocab"]           = _jd("target_vocab", None)
-        kwargs["no_build"]               = getattr(cfg.data, "no_build", False)
         ds = CodeBERTGraphDataset(source=getattr(jcfg, "source", ""), **kwargs)
         train_idx, _, _ = ds.get_splits(
             train_ratio=getattr(cfg.data, "train_ratio", 0.8),
