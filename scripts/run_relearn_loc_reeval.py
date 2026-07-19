@@ -8,17 +8,18 @@ computes the localization block at every eval, so this script re-runs the same
 evals and collects Top-1/Top-5/IFA from metrics_summary.json into
 RELEARN_LOC_RESULTS_nine.md (+ upload to Drive results/).
 
-Prereqs on the pod (already in place after any prior --setup run of the two
-orchestrators on this pod): megavul + relearn + cil .pt datasets extracted,
-relearn vocab aligned, cil labels patched. Method checkpoints download
-automatically from Drive checkpoints/.
+Self-contained: downloads the three .pt datasets (megavul + relearn + cil,
+graph ml1024 nine, newest/patched tar), aligns the vocabs, patches the cil
+labels, and fetches method checkpoints from Drive — all idempotent, so a fresh
+pod only needs the repo + rclone.conf.
 
 Run (cloud, Linux):
   PYTHONPATH=src python scripts/run_relearn_loc_reeval.py
 """
 from __future__ import annotations
-import json, statistics, subprocess, sys
+import json, re, shutil, statistics, subprocess, sys
 from pathlib import Path
+from typing import Optional
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "results"
@@ -66,6 +67,51 @@ def sh(args: list) -> None:
     subprocess.run([str(a) for a in args], check=True, cwd=str(ROOT))
 
 
+# ── Dataset setup (idempotent, mirrors the orchestrators) ───────────────────
+DATASETS = [  # (Drive subdir, archive hint — newest/patched tar wins)
+    ("data/processed/megavul", "lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42_lazy_20260613_195029.tar.gz"),
+    ("data/processed/relearn", "lm_dataset_relearn_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42.tar.gz"),
+    ("data/processed/relearn", "lm_dataset_megavul_cil_multiclass_unixcoder-base-nine_ft_ml1024_lazy.tar.gz"),
+]
+
+
+def _ds_base_name(archive: str) -> str:
+    return re.sub(r'(_(lazy|inmemory)(_\d{8}_\d{6})?)?(_\d{8}(_\d{6})?)?\.tar\.gz$', '', archive)
+
+
+def _newest_archive(remote_dir: str, ds_name: str) -> Optional[str]:
+    out = subprocess.run(["rclone", "lsf", f"{DRIVE_ROOT}/{remote_dir}"],
+                         capture_output=True, text=True).stdout.splitlines()
+    pat = re.compile(rf"^{re.escape(ds_name)}(\.tar\.gz|_(lazy|inmemory)(_\d{{8}}_\d{{6}})?\.tar\.gz|_\d{{8}}(_\d{{6}})?\.tar\.gz)$")
+    cands = sorted(f for f in out if pat.match(f))
+    return cands[-1] if cands else None
+
+
+def setup() -> None:
+    proc = ROOT / "data" / "processed"
+    proc.mkdir(parents=True, exist_ok=True)
+    # canonical vocabs BEFORE any dataset load
+    (ROOT / "data" / "raw" / "relearn").mkdir(parents=True, exist_ok=True)
+    shutil.copy2(CFG / "taskA_cwe_vocab.json", ROOT / "data" / "raw" / "relearn" / "cwe_vocab.json")
+    (ROOT / "data" / "raw" / "megavul_cil").mkdir(parents=True, exist_ok=True)
+    shutil.copy2(CFG / "cil" / "megavul_cil_cwe_vocab.json",
+                 ROOT / "data" / "raw" / "megavul_cil" / "cwe_vocab.json")
+    for remote_dir, hint in DATASETS:
+        ds = _ds_base_name(hint)
+        archive = _newest_archive(remote_dir, ds) or hint
+        marker = proc / f".{archive}.extracted"
+        if marker.exists():
+            print(f"{ds}: newest ({archive}) already extracted, skip")
+            continue
+        sh(["rclone", "copy", f"{DRIVE_ROOT}/{remote_dir}/{archive}", str(proc), "--progress"])
+        sh(["bash", "-c",
+            f'tar -I "$(command -v pigz || echo gzip)" -xf "{proc / archive}" -C "{proc}"'])
+        (proc / archive).unlink(missing_ok=True)
+        marker.touch()
+        print(f"{ds}: extracted newest {archive}")
+    sh([sys.executable, "scripts/patch_cil_labels.py"])   # idempotent, labels 26..35
+
+
 def fetch_ckpt(run_id: str) -> Path:
     d = CKPTS / run_id
     if not list(d.glob("best_*.pt")):
@@ -83,7 +129,6 @@ def eval_loc(run_id: str, cfg: Path, seed: int, tag: str) -> dict:
         ckpt = fetch_ckpt(run_id)
         ed = CKPTS / tag
         ed.mkdir(parents=True, exist_ok=True)
-        import shutil
         shutil.copy2(ckpt, ed / "best_model.pt")
         sh([sys.executable, "-m", "gnn_vuln.evaluate", "--checkpoint", ed / "best_model.pt",
             "--config", cfg, "--split-seed", str(seed), "--seed", str(seed)])
@@ -156,6 +201,7 @@ def main() -> None:
     for p in (DOMAIN_A_CFG, DOMAIN_B_CFG, CIL_A36_CFG, CIL_B_CFG):
         if not p.exists():
             sys.exit(f"Missing config: {p}")
+    setup()
     md = [
         "# Lokalisasi pada Continual Learning (graph N48 nine, per-seed, re-eval tanpa retrain)",
         "",
