@@ -30,10 +30,11 @@ fetch() {   # $1 = tar name on Drive, $2 = glob to test if already extracted
   fi
 }
 
-# 1. ml1024 nine bases (the re-tokenize source) — relearn + cil
-fetch "lm_dataset_relearn_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42.tar.gz" \
+# 1. ml1024 nine bases (the re-tokenize source) — relearn + cil.
+# PATCHED tars (exact-line flaw_line_mask); the older untimestamped tars have the inflated mask.
+fetch "lm_dataset_relearn_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42_lazy_20260708_055002.tar.gz" \
       "lm_dataset_relearn_multiclass_unixcoder-base-nine_ft_ml1024*_meta.pt"
-fetch "lm_dataset_megavul_cil_multiclass_unixcoder-base-nine_ft_ml1024_lazy.tar.gz" \
+fetch "lm_dataset_megavul_cil_multiclass_unixcoder-base-nine_ft_ml1024_lazy_20260709_163416.tar.gz" \
       "lm_dataset_megavul_cil_multiclass_unixcoder-base-nine_ft_ml1024*_meta.pt"
 
 # 2. cil needs its cwe_vocab.json (dataset constructor guard) + labels patched to 26..35
@@ -55,7 +56,9 @@ pack_upload() {   # $1 = source prefix, $2 = output tar name
   rclone copy "$PROC/$2" "$DRIVE" --progress
   echo "uploaded $2 -> $DRIVE"
 }
-pack_upload "lm_dataset_relearn_multiclass"     "lm_dataset_relearn_multiclass_unixcoder-base-nine_ft_ml5120_f40f2e964_s1600r42.tar.gz"
-pack_upload "lm_dataset_megavul_cil_multiclass" "lm_dataset_megavul_cil_multiclass_unixcoder-base-nine_ft_ml5120_lazy.tar.gz"
+# timestamped names so the orchestrators' newest-tar pick sorts these above any older upload
+TS="$(date +%Y%m%d_%H%M%S)"
+pack_upload "lm_dataset_relearn_multiclass"     "lm_dataset_relearn_multiclass_unixcoder-base-nine_ft_ml5120_f40f2e964_s1600r42_lazy_${TS}.tar.gz"
+pack_upload "lm_dataset_megavul_cil_multiclass" "lm_dataset_megavul_cil_multiclass_unixcoder-base-nine_ft_ml5120_lazy_${TS}.tar.gz"
 
 echo "DONE — relearn + cil ml5120 built + uploaded. Hybrid continual can now download them."
