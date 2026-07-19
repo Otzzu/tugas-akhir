@@ -1,7 +1,7 @@
 # N48 continual UPPER BOUND — Pelatihan ulang gabungan (joint, from scratch).
 # ewc.enabled false -> TANPA load checkpoint task-A (inisialisasi acak, from scratch).
-# replay.buffer_per_class 0 -> buffer = SELURUH split train task-A (bukan sampel per kelas),
-# jadi tiap step melatih 1 batch task-B + 1 batch task-A (sampling seimbang dua sumber).
+# joint.enabled -> loader train = gabungan train task-B + train task-A, uniform shuffle
+# (baseline MULTI-TASK Chaudhry et al. 2019).
 # Split test kedua task tetap identik dengan baris continual: buffer dibangun dari
 # get_splits(train) task-A dengan --split-seed yang sama, eval lewat orkestrator seperti biasa.
 #
@@ -51,14 +51,16 @@ ewc:
   enabled: false
   weight: 0.0
 
-# buffer_per_class 0 = seluruh train task-A ikut dilatih (joint)
-replay:
+# MULTI-TASK pooled joint (Chaudhry et al. 2019): train = train task-B UNION train task-A,
+# satu loader uniform shuffle. Split per dataset lebih dulu, test tak tersentuh.
+joint:
   enabled: true
   source: megavul
   ds_name_suffix: ""
-  buffer_per_class: 0
-  weight: 1.0
-  buffer_seed: 42
+  filter_top25_dangerous: true
+  max_per_class: 1600
+  top_cwe: 0
+  resample_seed: 42
 
 train:
   seed: 42

@@ -1,7 +1,7 @@
 # CIL UPPER BOUND — Pelatihan ulang gabungan (joint, from scratch), head 36 kelas.
 # ewc.enabled false -> TANPA load checkpoint task-A (inisialisasi acak, from scratch).
-# replay.buffer_per_class 0 -> buffer = SELURUH split train task-A megavul, jadi tiap step
-# melatih 1 batch task-B (megavul_cil, kelas 26..35) + 1 batch task-A (kelas 0..25).
+# joint.enabled -> loader train = gabungan train megavul_cil (kelas 26..35) + train
+# megavul task-A (kelas 0..25), uniform shuffle (baseline MULTI-TASK Chaudhry et al. 2019).
 # Split test kedua task identik dengan baris continual (get_splits per --split-seed).
 #
 # Run: RELEARN_NINE=1 RELEARN_METHODS=joint python scripts/run_relearn_cil_experiment.py --seed N
@@ -50,15 +50,12 @@ ewc:
   enabled: false
   weight: 0.0
 
-# buffer_per_class 0 = seluruh train task-A ikut dilatih (joint)
-replay:
+# MULTI-TASK pooled joint (Chaudhry et al. 2019): train = train task-B UNION train task-A,
+# satu loader uniform shuffle. Overrides = identitas .pt task-A megavul.
+joint:
   enabled: true
   source: megavul
   ds_name_suffix: ""
-  buffer_per_class: 0
-  weight: 1.0
-  buffer_seed: 42
-  # task-A megavul subset (overrides cil data block so the buffer uses the trained-on .pt)
   filter_top25_dangerous: true
   max_per_class: 1600
   top_cwe: 0

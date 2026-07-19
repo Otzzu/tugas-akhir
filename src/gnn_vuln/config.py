@@ -383,12 +383,30 @@ class ReplayConfig:
 
 
 @dataclass
+class JointConfig:
+    """MULTI-TASK pooled joint upper bound (Chaudhry et al. 2019): train on the UNION of
+    this config's dataset and the `source` dataset's train splits, one uniform loader.
+    Read by train.py:_setup_joint. Dataset-identity overrides mirror ReplayConfig."""
+    enabled: bool = False
+    source: str = ""                 # second dataset pooled into training (e.g. megavul)
+    ds_name_suffix: str = ""
+    top_cwe: int | None = None
+    filter_top25_dangerous: bool | None = None
+    max_per_class: int | None = None
+    resample_seed: int | None = None
+    storage: str | None = None
+    ds_name: str | None = None
+    target_vocab: dict[str, int] | None = None
+
+
+@dataclass
 class Config:
     data: DataConfig = field(default_factory=DataConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
     ewc: EWCConfig = field(default_factory=EWCConfig)
     replay: ReplayConfig = field(default_factory=ReplayConfig)
+    joint: JointConfig = field(default_factory=JointConfig)
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Config":
@@ -401,7 +419,7 @@ class Config:
     @classmethod
     def from_yamls(cls, paths) -> "Config":
         """Compose a Config from one OR MORE YAML files. Each file may carry any subset
-        of the sections (data / model / train / ewc / replay); later files override
+        of the sections (data / model / train / ewc / replay / joint); later files override
         earlier ones, section by section.
 
         This enables split configs — e.g. `from_yamls([data.yaml, model.yaml,
@@ -432,7 +450,7 @@ class Config:
             return value
 
         cfg = cls()
-        for section in ("data", "model", "train", "ewc", "replay"):
+        for section in ("data", "model", "train", "ewc", "replay", "joint"):
             if section in raw and isinstance(raw[section], dict):
                 target = getattr(cfg, section)
                 for k, v in raw[section].items():
