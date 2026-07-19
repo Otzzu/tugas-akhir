@@ -59,10 +59,11 @@ replay:
   buffer_per_class: 50
   weight: 1.0
   buffer_seed: 42
+# batch 16 accum 2 (efektif tetap 32): replay dua forward pada jalur LM 5120 lewat 32 GB di batch 32
 train:
   seed: 42
   epochs: 100
-  batch_size: 32
+  batch_size: 16
   lr: 0.001
   lm_lr: 1.0e-05
   warmup_ratio: 0.1
@@ -79,7 +80,7 @@ train:
   device: cuda
   use_amp: true
   use_flash_attention: true
-  grad_accum_steps: 1
+  grad_accum_steps: 2
   save_last_every: 10
   compile_model: false
   stmt_head_vectorized: true
