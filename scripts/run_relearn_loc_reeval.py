@@ -17,9 +17,11 @@ Run (cloud, Linux):
   PYTHONPATH=src python scripts/run_relearn_loc_reeval.py
 """
 from __future__ import annotations
-import json, re, shutil, statistics, subprocess, sys
+import json, os, re, shutil, statistics, subprocess, sys
 from pathlib import Path
 from typing import Optional
+
+os.environ["RELEARN_NINE"] = "1"   # semua run di sini backbone nine; patch_cil_labels membacanya
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "results"
