@@ -62,10 +62,11 @@ replay:
   max_per_class: 1600
   top_cwe: 0
   resample_seed: 42
+# batch 16 accum 4 (efektif tetap 64): replay dua forward x dua encoder seq ~30 GB di batch 32, OOM di pod 32 GB
 train:
   seed: 42
   epochs: 100
-  batch_size: 32
+  batch_size: 16
   lr: 0.001
   warmup_ratio: 0.1
   grad_clip: 1.0
@@ -81,7 +82,7 @@ train:
   device: cuda
   use_amp: false
   use_flash_attention: false
-  grad_accum_steps: 2
+  grad_accum_steps: 4
   save_last_every: 10
   compile_model: false
   stmt_head_vectorized: true
