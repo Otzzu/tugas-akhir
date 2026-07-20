@@ -208,6 +208,21 @@ def f1_macro(results_dir: Path) -> float:
     return float(m["function_level"]["f1_macro"])
 
 
+def loc_of(results_dir: Path):
+    """(top1, top5, ifa) dari blok localization eval, atau None jika tanpa flaw GT."""
+    m = json.loads((results_dir / "metrics_summary.json").read_text()).get("localization") or {}
+    if m.get("top_1_accuracy") is None:
+        return None
+    return (m["top_1_accuracy"], m["top_5_accuracy"], m["ifa_mean"])
+
+
+def _loc_row(label: str, la, lb) -> str:
+    fmt = lambda v: (f"{v[0]:.4f}", f"{v[1]:.4f}", f"{v[2]:.4f}") if v else ("—", "—", "—")
+    a1, a5, ai = fmt(la)
+    b1, b5, bi = fmt(lb)
+    return f"| {label} | {a1} | {a5} | {ai} | {b1} | {b5} | {bi} |"
+
+
 def train_cost(rdir: Path) -> tuple[float, int, int, str]:
     """(total_time_s, epochs_trained, n_train, gpu) — training_summary.json is not uploaded,
     so the cost is harvested here and written into the results md. gpu is recorded because
@@ -317,6 +332,8 @@ def main() -> None:
     taskA_before = eval_ckpt(TASKA_CKPT, MEGAVUL_CFG, "rl_taskA_before")
     taskB_before = eval_ckpt(TASKA_CKPT, RELEARN_CFG, "rl_taskB_before")
     rows = [("Sebelum pembaruan", taskA_before, taskB_before, None)]
+    loc_rows = [("Sebelum pembaruan", loc_of(RESULTS / "rl_taskA_before"),
+                 loc_of(RESULTS / "rl_taskB_before"))]
     ckpt_map = []   # (label, run_id) — uploaded ckpts, for re-eval without retraining
     costs = []      # (label, total_time_s, epochs, n_train, gpu) — empty on --reeval
 
@@ -328,6 +345,8 @@ def main() -> None:
             taskB = eval_ckpt(ckpt, RELEARN_CFG, f"rl_taskB_{run_id}")
             taskA = eval_ckpt(ckpt, MEGAVUL_CFG, f"rl_taskA_{run_id}")
             rows.append((label, taskA, taskB, taskA_before - taskA))
+            loc_rows.append((label, loc_of(RESULTS / f"rl_taskA_{run_id}"),
+                             loc_of(RESULTS / f"rl_taskB_{run_id}")))
             ckpt_map.append((label, run_id))
     else:
         # 0. EWC importance on task-A (compute_only -> exits after saving cache)
@@ -341,6 +360,8 @@ def main() -> None:
             taskB = eval_ckpt(ckpt, RELEARN_CFG, f"rl_taskB_{rdir.name}")   # task-B test
             taskA = eval_ckpt(ckpt, MEGAVUL_CFG, f"rl_taskA_{rdir.name}")   # task-A test
             rows.append((label, taskA, taskB, taskA_before - taskA))  # forgetting = drop on task-A
+            loc_rows.append((label, loc_of(RESULTS / f"rl_taskA_{rdir.name}"),
+                             loc_of(RESULTS / f"rl_taskB_{rdir.name}")))
             costs.append((label, *train_cost(rdir)))
             upload_ckpt(rdir.name)                                    # upload trained model for re-eval
             ckpt_map.append((label, rdir.name))
@@ -380,6 +401,16 @@ def main() -> None:
         ]
         for label, t, ep, n, gpu in costs:
             md.append(f"| {label} | {ep} | {t:.0f} | {n} | {gpu} |")
+
+    md += [
+        "",
+        "Lokalisasi (Top-1, Top-5, IFA) task-A dan task-B, dari blok localization eval yang sama.",
+        "",
+        "| Metode | Top-1 A | Top-5 A | IFA A | Top-1 B | Top-5 B | IFA B |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for label, la, lb in loc_rows:
+        md.append(_loc_row(label, la, lb))
 
     md += [
         "",

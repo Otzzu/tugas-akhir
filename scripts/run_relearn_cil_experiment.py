@@ -204,6 +204,21 @@ def f1_macro(results_dir: Path) -> float:
     return float(m["function_level"]["f1_macro"])
 
 
+def loc_of(results_dir: Path):
+    """(top1, top5, ifa) dari blok localization eval, atau None jika tanpa flaw GT."""
+    m = json.loads((results_dir / "metrics_summary.json").read_text()).get("localization") or {}
+    if m.get("top_1_accuracy") is None:
+        return None
+    return (m["top_1_accuracy"], m["top_5_accuracy"], m["ifa_mean"])
+
+
+def _loc_row(label: str, la, lb) -> str:
+    fmt = lambda v: (f"{v[0]:.4f}", f"{v[1]:.4f}", f"{v[2]:.4f}") if v else ("—", "—", "—")
+    a1, a5, ai = fmt(la)
+    b1, b5, bi = fmt(lb)
+    return f"| {label} | {a1} | {a5} | {ai} | {b1} | {b5} | {bi} |"
+
+
 def accuracy_of(results_dir: Path) -> float:
     m = json.loads((results_dir / "metrics_summary.json").read_text())
     return float(m["function_level"]["accuracy"])
@@ -310,6 +325,7 @@ def main() -> None:
     taskA_before = eval_ckpt(TASKA_CKPT, TASKA_EVAL26, "rlcil_taskA_before")
     a1_acc = accuracy_of(RESULTS / "rlcil_taskA_before")   # A_1: acc after task-A (initial), for A_avg
     rows = [("Sebelum pembaruan", taskA_before, None, None, None, None, None)]
+    loc_rows = [("Sebelum pembaruan", loc_of(RESULTS / "rlcil_taskA_before"), None)]
     ckpt_map = []   # (label, run_id) — uploaded ckpts, for re-eval without retraining
     costs = []      # (label, total_time_s, epochs, n_train, gpu) — empty on --reeval
 
@@ -323,6 +339,8 @@ def main() -> None:
             alast_f1, alast_acc = combined_alast(f"rlcil_taskA_{run_id}", f"rlcil_taskB_{run_id}")
             a_avg = (a1_acc + alast_acc) / 2.0
             rows.append((label, taskA, taskB, taskA_before - taskA, alast_f1, alast_acc, a_avg))
+            loc_rows.append((label, loc_of(RESULTS / f"rlcil_taskA_{run_id}"),
+                             loc_of(RESULTS / f"rlcil_taskB_{run_id}")))
             ckpt_map.append((label, run_id))
     else:
         # 0. EWC importance on task-A (26-class, compute_only -> exits after saving cache)
@@ -339,6 +357,8 @@ def main() -> None:
             alast_f1, alast_acc = combined_alast(f"rlcil_taskA_{rdir.name}", f"rlcil_taskB_{rdir.name}")
             a_avg = (a1_acc + alast_acc) / 2.0
             rows.append((label, taskA, taskB, taskA_before - taskA, alast_f1, alast_acc, a_avg))
+            loc_rows.append((label, loc_of(RESULTS / f"rlcil_taskA_{rdir.name}"),
+                             loc_of(RESULTS / f"rlcil_taskB_{rdir.name}")))
             costs.append((label, *train_cost(rdir)))
             upload_ckpt(rdir.name)                                        # upload trained model for re-eval
             ckpt_map.append((label, rdir.name))
@@ -386,6 +406,17 @@ def main() -> None:
         ]
         for label, t, ep, n, gpu in costs:
             md.append(f"| {label} | {ep} | {t:.0f} | {n} | {gpu} |")
+
+    md += [
+        "",
+        "Lokalisasi (Top-1, Top-5, IFA) task-A dan task-B, dari blok localization eval yang sama.",
+        "Task-B sebelum pembaruan N.A. (model 26 kelas tidak dimuat pada eval 36 kelas).",
+        "",
+        "| Metode | Top-1 A | Top-5 A | IFA A | Top-1 B | Top-5 B | IFA B |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for label, la, lb in loc_rows:
+        md.append(_loc_row(label, la, lb))
 
     md += [
         "",
