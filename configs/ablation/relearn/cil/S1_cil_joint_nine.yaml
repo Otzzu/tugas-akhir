@@ -1,0 +1,94 @@
+# S1 sekuensial CIL UPPER BOUND — Pelatihan ulang gabungan (joint, from scratch), head 36 kelas.
+# ewc.enabled false -> TANPA load checkpoint task-A (inisialisasi acak, from scratch).
+# joint.enabled -> loader train = gabungan train megavul_cil (kelas 26..35) + train
+# megavul task-A (kelas 0..25), uniform shuffle (baseline MULTI-TASK Chaudhry et al. 2019).
+# Model block = arsitektur sekuensial.
+#
+# Run: RELEARN_NINE=1 RELEARN_ARCH=seq RELEARN_METHODS=joint python scripts/run_relearn_cil_experiment.py --seed N
+
+data:
+  source: megavul_cil
+  mode: multiclass
+  max_nodes: 2500
+  top_cwe: 0
+  filter_top25_dangerous: false
+  filter_owasp: false
+  max_per_class: 0
+  resample_seed: 42
+  storage: lazy
+  ds_name_suffix: ""
+
+model:
+  architecture: lmgat_seqgnn
+  live_lm: none
+  pretrained_lm: microsoft/unixcoder-base-nine
+  func_lm: microsoft/unixcoder-base-nine
+  add_func_tokens: true
+  func_max_length: 1024
+  localization_encoder: gnn
+  hidden_dim: 256
+  num_layers: 4
+  dropout: 0.3
+  heads: 4
+  edge_dim: 31
+  num_classes: 36
+  mil_weight: 0.3
+  mil_k: 3
+  rank_loss_weight: 0.2
+  add_self_loops: false
+  use_skip: true
+  gnn_block_style: gnn_plus
+  gnn_norm_type: batch
+  gnn_activation: elu
+  gnn_use_ffn: true
+  gnn_ffn_expansion: 2
+  func_head_type: linear
+  jknet_mode: concat
+  jknet_readout: meanmax
+  jknet_loc: false
+  seq_stage2_input: raw
+  seq_susp_pool: false
+  seq_susp_pool_k: 4.0
+  seq_detach_susp: false
+
+# from scratch: TIDAK memuat bobot task-A
+ewc:
+  enabled: false
+  weight: 0.0
+
+# MULTI-TASK pooled joint (Chaudhry et al. 2019): train = train task-B UNION train task-A,
+# satu loader uniform shuffle. Overrides = identitas .pt task-A megavul.
+joint:
+  enabled: true
+  source: megavul
+  ds_name_suffix: ""
+  filter_top25_dangerous: true
+  max_per_class: 1600
+  top_cwe: 0
+  resample_seed: 42
+
+train:
+  seed: 42
+  epochs: 100
+  batch_size: 32
+  lr: 0.001
+  warmup_ratio: 0.1
+  grad_clip: 1.0
+  weight_decay: 0.001
+  patience: 15
+  early_stop_metric: f1
+  use_class_weights: true
+  focal_loss_gamma: 0.0
+  epoch_adaptive_weights: true
+  livable_loss: false
+  label_smoothing: 0.1
+  lr_scheduler: cosine
+  device: cuda
+  use_amp: false
+  use_flash_attention: false
+  grad_accum_steps: 2
+  save_last_every: 10
+  compile_model: false
+  stmt_head_vectorized: true
+  num_workers: 0
+  prefetch_factor: 2

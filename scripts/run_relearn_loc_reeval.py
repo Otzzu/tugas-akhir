@@ -28,38 +28,67 @@ RESULTS = ROOT / "results"
 CKPTS = ROOT / "checkpoints"
 CFG = ROOT / "configs" / "ablation" / "relearn"
 DRIVE_ROOT = "gdrive-mesach:tugas-akhir"
-OUT_MD = ROOT / "RELEARN_LOC_RESULTS_nine.md"
-SEEDS = [42, 1, 2]
-ARCH_SUFFIX = "_lmgat_codebert_multiclass"
+# Architecture selector — graph (N48, 3-seed, includes joint) or seq (S1, 1-seed, no joint here;
+# seq joint loc comes from its own RELEARN_METHODS=joint run since the orchestrator now harvests
+# loc). Run ids from the per-seed RELEARN md files (graph on ABLATION_RESULTS.md, seq s42 from
+# RELEARN_*_nine_seq_s42.md). ARCH set via env RELEARN_ARCH like the orchestrators.
+ARCH = os.environ.get("RELEARN_ARCH", "graph").lower()
+_ARCH = {
+    "graph": {
+        "suffix": "_lmgat_codebert_multiclass", "prefix": "N48", "cil_eval": "cil_taskA_eval_nine",
+        "seeds": [42, 1, 2],
+        "before": {42: "20260707_202747", 1: "20260707_204341", 2: "20260707_205826"},
+        "domain": [
+            ("Fine-tuning naif",             {42: "20260708_074620", 1: "20260708_083036", 2: "20260708_090639"}),
+            ("EWC-DR",                       {42: "20260708_075054", 1: "20260708_083539", 2: "20260708_091300"}),
+            ("Experience replay",            {42: "20260708_080018", 1: "20260708_084024", 2: "20260708_092634"}),
+            ("EWC-DR dan experience replay", {42: "20260708_081600", 1: "20260708_085327", 2: "20260708_094056"}),
+            ("Pelatihan ulang gabungan",     {42: "20260719_120429", 1: "20260719_122249", 2: "20260719_124654"}),
+        ],
+        "cil": [
+            ("Fine-tuning naif",             {42: "20260709_164752", 1: "20260709_165238", 2: "20260709_174921"}),
+            ("EWC-DR",                       {42: "20260709_171642", 1: "20260709_170738", 2: "20260709_181114"}),
+            ("Experience replay",            {42: "20260709_173058", 1: "20260709_172751", 2: "20260709_184528"}),
+            ("EWC-DR dan experience replay", {42: "20260709_175941", 1: "20260709_175123", 2: "20260709_190811"}),
+            ("Pelatihan ulang gabungan",     {42: "20260719_130119", 1: "20260719_131921", 2: "20260719_135509"}),
+        ],
+    },
+    "seq": {
+        "suffix": "_lmgat_seqgnn_multiclass", "prefix": "S1", "cil_eval": "S1_cil_taskA_eval_nine",
+        "seeds": [42],
+        "before": {42: "20260707_211550"},
+        "domain": [
+            ("Fine-tuning naif",             {42: "20260720_005532"}),
+            ("EWC-DR",                       {42: "20260720_011157"}),
+            ("Experience replay",            {42: "20260720_012921"}),
+            ("EWC-DR dan experience replay", {42: "20260720_014553"}),
+        ],
+        "cil": [
+            ("Fine-tuning naif",             {42: "20260720_020650"}),
+            ("EWC-DR",                       {42: "20260720_022047"}),
+            ("Experience replay",            {42: "20260720_024917"}),
+            ("EWC-DR dan experience replay", {42: "20260720_031248"}),
+        ],
+    },
+}[ARCH]
 
-# Task-A backbone (klasifikasi 26 kelas per-seed, patched dataset) = baris "Sebelum pembaruan".
-BEFORE = {42: "20260707_202747", 1: "20260707_204341", 2: "20260707_205826"}
-
-# Method run ids per seed — from ABLATION_RESULTS.md per-seed tables (patched runs
-# 2026-07-08 domain, 2026-07-09 CIL, 2026-07-19 joint).
-DOMAIN_METHODS = [
-    ("Fine-tuning naif",             {42: "20260708_074620", 1: "20260708_083036", 2: "20260708_090639"}),
-    ("EWC-DR",                       {42: "20260708_075054", 1: "20260708_083539", 2: "20260708_091300"}),
-    ("Experience replay",            {42: "20260708_080018", 1: "20260708_084024", 2: "20260708_092634"}),
-    ("EWC-DR dan experience replay", {42: "20260708_081600", 1: "20260708_085327", 2: "20260708_094056"}),
-    ("Pelatihan ulang gabungan",     {42: "20260719_120429", 1: "20260719_122249", 2: "20260719_124654"}),
-]
-CIL_METHODS = [
-    ("Fine-tuning naif",             {42: "20260709_164752", 1: "20260709_165238", 2: "20260709_174921"}),
-    ("EWC-DR",                       {42: "20260709_171642", 1: "20260709_170738", 2: "20260709_181114"}),
-    ("Experience replay",            {42: "20260709_173058", 1: "20260709_172751", 2: "20260709_184528"}),
-    ("EWC-DR dan experience replay", {42: "20260709_175941", 1: "20260709_175123", 2: "20260709_190811"}),
-    ("Pelatihan ulang gabungan",     {42: "20260719_130119", 1: "20260719_131921", 2: "20260719_135509"}),
-]
+ARCH_TAG = "" if ARCH == "graph" else f"_{ARCH}"
+OUT_MD = ROOT / f"RELEARN_LOC_RESULTS_nine{ARCH_TAG}.md"
+SEEDS = _ARCH["seeds"]
+ARCH_SUFFIX = _ARCH["suffix"]
+BEFORE = _ARCH["before"]
+DOMAIN_METHODS = _ARCH["domain"]
+CIL_METHODS = _ARCH["cil"]
+_PFX = _ARCH["prefix"]
 
 # Eval configs. CIL "before" pakai head 26 (config importance); ckpt metode CIL berkepala 36
 # sehingga pakai config eval 36. Task-B CIL untuk "before" dilewati — model 26 kelas tidak bisa
 # dimuat pada config 36 kelas (bukan load expandable), dan barisnya memang N.A. di tabel utama.
-DOMAIN_A_CFG = CFG / "N48_taskA_importance_nine.yaml"
-DOMAIN_B_CFG = CFG / "N48_relearn_naive_nine.yaml"
-CIL_A26_CFG = CFG / "N48_taskA_importance_nine.yaml"
-CIL_A36_CFG = CFG / "cil" / "cil_taskA_eval_nine.yaml"
-CIL_B_CFG = CFG / "cil" / "N48_cil_naive_nine.yaml"
+DOMAIN_A_CFG = CFG / f"{_PFX}_taskA_importance_nine.yaml"
+DOMAIN_B_CFG = CFG / f"{_PFX}_relearn_naive_nine.yaml"
+CIL_A26_CFG = CFG / f"{_PFX}_taskA_importance_nine.yaml"
+CIL_A36_CFG = CFG / "cil" / f"{_ARCH['cil_eval']}.yaml"
+CIL_B_CFG = CFG / "cil" / f"{_PFX}_cil_naive_nine.yaml"
 
 LOC_KEYS = ("top_1_accuracy", "top_5_accuracy", "ifa_mean")
 
