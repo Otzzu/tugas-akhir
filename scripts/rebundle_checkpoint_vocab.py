@@ -52,8 +52,10 @@ def find_zip(run_id: str) -> str:
     """Return the single <run_id>_*_checkpoints.zip filename on the remote."""
     names = [
         n.strip()
-        for n in rclone_out("lsf", REMOTE, "--include", f"{run_id}_*_checkpoints.zip").splitlines()
-        if n.strip()
+        for n in rclone_out(
+            "lsf", REMOTE, "--files-only", "--include", f"{run_id}_*_checkpoints.zip"
+        ).splitlines()
+        if n.strip().endswith(".zip")
     ]
     if not names:
         raise SystemExit(f"[{run_id}] no matching zip in {REMOTE}")
