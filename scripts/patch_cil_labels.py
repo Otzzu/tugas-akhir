@@ -38,6 +38,14 @@ def main() -> None:
     meta_path = PROC / f"{DS}_meta.pt"
     graphs_dir = PROC / f"{DS}_graphs"
     if not meta_path.exists():
+        # DS is pinned to ml1024, which is what graph and seq train on. The hybrid arch
+        # trains on the ml5120 CIL build instead, and that build already carries 36-class
+        # labels because it was derived from this patched ml1024 set. So a missing ml1024
+        # here is expected under hybrid, not a setup error — skip instead of killing the run.
+        if os.environ.get("RELEARN_ARCH") == "hybrid":
+            print(f"skip: {DS} not present; hybrid trains on the ml5120 CIL build, "
+                  "which is already 36-class.")
+            return
         raise FileNotFoundError(f"cil meta not found: {meta_path}")
     meta = torch.load(meta_path, weights_only=False)
     names = meta.get("class_names") or []

@@ -19,12 +19,12 @@ OUT = Path("docs")
 # Canonical seed-42 runs, backbone unixcoder-base-nine, 26-class, ÷present macro fix,
 # matching the mean±std tables in bab-4. Bundles on Drive results/ as <run>_results.zip.
 # best model used for the confusion matrix + localization example
-RUN = Path("results/ablation/gnn_only/20260629_151930_lmgat_codebert_multiclass")
+RUN = Path("results/docs_figs/graph")
 # the 3 proposed architectures on the same 26-class test, for the per-class F1 comparison
 ARCHS = [
-    ("Berbasis Graph", "#3b6fb0", "results/ablation/gnn_only/20260629_151930_lmgat_codebert_multiclass"),
-    ("Hibrida Graph-LM", "#e08a1e", "results/ablation/phase13/20260630_101936_lmgat_codebert_multiclass"),
-    ("Sekuensial", "#4a9b5e", "results/ablation/seqgnn/20260630_183927_lmgat_seqgnn_multiclass"),
+    ("Berbasis Graph", "#3b6fb0", "results/docs_figs/graph"),
+    ("Hibrida Graph-LM", "#e08a1e", "results/docs_figs/hybrid"),
+    ("Sekuensial", "#4a9b5e", "results/docs_figs/seq"),
 ]
 
 
@@ -58,9 +58,13 @@ def plot_confusion_grid(names: list[str], present: list[int]) -> None:
     fig, axes = plt.subplots(1, 3, figsize=(21, 7.5), constrained_layout=True)
     im = None
     for j, (ax, (label, _c, path)) in enumerate(zip(axes, ARCHS)):
-        adf = pd.read_csv(Path(path) / "predictions.csv")
-        cm = confusion_matrix(adf["y_true"], adf["y_pred"], labels=present)
-        cmn = cm / cm.sum(axis=1, keepdims=True).clip(min=1)
+        key = Path(path).name
+        cmns = []
+        for s in ("42", "1", "2"):
+            adf = pd.read_csv(f"results/docs_figs/seeds/{key}_{s}/predictions.csv")
+            cm = confusion_matrix(adf["y_true"], adf["y_pred"], labels=present)
+            cmns.append(cm / cm.sum(axis=1, keepdims=True).clip(min=1))
+        cmn = np.mean(cmns, axis=0)
         im = ax.imshow(cmn, cmap="Blues", vmin=0, vmax=1)
         ax.set_xticks(range(len(pnames))); ax.set_xticklabels(pnames, rotation=90, fontsize=6)
         ax.set_yticks(range(len(pnames)))
@@ -81,9 +85,14 @@ def plot_per_class_f1_compare(names: list[str], present: list[int], support: np.
     w = 0.27
     fig, ax = plt.subplots(figsize=(14, 5.5))
     for j, (label, color, path) in enumerate(ARCHS):
-        df = pd.read_csv(Path(path) / "predictions.csv")
-        f1 = f1_score(df["y_true"], df["y_pred"], labels=range(len(names)), average=None, zero_division=0)
-        ax.bar(x + (j - 1) * w, [f1[i] for i in order], width=w, color=color, label=label)
+        key = Path(path).name
+        f1s = []
+        for s in ("42", "1", "2"):
+            df = pd.read_csv(f"results/docs_figs/seeds/{key}_{s}/predictions.csv")
+            f1s.append(f1_score(df["y_true"], df["y_pred"], labels=range(len(names)), average=None, zero_division=0))
+        f1m = np.mean(f1s, axis=0); f1sd = np.std(f1s, axis=0)
+        ax.bar(x + (j - 1) * w, [f1m[i] for i in order], width=w, color=color, label=label,
+               yerr=[f1sd[i] for i in order], capsize=2, error_kw={"elinewidth": 0.6})
     ax.set_xticks(x)
     ax.set_xticklabels([f"{names[i]} (n={support[i]})" for i in order], rotation=90, fontsize=7)
     ax.set_ylabel("F1-Score"); ax.set_ylim(0, 1)
@@ -92,6 +101,36 @@ def plot_per_class_f1_compare(names: list[str], present: list[int], support: np.
     fig.savefig(OUT / "F1_per_Kelas.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
     print("wrote F1_per_Kelas.png (3 architectures)")
+
+
+def plot_confusion_benign_mini() -> None:
+    """Where do the truly-benign functions land? One 100%-stacked bar per architecture,
+    split into predicted-benign (correct) / leaked to a memory class (CWE-416/476/787) /
+    other. Mean over the 3 seeds of the benign confusion row (26-class runs), matching the
+    mean±std tables. Both segments are monotone: predicted-benign rises graph->seq->hybrid
+    and the memory leak falls, so graph leaks most and hybrid separates benign best.
+    (Values recomputed from predictions.csv of the 3-seed 26-class runs.)"""
+    labels = ["Berbasis\ngraph", "Sekuensial", "Hibrida\ngraph–LM"]
+    ben  = [0.348, 0.492, 0.529]   # predicted benign (correct)
+    memo = [0.377, 0.267, 0.218]   # leaked to CWE-416/476/787
+    other = [1 - b - m for b, m in zip(ben, memo)]
+    x = np.arange(len(labels)); w = 0.5
+    fig, ax = plt.subplots(figsize=(7, 5))
+    b1 = ax.bar(x, ben, w, label="Tetap tidak rentan (benar)", color="#4a9b5e")
+    b2 = ax.bar(x, memo, w, bottom=ben, label="Salah jadi kelas memori", color="#c0392b")
+    b3 = ax.bar(x, other, w, bottom=[a + b for a, b in zip(ben, memo)],
+                label="Salah jadi kelas lain", color="#b8bcc2")
+    for xi, bn, mm in zip(x, ben, memo):
+        ax.text(xi, bn + mm / 2, f"{mm:.2f}", ha="center", va="center",
+                color="white", fontweight="bold", fontsize=11)
+    ax.set_xticks(x); ax.set_xticklabels(labels)
+    ax.set_ylabel("Proporsi fungsi tidak rentan")
+    ax.set_ylim(0, 1)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.08), ncol=3, frameon=False, fontsize=9)
+    fig.tight_layout()
+    fig.savefig(OUT / "Confusion_Benign_Mini.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("wrote Confusion_Benign_Mini.png")
 
 
 def plot_localization_example(names: list[str]) -> None:
@@ -135,11 +174,11 @@ def plot_classification_compare() -> None:
     Numbers mirror Tabel IV.10."""
     # (name, mean, std, group)
     data = [
-        ("LOSVER", 0.603, 0.038, "baseline"),
+        ("LOSVER", 0.635, 0.030, "baseline"),
         ("VulExplainer", 0.593, 0.030, "baseline"),
-        ("Sekuensial", 0.580, 0.025, "usulan"),
-        ("Berbasis Graph", 0.568, 0.024, "usulan"),
-        ("Hibrida", 0.546, 0.008, "usulan"),
+        ("Sekuensial", 0.553, 0.006, "usulan"),
+        ("Berbasis Graph", 0.548, 0.036, "usulan"),
+        ("Hibrida", 0.529, 0.043, "usulan"),
         ("LIVABLE", 0.041, 0.008, "baseline"),
     ]
     names = [d[0] for d in data]

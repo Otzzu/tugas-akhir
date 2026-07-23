@@ -116,54 +116,119 @@ def _pid_token_len(seed: int) -> dict:
     return m
 
 
+ARCH_LABEL = {"graph": "Berbasis graph", "hybrid": "Hibrida", "seq": "Sekuensial"}
+
+
 def plot_ifa_scatter() -> None:
-    """IFA vs function length, graph arch, three seeds pooled. Each dot is a function
-    scored by the model of the seed whose test split contains it. Black line is median
-    IFA per length bin. Shows IFA rising with length, so the long functions (>512 token)
-    that baselines drop are where localization degrades (IV.4.2)."""
-    ifa, tok = [], []
-    for seed in SEEDS:
-        pid2len = _pid_token_len(seed)
-        df = pd.read_csv(f"results/docs_figs/seeds/graph_{seed}/localization_scores.csv")
-        for _, g in df.groupby("func_idx"):
-            if (g["y_true"] > 0).sum() == 0 or g["is_flaw_line"].sum() == 0:
-                continue
-            gg = g.sort_values("score", ascending=False).reset_index(drop=True)
-            tl = pid2len.get(int(g["parquet_id"].iloc[0]))
-            if tl is None:
-                continue
-            ifa.append(int(gg.index[gg["is_flaw_line"] == 1][0]))
-            tok.append(tl)
-    ifa, tok = np.array(ifa), np.array(tok)
-    s = tok <= 512
-    fig, ax = plt.subplots(figsize=(7, 4.5))
-    ax.scatter(tok[s], np.clip(ifa[s], 0, 40), s=12, alpha=0.35, color="#3b6fb0",
-               edgecolors="none", label="≤512 token")
-    ax.scatter(tok[~s], np.clip(ifa[~s], 0, 40), s=12, alpha=0.35, color="#c0392b",
-               edgecolors="none", label=">512 token")
-    be = np.arange(0, 1025, 128); bc = (be[:-1] + be[1:]) / 2
-    med = [np.median(ifa[(tok >= be[i]) & (tok < be[i + 1])])
-           if ((tok >= be[i]) & (tok < be[i + 1])).any() else np.nan
-           for i in range(len(be) - 1)]
-    ax.plot(bc, med, color="black", marker="o", lw=2, label="median IFA per bin")
-    ax.axvline(512, color="gray", ls="--", lw=1)
-    ax.text(520, 38, " batas 512", fontsize=8)
-    ax.set_xlabel("Panjang fungsi (token UniXcoder)")
-    ax.set_ylabel("IFA (baris salah sebelum penyebab)")
-    ax.set_xlim(0, 1030); ax.set_ylim(-1, 41)
-    ax.legend(loc="upper left", fontsize=8)
-    ax.text(0.99, 0.02, "titik >40 dipotong", transform=ax.transAxes,
-            ha="right", fontsize=7, color="gray")
+    """IFA vs function length for the THREE architectures (one panel each), three seeds
+    pooled per arch. Each dot is a function scored by the model of the seed whose test
+    split contains it. Black line is median IFA per length bin. Shows IFA rising with
+    length on all three, so the long functions (>512 token) that baselines drop are where
+    localization degrades (IV.4.2, Tabel IV.22)."""
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5), sharey=True)
+    for ax, (key, label) in zip(axes, ARCH_LABEL.items()):
+        ifa, tok = [], []
+        for seed in SEEDS:
+            pid2len = _pid_token_len(seed)
+            df = pd.read_csv(f"results/docs_figs/seeds/{key}_{seed}/localization_scores.csv")
+            for _, g in df.groupby("func_idx"):
+                if (g["y_true"] > 0).sum() == 0 or g["is_flaw_line"].sum() == 0:
+                    continue
+                gg = g.sort_values("score", ascending=False).reset_index(drop=True)
+                tl = pid2len.get(int(g["parquet_id"].iloc[0]))
+                if tl is None:
+                    continue
+                ifa.append(int(gg.index[gg["is_flaw_line"] == 1][0]))
+                tok.append(tl)
+        ifa, tok = np.array(ifa), np.array(tok)
+        s = tok <= 512
+        ax.scatter(tok[s], np.clip(ifa[s], 0, 40), s=10, alpha=0.35, color="#3b6fb0",
+                   edgecolors="none", label="≤512 token")
+        ax.scatter(tok[~s], np.clip(ifa[~s], 0, 40), s=10, alpha=0.35, color="#c0392b",
+                   edgecolors="none", label=">512 token")
+        be = np.arange(0, 1025, 128); bc = (be[:-1] + be[1:]) / 2
+        med = [np.median(ifa[(tok >= be[i]) & (tok < be[i + 1])])
+               if ((tok >= be[i]) & (tok < be[i + 1])).any() else np.nan
+               for i in range(len(be) - 1)]
+        ax.plot(bc, med, color="black", marker="o", lw=2, label="median IFA per bin")
+        ax.axvline(512, color="gray", ls="--", lw=1)
+        ax.set_title(label, fontsize=11)
+        ax.set_xlabel("Panjang fungsi (token UniXcoder)")
+        ax.set_xlim(0, 1030); ax.set_ylim(-1, 41)
+    axes[0].set_ylabel("IFA (baris salah sebelum penyebab)")
+    axes[0].text(520, 38, " batas 512", fontsize=8)
+    axes[0].legend(loc="upper left", fontsize=8)
+    axes[2].text(0.99, 0.02, "titik >40 dipotong", transform=axes[2].transAxes,
+                 ha="right", fontsize=7, color="gray")
     fig.tight_layout()
     fig.savefig(OUT / "Lokalisasi_IFA_Panjang.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print("wrote Lokalisasi_IFA_Panjang.png")
+    print("wrote Lokalisasi_IFA_Panjang.png (3 arch)")
+
+
+def plot_cl_tradeoff() -> None:
+    """Old-task F1 vs new-task F1 per continual learning method, mean +/- std over 3 seeds
+    (Tabel IV.15 / IV.16). Shows the frontier: no method wins on both axes. Dashed line is
+    the old-task F1 before the update, so points above it have negative forgetting.
+
+    Joint retraining is plotted as a star: it is the upper-bound reference, not a continual
+    method. It makes the domain-incremental result readable at a glance — EWC-DR + replay
+    sits above it on BOTH axes there, while on class-incremental it stays out of reach."""
+    before_old = 0.472
+    # label: (new_f1, new_std, old_f1, old_std)
+    domain = {
+        "Fine-tuning naif":  (0.410, 0.054, 0.156, 0.006),
+        "EWC-DR":            (0.390, 0.050, 0.408, 0.051),
+        "Experience replay": (0.460, 0.019, 0.376, 0.024),
+        "EWC-DR + replay":   (0.427, 0.019, 0.606, 0.135),
+    }
+    cil = {
+        "Fine-tuning naif":  (0.573, 0.011, 0.000, 0.001),
+        "EWC-DR":            (0.518, 0.021, 0.081, 0.028),
+        "Experience replay": (0.474, 0.024, 0.370, 0.011),
+        "EWC-DR + replay":   (0.331, 0.045, 0.476, 0.020),
+    }
+    # Joint retraining is the upper-bound reference, NOT a continual method: kept out of the
+    # dicts above so it never enters the CIL frontier line, and drawn with its own marker.
+    joint = {
+        "Domain-incremental": (0.397, 0.052, 0.469, 0.043),
+        "Class-incremental":  (0.497, 0.028, 0.461, 0.078),
+    }
+    colors = {"Fine-tuning naif": "#c0392b", "EWC-DR": "#e08a1e",
+              "Experience replay": "#3b6fb0", "EWC-DR + replay": "#4a9b5e"}
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.6), sharey=True)
+    for ax, (data, title) in zip(axes, [(domain, "Domain-incremental"),
+                                        (cil, "Class-incremental")]):
+        for lab, (nx, nsd, oy, osd) in data.items():
+            ax.errorbar(nx, oy, xerr=nsd, yerr=osd, fmt="o", ms=9, capsize=3,
+                        color=colors[lab], label=lab, zorder=3)
+        jx, jxsd, jy, jysd = joint[title]
+        ax.errorbar(jx, jy, xerr=jxsd, yerr=jysd, fmt="*", ms=16, capsize=3,
+                    color="#6c3483", label="Pelatihan ulang gabungan (batas atas)", zorder=4)
+        ax.axhline(before_old, color="gray", ls="--", lw=1)
+        ax.text(0.98, before_old + 0.015, "F1 task lama sebelum pembaruan", ha="right",
+                transform=ax.get_yaxis_transform(), fontsize=7.5, color="gray")
+        ax.set_title(title, fontsize=10)
+        ax.set_xlabel("Macro F1 task baru (menyerap yang baru)")
+        ax.set_xlim(0.30, 0.62); ax.set_ylim(-0.05, 0.85)
+        ax.grid(alpha=0.25, lw=0.5)
+    axes[0].set_ylabel("Macro F1 task lama (menjaga yang lama)")
+    # CIL points are monotone; the line only guides the eye along their order
+    fr = sorted((v[0], v[2]) for v in cil.values())
+    axes[1].plot([p[0] for p in fr], [p[1] for p in fr], ls=":", lw=1.1, color="gray", zorder=1)
+    h, l = axes[0].get_legend_handles_labels()
+    fig.legend(h, l, loc="lower center", ncol=5, frameon=False, bbox_to_anchor=(0.5, -0.04))
+    fig.tight_layout()
+    fig.savefig(OUT / "Tradeoff_Continual.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("wrote Tradeoff_Continual.png")
 
 
 def main() -> None:
     plot_length_hist()
     plot_flip()
     plot_ifa_scatter()
+    plot_cl_tradeoff()
 
 
 if __name__ == "__main__":

@@ -27,3 +27,4 @@ model:
 
 train:
   seed: 42
+  device: cuda        # embedding node UniXcoder — jangan CPU
