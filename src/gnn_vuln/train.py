@@ -631,6 +631,18 @@ class TrainingSession:
                 _cb = class_balanced_sampler(_cb_labels, seed=_seed)
                 logger.info(f"class_balanced_sampler (cRT): {len(set(_cb_labels))} classes | {len(_cb_labels)} draws/epoch")
                 train_dl = DataLoader(dataset[train_idx], batch_size=bs, sampler=_cb, **dl_kw)
+            elif self._joint_enabled():
+                # MULTI-TASK pooled joint (Chaudhry et al. 2019 upper bound): one loader over the
+                # union of both datasets' TRAIN splits, uniform shuffle. Splits stay per-dataset.
+                if _use_balanced or _use_cb_sampling:
+                    raise ValueError("joint mode does not combine with balanced/cb samplers")
+                from torch.utils.data import ConcatDataset
+                ds_joint, joint_train_idx = self._setup_joint()
+                pooled = ConcatDataset([dataset[train_idx], ds_joint[joint_train_idx]])
+                logger.info(
+                    f"Joint pooled training (MULTI-TASK): {len(train_idx)} (utama) + "
+                    f"{len(joint_train_idx)} (joint) = {len(pooled)} train samples, uniform shuffle")
+                train_dl = DataLoader(pooled, batch_size=bs, shuffle=True, **dl_kw)
             else:
                 train_dl = DataLoader(dataset[train_idx], batch_size=bs, shuffle=True, **dl_kw)
             # test is its own role: ratios may drive train/val while test comes from a fixed
@@ -658,12 +670,60 @@ class TrainingSession:
         self._split_test_idx = locals().get("test_idx")
         return dataset, loaders, train_idx
 
+    def _joint_enabled(self) -> bool:
+        jcfg = getattr(self.cfg, "joint", None)
+        return jcfg is not None and getattr(jcfg, "enabled", False)
+
+    def _setup_joint(self):
+        """Second dataset for MULTI-TASK pooled joint training (upper bound). Same
+        dataset-identity resolution as the replay buffer, but the TRAIN split is pooled
+        into the main train loader instead of being interleaved per step. Returns
+        (dataset, train_idx) and stashes the train labels for combined class weights."""
+        cfg = self.cfg
+        jcfg = cfg.joint
+        pretrained_lm = getattr(cfg.model, "pretrained_lm", "microsoft/codebert-base")
+        func_lm = getattr(cfg.model, "func_lm", "") or pretrained_lm
+        kwargs = dict(
+            root=str(cfg.data.processed_dir.parent), max_nodes=cfg.data.max_nodes,
+            embedder_device=str(self.device), mode=cfg.data.mode,
+            pretrained_lm=pretrained_lm, func_lm=func_lm,
+            add_func_tokens=getattr(cfg.model, "add_func_tokens", False),
+            func_lm_source=getattr(cfg.model, "func_lm_source", "raw"),
+            cwe_list=getattr(cfg.data, "cwe_list", None),
+            cwe_groups=getattr(cfg.data, "cwe_groups", None),
+            filter_owasp=getattr(cfg.data, "filter_owasp", False),
+            func_max_length=getattr(cfg.model, "func_max_length", 512),
+            precompute_line_cls=getattr(cfg.model, "precompute_line_cls", False),
+            ds_name_suffix=getattr(jcfg, "ds_name_suffix", ""),
+        )
+        def _jd(k, default):
+            v = getattr(jcfg, k, None)
+            return v if v is not None else getattr(cfg.data, k, default)
+        kwargs["top_cwe"]                = _jd("top_cwe", 0)
+        kwargs["filter_top25_dangerous"] = _jd("filter_top25_dangerous", False)
+        kwargs["max_per_class"]          = _jd("max_per_class", 0)
+        kwargs["resample_seed"]          = _jd("resample_seed", 42)
+        kwargs["storage"]                = _jd("storage", "inmemory")
+        kwargs["target_vocab"]           = _jd("target_vocab", None)
+        ds = CodeBERTGraphDataset(source=getattr(jcfg, "source", ""), **kwargs)
+        train_idx, _, _ = ds.get_splits(
+            train_ratio=getattr(cfg.data, "train_ratio", 0.8),
+            val_ratio=getattr(cfg.data, "val_ratio", 0.1),
+            seed=getattr(cfg.data, "split_seed", None) or cfg.train.seed,
+        )
+        all_y = ds.get_all_labels()
+        self._joint_train_labels = all_y[torch.tensor(train_idx, dtype=torch.long)]
+        return ds, train_idx
+
     def _setup_class_weights(self, dataset, train_idx):
         if not self._use_class_weights:
             return None, None
         cfg = self.cfg
         all_y = dataset.get_all_labels()
         train_labels = all_y[torch.tensor(train_idx, dtype=torch.long)]
+        if getattr(self, "_joint_train_labels", None) is not None:
+            # pooled joint: class weights follow the combined train distribution
+            train_labels = torch.cat([train_labels, self._joint_train_labels])
         counts = torch.bincount(train_labels, minlength=cfg.model.num_classes).float()
         if self._use_epoch_adaptive:
             w = epoch_adaptive_class_weights(counts, 1, cfg.train.epochs, cfg.model.num_classes, self.device)
