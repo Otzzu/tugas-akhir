@@ -922,30 +922,53 @@ Bundle Drive `results/baselines/`: seed-42 semua baseline `*_s42_20260626..28_*`
 
 # Continual Learning — backbone unixcoder-base-nine, PER-SEED (seeds 42,1,2)
 
-N48 (GNN-only, jknet). Backbone task-A = checkpoint klasifikasi 26 kelas nine PER-SEED (seed 42 `20260629_151930`, seed 1 `20260629_154445`, seed 2 `20260629_155935`), jadi tiap seed pakai backbone + split-nya sendiri (tidak bocor, sekonsisten arsitektur usulan). Sebelumnya fixed-42 backbone (lebih lemah) — digantikan run ini. mean±std dari `RELEARN_RESULTS_nine_s{42,1,2}.md` (domain) + `RELEARN_CIL_RESULTS_nine_s{42,1,2}.md` (CIL).
+N48 (GNN-only, jknet). Backbone task-A = checkpoint klasifikasi 26 kelas nine PER-SEED dari dataset flaw-mask exact-line yang sudah dipatch (seed 42 `20260707_202747`, seed 1 `20260707_204341`, seed 2 `20260707_205826`), jadi tiap seed pakai backbone + split-nya sendiri (tidak bocor, sekonsisten arsitektur usulan). Menggantikan run backbone pra-patch sebelumnya. mean±std dari `RELEARN_RESULTS_nine_s{42,1,2}.md` (domain) + `RELEARN_CIL_RESULTS_nine_s{42,1,2}.md` (CIL).
 
-**Consistency check LOLOS.** "Sebelum pembaruan" task-A per seed (0.470 / 0.525 / 0.475) = persis macro klasifikasi nine per-seed → per-seed backbone tersambung benar.
+**Consistency check LOLOS.** "Sebelum pembaruan" task-A per seed (0.474 / 0.498 / 0.443) ≈ macro klasifikasi predictions per-seed backbone (0.474 / 0.498 / 0.426); s42 dan s1 persis, s2 selisih kecil karena beda eval harness → per-seed backbone tersambung benar. Macro dihitung dari predictions.csv (sklearn), sama seperti baseline dan relearn (bukan `test_f1` di training_summary yang memakai konvensi berbeda).
 
 ## Domain-incremental (task-B = BigVul + TitanVul, 26 kelas tetap)
 
 | Metode              | F1 task-A         | F1 task-B     | Forgetting ↓       |
 | ------------------- | ----------------- | ------------- | ------------------ |
-| Sebelum pembaruan   | 0.490 ± 0.030     | 0.282 ± 0.031 | —                  |
-| Fine-tuning naif    | 0.165 ± 0.048     | 0.414 ± 0.017 | +0.325 ± 0.019     |
-| EWC-DR              | 0.303 ± 0.054     | 0.412 ± 0.039 | +0.187 ± 0.050     |
-| Experience replay   | 0.416 ± 0.057     | 0.448 ± 0.040 | +0.074 ± 0.050     |
-| **EWC-DR + replay** | **0.597 ± 0.114** | 0.420 ± 0.062 | **−0.107 ± 0.089** |
+| Sebelum pembaruan   | 0.472 ± 0.028     | 0.265 ± 0.036 | —                  |
+| Fine-tuning naif    | 0.156 ± 0.006     | 0.410 ± 0.054 | +0.315 ± 0.031     |
+| EWC-DR              | 0.408 ± 0.051     | 0.390 ± 0.050 | +0.064 ± 0.053     |
+| Experience replay   | 0.376 ± 0.024     | 0.460 ± 0.019 | +0.096 ± 0.020     |
+| **EWC-DR + replay** | **0.606 ± 0.135** | 0.427 ± 0.019 | **−0.134 ± 0.124** |
 
 ## Class-incremental (task-B = 10 CWE baru megavul_cil, id 26..35, head 26→36)
 
 | Metode              | F1 task-A         | F1 task-B     | A_last F1         | A_last Acc    | A_avg Acc     | Forgetting ↓       |
 | ------------------- | ----------------- | ------------- | ----------------- | ------------- | ------------- | ------------------ |
-| Fine-tuning naif    | 0.000 ± 0.000     | 0.577 ± 0.020 | 0.086 ± 0.006     | 0.205 ± 0.009 | 0.353 ± 0.005 | +0.490 ± 0.030     |
-| EWC-DR              | 0.013 ± 0.010     | 0.524 ± 0.026 | 0.090 ± 0.013     | 0.197 ± 0.012 | 0.349 ± 0.002 | +0.477 ± 0.033     |
-| Experience replay   | 0.372 ± 0.019     | 0.508 ± 0.022 | 0.343 ± 0.017     | 0.302 ± 0.010 | 0.401 ± 0.010 | +0.118 ± 0.022     |
-| **EWC-DR + replay** | **0.672 ± 0.178** | 0.352 ± 0.145 | **0.512 ± 0.154** | 0.487 ± 0.129 | 0.494 ± 0.063 | **−0.182 ± 0.160** |
+RERUN 2026-07-09 pada tar `megavul_cil` yang sudah dipatch flaw-mask (`..._lazy_20260709_163416`). Tabel LAMA di bawah ini digantikan; run 2026-07-08 memakai tar cil pra-patch (3 Juli) sehingga ranking loss task-B dilatih pada mask signature yang salah.
 
-**Verdict.** EWC-DR + replay menang di dua setting (retensi task-A tertinggi, forgetting negatif = backward transfer via buffer replay). Naif + EWC-DR sendiri kolaps di CIL (F1 task-A ~0, catastrophic forgetting yang wajar saat head diperluas). Replay saja jadi penyeimbang layak. Std EWC-DR+replay tinggi (CIL seed-42 outlier rendah, F1-B 0.185 vs s1/s2 0.43/0.44) — dilaporkan apa adanya.
+| Metode              | F1 task-A         | F1 task-B     | A_last F1         | A_last Acc    | A_avg Acc     | Forgetting ↓       |
+| ------------------- | ----------------- | ------------- | ----------------- | ------------- | ------------- | ------------------ |
+| Fine-tuning naif    | 0.000 ± 0.001     | 0.573 ± 0.011 | 0.087 ± 0.002     | 0.206 ± 0.005 | 0.344 ± 0.002 | +0.471 ± 0.027     |
+| EWC-DR              | 0.081 ± 0.028     | 0.518 ± 0.021 | 0.135 ± 0.022     | 0.209 ± 0.015 | 0.345 ± 0.012 | +0.390 ± 0.026     |
+| Experience replay   | 0.370 ± 0.011     | 0.474 ± 0.024 | 0.337 ± 0.005     | 0.305 ± 0.007 | 0.393 ± 0.005 | +0.102 ± 0.038     |
+| **EWC-DR + replay** | **0.476 ± 0.020** | 0.331 ± 0.045 | **0.375 ± 0.027** | 0.354 ± 0.006 | 0.418 ± 0.006 | **−0.004 ± 0.018** |
+
+**Verdict.** EWC-DR + replay tetap menang pada A_last + A_avg, tapi retensinya hanya BALIK ke titik sebelum pembaruan (0.476 vs 0.472), bukan melampauinya. Forgetting negatif di CIL HILANG setelah patch mask — angka lama (−0.172 ± 0.157) ditopang dua seed yang melonjak ke F1 task-A 0.75, dan lonjakan itu tidak muncul lagi. Std ikut mengecil (A_last F1 0.027 vs 0.105), jadi run baru jauh lebih stabil. Tiga metode lain bergeser < 0.03 di semua kolom, jadi mask task-B praktis hanya memengaruhi kombinasi. Trade-off stability–plasticity makin tajam (task-B 0.331 vs naif 0.573). Naif + EWC-DR sendiri tetap kolaps (F1 task-A ~0 dan 0.081). Forgetting negatif kini hanya bertahan di domain-incremental.
+
+## Biaya pelatihan continual (seed 42, RTX 5090)
+
+Dipanen dari rerun 2026-07-09 (`train_cost()` di kedua orkestrator; `training_summary.json` tidak ikut diunggah, jadi angka ini hanya ada di RELEARN md). **Hanya biaya yang dipakai dari rerun itu, bukan F1.** Rerun CIL-nya berjalan sebelum tar `megavul_cil` dipatch, dan rerun domain-nya menghasilkan F1 yang bergeser dari run 2026-07-08 karena macro F1 task-B peka terhadap kelas tail.
+
+Pembanding latih ulang dari awal = backbone task-A `20260707_202747` (26 kelas MegaVul), 40 epoch, **917 s**, 8572 sampel train, RTX 5090.
+
+| Skenario | Metode | Epoch | Waktu (s) | s/epoch | Sampel train |
+| -------- | ------ | ----- | --------- | ------- | ------------ |
+| Domain   | Fine-tuning naif    | 28 | 289  | 10.3 | 3556 |
+| Domain   | EWC-DR              | 62 | 637  | 10.3 | 3556 |
+| Domain   | Experience replay   | 55 | 1088 | 19.8 | 3556 |
+| Domain   | EWC-DR + replay     | 41 | 795  | 19.4 | 3556 |
+| CIL      | Fine-tuning naif    | 71 | 1122 | 15.8 | 4273 |
+| CIL      | EWC-DR              | 40 | 630  | 15.8 | 4273 |
+| CIL      | Experience replay   | 36 | 968  | 26.9 | 4273 |
+| CIL      | EWC-DR + replay     | 19 | 531  | 27.9 | 4273 |
+
+**Bacaan.** EWC-DR tidak menambah biaya per epoch (10.3 = 10.3 domain, 15.8 = 15.8 CIL) — penalti Fisher murah — tapi butuh lebih banyak epoch di domain. Replay menaikkan s/epoch ~1.9× (forward tambahan atas buffer). Gabungannya justru lebih cepat total daripada replay sendiri karena berhenti lebih awal. Buffer = `buffer_per_class: 50` × 26 = 1300 fungsi = **15% dari 8572 sampel task-A**, jadi 85% data lama tidak perlu disimpan maupun dilewati ulang. Penghematan waktu per pembaruan tipis (795 s vs 917 s), yang menentukan adalah biaya latih ulang tumbuh dengan seluruh sejarah data sedangkan biaya continual terikat pada data baru plus buffer tetap.
 
 **Per-seed (run id untuk telusur, checkpoint di Drive checkpoints/).**
 
@@ -953,35 +976,83 @@ Domain:
 
 | Metode                       | seed | run                                         | F1 task-A | F1 task-B | Forgetting ↓ |
 | ---------------------------- | ---- | ------------------------------------------- | --------- | --------- | ------------ |
-| Fine-tuning naif             | 42   | `20260701_163249_lmgat_codebert_multiclass` | 0.1259    | 0.4099    | +0.3440      |
-| Fine-tuning naif             | 1    | `20260701_172710_lmgat_codebert_multiclass` | 0.2185    | 0.3998    | +0.3062      |
-| Fine-tuning naif             | 2    | `20260701_180900_lmgat_codebert_multiclass` | 0.1512    | 0.4321    | +0.3239      |
-| EWC-DR                       | 42   | `20260701_164604_lmgat_codebert_multiclass` | 0.3334    | 0.3671    | +0.1364      |
-| EWC-DR                       | 1    | `20260701_173148_lmgat_codebert_multiclass` | 0.3345    | 0.4353    | +0.1902      |
-| EWC-DR                       | 2    | `20260701_182236_lmgat_codebert_multiclass` | 0.2398    | 0.4347    | +0.2353      |
-| Experience replay            | 42   | `20260701_165430_lmgat_codebert_multiclass` | 0.3502    | 0.4016    | +0.1197      |
-| Experience replay            | 1    | `20260701_174412_lmgat_codebert_multiclass` | 0.4418    | 0.4747    | +0.0829      |
-| Experience replay            | 2    | `20260701_183708_lmgat_codebert_multiclass` | 0.4545    | 0.4676    | +0.0206      |
-| EWC-DR dan experience replay | 42   | `20260701_171523_lmgat_codebert_multiclass` | 0.4785    | 0.3687    | -0.0087      |
-| EWC-DR dan experience replay | 1    | `20260701_175632_lmgat_codebert_multiclass` | 0.7056    | 0.4025    | -0.1809      |
-| EWC-DR dan experience replay | 2    | `20260701_184712_lmgat_codebert_multiclass` | 0.6076    | 0.4890    | -0.1326      |
+| Fine-tuning naif             | 42   | `20260708_074620_lmgat_codebert_multiclass` | 0.1499    | 0.3474    | +0.3237      |
+| Fine-tuning naif             | 1    | `20260708_083036_lmgat_codebert_multiclass` | 0.1571    | 0.4436    | +0.3412      |
+| Fine-tuning naif             | 2    | `20260708_090639_lmgat_codebert_multiclass` | 0.1623    | 0.4377    | +0.2811      |
+| EWC-DR                       | 42   | `20260708_075054_lmgat_codebert_multiclass` | 0.3509    | 0.3493    | +0.1227      |
+| EWC-DR                       | 1    | `20260708_083539_lmgat_codebert_multiclass` | 0.4506    | 0.3761    | +0.0477      |
+| EWC-DR                       | 2    | `20260708_091300_lmgat_codebert_multiclass` | 0.4228    | 0.4453    | +0.0205      |
+| Experience replay            | 42   | `20260708_080018_lmgat_codebert_multiclass` | 0.3574    | 0.4417    | +0.1162      |
+| Experience replay            | 1    | `20260708_084024_lmgat_codebert_multiclass` | 0.4022    | 0.4801    | +0.0961      |
+| Experience replay            | 2    | `20260708_092634_lmgat_codebert_multiclass` | 0.3674    | 0.4577    | +0.0760      |
+| EWC-DR dan experience replay | 42   | `20260708_081600_lmgat_codebert_multiclass` | 0.4751    | 0.4146    | -0.0015      |
+| EWC-DR dan experience replay | 1    | `20260708_085327_lmgat_codebert_multiclass` | 0.7441    | 0.4180    | -0.2459      |
+| EWC-DR dan experience replay | 2    | `20260708_094056_lmgat_codebert_multiclass` | 0.5986    | 0.4482    | -0.1553      |
 
 CIL:
 
 | Metode                       | seed | run                                         | F1 task-A | F1 task-B | A_last F1 | A_last Acc | A_avg Acc | Forgetting ↓ |
 | ---------------------------- | ---- | ------------------------------------------- | --------- | --------- | --------- | ---------- | --------- | ------------ |
-| Fine-tuning naif             | 42   | `20260701_191610_lmgat_codebert_multiclass` | 0.0000    | 0.5918    | 0.0905    | 0.2102     | 0.3581    | +0.4698      |
-| Fine-tuning naif             | 1    | `20260701_201541_lmgat_codebert_multiclass` | 0.0000    | 0.5541    | 0.0791    | 0.1953     | 0.3511    | +0.5247      |
-| Fine-tuning naif             | 2    | `20260701_212405_lmgat_codebert_multiclass` | 0.0000    | 0.5865    | 0.0897    | 0.2102     | 0.3488    | +0.4751      |
-| EWC-DR                       | 42   | `20260701_193046_lmgat_codebert_multiclass` | 0.0035    | 0.5092    | 0.0794    | 0.1866     | 0.3463    | +0.4663      |
-| EWC-DR                       | 1    | `20260701_202702_lmgat_codebert_multiclass` | 0.0108    | 0.5094    | 0.0862    | 0.1953     | 0.3511    | +0.5139      |
-| EWC-DR                       | 2    | `20260701_214057_lmgat_codebert_multiclass` | 0.0239    | 0.5540    | 0.1053    | 0.2102     | 0.3488    | +0.4512      |
-| Experience replay            | 42   | `20260701_194523_lmgat_codebert_multiclass` | 0.3762    | 0.5176    | 0.3503    | 0.3116     | 0.4088    | +0.0936      |
-| Experience replay            | 1    | `20260701_204102_lmgat_codebert_multiclass` | 0.3881    | 0.4827    | 0.3537    | 0.3035     | 0.4052    | +0.1366      |
-| Experience replay            | 2    | `20260701_215713_lmgat_codebert_multiclass` | 0.3514    | 0.5245    | 0.3235    | 0.2917     | 0.3895    | +0.1237      |
-| EWC-DR dan experience replay | 42   | `20260701_200343_lmgat_codebert_multiclass` | 0.4669    | 0.1846    | 0.3356    | 0.3420     | 0.4240    | +0.0029      |
-| EWC-DR dan experience replay | 1    | `20260701_210512_lmgat_codebert_multiclass` | 0.7925    | 0.4329    | 0.6224    | 0.5889     | 0.5480    | -0.2678      |
-| EWC-DR dan experience replay | 2    | `20260701_221617_lmgat_codebert_multiclass` | 0.7564    | 0.4394    | 0.5773    | 0.5311     | 0.5093    | -0.2813      |
+| Fine-tuning naif             | 42   | `20260709_164752_lmgat_codebert_multiclass` | 0.0010    | 0.5832    | 0.0867    | 0.2108     | 0.3426    | +0.4726      |
+| Fine-tuning naif             | 1    | `20260709_165238_lmgat_codebert_multiclass` | 0.0000    | 0.5606    | 0.0860    | 0.2015     | 0.3463    | +0.4983      |
+| Fine-tuning naif             | 2    | `20260709_174921_lmgat_codebert_multiclass` | 0.0000    | 0.5752    | 0.0893    | 0.2071     | 0.3431    | +0.4434      |
+| EWC-DR                       | 42   | `20260709_171642_lmgat_codebert_multiclass` | 0.0559    | 0.5151    | 0.1144    | 0.1996     | 0.3370    | +0.4176      |
+| EWC-DR                       | 1    | `20260709_170738_lmgat_codebert_multiclass` | 0.1105    | 0.5407    | 0.1590    | 0.2270     | 0.3591    | +0.3878      |
+| EWC-DR                       | 2    | `20260709_181114_lmgat_codebert_multiclass` | 0.0774    | 0.4990    | 0.1318    | 0.2009     | 0.3400    | +0.3659      |
+| Experience replay            | 42   | `20260709_173058_lmgat_codebert_multiclass` | 0.3672    | 0.4971    | 0.3420    | 0.3004     | 0.3874    | +0.1064      |
+| Experience replay            | 1    | `20260709_172751_lmgat_codebert_multiclass` | 0.3605    | 0.4745    | 0.3333    | 0.3029     | 0.3970    | +0.1377      |
+| Experience replay            | 2    | `20260709_184528_lmgat_codebert_multiclass` | 0.3812    | 0.4492    | 0.3346    | 0.3128     | 0.3959    | +0.0622      |
+| EWC-DR dan experience replay | 42   | `20260709_175941_lmgat_codebert_multiclass` | 0.4616    | 0.2838    | 0.3514    | 0.3576     | 0.4160    | +0.0120      |
+| EWC-DR dan experience replay | 1    | `20260709_175123_lmgat_codebert_multiclass` | 0.4983    | 0.3731    | 0.4051    | 0.3570     | 0.4241    | -0.0000      |
+| EWC-DR dan experience replay | 2    | `20260709_190811_lmgat_codebert_multiclass` | 0.4677    | 0.3362    | 0.3688    | 0.3464     | 0.4127    | -0.0243      |
+
+## Pelatihan ulang gabungan (joint upper bound, from scratch) — run 2026-07-19
+
+Baseline MULTI-TASK (Chaudhry et al. 2019): model dilatih dari awal (tanpa bobot task-A) pada gabungan split train task-A + train task-B, satu loader uniform shuffle. Split per dataset dibuat lebih dulu dengan get_splits per --split-seed, baru train digabung, jadi test/val kedua task identik dengan baris continual di atas. Config `N48_relearn_joint_nine.yaml` + `cil/N48_cil_joint_nine.yaml` via `RELEARN_METHODS=joint`; sumber = `RELEARN_RESULTS_nine_s{42,1,2}_joint.md` + `RELEARN_CIL_RESULTS_nine_s{42,1,2}_joint.md`. Catatan: kolom "Sampel train" di md biaya = train utama saja; loader sebenarnya pooled (domain 3556+8572=12128, CIL 4273+8572=12845).
+
+Domain-incremental:
+
+| Metode                   | F1 task-A     | F1 task-B     | Forgetting ↓   |
+| ------------------------ | ------------- | ------------- | -------------- |
+| Pelatihan ulang gabungan | 0.469 ± 0.043 | 0.397 ± 0.052 | +0.003 ± 0.017 |
+
+Class-incremental:
+
+| Metode                   | F1 task-A     | F1 task-B     | A_last F1     | A_last Acc    | A_avg Acc     | Forgetting ↓   |
+| ------------------------ | ------------- | ------------- | ------------- | ------------- | ------------- | -------------- |
+| Pelatihan ulang gabungan | 0.461 ± 0.078 | 0.497 ± 0.028 | 0.413 ± 0.058 | 0.415 ± 0.019 | 0.448 ± 0.014 | +0.011 ± 0.065 |
+
+Per-seed:
+
+| Skenario | seed | run                                         | F1 task-A | F1 task-B | A_last F1 | Forgetting ↓ | Epoch | Waktu (s) |
+| -------- | ---- | ------------------------------------------- | --------- | --------- | --------- | ------------ | ----- | --------- |
+| Domain   | 42   | `20260719_120429_lmgat_codebert_multiclass` | 0.4830    | 0.3573    | —         | -0.0094      | 41    | 1045      |
+| Domain   | 1    | `20260719_122249_lmgat_codebert_multiclass` | 0.5035    | 0.4566    | —         | -0.0053      | 55    | 1388      |
+| Domain   | 2    | `20260719_124654_lmgat_codebert_multiclass` | 0.4206    | 0.3778    | —         | +0.0228      | 30    | 754       |
+| CIL      | 42   | `20260719_130119_lmgat_codebert_multiclass` | 0.3939    | 0.4647    | 0.3644    | +0.0797      | 36    | 1035      |
+| CIL      | 1    | `20260719_131921_lmgat_codebert_multiclass` | 0.5466    | 0.5142    | 0.4779    | -0.0484      | 73    | 2101      |
+| CIL      | 2    | `20260719_135509_lmgat_codebert_multiclass` | 0.4413    | 0.5126    | 0.3979    | +0.0020      | 100   | 2853      |
+
+**Bacaan.** Di CIL joint berperilaku seperti upper bound klasik: A_last F1 0.413 vs 0.375 (EWC-DR + replay), task-B 0.497 vs 0.331, task-A setara (0.461 vs 0.476). Di domain justru tidak: EWC-DR + replay di atas joint pada task-A (0.606 vs 0.469) dan task-B (0.427 vs 0.397); joint hanya kembali ke level task-A awal (0.472). Biaya joint per pembaruan 754–2853 s pada 12.1–12.8k sampel vs 531–795 s EWC-DR + replay, dan joint mensyaratkan seluruh data historis tetap tersimpan. Std CIL besar karena seed 42 berhenti dini (36 epoch, task-A 0.394). Untuk laporan: continual EWC-DR + replay menandingi atau melampaui pelatihan ulang gabungan dengan biaya per pembaruan lebih kecil dan tanpa menyimpan seluruh data lama.
+
+## Lokalisasi pada continual (re-eval 2026-07-20, tanpa retrain)
+
+`scripts/run_relearn_loc_reeval.py` — checkpoint metode yang sama dengan tabel di atas dievaluasi ulang, blok localization dipanen (md lengkap + per-seed: `RELEARN_LOC_RESULTS_nine.md` di Drive results/). TEMUAN UTAMA: lokalisasi JAUH lebih tahan forgetting daripada klasifikasi — naif yang macro F1 task-A-nya runtuh (0.156 domain, 0.000 CIL) hanya kehilangan Top-1 loc 0.257→0.226 (domain) / 0.208 (CIL); EWC-DR+replay nyaris utuh (0.251 / 0.248). Task-B loc justru membaik setelah pembaruan (0.291→0.44-0.47 domain). Joint ≈ sebelum (0.258 / 0.254). Skor kecurigaan dibentuk sinyal struktural lintas kelas, tidak ikut runtuh saat head kelas bergeser.
+
+| Skenario | Metode | Top-1 A | Top-5 A | IFA A | Top-1 B | Top-5 B | IFA B |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Domain | Sebelum pembaruan | 0.257 ± 0.003 | 0.583 ± 0.005 | 11.72 ± 0.62 | 0.291 ± 0.009 | 0.559 ± 0.033 | 8.79 ± 1.73 |
+| Domain | Fine-tuning naif | 0.226 ± 0.014 | 0.555 ± 0.008 | 12.56 ± 1.29 | 0.474 ± 0.025 | 0.709 ± 0.015 | 6.77 ± 1.71 |
+| Domain | EWC-DR | 0.230 ± 0.026 | 0.532 ± 0.028 | 12.96 ± 2.45 | 0.440 ± 0.029 | 0.679 ± 0.015 | 6.86 ± 1.84 |
+| Domain | Experience replay | 0.239 ± 0.008 | 0.572 ± 0.019 | 12.84 ± 0.96 | 0.460 ± 0.026 | 0.708 ± 0.005 | 7.54 ± 1.90 |
+| Domain | EWC-DR + replay | 0.251 ± 0.015 | 0.579 ± 0.020 | 12.16 ± 1.58 | 0.458 ± 0.015 | 0.697 ± 0.010 | 7.81 ± 2.01 |
+| Domain | Pelatihan ulang gabungan | 0.258 ± 0.026 | 0.594 ± 0.017 | 11.58 ± 0.21 | 0.442 ± 0.006 | 0.687 ± 0.019 | 7.23 ± 2.32 |
+| CIL | Sebelum pembaruan | 0.257 ± 0.003 | 0.583 ± 0.005 | 11.72 ± 0.62 | — | — | — |
+| CIL | Fine-tuning naif | 0.208 ± 0.017 | 0.521 ± 0.018 | 14.36 ± 0.28 | 0.341 ± 0.009 | 0.628 ± 0.011 | 10.10 ± 0.86 |
+| CIL | EWC-DR | 0.235 ± 0.011 | 0.558 ± 0.015 | 12.81 ± 0.52 | 0.290 ± 0.021 | 0.591 ± 0.020 | 10.05 ± 1.37 |
+| CIL | Experience replay | 0.237 ± 0.008 | 0.553 ± 0.017 | 13.59 ± 0.65 | 0.281 ± 0.045 | 0.602 ± 0.011 | 10.00 ± 1.11 |
+| CIL | EWC-DR + replay | 0.248 ± 0.020 | 0.580 ± 0.022 | 12.35 ± 0.47 | 0.244 ± 0.030 | 0.558 ± 0.012 | 10.71 ± 1.33 |
+| CIL | Pelatihan ulang gabungan | 0.254 ± 0.019 | 0.585 ± 0.012 | 10.91 ± 0.77 | 0.257 ± 0.007 | 0.593 ± 0.003 | 9.88 ± 1.00 |
 
 ---
 
@@ -1011,6 +1082,55 @@ S1 (lmgat_seqgnn, dua tahap). Backbone task-A = checkpoint klasifikasi 26 kelas 
 | **EWC-DR + replay** | **0.636 ± 0.137** | 0.403 ± 0.023 | **0.492 ± 0.092** | 0.467 ± 0.081 | 0.487 ± 0.040 | **−0.141 ± 0.117** |
 
  **Verdict.** Pola sama persis dengan N48 graph. EWC-DR + replay menang di dua setting (retensi task-A tertinggi, forgetting negatif = backward transfer via replay). Naif + EWC-DR sendiri kolaps di CIL (F1 task-A 0.000 / 0.157). Replay saja jadi penyeimbang layak. Magnitudo berdekatan dengan graph (domain ewc_replay 0.625 vs 0.597, CIL A_last-F1 0.492 vs 0.512) → arsitektur sekuensial juga mendukung continual learning secara konsisten. Std ewc_replay tinggi (seed-dependent) — dilaporkan apa adanya.
+
+## Sekuensial s42 backbone PATCHED (20260707_211550) — joint + lokalisasi, untuk Lampiran J
+
+1-seed (s42), backbone PATCHED (beda dari tabel 3-seed di atas yang pakai backbone lama 20260630, pod 48 GB). Ini yang dipakai Lampiran J laporan. Config replay batch 16 accum 4 (fix OOM 32 GB). Sumber: `RELEARN_RESULTS_nine_seq_s42.md` + `_joint.md` (klasifikasi), `RELEARN_LOC_RESULTS_nine_seq.md` + joint md (lokalisasi). "Sebelum pembaruan" task-A = 0.4624 (klasifikasi seq nine s42 patched).
+
+Domain klasifikasi:
+
+| Metode | F1 task-A | F1 task-B | Forgetting ↓ |
+| --- | --- | --- | --- |
+| Sebelum pembaruan | 0.4624 | 0.2529 | — |
+| Fine-tuning naif | 0.1471 | 0.3749 | +0.3152 |
+| EWC-DR | 0.3852 | 0.4162 | +0.0772 |
+| Experience replay | 0.4104 | 0.4118 | +0.0520 |
+| **EWC-DR + replay** | **0.4425** | 0.3823 | +0.0199 |
+| Pelatihan ulang gabungan | 0.5244 | 0.4328 | -0.0620 |
+
+CIL klasifikasi:
+
+| Metode | F1 task-A | F1 task-B | A_last F1 | A_last Acc | A_avg Acc | Forgetting ↓ |
+| --- | --- | --- | --- | --- | --- | --- |
+| Fine-tuning naif | 0.0000 | 0.5976 | 0.0886 | 0.2096 | 0.3513 | +0.4624 |
+| EWC-DR | 0.0484 | 0.5708 | 0.1218 | 0.2270 | 0.3600 | +0.4140 |
+| Experience replay | 0.3741 | 0.5399 | 0.3459 | 0.3153 | 0.4042 | +0.0883 |
+| **EWC-DR + replay** | **0.4942** | 0.2817 | **0.3839** | 0.3650 | 0.4290 | -0.0318 |
+| Pelatihan ulang gabungan | 0.4347 | 0.4778 | 0.3966 | 0.4030 | 0.4480 | +0.0277 |
+
+Domain lokalisasi (Top-1/Top-5/IFA task-A dan task-B):
+
+| Metode | Top-1 A | Top-5 A | IFA A | Top-1 B | Top-5 B | IFA B |
+| --- | --- | --- | --- | --- | --- | --- |
+| Sebelum pembaruan | 0.275 | 0.578 | 12.50 | 0.254 | 0.592 | 6.55 |
+| Fine-tuning naif | 0.212 | 0.506 | 16.33 | 0.509 | 0.741 | 6.76 |
+| EWC-DR | 0.207 | 0.515 | 15.80 | 0.504 | 0.768 | 7.04 |
+| Experience replay | 0.241 | 0.547 | 15.11 | 0.465 | 0.711 | 6.68 |
+| EWC-DR + replay | 0.241 | 0.540 | 14.49 | 0.456 | 0.706 | 6.65 |
+| Pelatihan ulang gabungan | 0.277 | 0.590 | 11.58 | 0.474 | 0.697 | 4.96 |
+
+CIL lokalisasi:
+
+| Metode | Top-1 A | Top-5 A | IFA A | Top-1 B | Top-5 B | IFA B |
+| --- | --- | --- | --- | --- | --- | --- |
+| Sebelum pembaruan | 0.275 | 0.578 | 12.50 | — | — | — |
+| Fine-tuning naif | 0.227 | 0.534 | 14.36 | 0.287 | 0.612 | 8.90 |
+| EWC-DR | 0.194 | 0.527 | 15.74 | 0.331 | 0.646 | 8.87 |
+| Experience replay | 0.258 | 0.568 | 13.15 | 0.264 | 0.593 | 8.91 |
+| EWC-DR + replay | 0.253 | 0.551 | 14.01 | 0.256 | 0.573 | 9.18 |
+| Pelatihan ulang gabungan | 0.258 | 0.594 | 11.62 | 0.278 | 0.629 | 8.78 |
+
+**Bacaan seq s42.** Klasifikasi: pola sama graph — naif kolaps (CIL F1-A 0.000), ewc_replay retensi terbaik, joint upper bound (domain F1-A 0.524 > ewc_replay 0.443, CIL A_last 0.397 ≈ ewc_replay 0.384). Lokalisasi: sama seperti graph, TAHAN forgetting — Top-1 task-A cuma turun 0.275→0.21-0.26 walau klasifikasi runtuh; joint tak unggul (0.277/0.258). Loc task-B membaik setelah update (domain 0.254→0.46-0.51).
 
 # Training Efficiency
 
@@ -1136,41 +1256,41 @@ CIL:
 
 Bug: node METHOD satu-satunya node ber-lineNumberEnd di CPG MegaVul (span [1, akhir]), sehingga range mask menandai baris 1 (signature) sebagai flaw di ~90% fungsi rentan → Top-1 lokalisasi menggelembung (~0.92 palsu). FIX = exact-line: node flaw hanya jika baris sumbernya sendiri baris patch, METHOD dikecualikan. Verified patch==rebuild 500/500, 0 spurious, dataset-wide 0 non-METHOD spanning node. Ranking loss (weight 0.2, stmt head biner) ikut terlatih pada mask lama, jadi SEMUA arsitektur di-retrain. Klasifikasi tak pakai mask langsung tetapi encoder dibagi, jadi bergeser tipis. Backbone nine 26-class baru menggantikan 20260629/20260630 di ckpt relearn (kedua orchestrator diupdate).
 
-Baris raw dipertahankan agar mean±std bisa dicek ulang.
+Baris raw dipertahankan agar mean±std bisa dicek ulang. macro-F1 dan acc dihitung dari predictions.csv (sklearn), sama seperti baseline dan relearn. `test_f1`/`test_acc` di training_summary memakai konvensi berbeda dan tidak cocok dengan checkpoint tersimpan (mis. Graph s42 test_f1 0.528 vs predictions macro 0.474, acc 0.529 vs 0.474 pada test yang sama), jadi tidak dipakai.
 
 ### Arsitektur usulan 26-class (raw per-seed + mean±std)
 
 | Arch | seed | run_id | macro-F1 | acc | Top-1 | Top-5 | IFA | n_loc |
 |---|---|---|---|---|---|---|---|---|
-| Graph N48 | 42 | `20260707_202747` | 0.5281 | 0.5294 | 0.2599 | 0.5886 | 12.31 | 581 |
-| Graph N48 | 1  | `20260707_204341` | 0.5063 | 0.5051 | 0.2543 | 0.5796 | 11.76 | 578 |
-| Graph N48 | 2  | `20260707_205826` | 0.5007 | 0.5163 | 0.2580 | 0.5801 | 11.08 | 593 |
-| **Graph N48 mean** | | | **0.512±0.015** | 0.517±0.012 | **0.257±0.003** | 0.583±0.005 | 11.7±0.6 | |
-| Hybrid O1 | 42 | `20260707_201128` | 0.5212 | 0.4902 | 0.2513 | 0.5129 | 15.02 | 581 |
-| Hybrid O1 | 1  | `20260707_234710` | 0.5419 | 0.5294 | 0.2682 | 0.5554 | 14.07 | 578 |
-| Hybrid O1 | 2  | `20260708_015442` | 0.4850 | 0.5219 | 0.2159 | 0.5413 | 14.88 | 593 |
-| **Hybrid O1 mean** | | | **0.516±0.029** | 0.514±0.021 | **0.245±0.027** | 0.537±0.022 | 14.7±0.5 | |
-| Seq S1 | 42 | `20260707_211550` | 0.4895 | 0.5228 | 0.2754 | 0.5783 | 12.50 | 581 |
-| Seq S1 | 1  | `20260707_214418` | 0.5442 | 0.5396 | 0.2820 | 0.6107 | 10.72 | 578 |
-| Seq S1 | 2  | `20260707_222608` | 0.4701 | 0.4893 | 0.2614 | 0.5717 | 11.28 | 593 |
-| **Seq S1 mean** | | | **0.501±0.038** | 0.517±0.026 | **0.273±0.011** | 0.587±0.021 | 11.5±0.9 | |
+| Graph N48 | 42 | `20260707_202747` | 0.4736 | 0.4744 | 0.2599 | 0.5886 | 12.31 | 581 |
+| Graph N48 | 1  | `20260707_204341` | 0.4983 | 0.4911 | 0.2543 | 0.5796 | 11.76 | 578 |
+| Graph N48 | 2  | `20260707_205826` | 0.4256 | 0.4790 | 0.2580 | 0.5801 | 11.08 | 593 |
+| **Graph N48 mean** | | | **0.466±0.037** | 0.482±0.009 | **0.257±0.003** | 0.583±0.005 | 11.7±0.6 | |
+| Hybrid O1 | 42 | `20260707_201128` | 0.5303 | 0.5126 | 0.2513 | 0.5129 | 15.02 | 581 |
+| Hybrid O1 | 1  | `20260707_234710` | 0.5274 | 0.5480 | 0.2682 | 0.5554 | 14.07 | 578 |
+| Hybrid O1 | 2  | `20260708_015442` | 0.4819 | 0.5303 | 0.2159 | 0.5413 | 14.88 | 593 |
+| **Hybrid O1 mean** | | | **0.513±0.027** | 0.530±0.018 | **0.245±0.027** | 0.537±0.022 | 14.7±0.5 | |
+| Seq S1 | 42 | `20260707_211550` | 0.4624 | 0.4930 | 0.2754 | 0.5783 | 12.50 | 581 |
+| Seq S1 | 1  | `20260707_214418` | 0.5276 | 0.5349 | 0.2820 | 0.6107 | 10.72 | 578 |
+| Seq S1 | 2  | `20260707_222608` | 0.4347 | 0.4856 | 0.2614 | 0.5717 | 11.28 | 593 |
+| **Seq S1 mean** | | | **0.475±0.048** | 0.505±0.027 | **0.273±0.011** | 0.587±0.021 | 11.5±0.9 | |
 
 ### Arsitektur usulan vuln-only 25-class
 
 | Arch | seed | run_id | macro-F1 | acc | Top-1 | Top-5 | IFA | n_loc |
 |---|---|---|---|---|---|---|---|---|
-| Graph N48 | 42 | `20260707_225629` | 0.5978 | 0.5761 | 0.2305 | 0.5220 | 13.59 | 590 |
-| Graph N48 | 1  | `20260707_231454` | 0.5748 | 0.5520 | 0.2249 | 0.5502 | 11.96 | 578 |
-| Graph N48 | 2  | `20260707_233502` | 0.5548 | 0.5663 | 0.2388 | 0.5721 | 10.82 | 603 |
-| **Graph N48 mean** | | | **0.576±0.022** | 0.565±0.012 | **0.231±0.007** | 0.548±0.025 | 12.1±1.4 | |
-| Hybrid O1 | 42 | `20260708_021915` | 0.5284 | 0.5575 | 0.2458 | 0.5051 | 15.13 | 590 |
-| Hybrid O1 | 1  | `20260708_034057` | 0.5728 | 0.5696 | 0.2301 | 0.5484 | 12.66 | 578 |
-| Hybrid O1 | 2  | `20260708_042439` | 0.5637 | 0.5641 | 0.2222 | 0.5506 | 12.99 | 603 |
-| **Hybrid O1 mean** | | | **0.555±0.023** | 0.564±0.006 | **0.233±0.012** | 0.535±0.026 | 13.6±1.3 | |
-| Seq S1 | 42 | `20260707_235509` | 0.5364 | 0.5652 | 0.2390 | 0.5373 | 12.90 | 590 |
-| Seq S1 | 1  | `20260708_001943` | 0.5583 | 0.5663 | 0.2318 | 0.5467 | 13.13 | 578 |
-| Seq S1 | 2  | `20260708_005700` | 0.5862 | 0.5542 | 0.2570 | 0.5821 | 11.04 | 603 |
-| **Seq S1 mean** | | | **0.560±0.025** | 0.562±0.007 | **0.243±0.013** | 0.555±0.024 | 12.4±1.1 | |
+| Graph N48 | 42 | `20260707_225629` | 0.5895 | 0.5641 | 0.2305 | 0.5220 | 13.59 | 590 |
+| Graph N48 | 1  | `20260707_231454` | 0.5307 | 0.5465 | 0.2249 | 0.5502 | 11.96 | 578 |
+| Graph N48 | 2  | `20260707_233502` | 0.5236 | 0.5597 | 0.2388 | 0.5721 | 10.82 | 603 |
+| **Graph N48 mean** | | | **0.548±0.036** | 0.557±0.009 | **0.231±0.007** | 0.548±0.025 | 12.1±1.4 | |
+| Hybrid O1 | 42 | `20260708_021915` | 0.5718 | 0.5936 | 0.2458 | 0.5051 | 15.13 | 590 |
+| Hybrid O1 | 1  | `20260708_034057` | 0.5311 | 0.5487 | 0.2301 | 0.5484 | 12.66 | 578 |
+| Hybrid O1 | 2  | `20260708_042439` | 0.4855 | 0.5433 | 0.2222 | 0.5506 | 12.99 | 603 |
+| **Hybrid O1 mean** | | | **0.529±0.043** | 0.562±0.028 | **0.233±0.012** | 0.535±0.026 | 13.6±1.3 | |
+| Seq S1 | 42 | `20260707_235509` | 0.5474 | 0.5520 | 0.2390 | 0.5373 | 12.90 | 590 |
+| Seq S1 | 1  | `20260708_001943` | 0.5536 | 0.5761 | 0.2318 | 0.5467 | 13.13 | 578 |
+| Seq S1 | 2  | `20260708_005700` | 0.5594 | 0.5542 | 0.2570 | 0.5821 | 11.04 | 603 |
+| **Seq S1 mean** | | | **0.553±0.006** | 0.561±0.013 | **0.243±0.013** | 0.555±0.024 | 12.4±1.1 | |
 
 ### Baseline (GT terkoreksi, raw per-seed + mean±std)
 
@@ -1204,7 +1324,20 @@ LineVul — 26-class attention, lokalisasi (n=402/418/422):
 ### Temuan
 
 1. **Lokalisasi jujur.** Top-1 usulan turun dari ~0.92 palsu ke ~0.25 nyata; signature artifact hilang.
-2. **Fully-supervised mendominasi lokalisasi.** LineVD (per-statement fully-sup) 0.889, LOSVER (2-tahap fully-sup) 0.512, jauh di atas usulan ~0.25. Usulan MENGUNGGULI LineVul (attention-only, 0.221). Keunggulan usulan bukan presisi lokalisasi melainkan aplikabilitas (tanpa label baris, semua fungsi, kembalikan statement). Klaim IV.4.2 lama "hampir selalu di peringkat teratas, langsung bisa dipakai" DICABUT.
-3. **Klasifikasi dalam noise.** 26-class usulan ~0.50-0.52, vuln-only ~0.56-0.58, geser dalam std vs lama (encoder dibagi + ranking loss berubah). LOSVER vuln-only cls 0.635 tetap memimpin tipis, tetapi pada subset n=478 (≤512 token), bukan 913.
+2. **Fully-supervised mendominasi lokalisasi.** LineVD (per-statement fully-sup) Top-1 0.889, LOSVER (2-tahap fully-sup) 0.512, jauh di atas usulan ~0.25. Usulan mengungguli LineVul pada Top-1 (0.221) TAPI LineVul lebih baik pada IFA (5.87 vs ~12) dan recall — usulan cuma unggul di Top-1, kalah di IFA/recall/effort. Keunggulan usulan aplikabilitas (tanpa label baris, semua fungsi, kembalikan statement), bukan presisi lokalisasi. Klaim IV.4.2 lama "hampir selalu di peringkat teratas, langsung bisa dipakai" DICABUT.
+3. **Klasifikasi.** 26-class Hybrid 0.513 memimpin (>1 std di atas Graph 0.466 dan Seq 0.475), berbalik dari vuln-only tempat Seq 0.553 dan Graph 0.548 di atas Hybrid 0.529 (pembalikan benign). LOSVER vuln-only cls 0.635 memimpin dengan selisih melampaui std, pada subset n=478 (≤512 token), bukan 913. macro dari predictions.csv, bukan test_f1.
 4. **Peringkat lokalisasi antararsitektur.** 26-class Seq Top-1 tertinggi (0.273), Hybrid terlemah (0.245); vuln-only Seq 0.243. Konsisten hybrid pelokalisasi terlemah.
 5. **Cakupan data.** LineVD n=599, LOSVER n=476, LineVul n~410 vs usulan n~581-603 — baseline membuang fungsi (pipeline atau batas 512 token), usulan menilai lebih banyak.
+
+---
+
+## N68 — Lokalisasi Fully Supervised (uji coba, 2026-07-12)
+
+Uji "berapa harga presisi yang dibayar weakly supervised": ganti MIL (0.3) + ranking (0.2) dengan BCE per-statement langsung ke flaw_line_mask (gaya LineVD), weight 0.5, pos_weight 5. Kode aditif: `supervised_loc_loss` di training/losses.py, gate `loc_supervised_weight` (default 0 = perilaku lama utuh).
+
+**N68 run 1 (`20260712_064645`, base ml1024, seed 42) — INVALID.**
+Cls: acc 0.490, macro F1 0.504 (vs N48 0.525, −0.021 dari kompetisi task). Loc: Top-1 **0.972**, Top-5 0.991, IFA **0.186**, R@5% 0.362, Effort@20% 0.013, n=**683**.
+
+Vonis invalid: tar `unixcoder-base_ft_ml1024` di Drive masih **flaw mask LAMA** (node METHOD span seluruh fungsi). Hanya tar **nine** yang dipatch+diupload ulang (20260707_192819) untuk rerun per-seed jujur. Bukti: run jujur graph seed 42 (`20260707_225629`, lib eval sama) n=590, Top-1 0.2305, IFA 13.59 — sedangkan N68 n=683 (jumlah fungsi ber-GT versi mask lama) dan Top-1 0.97 = pola artefak signature. Supervised loss mengeksploitasi bug: node METHOD berlabel flaw di ~90% fungsi rentan → model belajar "tunjuk signature" → Top-1 palsu. Angka klasifikasinya tetap sah (label CWE tidak tersentuh bug mask).
+
+**Tindak lanjut: N68n** (`N68n_a1_l1_loc_supervised_nine.yaml`) — config sama di dataset nine ml1024 patched, pembanding langsung baris jujur per-seed (Top-1 ~0.23, IFA ~13, n~590). Status: belum jalan.

@@ -159,7 +159,8 @@ Each `--config` must be paired with a `--dataset` (same position).
 
 **Dataset name** = zip/tar filename on `gdrive-mesach:tugas-akhir/` WITHOUT extension.
 Find from a recent `training_summary.json` → `dataset_pt` field, strip `_meta.pt` suffix.
-Current megavul multiclass dataset: `lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42`
+Current megavul multiclass dataset (OFFICIAL, used by all bab-4 per-seed runs): `lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42` — the NINE variant, patched flaw mask (tar 20260707_192819).
+WARNING: the base (non-nine) ml1024 tar on Drive still has the OLD inflated flaw_line_mask (METHOD node spans whole function) — do NOT use it for localization experiments; N68 run 1 was invalidated by this.
 Storage mode: **lazy** (graphs stored as individual files, not a single .pt).
 Note: configs use CRLF on Windows — the script's storage-marker grep may show a cosmetic warning (`No inmemory-marked tar found`) due to CRLF, but the fallback finds the correct `_lazy_` tar and downloads fine.
 
@@ -167,14 +168,14 @@ Note: configs use CRLF on Windows — the script's storage-marker grep may show 
 # Single run (server already set up)
 ./scripts/train_cloud.sh --skip \
   --config configs/ablation/gnn_only/N48_a1_l1_jknet.yaml \
-  --dataset lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42
+  --dataset lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42
 
 # Multiple runs, same dataset, clean after last
 ./scripts/train_cloud.sh --skip --clean-every 2 \
   --config configs/ablation/gnn_only/N48_a1_l1_jknet.yaml \
-  --dataset lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42 \
+  --dataset lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42 \
   --config configs/ablation/gnn_only/N49_a1_l1_imtl_mid2.yaml \
-  --dataset lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42
+  --dataset lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42
 
 # Fresh server
 ./scripts/train_cloud.sh --init \
@@ -185,5 +186,5 @@ Note: configs use CRLF on Windows — the script's storage-marker grep may show 
 ./scripts/train_cloud.sh --skip \
   --backbone 20260606_163818_lmgat_codebert_multiclass \
   --config configs/ablation/gnn_only/N53_a1_l1_crt_n48.yaml \
-  --dataset lm_dataset_megavul_multiclass_unixcoder-base_ft_ml1024_f40f2e964_s1600r42
+  --dataset lm_dataset_megavul_multiclass_unixcoder-base-nine_ft_ml1024_f40f2e964_s1600r42
 ```

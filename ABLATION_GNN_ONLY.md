@@ -490,3 +490,50 @@ runs are disambiguated by size (graph_based GNN-only ≈ 71 MB vs hybrid_graph_l
 | graph_based      | lmgat_codebert (GNN-only)   | `20260623_042745_lmgat_codebert_multiclass`  | 71 MB   |
 | sequential       | lmgat_seqgnn                | `20260623_050527_lmgat_seqgnn_multiclass`    | 137 MB  |
 | hybrid_graph_lm  | lmgat_codebert (live-LM)    | `20260623_055033_lmgat_codebert_multiclass`  | 1.19 GB |
+
+## Lokalisasi Fully-Supervised (N68n + S1-sup, seed 42, dataset nine PATCHED)
+
+Uji: seberapa banyak presisi lokalisasi datang dari supervisi label baris penuh. MIL dan
+ranking dimatikan (`mil_weight 0`, `rank_loss_weight 0`), diganti BCE per-statement ala
+LineVD (`loc_supervised_weight 0.5`, `pos_weight 5.0`). Sisanya identik dengan N48 / S1.
+
+| Run | Arch | run_id | macro-F1 | acc | Top-1 | Top-5 | IFA | R@5%LOC | n_loc |
+|---|---|---|---|---|---|---|---|---|---|
+| N68n | graph (nine) | `20260712_080145` | 0.478 | 0.522 | 0.253 | 0.522 | 14.42 | 0.195 | 581 |
+| S1-sup | seq (nine) | `20260712_085004` | 0.547 | 0.522 | 0.265 | 0.525 | 13.68 | 0.178 | 581 |
+| ~~N68~~ | ~~graph (base)~~ | ~~`20260712_064645`~~ | ~~0.504~~ | ~~0.490~~ | ~~0.972~~ | ~~0.991~~ | ~~0.19~~ | ~~0.361~~ | **683** |
+
+Baris ketiga INVALID — dataset base ml1024 di Drive tidak pernah dipatch, jadi mask flaw
+masih menandai node METHOD (baris signature) di ~90% fungsi rentan. Top-1 0.972 = artefak.
+`n_loc 683` adalah sidik jarinya; run yang sah punya `n_loc 581`.
+
+**Verdict: supervisi penuh TIDAK menaikkan lokalisasi.** Dibanding weakly-supervised seed 42
+(N48 Top-1 0.260 / Top-5 0.589 / IFA 12.31; S1 0.275 / 0.578 / 12.50), versi supervised
+justru sedikit LEBIH BURUK pada Top-5 dan IFA.
+
+### Kenapa — semuanya soal panjang fungsi
+
+IFA dan Top-5 menurut panjang fungsi (graph, seed 42):
+
+| Panjang | n | IFA weakly | IFA sup | Top-5 weakly | Top-5 sup |
+|---|---|---|---|---|---|
+| <=20 baris | 157 | 1.34 | 1.34 | 0.911 | 0.898 |
+| 21-50 | 157 | 4.60 | 5.02 | 0.631 | 0.592 |
+| 51-100 | 122 | 10.72 | **12.54** | 0.492 | **0.352** |
+| 101-200 | 80 | 19.89 | **24.80** | 0.350 | **0.238** |
+| >200 | 65 | 51.12 | **59.45** | 0.185 | **0.108** |
+
+Pada fungsi pendek supervisi sedikit menolong (Top-1 0.497 -> 0.529, median IFA 1 -> 0).
+Mulai 50 baris ke atas supervisi MERUSAK, dan makin panjang makin parah. Pola identik pada
+S1 (Top-5 51-100: 0.525 -> 0.418; >200: IFA 57.99 -> 52.11 tapi Top-5 0.123 -> 0.123).
+
+Dugaan: BCE per-statement menghadapi rasio negatif:positif yang meledak pada fungsi panjang
+(300 baris, 3 baris rentan = 100:1). `pos_weight 5` tidak cukup, model belajar menekan semua
+baris. MIL kebal karena hanya menuntut top-k statement bernilai tinggi, tanpa peduli berapa
+banyak baris negatif di sekitarnya.
+
+**Implikasi bab-4:** klaim IV.4.2 bahwa selisih ke LineVD "bersumber pada label baris yang
+lebih lengkap" TIDAK didukung eksperimen kita sendiri. Penjelasan yang bertahan = granularitas
+graph (node LineVD = satu baris, skor kita hasil penyatuan banyak node CPG) + fungsi panjang.
+
+Hibrida (O1) supervised BELUM dijalankan (butuh ml5120).
