@@ -35,6 +35,9 @@ dependencies = [
     "ijson>=3.5.0",
     "python-docx>=1.2.0",
     "h5py>=3.16.0",
+    # unixcoder-base-nine ships no tokenizer.json, so transformers converts the slow
+    # tokenizer and that path needs protobuf even for BPE models.
+    "protobuf>=4.25",
 ]
 
 [project.optional-dependencies]
@@ -45,6 +48,7 @@ dev = [
     "pytest>=8.0.0",
     "pytest-cov>=5.0.0",
     "ruff>=0.4.0",
+    "pydot>=4.0.1",
 ]
 
 [project.scripts]
@@ -80,6 +84,7 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+markers = ["slow: menuntut Joern atau pelatihan, dilewati dengan -m 'not slow'"]
 
 # NOTE: PyTorch Geometric sparse extensions (torch-scatter, torch-sparse)
 # require matching torch+cpu wheels. Install them AFTER `uv sync` with:
