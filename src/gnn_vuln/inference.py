@@ -94,21 +94,24 @@ def load_model(
     in_channels = NODE_FEAT_DIM
 
     model = build_model(cfg, in_channels).to(dev)
-    load_checkpoint(model, checkpoint, device=str(dev))
+    meta = load_checkpoint(model, checkpoint, device=str(dev))
     model.eval()
 
-    # Derive class_names from config
-    if cfg.data.mode == "multiclass":
-        vocab_path = cfg.data.raw_dir / "cwe_vocab.json"
-        if vocab_path.exists():
-            import json
-            with open(vocab_path) as f:
-                vocab: dict[str, int] = json.load(f)
-            class_names = [k for k, _ in sorted(vocab.items(), key=lambda kv: kv[1])]
+    # Prefer class_names embedded in the checkpoint at train time.
+    class_names = meta.get("class_names")
+    if not class_names:
+        # Legacy checkpoints without embedded class_names — derive from config.
+        if cfg.data.mode == "multiclass":
+            vocab_path = cfg.data.raw_dir / "cwe_vocab.json"
+            if vocab_path.exists():
+                import json
+                with open(vocab_path) as f:
+                    vocab: dict[str, int] = json.load(f)
+                class_names = [k for k, _ in sorted(vocab.items(), key=lambda kv: kv[1])]
+            else:
+                class_names = [str(i) for i in range(cfg.model.num_classes)]
         else:
-            class_names = [str(i) for i in range(cfg.model.num_classes)]
-    else:
-        class_names = ["benign", "vulnerable"]
+            class_names = ["benign", "vulnerable"]
 
     return model, class_names
 

@@ -118,6 +118,9 @@ class TrainingSession:
                 f"Config model.num_classes={cfg.model.num_classes} but dataset has "
                 f"{dataset.num_classes} classes."
             )
+        # Ordered class labels for this run — embedded in the best checkpoint so
+        # serving resolves CWE names without the raw cwe_vocab.json file.
+        self._class_names = getattr(dataset, "class_names", None)
 
         class_weight, train_counts = self._setup_class_weights(dataset, train_idx)
         if self._use_livable_real and class_weight is not None:
@@ -908,7 +911,8 @@ class TrainingSession:
             if improved:
                 best_val_f1 = val_f1; best_val_loss = val_loss; patience_counter = 0
                 cm.save_best(trainer.model, epoch=epoch, val_loss=val_loss,
-                             val_acc=val_acc, val_conf=val_conf, val_f1=val_f1, val_f1_weighted=val_f1w)
+                             val_acc=val_acc, val_conf=val_conf, val_f1=val_f1, val_f1_weighted=val_f1w,
+                             class_names=getattr(self, "_class_names", None))
             else:
                 patience_counter += 1
 
