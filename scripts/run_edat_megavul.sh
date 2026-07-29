@@ -10,7 +10,10 @@
 set -uo pipefail
 
 REMOTE="gdrive-mesach:tugas-akhir"
-DATA_TAR="megavul_ml1024_baselines_20260613.tar.gz"
+# Skrip ini tidak pernah dijalankan multi seed dan hasilnya tidak masuk laporan. Pemilihan
+# bundel tetap dialihkan ke lib_baseline_data.sh supaya tidak bisa diam-diam memakai bundel
+# lama dengan flaw mask bermasalah. Set SEED bila ingin bundel selain seed 42.
+SEED="${SEED:-42}"
 WORK="$PWD"; ED="$WORK/src/EDAT"
 VD="$ED/EDAT-MLT/多任务/graphcodebert-上下文"     # best variant: GraphCodeBERT + context
 OUTJ="$WORK/megavul_edat"; RUN_ID="edat_megavul_$(date +%Y%m%d_%H%M%S)"
@@ -32,9 +35,8 @@ python -c "import torch,transformers,sklearn,pandas,fastparquet,matplotlib,tree_
 [[ -f "$VD/multi_task_train_alternate.py" ]] || { echo "ERR: EDAT variant not found at $VD (check clone/path)"; exit 1; }
 
 echo "=== [2/6] data: megavul split ==="
-if [[ ! -d megavul_ml1024 ]]; then
-  rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar --no-same-owner -xzf "$DATA_TAR"
-fi
+source "$WORK/scripts/lib_baseline_data.sh"
+NEEDS_FLAW=1 baseline_data_fetch "$REMOTE" "$SEED"
 
 echo "=== [3/6] adapter: megavul -> EDAT VTP + LVD jsonl ==="
 python scripts/edat_prepare_megavul.py --in-dir "$WORK/megavul_ml1024/linevd" --out-dir "$OUTJ"

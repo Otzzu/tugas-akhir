@@ -9,9 +9,9 @@
 set -euo pipefail
 
 REMOTE="gdrive-mesach:tugas-akhir"
-DATA_TAR="$(rclone lsf "$REMOTE/data/baselines/" 2>/dev/null | grep -E '^megavul_ml1024_baselines_.*\.tar\.gz$' | sort | tail -1)"
-DATA_TAR="${DATA_TAR:-megavul_ml1024_baselines_20260613.tar.gz}"   # newest bundle on Drive, fallback to legacy
-RUN_ID="linevd_megavul_ml1024${SEED:+_s$SEED}_$(date +%Y%m%d_%H%M%S)"
+# SEED wajib eksplisit. Default diam-diam dulu bikin ketiga seed memakai split seed 42 (P#6).
+SEED="${SEED:?set SEED=42, 1, atau 2 secara eksplisit}"
+RUN_ID="linevd_megavul_ml1024_s${SEED}_$(date +%Y%m%d_%H%M%S)"
 WORK="$PWD"
 
 echo "=== [1/6] LineVD present (vendored in-repo; clone only if missing) ==="
@@ -49,10 +49,9 @@ pip install -q gensim graphviz matplotlib networkx pandas scipy scikit-learn sea
   torchmetrics tqdm "transformers<4.50" tsne-torch unidiff "ray[tune]" tensorboard   # tensorboard: sastvd/helpers/ml.py SummaryWriter
 python -c "import torch,dgl; print('torch',torch.__version__,'dgl',dgl.__version__,'| cuda',torch.cuda.is_available())"
 
-echo "=== [3/6] data + LineVD cache files (our split + flaw GT, no code edit) ==="
-if [[ ! -d megavul_ml1024 ]]; then
-  rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar -I "$(command -v pigz || echo gzip)" -xf "$DATA_TAR"
-fi
+echo "=== [3/6] data + LineVD cache files (bundel split seed $SEED, flaw GT ikut bundel) ==="
+source "$WORK/scripts/lib_baseline_data.sh"
+NEEDS_FLAW=1 baseline_data_fetch "$REMOTE" "$SEED"
 cd src/linevd
 PYTHONPATH=. python "$WORK/scripts/linevd_prepare_megavul.py" --in-dir "$WORK/megavul_ml1024/linevd"
 
@@ -153,7 +152,7 @@ if [[ -n "$EVAL_ONLY" ]]; then
   [[ -n "$LINEVD_CKPT" ]] || { echo "ERR: no .ckpt found inside $WEIGHTS_TAR"; exit 1; }
   echo "  EVAL_ONLY: loaded $LINEVD_CKPT (skip raytune train)"
 else
-  export LINEVD_SEED="${SEED:-0}"
+  export LINEVD_SEED="$SEED"
   source "$WORK/scripts/lib_timer.sh"; timer_start
   PYTHONPATH=. python sastvd/scripts/train_best.py 2>&1 | tee "$OUT/train.log"
   timer_stop "$OUT/train_efficiency.json"

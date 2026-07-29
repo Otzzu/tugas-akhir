@@ -8,9 +8,8 @@
 set -euo pipefail
 
 REMOTE="gdrive-mesach:tugas-akhir"
-DATA_TAR="$(rclone lsf "$REMOTE/data/baselines/" 2>/dev/null | grep -E '^megavul_ml1024_baselines_.*\.tar\.gz$' | sort | tail -1)"
-DATA_TAR="${DATA_TAR:-megavul_ml1024_baselines_20260613.tar.gz}"   # newest bundle on Drive, fallback to legacy
-SEED="${SEED:-123456}"
+# SEED wajib eksplisit. Default diam-diam dulu bikin ketiga seed memakai split seed 42 (P#6).
+SEED="${SEED:?set SEED=42, 1, atau 2 secara eksplisit}"
 RUN_ID="losver_megavul_ml1024_s${SEED}_$(date +%Y%m%d_%H%M%S)"
 WORK="$PWD"
 OUT="$WORK/baseline_runs/$RUN_ID"; mkdir -p "$OUT"
@@ -48,10 +47,9 @@ python -c "import torch; print('torch', torch.__version__, '| cuda op:', (torch.
 echo "=== [3/7] UniXcoder model ==="
 ( cd src/losver && python download_unixcoder.py )   # subshell -> parent CWD stays $WORK even on failure; -> src/losver/unixcoder-nine
 
-echo "=== [4/7] data + build LOSVER jsonl from our split (our flaw GT) ==="
-if [[ ! -d megavul_ml1024 ]]; then
-  rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar -I "$(command -v pigz || echo gzip)" -xf "$DATA_TAR"
-fi
+echo "=== [4/7] data (bundel split seed $SEED) + build LOSVER jsonl (flaw GT ikut bundel) ==="
+source "$WORK/scripts/lib_baseline_data.sh"
+NEEDS_FLAW=1 baseline_data_fetch "$REMOTE" "$SEED"
 PYTHONPATH=src python scripts/export_losver_jsonl.py \
   --in-dir megavul_ml1024/linevd --out-dir megavul_ml1024/losver \
   --tokenizer microsoft/unixcoder-base-nine --token-limit 512 2>&1 | tee "$OUT/convert.log"

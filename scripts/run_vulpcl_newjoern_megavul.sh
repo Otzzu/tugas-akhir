@@ -12,7 +12,10 @@
 set -uo pipefail
 
 REMOTE="gdrive-mesach:tugas-akhir"
-DATA_TAR="megavul_ml1024_baselines_20260613.tar.gz"
+# Skrip ini tidak pernah dijalankan multi seed dan hasilnya tidak masuk laporan. Pemilihan
+# bundel tetap dialihkan ke lib_baseline_data.sh supaya tidak bisa diam-diam memakai bundel
+# lama dengan flaw mask bermasalah. Set SEED bila ingin bundel selain seed 42.
+SEED="${SEED:-42}"
 WORK="$PWD"; VP="$WORK/src/VulPCL"; CAT="$VP/vul_categorization"
 SPLIT="$WORK/megavul_ml1024/linevd"; HDF5="$WORK/data/graphs/megavul.hdf5"; PKL="$WORK/megavul_vulpcl_pkl"
 PROJ="megavul"; CWE="all"; RUN_ID="vulpcl_newjoern_megavul_$(date +%Y%m%d_%H%M%S)"
@@ -40,9 +43,8 @@ if [[ ! -f "$HDF5" ]]; then
   command -v zstd >/dev/null || (apt-get update -q && apt-get install -y -q zstd)
   zstd -d -f /tmp/megavul.hdf5.zst -o "$HDF5" && rm -f /tmp/megavul.hdf5.zst
 fi
-if [[ ! -d megavul_ml1024 ]]; then
-  rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar --no-same-owner -xzf "$DATA_TAR"
-fi
+source "$WORK/scripts/lib_baseline_data.sh"
+baseline_data_fetch "$REMOTE" "$SEED"
 
 echo "=== [3/6] adapter: hdf5 CPGs -> VulPCL pkls (PTSC + FCDS + CPAG DeepWalk) ==="
 python scripts/vulpcl_newjoern_adapter.py --hdf5 "$HDF5" --split-dir "$SPLIT" --out-dir "$PKL" --vulpcl "$VP" \

@@ -8,9 +8,8 @@
 set -euo pipefail
 
 REMOTE="gdrive-mesach:tugas-akhir"
-DATA_TAR="$(rclone lsf "$REMOTE/data/baselines/" 2>/dev/null | grep -E '^megavul_ml1024_baselines_.*\.tar\.gz$' | sort | tail -1)"
-DATA_TAR="${DATA_TAR:-megavul_ml1024_baselines_20260613.tar.gz}"   # newest bundle on Drive, fallback to legacy
-SEED="${SEED:-42}"
+# SEED wajib eksplisit. Default diam-diam dulu bikin ketiga seed memakai split seed 42 (P#6).
+SEED="${SEED:?set SEED=42, 1, atau 2 secara eksplisit}"
 RUN_ID="linevul_megavul_ml1024_s${SEED}_$(date +%Y%m%d_%H%M%S)"
 WORK="$PWD"
 OUT="$WORK/baseline_runs/$RUN_ID"
@@ -42,11 +41,9 @@ sed -i '/is_attention = True if reasoning_method == "attention" else False/a\   
 sed -i '/config = RobertaConfig.from_pretrained(/a\    config._attn_implementation = "eager"' src/LineVul/linevul/linevul_main.py
 python -c "import torch; print('torch', torch.__version__, '| cuda op:', (torch.randn(2).cuda()+1).sum().item())"
 
-echo "=== [2/5] data ==="
-if [[ ! -d megavul_ml1024 ]]; then
-  rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress
-  tar -I "$(command -v pigz || echo gzip)" -xf "$DATA_TAR"
-fi
+echo "=== [2/5] data (bundel split seed $SEED) ==="
+source "$WORK/scripts/lib_baseline_data.sh"
+NEEDS_FLAW=1 baseline_data_fetch "$REMOTE" "$SEED"
 D="$WORK/megavul_ml1024/linevul"
 
 cd src/LineVul/linevul

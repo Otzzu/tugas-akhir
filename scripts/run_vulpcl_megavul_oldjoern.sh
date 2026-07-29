@@ -16,7 +16,10 @@
 set -euo pipefail
 
 REMOTE="gdrive-mesach:tugas-akhir"
-DATA_TAR="megavul_ml1024_baselines_20260613.tar.gz"
+# Skrip ini tidak pernah dijalankan multi seed dan hasilnya tidak masuk laporan. Pemilihan
+# bundel tetap dialihkan ke lib_baseline_data.sh supaya tidak bisa diam-diam memakai bundel
+# lama dengan flaw mask bermasalah. Set SEED bila ingin bundel selain seed 42.
+SEED="${SEED:-42}"
 WORK="$PWD"; VP="$WORK/src/VulPCL"; CAT="$VP/vul_categorization"
 PROJ="megavul"; CWE="all"
 RUN_ID="vulpcl_megavul_$(date +%Y%m%d_%H%M%S)"
@@ -31,9 +34,8 @@ python -c "import pandas,torch,transformers,sklearn,gensim,networkx" 2>/dev/null
 
 echo "=== [1/7] export our megavul split as .c + labels (26-class, matches our model + split) ==="
 # vulpcl_prepare_megavul.py: --keep-benign => 26-class (benign + 25 CWE), == our model/LineVD/LineVul.
-if [[ ! -d megavul_ml1024 ]]; then
-  rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar --no-same-owner -xzf "$DATA_TAR"
-fi
+source "$WORK/scripts/lib_baseline_data.sh"
+baseline_data_fetch "$REMOTE" "$SEED"
 PREP="$WORK/megavul_vulpcl"
 python "$WORK/scripts/vulpcl_prepare_megavul.py" --in-dir "$WORK/megavul_ml1024/linevd" \
   --out-dir "$PREP" --project "$PROJ" --keep-benign

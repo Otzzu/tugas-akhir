@@ -14,8 +14,6 @@
 set -euo pipefail
 
 REMOTE="gdrive-mesach:tugas-akhir"
-DATA_TAR="$(rclone lsf "$REMOTE/data/baselines/" 2>/dev/null | grep -E '^megavul_ml1024_baselines_.*\.tar\.gz$' | sort | tail -1)"
-DATA_TAR="${DATA_TAR:-megavul_ml1024_baselines_20260613.tar.gz}"   # newest bundle on Drive, fallback to legacy
 TS="$(date +%Y%m%d_%H%M%S)"
 VULN_ONLY=""; OPT="adamw"; LR="1e-3"   # README pt6 says RAdam 1e-4 but it FREEZES on our data
                                         # (loss flat, acc 0); AdamW 1e-3 = repo's shipped default + trains.
@@ -33,7 +31,9 @@ while [[ $# -gt 0 ]]; do
 done
 WORK="$PWD"
 LV="$WORK/src/LIVABLE"
-SEED="${SEED:-10}"   # multi-seed: patched into main_sta.py below; default 10 = LIVABLE original
+# SEED wajib eksplisit. Default diam-diam dulu bikin ketiga seed memakai split seed 42 (P#6).
+# Di mode --bigvul split datang dari repo LIVABLE sendiri, jadi seed di sana hanya seed pelatihan.
+SEED="${SEED:?set SEED=42, 1, atau 2 secara eksplisit}"   # dipatch ke main_sta.py di bawah
 if [[ "$MODE" == "bigvul" ]]; then
   PREP="$WORK/bigvul_livable"; PREP_CACHE="livable_bigvul_preprocess.tar.gz"
   RUN_ID="livable_bigvul_${TS}_top${TOPCWE}_${OPT}${LR}"
@@ -83,9 +83,8 @@ if [[ "$MODE" == "bigvul" ]]; then
   [[ -f "$CSV" ]] || { echo "ERR: all_vul.csv missing (upload to $REMOTE/data/baselines/ or check gdown)"; exit 1; }
   python "$WORK/scripts/livable_prepare_bigvul.py" --csv "$CSV" --out-dir "$PREP" --top-cwe "$TOPCWE"
 else
-  if [[ ! -d megavul_ml1024 ]]; then
-    rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar --no-same-owner -xzf "$DATA_TAR"
-  fi
+  source "$WORK/scripts/lib_baseline_data.sh"
+  baseline_data_fetch "$REMOTE" "$SEED"   # klasifikasi saja, flaw mask tidak dipakai
   # Always --keep-benign here (26-class ggnn) so ONE joern/ggnn cache serves both modes; --vuln-only
   # filters benign out of the built ggnn downstream (label-independent cache, no re-parse).
   python "$WORK/scripts/livable_prepare_megavul.py" --in-dir "$WORK/megavul_ml1024/linevd" --out-dir "$PREP" --keep-benign

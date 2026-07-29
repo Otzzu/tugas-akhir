@@ -13,12 +13,11 @@
 set -euo pipefail
 
 REMOTE="gdrive-mesach:tugas-akhir"
-DATA_TAR="$(rclone lsf "$REMOTE/data/baselines/" 2>/dev/null | grep -E '^megavul_ml1024_baselines_.*\.tar\.gz$' | sort | tail -1)"
-DATA_TAR="${DATA_TAR:-megavul_ml1024_baselines_20260613.tar.gz}"   # newest bundle on Drive, fallback to legacy
 WORK="$PWD"; VPROOT="$WORK/src/VulExplainer"
 VARIANT="$VPROOT/VulExplainer/VulExplainer_GraphCodeBERT"
 BIGVUL="$VPROOT/data/big_vul"; SPLIT="$WORK/megavul_ml1024/linevd"
-SEED="${SEED:-123456}"
+# SEED wajib eksplisit. Default diam-diam dulu bikin seed pelatihan dan seed split bisa berbeda (P#6).
+SEED="${SEED:?set SEED=42, 1, atau 2 secara eksplisit}"
 RUN_ID="vulexplainer_megavul_s${SEED}_$(date +%Y%m%d_%H%M%S)"
 
 # EVAL_ONLY=1 -> skip teacher+student TRAIN: restore saved checkpoints, run student --do_test only,
@@ -41,10 +40,9 @@ python -c "import torch,transformers,sklearn,pandas,numpy,tree_sitter,pyarrow; v
 [[ -f "$VARIANT/student_graphcodebert_main.py" ]] || { rm -rf "$VPROOT"; git clone --depth 1 https://github.com/awsm-research/VulExplainer.git "$VPROOT"; }
 [[ -f "$VARIANT/student_graphcodebert_main.py" ]] || { echo "ERR: variant not found at $VARIANT"; exit 1; }
 
-echo "=== [2/7] data: megavul split ==="
-if [[ ! -d megavul_ml1024 ]]; then
-  rclone copy "$REMOTE/data/baselines/$DATA_TAR" . --progress && tar --no-same-owner -xzf "$DATA_TAR"
-fi
+echo "=== [2/7] data: megavul split (bundel seed $SEED) ==="
+source "$WORK/scripts/lib_baseline_data.sh"
+baseline_data_fetch "$REMOTE" "$SEED"   # klasifikasi saja, flaw mask tidak dipakai
 
 echo "=== [3/7] adapter: megavul -> big_vul csv + cwe_label_map ==="
 mkdir -p "$BIGVUL"
