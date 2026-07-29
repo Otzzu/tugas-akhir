@@ -55,15 +55,20 @@ baseline_data_fetch() {
   fi
   export DATA_TAR
 
-  # 2. ekstrak. Direktori lama dari seed lain dibuang, tidak dipakai ulang diam-diam.
+  # 2. ekstrak. Direktori lama dibuang kalau seed ATAU isi bundelnya berbeda. Ukuran tar ikut
+  #    dicatat supaya bundel yang diperbaiki di Drive tidak tertutup direktori lama bertanda
+  #    seed yang sama.
+  local want size
+  size="$(rclone lsl "$remote/data/baselines/$DATA_TAR" 2>/dev/null | awk '{print $1}')"
+  want="$seed ${size:-?}"
   local mark="$dir/.seed"
   if [[ -d "$dir" ]]; then
     local have=""; [[ -f "$mark" ]] && have="$(cat "$mark")"
-    if [[ "$have" != "$seed" ]]; then
-      echo "  buang $dir bekas seed '${have:-tak bertanda}', ganti dengan seed $seed"
+    if [[ "$have" != "$want" ]]; then
+      echo "  buang $dir bertanda '${have:-tak bertanda}', ganti dengan '$want'"
       rm -rf "$dir"
     else
-      echo "  pakai $dir yang sudah ada, seed $seed cocok"
+      echo "  pakai $dir yang sudah ada, tanda '$want' cocok"
     fi
   fi
   if [[ ! -d "$dir" ]]; then
@@ -71,7 +76,7 @@ baseline_data_fetch() {
     rclone copy "$remote/data/baselines/$DATA_TAR" . --progress
     tar -I "$(command -v pigz || echo gzip)" -xf "$DATA_TAR" || tar --no-same-owner -xzf "$DATA_TAR"
     [[ -d "$dir" ]] || { echo "ERR: $DATA_TAR tidak berisi direktori $dir" >&2; return 1; }
-    echo "$seed" > "$mark"
+    echo "$want" > "$mark"
   fi
 
   # 3. periksa isinya, dan pada baseline lokalisasi periksa juga versi flaw mask.

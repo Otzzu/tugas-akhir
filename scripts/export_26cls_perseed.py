@@ -96,8 +96,15 @@ def main():
         sys.exit(f"GAGAL. get_splits({n}, {a.base_seed}) memberi {len(tr)}/{len(va)}/{len(te)}, "
                  f"sedangkan bundel sumber {[len(pids[s]) for s in ('train','val','test')]}. "
                  "Rumus split tidak cocok, jangan lanjut.")
-    order = tr + va + te                       # order[j] = indeks dataset untuk baris ke-j
-    row_of_index = {di: j for j, di in enumerate(order)}
+    # PENTING. export_baseline_split.py menyusuri indeks 0..n-1 secara MENAIK lalu menaruh tiap
+    # baris ke splitnya, sehingga di dalam satu split urutan barisnya menaik menurut indeks
+    # dataset, BUKAN urutan hasil shuffle. Salah membaca ini membuat seluruh pemetaan meleset.
+    row_of_index = {}
+    pos = 0
+    for part in (tr, va, te):
+        for j, di in enumerate(sorted(part)):
+            row_of_index[di] = pos + j
+        pos += len(part)
     if len(row_of_index) != n:
         sys.exit("GAGAL. Pemetaan indeks ke baris tidak bijektif.")
 
@@ -119,7 +126,7 @@ def main():
         parts = get_splits(n, seed)
         new_ids = {}
         for name, part in zip(("train", "val", "test"), parts):
-            take = [row_of_index[i] for i in part]
+            take = [row_of_index[i] for i in sorted(part)]   # tiru urutan menaik seperti aslinya
             for kind in ("linevd", "linevul"):
                 sub = rows[kind].iloc[take].reset_index(drop=True)
                 if kind == "linevd":
