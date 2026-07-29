@@ -799,3 +799,73 @@ tiap seed, bukan lagi ambilan acak terpisah. Ini menutup P#4 sekaligus P#6.
 **Seed 42 ikut diulang untuk ketiga baseline vuln-only**, karena metodologinya berubah dari
 menyaring split 26 kelas menjadi memakai dataset vuln-only. LineVD dan LineVul cukup seed 1 dan
 2, karena seed 42-nya sudah memakai bundel yang benar.
+
+## P#9 — Hasil rerun baseline, terisi bertahap
+
+Rerun 29 Juli 2026, sembilan pod. LineVD dan LineVul memakai bundel 26 kelas per seed, LOSVER,
+VulExplainer, dan LIVABLE memakai bundel vuln-only per seed. Seed 42 LineVD dan LineVul tidak
+diulang karena bundelnya memang sudah benar.
+
+### LineVul, SELESAI
+
+Sumber `linevul_recomputed_metrics.json` di `results/baselines/linevul_*_20260729_*`.
+
+| Seed | Top-1 | Top-5 | IFA | n |
+| --- | --- | --- | --- | --- |
+| 42, tidak diulang | 0,2139 | 0,5821 | 6,01 | 402 |
+| 1, baru | 0,2149 | 0,6233 | 5,35 | 377 |
+| 2, baru | 0,2167 | 0,5985 | 5,84 | 406 |
+
+| Metrik | Lama | Baru |
+| --- | --- | --- |
+| Top-1 | 0,221 ± 0,007 | **0,215 ± 0,001** |
+| IFA | 5,87 ± 0,12 | **5,73 ± 0,34** |
+| n | 414 ± 11 | **395 ± 15** |
+
+Waktu 1.120 dan 1.115 detik, VRAM 13,1 GB, RTX 4090.
+
+### Dua pola yang muncul, dan keduanya sesuai dugaan
+
+**Mean nyaris tidak bergeser.** Top-1 turun 0,006 dan IFA turun 0,14. Data latih dua ambilan 80
+persen dari kolam yang sama beririsan sekitar 80 persen, jadi modelnya mirip. Kesimpulan di
+laporan tidak berubah, arsitektur usulan tetap unggul pada Top-1 terhadap LineVul.
+
+**Standard deviation melebar.** IFA dari 0,12 menjadi 0,34, hampir tiga kali. Itu memang yang
+dicari. Std lama hanya menangkap keacakan pelatihan karena split-nya terkunci, sedangkan yang
+baru menangkap keacakan pelatihan dan pembagian data sekaligus. Estimasi bootstrap pada
+P#6 lanjutan 2 memperkirakan komponen yang hilang beberapa kali lebih besar daripada std yang
+dilaporkan, dan hasil nyatanya sejalan. Setelah seluruh rerun selesai, bagian estimasi itu
+dihapus karena std sungguhannya sudah ada.
+
+### n per seed yang sudah terpantau
+
+| Model | Lama | Baru per seed |
+| --- | --- | --- |
+| LineVul | 414 tetap | 402, 377, 406 |
+| LOSVER | 476 tetap | 456, 462, 485 |
+| LIVABLE | 576 tetap | test 426 pada seed 42, seed lain menyusul |
+| VulExplainer | 914, 910, 921 | 913 pada ketiga seed, tanpa filter |
+
+Kolom n yang dulu konstan kini bergerak. Itu tanda paling langsung bahwa split benar-benar
+mengikuti seed.
+
+### P#9 lanjutan — alat bantu revisi
+
+Dua berkas disiapkan supaya revisi nanti tinggal menimpa, bukan menyusun ulang.
+
+1. **`REVISI_TABEL_BASELINE.md`** memuat salinan **persis** sebelas tabel yang harus berubah,
+   yaitu Tabel IV.10, IV.11, IV.12, Tabel D.3, Tabel H.2 pada laporan, ditambah padanannya di
+   `slides/05_hasil.md` dan `slides/07_appendix.md` termasuk tabel Cakupan Data Uji. Tiap blok
+   diberi keterangan sel mana yang berubah. Baris arsitektur usulan tidak berubah.
+
+2. **`scripts/collect_baseline_results.py`** memanen angkanya dari Drive dan mencetak dalam
+   format tabel yang sama, koma sebagai desimal, lengkap dengan mean ± std dan rincian per seed.
+
+```
+uv run python scripts/collect_baseline_results.py
+```
+
+Dua penjaga di dalam skrip itu. Pasangan model dan seed yang belum selesai dicetak sebagai
+`BELUM ADA`, tidak diisi angka lama. Dan hanya LineVul serta LineVD **seed 42** yang boleh
+mengambil dari gelombang 20260707, karena keduanya sengaja tidak di-rerun. Model lain tidak akan
+pernah jatuh ke gelombang lama, supaya dua metodologi tidak tercampur tanpa terlihat.
