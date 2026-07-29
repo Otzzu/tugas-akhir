@@ -869,3 +869,62 @@ Dua penjaga di dalam skrip itu. Pasangan model dan seed yang belum selesai dicet
 `BELUM ADA`, tidak diisi angka lama. Dan hanya LineVul serta LineVD **seed 42** yang boleh
 mengambil dari gelombang 20260707, karena keduanya sengaja tidak di-rerun. Model lain tidak akan
 pernah jatuh ke gelombang lama, supaya dua metodologi tidak tercampur tanpa terlihat.
+
+## P#10 — TERBUKA. Cakupan ground truth baris LineVD lebih besar dari milik kita
+
+**Belum terjawab. Bukan penghalang rerun, tetapi harus dijelaskan sebelum angka LineVD dipakai
+untuk klaim apa pun.**
+
+Pada seed 1, dump skor per baris LineVD memuat **601 fungsi** ber-ground-truth, sedangkan bundel
+seed 1 hanya punya **548 fungsi** uji dengan `flaw_lines` tidak kosong. Node berflaw 1.898 lawan
+1.663 baris di bundel.
+
+Angka 1.898 lawan 1.663 wajar, satu baris bisa memikul beberapa node. Yang **601 lawan 548 tidak
+wajar**, karena fungsi tanpa baris penyebab seharusnya tidak bisa mendapat node berflaw.
+
+Selisihnya 9,7% dan arahnya **menguntungkan LineVD**, karena ground truth yang lebih longgar
+membuat lebih banyak tebakan dihitung benar.
+
+**Pola ini sudah ada sebelum rerun**, yaitu run lama 599 lawan 551 pada bundel seed 42. Jadi
+perbandingan angka lama dengan angka baru tetap sah, dan rerun yang sedang berjalan tidak perlu
+dihentikan.
+
+### Yang sudah dipastikan, empat kemungkinan tertutup
+
+| Dugaan | Status |
+| --- | --- |
+| LineVD tidak memakai flaw mask kita | **salah**, `removed` = `flaw_lines` kita, dioper `linevd_prepare_megavul.py` baris 50 |
+| `bigvul()` menghitung ulang GT dari diff | **tidak**, `minimal=True` membaca parquet apa adanya, hanya kolom `label` yang dipetakan dari file split |
+| `depadd` menambah baris | **tidak bisa**, `added = []` sehingga `get_dep_add_lines` mengembalikan himpunan kosong |
+| Fungsi tak rentan ikut berlabel | **tidak**, `lines` hanya dibangun untuk `vul == 1` |
+| Penghitungnya keliru | **tidak**, `num_funcs_with_flaw_gt` hanya menghitung fungsi dengan minimal satu node berflaw |
+
+Bukti lain bahwa mask-nya memang mask tambalan, yaitu flaw per fungsi 1,84. Mask lama akan
+memberi sekitar 26 per fungsi.
+
+### Sisa dugaan, hanya bisa diuji di pod
+
+`get_dep_add_lines_bigvul()` menyimpan hasilnya ke
+`storage/processed/bigvul/eval/statement_labels.pkl` dan memakai ulang cache itu **tanpa
+memeriksa apakah datanya masih sama**. Kalau berkas itu tersisa dari build sebelumnya, ground
+truth-nya milik dataset lain.
+
+```bash
+cd /workspace/tugas-akhir/src/linevd
+python - <<'PY'
+import pickle, pandas as pd
+d = pickle.load(open("storage/processed/bigvul/eval/statement_labels.pkl","rb"))
+t = pd.read_parquet("/workspace/tugas-akhir/megavul_ml1024/linevd/test.parquet")
+ids = set(t[t.vul==1]["id"])
+print("kunci:", len(d))
+print("dalam test, ber-removed:", sum(1 for k,v in d.items() if k in ids and len(v["removed"])>0))
+print("dalam test, ber-depadd :", sum(1 for k,v in d.items() if k in ids and v["depadd"]))
+PY
+```
+
+Bila `ber-depadd` besar, berarti ground truth LineVD memang lebih longgar dan Tabel IV.12 perlu
+catatan bahwa cakupan GT-nya tidak sama dengan milik arsitektur usulan. Bila `ber-removed`
+sudah 601, berarti pkl-nya basi dan LineVD perlu dijalankan ulang dengan cache itu dihapus.
+
+**Jalankan selagi pod LineVD masih hidup.** Setelah pod mati, `storage/processed/bigvul/eval`
+ikut hilang karena tidak termasuk cache yang diunggah ke Drive.
