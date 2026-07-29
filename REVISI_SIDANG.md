@@ -959,3 +959,28 @@ butuh menelusuri keluaran Joern per fungsi, dan tidak sepadan dikerjakan sekaran
 
 **Yang sudah pasti untuk sidang.** Selisihnya menguntungkan LineVD, bukan kita, dan polanya sudah
 ada sejak run lama. Tidak ada angka yang perlu ditarik, dan tidak ada run yang perlu dihentikan.
+
+### P#10 SELESAI — kelebihan cakupan GT LineVD bersifat sistematis, sekitar 10 persen
+
+Diukur pada kedua seed hasil rerun.
+
+| Seed | Fungsi dinilai | Ber-GT | Bundel berflaw | Selisih |
+| --- | ---: | ---: | ---: | --- |
+| 1 | 1.034 | 601 | 548 | +53, 9,7% |
+| 2 | 1.019 | 612 | 556 | +56, 10,1% |
+
+Karena selisihnya tetap sekitar 10 persen di kedua seed, ini sifat tetap dari pemetaan nomor
+baris ke node pada LineVD, bukan kesalahan data dan bukan gangguan acak. Sumber ground truth
+sudah dipastikan sahih, yaitu `removed` = `flaw_lines` kita, `depadd` nol, pkl memuat 5.473
+fungsi berflaw persis seperti bundel.
+
+**Yang perlu ditulis, kalau ditulis.** Cukup satu kalimat pada catatan cakupan data uji, bahwa
+ground truth baris LineVD mencakup sekitar 10 persen lebih banyak fungsi daripada ground truth
+yang dipakai arsitektur usulan, karena pemetaan baris ke node pada pipeline LineVD.
+
+**Jangan dipakai sebagai pembelaan di prosa pembahasan.** Selisih 10 persen tidak bisa
+menjelaskan jarak Top-1 0,89 lawan 0,26 yang besarnya 3,4 kali. Menyebutnya di dekat angka yang
+kita kalahi akan terbaca sebagai mencari alasan. Penjelasan yang benar dan lebih kuat tetap
+bentuk supervisinya, yaitu LineVD dilatih dengan label tiap statement dan diuji pada label yang
+sama, sedangkan arsitektur usulan belajar dari label fungsi dengan label baris hanya sebagai
+sinyal peringkat lemah.
