@@ -928,3 +928,34 @@ sudah 601, berarti pkl-nya basi dan LineVD perlu dijalankan ulang dengan cache i
 
 **Jalankan selagi pod LineVD masih hidup.** Setelah pod mati, `storage/processed/bigvul/eval`
 ikut hilang karena tidak termasuk cache yang diunggah ke Drive.
+
+### P#10 lanjutan — hasil diagnostik di pod, 29 Juli 2026
+
+Dijalankan selagi pod LineVD hidup. Semua dugaan tentang sumber ground truth **tertutup**.
+
+| Pemeriksaan | Hasil | Kesimpulan |
+| --- | --- | --- |
+| `depadd` tidak kosong | **0** | GT = `removed` saja, tidak ada pelonggaran dari dependensi baris tambahan |
+| kunci pkl | 9.115 | mencakup seluruh fungsi rentan, satu selisih dari 9.116 karena ada id kembar |
+| irisan kunci dengan fungsi rentan di test | 921 dari 921 | penuh, pkl tidak basi |
+| ber-removed di seluruh df | **5.473** | cocok persis dengan jumlah fungsi berflaw di bundel |
+| ber-removed pada test seed 2 | 556 | cocok persis dengan bundel seed 2 |
+| bundel yang dipakai run seed 1 | `rentan 910`, `548 berflaw` | bundel yang benar, bukan versi salah yang sempat terunggah |
+
+Jadi LineVD **memang memakai flaw mask kita, apa adanya**. Kelebihan 53 fungsi bukan berasal
+dari ground truth.
+
+**Sisa kemungkinan ada di jalur pelabelan node**, yaitu `feature_extraction` dan pemetaan nomor
+baris ke node pada `vuln = [1 if i in self.lines[_id] else 0 for i in lineno]`. Membedah itu
+butuh menelusuri keluaran Joern per fungsi, dan tidak sepadan dikerjakan sekarang.
+
+**Pemeriksaan lanjutan yang gratis.** Saat hasil LineVD seed 2 turun, hitung fungsi ber-GT pada
+`linevd_loc_scores.csv`-nya lalu bandingkan dengan 556.
+
+- Kalau sekitar 609, berarti kelebihannya sistematis sekitar 10 persen dan memang berasal dari
+  pemetaan baris ke node. Tabel IV.12 cukup diberi catatan bahwa cakupan GT LineVD sedikit lebih
+  longgar daripada milik arsitektur usulan.
+- Kalau tepat 556, berarti seed 1 yang menyimpang dan perlu dilihat khusus.
+
+**Yang sudah pasti untuk sidang.** Selisihnya menguntungkan LineVD, bukan kita, dan polanya sudah
+ada sejak run lama. Tidak ada angka yang perlu ditarik, dan tidak ada run yang perlu dihentikan.
