@@ -224,11 +224,59 @@ def plot_cl_tradeoff() -> None:
     print("wrote Tradeoff_Continual.png")
 
 
+def plot_cl_tradeoff_split() -> None:
+    """Same data and styling as plot_cl_tradeoff, but one PNG per scenario for the slides.
+    The report keeps the two-panel Gambar IV.12; a slide shows only the scenario it is
+    discussing, so each panel gets its own legend and axis labels."""
+    before_old = 0.472
+    domain = {
+        "Fine-tuning naif":  (0.410, 0.054, 0.156, 0.006),
+        "EWC-DR":            (0.390, 0.050, 0.408, 0.051),
+        "Experience replay": (0.460, 0.019, 0.376, 0.024),
+        "EWC-DR + replay":   (0.427, 0.019, 0.606, 0.135),
+    }
+    cil = {
+        "Fine-tuning naif":  (0.573, 0.011, 0.000, 0.001),
+        "EWC-DR":            (0.518, 0.021, 0.081, 0.028),
+        "Experience replay": (0.474, 0.024, 0.370, 0.011),
+        "EWC-DR + replay":   (0.331, 0.045, 0.476, 0.020),
+    }
+    joint = {"domain": (0.397, 0.052, 0.469, 0.043), "cil": (0.497, 0.028, 0.461, 0.078)}
+    colors = {"Fine-tuning naif": "#c0392b", "EWC-DR": "#e08a1e",
+              "Experience replay": "#3b6fb0", "EWC-DR + replay": "#4a9b5e"}
+    for key, data, title in [("domain", domain, "Domain-incremental"),
+                             ("cil", cil, "Class-incremental")]:
+        fig, ax = plt.subplots(figsize=(6.6, 4.8))
+        for lab, (nx, nsd, oy, osd) in data.items():
+            ax.errorbar(nx, oy, xerr=nsd, yerr=osd, fmt="o", ms=10, capsize=3,
+                        color=colors[lab], label=lab, zorder=3)
+        jx, jxsd, jy, jysd = joint[key]
+        ax.errorbar(jx, jy, xerr=jxsd, yerr=jysd, fmt="*", ms=18, capsize=3,
+                    color="#6c3483", label="Pelatihan ulang gabungan (batas atas)", zorder=4)
+        ax.axhline(before_old, color="gray", ls="--", lw=1)
+        ax.text(0.98, before_old + 0.015, "F1 task lama sebelum pembaruan", ha="right",
+                transform=ax.get_yaxis_transform(), fontsize=8.5, color="gray")
+        if key == "cil":   # CIL points are monotone; the line only guides the eye
+            fr = sorted((v[0], v[2]) for v in cil.values())
+            ax.plot([p[0] for p in fr], [p[1] for p in fr], ls=":", lw=1.2, color="gray", zorder=1)
+        ax.set_title(title, fontsize=12)
+        ax.set_xlabel("Macro F1 task baru (menyerap yang baru)")
+        ax.set_ylabel("Macro F1 task lama (menjaga yang lama)")
+        ax.set_xlim(0.30, 0.62); ax.set_ylim(-0.05, 0.85)
+        ax.grid(alpha=0.25, lw=0.5)
+        ax.legend(loc="upper right", fontsize=8.5, frameon=False)
+        fig.tight_layout()
+        fig.savefig(OUT / f"Tradeoff_Continual_{key}.png", dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"wrote Tradeoff_Continual_{key}.png")
+
+
 def main() -> None:
     plot_length_hist()
     plot_flip()
     plot_ifa_scatter()
     plot_cl_tradeoff()
+    plot_cl_tradeoff_split()
 
 
 if __name__ == "__main__":
