@@ -75,26 +75,46 @@ baseline_data_fetch() {
   fi
 
   # 3. periksa isinya, dan pada baseline lokalisasi periksa juga versi flaw mask.
-  NEEDS_FLAW="${NEEDS_FLAW:-}" python - "$dir" "$seed" "${NEEDS_FLAW:-0}" <<'CHECK'
+  python - "$dir" "$seed" "${NEEDS_FLAW:-0}" <<'CHECK'
+import re
 import sys
 from pathlib import Path
+
 d, seed, needs_flaw = Path(sys.argv[1]), sys.argv[2], sys.argv[3] == "1"
 try:
     import numpy as np, pandas as pd
 except ImportError:
     print("  PERINGATAN: pandas tidak ada, pemeriksaan data dilewati")
     sys.exit(0)
-te = pd.read_parquet(d / "linevd" / "test.parquet")
-n_vul = int((te["vul"] == 1).sum()) if "vul" in te else -1
-print(f"  seed {seed}: test {len(te)} fungsi, rentan {n_vul}")
+
+# Jalur utama lewat parquet. Sebagian env pod tidak memasang pyarrow maupun fastparquet,
+# misalnya env LineVul, jadi ada jalur cadangan lewat csv LineVul yang isinya sama.
+# Di csv itu baris penyebab disimpan sebagai flaw_line_index, indeks berbasis nol, sehingga
+# padanan "baris 1" adalah indeks 0.
+n_rows = n_vul = None
+first_is_head = None
+try:
+    te = pd.read_parquet(d / "linevd" / "test.parquet")
+    n_rows, n_vul = len(te), int((te["vul"] == 1).sum())
+    if needs_flaw:
+        fl = te["flaw_lines"].apply(lambda x: list(x) if isinstance(x, (list, np.ndarray)) else [])
+        w = fl[fl.apply(len) > 0]
+        first_is_head = w.apply(lambda x: min(x) == 1)
+except ImportError:
+    print("  (tanpa engine parquet, pakai csv LineVul)")
+    te = pd.read_csv(d / "linevul" / "test.csv")
+    n_rows, n_vul = len(te), int((te["target"] == 1).sum())
+    if needs_flaw:
+        w = te["flaw_line_index"].dropna().astype(str)
+        first_is_head = w.apply(lambda s: min(int(x) for x in re.split(r"[,/ ]+", s.strip()) if x) == 0)
+
+print(f"  seed {seed}: test {n_rows} fungsi, rentan {n_vul}")
 if not needs_flaw:
     sys.exit(0)
-fl = te["flaw_lines"].apply(lambda x: list(x) if isinstance(x, (list, np.ndarray)) else [])
-w = fl[fl.apply(len) > 0]
-if len(w) == 0:
+if len(first_is_head) == 0:
     sys.exit("  GAGAL. Tidak ada satu pun baris penyebab pada test, baseline lokalisasi tidak bisa dinilai.")
-pct = w.apply(lambda x: min(x) == 1).mean() * 100
-print(f"  flaw mask: {len(w)} fungsi berflaw, {pct:.1f}% memuat baris 1")
+pct = first_is_head.mean() * 100
+print(f"  flaw mask: {len(first_is_head)} fungsi berflaw, {pct:.1f}% memuat baris 1")
 if pct > 40:
     sys.exit("  GAGAL. Ini flaw mask versi LAMA yang menandai seluruh badan fungsi (bug METHOD-span). "
              "Bundel seperti megavul_ml1024_baselines_20260613, split_s1, dan split_s2 tidak boleh "
