@@ -53,7 +53,12 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--seeds", nargs="+", type=int, default=[42, 1, 2])
     ap.add_argument("--base-seed", type=int, default=42, help="seed asal bundel sumber")
+    ap.add_argument("--vuln-only", action="store_true",
+                    help="buang fungsi tidak rentan lebih dulu, lalu bagi ulang. Meniru "
+                         "build_vuln_only_subset.py yang menjaga urutan dataset, sehingga "
+                         "split-nya sama persis dengan yang dipakai arsitektur usulan")
     a = ap.parse_args()
+    prefix = "megavul_vulnonly_baselines" if a.vuln_only else "megavul_ml1024_baselines"
 
     src, out = Path(a.src), Path(a.out)
     meta = json.loads((src / "splits.json").read_text())
@@ -96,6 +101,16 @@ def main():
     if len(row_of_index) != n:
         sys.exit("GAGAL. Pemetaan indeks ke baris tidak bijektif.")
 
+    # Mode vuln-only. build_vuln_only_subset.py menyusuri indeks 0..n-1 secara urut, melewati
+    # yang benign, lalu menomori ulang dengan j++. Jadi indeks vuln-only ke-j adalah fungsi
+    # rentan ke-j menurut urutan dataset asal. Susunan itu ditiru di sini.
+    if a.vuln_only:
+        vul_of_index = {di: int(rows["linevd"]["vul"].iloc[j]) for di, j in row_of_index.items()}
+        keep = [di for di in range(n) if vul_of_index[di] == 1]
+        row_of_index = {j: row_of_index[di] for j, di in enumerate(keep)}
+        n = len(keep)
+        print(f"vuln-only: {n} fungsi rentan dari kolam")
+
     out.mkdir(parents=True, exist_ok=True)
     for seed in a.seeds:
         d = out / f"s{seed}" / "megavul_ml1024"
@@ -120,7 +135,7 @@ def main():
         nv = int((te_df["vul"] == 1).sum())
         print(f"  seed {seed}: train {len(parts[0])} val {len(parts[1])} test {len(parts[2])}, rentan di test {nv}")
 
-        tar = out / f"megavul_ml1024_baselines_s{seed}.tar.gz"
+        tar = out / f"{prefix}_s{seed}.tar.gz"
         comp = shutil.which("pigz") or "gzip"
         with open(tar, "wb") as f:
             p1 = subprocess.Popen(["tar", "-cf", "-", "-C", str(out / f"s{seed}"), "megavul_ml1024"],
@@ -131,7 +146,7 @@ def main():
 
     print("\nUnggah:")
     print(f"  rclone copy {out} gdrive-mesach:tugas-akhir/data/baselines/ "
-          "--include 'megavul_ml1024_baselines_s*.tar.gz' --progress")
+          f"--include '{prefix}_s*.tar.gz' --progress")
 
 
 if __name__ == "__main__":
