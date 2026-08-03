@@ -138,6 +138,24 @@ uv run train --config configs/lmgat/binary.yaml
 uv run train --config configs/lmgat/multiclass.yaml
 ```
 
+## Membaca Hasil Run (WAJIB)
+
+Angka metrik SELALU dari `metrics_summary.json` atau `predictions.csv`, **tidak pernah** dari
+`training_summary.json`. `training_summary.json` hanya untuk waktu, jumlah epoch, `dataset_pt`,
+dan `run_id`.
+
+Alasannya, `training_summary.json` → `test_f1` dihasilkan sebelum commit 3c0eb7d (12 Juli 2026)
+oleh bobot epoch TERAKHIR setelah early stopping, bukan checkpoint val terbaik. Seluruh run
+ablasi (Mei sampai Juni 2026) dan seluruh run hasil akhir (7 sampai 8 Juli 2026) berjalan
+sebelum commit itu. Angka test yang sah datang dari langkah `uv run evaluate --checkpoint
+best_*.pt` yang terpisah, dan hasilnya masuk ke `metrics_summary.json` serta `predictions.csv`.
+
+Konvensi macro F1 laporan, dihitung ulang dari `predictions.csv` dengan
+`f1_score(y_true, y_pred, average="macro")` tanpa argumen `labels=`, yaitu dibagi seluruh kelas.
+Nilai `metrics_summary.json` → `function_level.f1_macro` memakai pembagi kelas yang hadir saja,
+sehingga sedikit lebih tinggi dan TIDAK cocok dengan tabel laporan. Akurasi boleh langsung
+diambil dari `metrics_summary.json` karena kedua konvensi memberi angka yang sama.
+
 ## Cloud Training
 
 **Normal training runs on the pod ALWAYS use `scripts/train_cloud.sh`** — not bare `python -m gnn_vuln.train`. The wrapper handles dataset download, train, evaluate, and zip+upload of checkpoints + results to Drive in one go. Bare `python -m gnn_vuln.train` is only for reference or inside the custom multi-run orchestrators (e.g. `run_relearn_experiment.py`, which manage their own download/eval/upload).
